@@ -1165,7 +1165,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
         <label htmlFor=${audioInputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
           ${audioBusy ? "업로드 중..." : h.audio ? "녹음 다시 올리기" : "녹음 파일 올리기"}
         </label>
-        <input id=${audioInputId} type="file" accept="audio/*" capture="user" onChange=${handleAudio} style=${{ display: "none" }} disabled=${audioBusy} />
+        <input id=${audioInputId} type="file" accept="audio/*" onChange=${handleAudio} style=${{ display: "none" }} disabled=${audioBusy} />
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
         </div>
