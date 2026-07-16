@@ -202,6 +202,14 @@ async function compressImage(file, maxDim, quality) {
     reader.readAsDataURL(file);
   });
 }
+async function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ---------- Shared UI ----------
 function TopBar({ tagline }) {
@@ -616,6 +624,7 @@ function HomeworkEditor({ data, updateData }) {
                     ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
                   </div>
                 `}
+                ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
                 <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.navy : C.slate }}>${h.done ? "✓ 학생 완료 표시함" : "아직 미완료"}</div>
               </div>
               <div style=${{ display: "flex", gap: 10 }}>
@@ -1079,7 +1088,9 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 
 function HomeworkStudentCard({ h, studentId, updateData }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [audioBusy, setAudioBusy] = useState(false); const [audioErr, setAudioErr] = useState("");
   const inputId = `hwphoto-${h.id}`;
+  const audioInputId = `hwaudio-${h.id}`;
   const photos = h.photos || (h.photo ? [h.photo] : []);
 
   async function handleFile(e) {
@@ -1109,6 +1120,21 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
       homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: (x.photos || (x.photo ? [x.photo] : [])).filter((_, i) => i !== idx), photo: undefined } : x)),
     }));
   }
+  async function handleAudio(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setAudioErr(""); setAudioBusy(true);
+    try {
+      const dataUrl = await fileToDataURL(file);
+      if (dataUrl.length > 3000000) { setAudioErr("녹음 파일 용량이 너무 커요 (최대 약 2MB). 더 짧게 녹음해서 다시 올려주세요."); setAudioBusy(false); return; }
+      await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audio: dataUrl, done: true } : x)) }));
+    } catch { setAudioErr("파일을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
+    setAudioBusy(false);
+  }
+  async function removeAudio() {
+    await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audio: null } : x)) }));
+  }
   async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
 
   return html`
@@ -1125,16 +1151,27 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
           `)}
         </div>
       `}
+      ${h.audio && html`
+        <div style=${{ marginTop: 8 }}>
+          <audio controls src=${h.audio} style=${{ width: "100%", height: 32 }} />
+          <button onClick=${removeAudio} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11.5, cursor: "pointer", padding: 0, marginTop: 4 }}>녹음 지우고 다시 올리기</button>
+        </div>
+      `}
       <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
         <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
           ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
         </label>
         <input id=${inputId} type="file" accept="image/*" capture="environment" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
+        <label htmlFor=${audioInputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
+          ${audioBusy ? "업로드 중..." : h.audio ? "녹음 다시 올리기" : "녹음 파일 올리기"}
+        </label>
+        <input id=${audioInputId} type="file" accept="audio/*" capture="user" onChange=${handleAudio} style=${{ display: "none" }} disabled=${audioBusy} />
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
         </div>
       </div>
       ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
+      ${audioErr && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${audioErr}</div>`}
     <//>
   `;
 }
@@ -1328,6 +1365,7 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
               ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
             </div>
           `}
+          ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
           <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? "✓ 완료함" : "아직 미완료"}</div>
         <//>
       `))}
