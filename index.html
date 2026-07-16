@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Sarah's English</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #FAF7F1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; }
+  input, textarea, select, button { font-family: inherit; }
+  ::placeholder { color: #9a9488; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#5B6270;">불러오는 중...</div>
+</div>
+
+<script type="module">
+import React from "https://esm.sh/react@18.3.1";
+import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+import htm from "https://esm.sh/htm@3.1.1";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+const html = htm.bind(React.createElement);
+const { useState, useEffect } = React;
+
+// ---------- Firebase ----------
+const firebaseConfig = {
+  apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
+  authDomain: "sarah-s-english.firebaseapp.com",
+  databaseURL: "https://sarah-s-english-default-rtdb.firebaseio.com",
+  projectId: "sarah-s-english",
+  storageBucket: "sarah-s-english.firebasestorage.app",
+  messagingSenderId: "444699532890",
+  appId: "1:444699532890:web:44084cd90d0aa0b5ca0263",
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+
+async function fsGet(col, id) {
+  try {
+    const snap = await getDoc(doc(db, col, id));
+    return snap.exists() ? snap.data() : null;
+  } catch (e) {
+    console.error("fsGet error", e);
+    return null;
+  }
+}
+async function fsSet(col, id, data) {
+  try {
+    await setDoc(doc(db, col, id), data);
+    return true;
+  } catch (e) {
+    console.error("fsSet error", e);
+    return false;
+  }
+}
+
+// ---------- Design tokens ----------
+const C = {
+  ink: "#14161A", navy: "#1C2B4A", gold: "#B8935A", ivory: "#FAF7F1",
+  slate: "#5B6270", line: "#DCD8CF", white: "#FFFFFF", danger: "#A6473A",
+};
+const serif = { fontFamily: "Georgia, 'Times New Roman', serif" };
+const inputStyle = {
+  width: "100%", padding: "10px 12px", borderRadius: 3, border: `1px solid ${C.line}`,
+  fontSize: 14, boxSizing: "border-box", color: C.ink, background: C.white,
+};
+
+// ---------- Utilities ----------
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const today = () => new Date().toISOString().slice(0, 10);
+function fmtDate(d) {
+  try {
+    const dt = new Date(d + "T00:00:00");
+    return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, "0")}.${String(dt.getDate()).padStart(2, "0")}`;
+  } catch { return d; }
+}
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [] });
+
+function splitFirst(line, delim) {
+  const idx = line.indexOf(delim);
+  if (idx === -1) return null;
+  return [line.slice(0, idx).trim(), line.slice(idx + delim.length).trim()];
+}
+function parseVocabPaste(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    let pair = splitFirst(line, " - ") || splitFirst(line, "\t") || splitFirst(line, ":") || splitFirst(line, ",");
+    if (!pair) {
+      const m = line.split(/\s{2,}/);
+      if (m.length >= 2) pair = [m[0].trim(), m.slice(1).join(" ").trim()];
+    }
+    if (pair) {
+      const [word, meaning] = pair;
+      if (word && meaning) rows.push({ word, meaning });
+    }
+  }
+  return rows;
+}
+function parseExamPaste(text) {
+  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const out = [];
+  for (const block of blocks) {
+    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 3) continue;
+    const isMarker = (l) => /^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/.test(l);
+    const isAnswer = (l) => /^정답\s*[:：]?/.test(l);
+    const qLines = [];
+    let i = 0;
+    while (i < lines.length && !isMarker(lines[i]) && !isAnswer(lines[i])) { qLines.push(lines[i]); i++; }
+    if (qLines.length === 0) continue;
+    qLines[0] = qLines[0].replace(/^\d+[.\)]\s*/, "");
+    const qText = qLines.join("\n");
+    const choices = [];
+    let answerIdx = 0;
+    for (; i < lines.length; i++) {
+      const line = lines[i];
+      const ansMatch = line.match(/^정답\s*[:：]?\s*([1-9A-Da-d])/);
+      if (ansMatch) {
+        const a = ansMatch[1];
+        answerIdx = /[1-9]/.test(a) ? parseInt(a, 10) - 1 : a.toUpperCase().charCodeAt(0) - 65;
+        continue;
+      }
+      const marker = line.match(/^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/);
+      if (marker) choices.push(line.slice(marker[0].length).trim());
+      else if (choices.length > 0) choices[choices.length - 1] += " " + line;
+    }
+    if (qText && choices.length >= 2) out.push({ q: qText, choices, answer: Math.min(Math.max(answerIdx, 0), choices.length - 1) });
+  }
+  return out;
+}
+function normText(s) { return (s || "").replace(/\s+/g, "").toLowerCase(); }
+function checkVocabAnswer(userAnswer, correctMeaning) {
+  const norm = normText(userAnswer);
+  if (!norm) return false;
+  const segments = correctMeaning.split(/[,;/·]|\(|\)|\[|\]/).map((s) => normText(s)).filter(Boolean);
+  return segments.some((seg) => seg === norm || (seg.length >= 2 && norm.length >= 2 && (seg.includes(norm) || norm.includes(seg))));
+}
+async function compressImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ---------- Shared UI ----------
+function TopBar({ tagline }) {
+  return html`
+    <div>
+      <div style=${{ background: C.ink, height: 6 }} />
+      <div style=${{ background: C.ivory, padding: "22px 16px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
+        <div style=${{ width: 40, height: 40, borderRadius: "50%", border: `1.5px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", color: C.navy, ...serif, fontSize: 15, letterSpacing: 1 }}>S·E</div>
+        <div style=${{ ...serif, fontSize: 21, color: C.navy, letterSpacing: 1 }}>Sarah's English</div>
+        ${tagline && html`<div style=${{ ...serif, fontStyle: "italic", fontSize: 12.5, color: C.slate, marginTop: 4 }}>${tagline}</div>`}
+      </div>
+    </div>
+  `;
+}
+function SectionLabel({ n, label }) {
+  return html`
+    <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8, margin: "22px 0 10px" }}>
+      <span>— SECTION 0${n} — ${label} —</span>
+      <span style=${{ flex: 1, height: 1, background: C.line }} />
+    </div>
+  `;
+}
+function Card({ children, style }) {
+  return html`<div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16, marginBottom: 12, ...style }}>${children}</div>`;
+}
+function Button({ children, onClick, variant = "primary", style, disabled }) {
+  const base = { fontSize: 13.5, fontWeight: 600, padding: "10px 18px", borderRadius: 3, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
+  const variants = {
+    primary: { background: C.navy, color: C.white },
+    gold: { background: C.gold, color: C.white },
+    ghost: { background: "transparent", color: C.navy, border: `1px solid ${C.navy}` },
+    danger: { background: "transparent", color: C.danger, border: `1px solid ${C.danger}` },
+  };
+  return html`<button disabled=${disabled} onClick=${onClick} style=${{ ...base, ...variants[variant], ...style }}>${children}</button>`;
+}
+function Field({ label, children }) {
+  return html`<div style=${{ marginBottom: 12 }}><div style=${{ fontSize: 12, color: C.slate, marginBottom: 5, fontWeight: 600 }}>${label}</div>${children}</div>`;
+}
+function Tabs({ tabs, active, onChange }) {
+  return html`
+    <div style=${{ display: "flex", overflowX: "auto", gap: 4, borderBottom: `1px solid ${C.line}`, marginBottom: 16 }}>
+      ${tabs.map((t) => html`
+        <button key=${t.key} onClick=${() => onChange(t.key)} style=${{
+          flex: "0 0 auto", padding: "9px 12px", fontSize: 12.5, fontWeight: 600, background: "none", border: "none",
+          borderBottom: active === t.key ? `2px solid ${C.gold}` : "2px solid transparent",
+          color: active === t.key ? C.navy : C.slate, cursor: "pointer", whiteSpace: "nowrap",
+        }}>${t.icon} ${t.label}</button>
+      `)}
+    </div>
+  `;
+}
+function Empty({ text }) {
+  return html`<div style=${{ color: C.slate, fontSize: 13, textAlign: "center", padding: "28px 8px", border: `1px dashed ${C.line}`, borderRadius: 4 }}>${text}</div>`;
+}
+function BackBtn({ onClick }) {
+  return html`<button onClick=${onClick} style=${{ background: "none", border: "none", color: C.slate, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: 0 }}>‹ 뒤로</button>`;
+}
+
+// ---------- Root ----------
+function App() {
+  const [screen, setScreen] = useState("role");
+  const [roster, setRoster] = useState(null);
+  const [teacherAuth, setTeacherAuth] = useState(null);
+  const [session, setSession] = useState(null);
+  const [dataCache, setDataCache] = useState({});
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const r = await fsGet("meta", "roster");
+      setRoster((r && r.list) || []);
+      const ta = await fsGet("meta", "teacherAuth");
+      setTeacherAuth(ta);
+    })();
+  }, []);
+
+  async function ensureData(id) {
+    if (dataCache[id]) return dataCache[id];
+    const d = (await fsGet("studentData", id)) || emptyData();
+    setDataCache((prev) => ({ ...prev, [id]: d }));
+    return d;
+  }
+  async function updateData(id, updater) {
+    const cur = await ensureData(id);
+    const next = updater(cur);
+    setDataCache((prev) => ({ ...prev, [id]: next }));
+    await fsSet("studentData", id, next);
+  }
+  async function saveRosterList(list) {
+    setRoster(list);
+    await fsSet("meta", "roster", { list });
+  }
+
+  function logout() {
+    setSession(null); setSelectedStudentId(null); setErr(""); setScreen("role");
+  }
+
+  if (roster === null) {
+    return html`<div style=${{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.slate }}>불러오는 중...</div>`;
+  }
+
+  return html`
+    <div style=${{ minHeight: "100vh", background: C.ivory }}>
+      <${TopBar} tagline=${screen === "teacherDash" ? "Teacher Console" : screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />
+      <div style=${{ maxWidth: 480, margin: "0 auto", padding: "18px 16px 60px" }}>
+        ${screen === "role" && html`<${RoleSelect} setScreen=${setScreen} />`}
+        ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("role")}
+          onSetPass=${async (p) => { const ta = { passcode: p }; setTeacherAuth(ta); await fsSet("meta", "teacherAuth", ta); setSession({ role: "teacher" }); setScreen("teacherDash"); }}
+          onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { setSession({ role: "teacher" }); setScreen("teacherDash"); } else setErr("비밀번호가 맞지 않아요."); }}
+          err=${err} />`}
+        ${screen === "studentLogin" && html`<${StudentParentLogin} mode="student" roster=${roster} onBack=${() => setScreen("role")}
+          onLogin=${(s) => { setSession({ role: "student", student: s }); setScreen("studentDash"); }} />`}
+        ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("role")}
+          onLogin=${(s) => { setSession({ role: "parent", student: s }); setScreen("parentDash"); }} />`}
+        ${screen === "teacherDash" && html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
+          selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
+          ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
+        ${screen === "studentDash" && html`<${StudentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
+        ${screen === "parentDash" && html`<${ParentDash} student=${session.student} ensureData=${ensureData} dataCache=${dataCache} onLogout=${logout} />`}
+      </div>
+    </div>
+  `;
+}
+
+// ---------- Role select ----------
+function RoleSelect({ setScreen }) {
+  const options = [
+    { key: "teacherLogin", label: "선생님으로 접속", desc: "학습 기록 · 성적 · 시험 관리", icon: "✎" },
+    { key: "studentLogin", label: "학생으로 접속", desc: "학습 확인 · 재시험 응시", icon: "📘" },
+    { key: "parentLogin", label: "학부모로 접속", desc: "학습 · 성적 · 선생님 피드백 확인", icon: "💬" },
+  ];
+  return html`
+    <div>
+      <${SectionLabel} n=${1} label="ACCESS" />
+      ${options.map((o) => html`
+        <${Card} key=${o.key}>
+          <div onClick=${() => setScreen(o.key)} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style=${{ color: C.gold, fontSize: 18 }}>${o.icon}</div>
+              <div><div style=${{ fontWeight: 700, color: C.navy, fontSize: 15 }}>${o.label}</div><div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>${o.desc}</div></div>
+            </div>
+            <div style=${{ color: C.line, fontSize: 18 }}>›</div>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+// ---------- Teacher login ----------
+function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
+  const [p, setP] = useState(""); const [p2, setP2] = useState("");
+  const isNew = !teacherAuth;
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <${SectionLabel} n=${2} label="TEACHER LOGIN" />
+      <${Card}>
+        ${isNew ? html`
+          <div style=${{ fontSize: 13, color: C.slate, marginBottom: 12 }}>처음 사용하시네요. 선생님 전용 비밀번호를 설정해 주세요.</div>
+          <${Field} label="비밀번호 설정"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} /><//>
+          <${Field} label="비밀번호 확인"><input style=${inputStyle} type="password" value=${p2} onChange=${(e) => setP2(e.target.value)} /><//>
+          ${p && p2 && p !== p2 && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>비밀번호가 서로 달라요.</div>`}
+          <${Button} variant="gold" disabled=${!p || p !== p2} onClick=${() => onSetPass(p)}>설정하고 시작하기<//>
+        ` : html`
+          <${Field} label="비밀번호"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} /><//>
+          ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+          <${Button} variant="gold" disabled=${!p} onClick=${() => onLogin(p)}>로그인<//>
+        `}
+      <//>
+    </div>
+  `;
+}
+
+// ---------- Student/Parent login ----------
+function StudentParentLogin({ mode, roster, onBack, onLogin }) {
+  const [code, setCode] = useState(""); const [err, setErr] = useState("");
+  function submit() {
+    const trimmed = code.trim();
+    if (!trimmed) { setErr("코드를 입력해 주세요."); return; }
+    const s = roster.find((r) => (mode === "student" ? r.studentCode : r.parentCode) === trimmed);
+    if (!s) { setErr("코드가 맞지 않아요. 선생님께 확인해 주세요."); return; }
+    onLogin(s);
+  }
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <${SectionLabel} n=${2} label=${mode === "student" ? "STUDENT LOGIN" : "PARENT LOGIN"} />
+      ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
+        <${Card}>
+          <${Field} label=${mode === "student" ? "학생 코드" : "학부모 코드"}>
+            <input style=${inputStyle} value=${code} onChange=${(e) => setCode(e.target.value)}
+              onKeyDown=${(e) => e.key === "Enter" && submit()} placeholder="선생님께 받은 코드를 입력하세요" autoFocus />
+          <//>
+          ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+          <${Button} variant="gold" onClick=${submit}>접속하기<//>
+        <//>
+      `}
+    </div>
+  `;
+}
+
+// ---------- Teacher dashboard ----------
+function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
+  const [addErr, setAddErr] = useState("");
+  const selected = roster.find((r) => r.id === selectedStudentId);
+
+  useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
+
+  async function addStudent() {
+    if (!name || !sc || !pc) return;
+    const dupe = roster.some((r) => r.studentCode === sc || r.parentCode === sc || r.studentCode === pc || r.parentCode === pc);
+    if (dupe) { setAddErr("이미 사용 중인 코드예요. 다른 코드를 입력해 주세요."); return; }
+    const s = { id: uid(), name, studentCode: sc, parentCode: pc };
+    await saveRosterList([...roster, s]);
+    setName(""); setSc(""); setPc(""); setAddErr(""); setShowAdd(false);
+  }
+  async function removeStudent(id) {
+    await saveRosterList(roster.filter((r) => r.id !== id));
+    if (selectedStudentId === id) setSelectedStudentId(null);
+  }
+
+  if (!selected) {
+    return html`
+      <div>
+        <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+          <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+        </div>
+        <${SectionLabel} n=${1} label="STUDENTS" />
+        ${roster.map((r) => html`
+          <${Card} key=${r.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div onClick=${() => setSelectedStudentId(r.id)} style=${{ cursor: "pointer", flex: 1 }}>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${r.name}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
+              </div>
+              <button onClick=${() => removeStudent(r.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
+            </div>
+          <//>
+        `)}
+        ${roster.length === 0 && html`<${Empty} text="학생을 추가해 주세요." />`}
+        ${!showAdd ? html`
+          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 6 }}>+ 학생 추가<//>
+        ` : html`
+          <${Card}>
+            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="gold" onClick=${addStudent}>저장<//>
+              <${Button} variant="ghost" onClick=${() => { setShowAdd(false); setAddErr(""); }}>취소<//>
+            </div>
+          <//>
+        `}
+      </div>
+    `;
+  }
+
+  const data = dataCache[selected.id] || emptyData();
+  return html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
+    updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} />`;
+}
+
+function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout }) {
+  const [tab, setTab] = useState("logs");
+  const tabs = [
+    { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "scores", label: "성적", icon: "✅" },
+    { key: "homework", label: "숙제", icon: "📝" },
+    { key: "feedback", label: "학부모 피드백", icon: "💬" },
+    { key: "vocab", label: "단어 재시험", icon: "🔤" },
+    { key: "exam", label: "추가 시험", icon: "🗒" },
+  ];
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <${BackBtn} onClick=${onBackToList} />
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 2 }}>${student.name} 학생</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>학생코드 ${student.studentCode} · 학부모코드 ${student.parentCode}</div>
+      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+      ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "scores" && html`<${ScoresEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "feedback" && html`<${FeedbackEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
+    </div>
+  `;
+}
+
+function LogsEditor({ data, updateData }) {
+  const [date, setDate] = useState(today()); const [content, setContent] = useState("");
+  async function add() { if (!content) return; await updateData((d) => ({ ...d, logs: [{ id: uid(), date, content }, ...d.logs] })); setContent(""); }
+  async function remove(id) { await updateData((d) => ({ ...d, logs: d.logs.filter((l) => l.id !== id) })); }
+  return html`
+    <div>
+      <${Card}>
+        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="오늘 배운 내용"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: Unit 5 관계대명사 who/which 개념 설명, 워크북 12-14p 풀이" /><//>
+        <${Button} variant="gold" onClick=${add}>기록 추가<//>
+      <//>
+      ${data.logs.length === 0 && html`<${Empty} text="아직 기록이 없어요." />`}
+      ${data.logs.map((l) => html`
+        <${Card} key=${l.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div>
+            <button onClick=${() => remove(l.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+          <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+function ScoresEditor({ data, updateData }) {
+  const [date, setDate] = useState(today()); const [title, setTitle] = useState("");
+  const [score, setScore] = useState(""); const [max, setMax] = useState("");
+  async function add() { if (!title || score === "" || max === "") return; await updateData((d) => ({ ...d, scores: [{ id: uid(), date, title, score: Number(score), max: Number(max) }, ...d.scores] })); setTitle(""); setScore(""); setMax(""); }
+  async function remove(id) { await updateData((d) => ({ ...d, scores: d.scores.filter((s) => s.id !== id) })); }
+  return html`
+    <div>
+      <${Card}>
+        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="시험명"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 6월 모의고사 LV8-1" /><//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="점수"><input style=${inputStyle} type="number" value=${score} onChange=${(e) => setScore(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="만점"><input style=${inputStyle} type="number" value=${max} onChange=${(e) => setMax(e.target.value)} /><//></div>
+        </div>
+        <${Button} variant="gold" onClick=${add}>성적 추가<//>
+      <//>
+      ${data.scores.length === 0 && html`<${Empty} text="아직 등록된 성적이 없어요." />`}
+      ${data.scores.map((s) => html`
+        <${Card} key=${s.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+            <div>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(s.date)}</div>
+              <div style=${{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>${s.title}</div>
+              <div style=${{ fontSize: 16, marginTop: 4 }}>${s.score} <span style=${{ color: C.slate, fontSize: 12 }}>/ ${s.max}</span></div>
+            </div>
+            <button onClick=${() => remove(s.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+function HomeworkEditor({ data, updateData }) {
+  const [assignedDate, setAssignedDate] = useState(today()); const [dueDate, setDueDate] = useState(today());
+  const [content, setContent] = useState("");
+  async function add() { if (!content) return; await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content, done: false }, ...(d.homework || [])] })); setContent(""); }
+  async function remove(id) { await updateData((d) => ({ ...d, homework: (d.homework || []).filter((h) => h.id !== id) })); }
+  const list = data.homework || [];
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><input style=${inputStyle} type="date" value=${assignedDate} onChange=${(e) => setAssignedDate(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="제출 기한"><input style=${inputStyle} type="date" value=${dueDate} onChange=${(e) => setDueDate(e.target.value)} /><//></div>
+        </div>
+        <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
+        <${Button} variant="gold" onClick=${add}>숙제 추가<//>
+      <//>
+      ${list.length === 0 && html`<${Empty} text="아직 등록된 숙제가 없어요." />`}
+      ${list.map((h) => html`
+        <${Card} key=${h.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style=${{ flex: 1 }}>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
+              <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
+              ${h.photo && html`<img src=${h.photo} style=${{ maxWidth: 140, borderRadius: 4, marginTop: 8, border: `1px solid ${C.line}`, display: "block" }} />`}
+              <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.navy : C.slate }}>${h.done ? "✓ 학생 완료 표시함" : "아직 미완료"}</div>
+            </div>
+            <button onClick=${() => remove(h.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+function FeedbackEditor({ data, updateData }) {
+  const [date, setDate] = useState(today()); const [text, setText] = useState("");
+  async function add() { if (!text) return; await updateData((d) => ({ ...d, feedback: [{ id: uid(), date, text }, ...d.feedback] })); setText(""); }
+  async function remove(id) { await updateData((d) => ({ ...d, feedback: d.feedback.filter((f) => f.id !== id) })); }
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>이 내용은 학부모에게만 보여요. 학생에게는 노출되지 않습니다.</div>
+      <${Card}>
+        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="학부모 전용 메모"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${text} onChange=${(e) => setText(e.target.value)} placeholder="예: 이번 주 독해 속도가 눈에 띄게 좋아졌어요." /><//>
+        <${Button} variant="gold" onClick=${add}>메모 추가<//>
+      <//>
+      ${data.feedback.length === 0 && html`<${Empty} text="아직 작성된 메모가 없어요." />`}
+      ${data.feedback.map((f) => html`
+        <${Card} key=${f.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between" }}>
+            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(f.date)}</div>
+            <button onClick=${() => remove(f.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+          <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${f.text}</div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+function VocabEditor({ data, updateData }) {
+  const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
+  const [words, setWords] = useState([{ word: "", meaning: "" }]);
+  const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
+
+  function runParse() {
+    const parsed = parseVocabPaste(pasteText);
+    if (parsed.length === 0) { setPasteMsg("인식된 단어가 없어요. 형식을 확인해 주세요."); return; }
+    setWords(parsed); setPasteMsg(`${parsed.length}개 단어를 불러왔어요. 아래에서 확인 후 저장하세요.`); setShowPaste(false); setPasteText("");
+  }
+  function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
+  function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
+  function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
+  async function save() {
+    const clean = words.filter((w) => w.word && w.meaning);
+    if (!title || clean.length < 2) return;
+    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean }, ...d.vocabTests] }));
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setCreating(false);
+  }
+  async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
+
+  return html`
+    <div>
+      ${!creating ? html`
+        <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 재시험 만들기<//>
+      ` : html`
+        <${Card}>
+          <${Field} label="재시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 재시험" /><//>
+          ${!showPaste ? html`
+            <${Button} variant="ghost" onClick=${() => setShowPaste(true)} style=${{ marginBottom: 12 }}>붙여넣기로 한번에 가져오기<//>
+          ` : html`
+            <${Card} style=${{ background: C.ivory }}>
+              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6 }}>한 줄에 단어 하나씩, "단어 - 뜻" 형식으로 붙여넣어 주세요. 뜻이 여러 개면 콤마(,)나 세미콜론(;)으로 이어서 써도 돼요.</div>
+              <textarea style=${{ ...inputStyle, minHeight: 110, fontFamily: "monospace", fontSize: 12.5 }} placeholder=${"apple - 사과\nhesitate - 주저하다, 망설이다"} value=${pasteText} onChange=${(e) => setPasteText(e.target.value)} />
+              <div style=${{ display: "flex", gap: 8, marginTop: 8 }}>
+                <${Button} variant="gold" onClick=${runParse}>가져오기<//>
+                <${Button} variant="ghost" onClick=${() => setShowPaste(false)}>취소<//>
+              </div>
+            <//>
+          `}
+          ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개, 4지선다로 출제됩니다)</div>
+          ${words.map((w, i) => html`
+            <div key=${i} style=${{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
+              <input style=${{ ...inputStyle, flex: 1 }} placeholder="단어" value=${w.word} onChange=${(e) => setRow(i, "word", e.target.value)} />
+              <input style=${{ ...inputStyle, flex: 1 }} placeholder="뜻" value=${w.meaning} onChange=${(e) => setRow(i, "meaning", e.target.value)} />
+              ${words.length > 1 && html`<button onClick=${() => removeRow(i)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+            </div>
+          `)}
+          <${Button} variant="ghost" onClick=${addRow} style=${{ marginBottom: 12 }}>+ 단어 추가<//>
+          <div style=${{ display: "flex", gap: 8 }}>
+            <${Button} variant="gold" onClick=${save}>저장<//>
+            <${Button} variant="ghost" onClick=${() => setCreating(false)}>취소<//>
+          </div>
+        <//>
+      `}
+      <${SectionLabel} n=${2} label="등록된 재시험" />
+      ${data.vocabTests.length === 0 && html`<${Empty} text="아직 만든 재시험이 없어요." />`}
+      ${data.vocabTests.map((t) => {
+        const results = data.vocabResults.filter((r) => r.testId === t.id);
+        return html`
+          <${Card} key=${t.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 단어 ${t.words.length}개</div>
+              </div>
+              <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
+            ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
+              <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
+                ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}</div>`)}
+              </div>
+            `}
+          <//>
+        `;
+      })}
+    </div>
+  `;
+}
+
+function ExamEditor({ data, updateData }) {
+  const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
+  const [questions, setQuestions] = useState([{ q: "", choices: ["", ""], answer: 0 }]);
+  const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
+
+  function runParse() {
+    const parsed = parseExamPaste(pasteText);
+    if (parsed.length === 0) { setPasteMsg("인식된 문제가 없어요. 형식을 확인해 주세요."); return; }
+    setQuestions(parsed); setPasteMsg(`${parsed.length}개 문제를 불러왔어요. 아래에서 확인 후 저장하세요.`); setShowPaste(false); setPasteText("");
+  }
+  function setQ(i, val) { setQuestions((qs) => qs.map((row, idx) => (idx === i ? { ...row, q: val } : row))); }
+  function setChoice(qi, ci, val) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: row.choices.map((c, cidx) => (cidx === ci ? val : c)) } : row))); }
+  function setAnswer(qi, ci) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, answer: ci } : row))); }
+  function addChoice(qi) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: [...row.choices, ""] } : row))); }
+  function removeChoice(qi, ci) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: row.choices.filter((_, cidx) => cidx !== ci), answer: row.answer === ci ? 0 : row.answer > ci ? row.answer - 1 : row.answer } : row))); }
+  function addQuestion() { setQuestions((qs) => [...qs, { q: "", choices: ["", ""], answer: 0 }]); }
+  function removeQuestion(i) { setQuestions((qs) => qs.filter((_, idx) => idx !== i)); }
+  async function save() {
+    const clean = questions.filter((q) => q.q && q.choices.every((c) => c) && q.choices.length >= 2);
+    if (!title || clean.length === 0) return;
+    await updateData((d) => ({ ...d, examTests: [{ id: uid(), title, date: today(), questions: clean }, ...d.examTests] }));
+    setTitle(""); setQuestions([{ q: "", choices: ["", ""], answer: 0 }]); setCreating(false);
+  }
+  async function removeTest(id) { await updateData((d) => ({ ...d, examTests: d.examTests.filter((t) => t.id !== id) })); }
+
+  return html`
+    <div>
+      ${!creating ? html`
+        <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 추가 시험 만들기<//>
+      ` : html`
+        <${Card}>
+          <${Field} label="시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 관계대명사 추가 문제" /><//>
+          ${!showPaste ? html`
+            <${Button} variant="ghost" onClick=${() => setShowPaste(true)} style=${{ marginBottom: 12 }}>붙여넣기로 한번에 가져오기<//>
+          ` : html`
+            <${Card} style=${{ background: C.ivory }}>
+              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6 }}>문제 사이는 빈 줄로 구분해 주세요.</div>
+              <textarea style=${{ ...inputStyle, minHeight: 160, fontFamily: "monospace", fontSize: 12, whiteSpace: "pre" }}
+                placeholder=${"1. 다음 중 관계대명사가 알맞은 것은?\n1) who\n2) which\n3) that\n4) whose\n정답: 1"}
+                value=${pasteText} onChange=${(e) => setPasteText(e.target.value)} />
+              <div style=${{ display: "flex", gap: 8, marginTop: 8 }}>
+                <${Button} variant="gold" onClick=${runParse}>가져오기<//>
+                <${Button} variant="ghost" onClick=${() => setShowPaste(false)}>취소<//>
+              </div>
+            <//>
+          `}
+          ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
+          ${questions.map((q, qi) => html`
+            <div key=${qi} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 10 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>문제 ${qi + 1}</div>
+                ${questions.length > 1 && html`<button onClick=${() => removeQuestion(qi)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+              </div>
+              <textarea style=${{ ...inputStyle, minHeight: 50, marginBottom: 8 }} placeholder="문제 내용" value=${q.q} onChange=${(e) => setQ(qi, e.target.value)} />
+              ${q.choices.map((c, ci) => html`
+                <div key=${ci} style=${{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+                  <input type="radio" checked=${q.answer === ci} onChange=${() => setAnswer(qi, ci)} />
+                  <input style=${{ ...inputStyle, flex: 1 }} placeholder=${`보기 ${ci + 1}`} value=${c} onChange=${(e) => setChoice(qi, ci, e.target.value)} />
+                  ${q.choices.length > 2 && html`<button onClick=${() => removeChoice(qi, ci)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+                </div>
+              `)}
+              <button onClick=${() => addChoice(qi)} style=${{ background: "none", border: "none", color: C.navy, fontSize: 12, cursor: "pointer", padding: 0, marginTop: 4 }}>+ 보기 추가</button>
+              <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>라디오 버튼으로 정답을 표시하세요.</div>
+            </div>
+          `)}
+          <${Button} variant="ghost" onClick=${addQuestion} style=${{ marginBottom: 12 }}>+ 문제 추가<//>
+          <div style=${{ display: "flex", gap: 8 }}>
+            <${Button} variant="gold" onClick=${save}>저장<//>
+            <${Button} variant="ghost" onClick=${() => setCreating(false)}>취소<//>
+          </div>
+        <//>
+      `}
+      <${SectionLabel} n=${2} label="등록된 시험" />
+      ${data.examTests.length === 0 && html`<${Empty} text="아직 만든 시험이 없어요." />`}
+      ${data.examTests.map((t) => {
+        const results = data.examResults.filter((r) => r.testId === t.id);
+        return html`
+          <${Card} key=${t.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문제 ${t.questions.length}개</div>
+              </div>
+              <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
+            ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
+              <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
+                ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}</div>`)}
+              </div>
+            `}
+          <//>
+        `;
+      })}
+    </div>
+  `;
+}
+
+// ---------- Student dashboard ----------
+function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
+  const [tab, setTab] = useState("logs");
+  const [data, setData] = useState(null);
+  const [activeTest, setActiveTest] = useState(null);
+
+  useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
+  useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
+
+  const tabs = [
+    { key: "logs", label: "오늘의 학습", icon: "📘" },
+    { key: "scores", label: "성적", icon: "✅" },
+    { key: "homework", label: "숙제", icon: "📝" },
+    { key: "vocab", label: "단어 재시험", icon: "🔤" },
+    { key: "exam", label: "추가 시험", icon: "🗒" },
+  ];
+
+  if (!data) return html`<${Empty} text="불러오는 중..." />`;
+
+  if (activeTest) {
+    return html`<${TestTaker} activeTest=${activeTest} onExit=${() => setActiveTest(null)}
+      onSubmit=${async (score, total) => {
+        if (activeTest.type === "vocab") await updateData(student.id, (d) => ({ ...d, vocabResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total }, ...d.vocabResults] }));
+        else await updateData(student.id, (d) => ({ ...d, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total }, ...d.examResults] }));
+        setActiveTest(null);
+      }} />`;
+  }
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생</div>
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+
+      ${tab === "logs" && (data.logs.length === 0 ? html`<${Empty} text="아직 등록된 학습 기록이 없어요." />` : data.logs.map((l) => html`
+        <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
+      `))}
+
+      ${tab === "scores" && (data.scores.length === 0 ? html`<${Empty} text="아직 등록된 성적이 없어요." />` : data.scores.map((s) => html`
+        <${Card} key=${s.id}>
+          <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(s.date)}</div>
+          <div style=${{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>${s.title}</div>
+          <div style=${{ fontSize: 16, marginTop: 4 }}>${s.score} <span style=${{ color: C.slate, fontSize: 12 }}>/ ${s.max}</span></div>
+        <//>
+      `))}
+
+      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
+        (data.homework || []).map((h) => html`<${HomeworkStudentCard} key=${h.id} h=${h} studentId=${student.id} updateData=${updateData} />`))}
+
+      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 재시험이 없어요." />` : data.vocabTests.map((t) => {
+        const myResults = data.vocabResults.filter((r) => r.testId === t.id);
+        return html`
+          <${Card} key=${t.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>단어 ${t.words.length}개</div>
+                ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
+              </div>
+              <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+            </div>
+          <//>
+        `;
+      }))}
+
+      ${tab === "exam" && (data.examTests.length === 0 ? html`<${Empty} text="등록된 추가 시험이 없어요." />` : data.examTests.map((t) => {
+        const myResults = data.examResults.filter((r) => r.testId === t.id);
+        return html`
+          <${Card} key=${t.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문제 ${t.questions.length}개</div>
+                ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
+              </div>
+              <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => setActiveTest({ type: "exam", test: t })}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+            </div>
+          <//>
+        `;
+      }))}
+    </div>
+  `;
+}
+
+function HomeworkStudentCard({ h, studentId, updateData }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const inputId = `hwphoto-${h.id}`;
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setErr(""); setBusy(true);
+    try {
+      const dataUrl = await compressImage(file, 900, 0.6);
+      if (dataUrl.length > 900000) { setErr("사진 용량이 너무 커요. 다른 사진으로 시도해 주세요."); setBusy(false); return; }
+      await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photo: dataUrl, done: true } : x)) }));
+    } catch { setErr("사진을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
+    setBusy(false);
+  }
+  async function removePhoto() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photo: null } : x)) })); }
+  async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
+
+  return html`
+    <${Card}>
+      <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
+      <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
+      ${h.photo && html`
+        <div style=${{ marginTop: 8 }}>
+          <img src=${h.photo} style=${{ maxWidth: 160, borderRadius: 4, border: `1px solid ${C.line}`, display: "block" }} />
+          <button onClick=${removePhoto} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11.5, cursor: "pointer", padding: 0, marginTop: 4 }}>사진 지우고 다시 올리기</button>
+        </div>
+      `}
+      <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+        <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
+          ${busy ? "업로드 중..." : h.photo ? "인증샷 다시 올리기" : "인증샷 올리기"}
+        </label>
+        <input id=${inputId} type="file" accept="image/*" capture="environment" onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
+        <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
+          ${h.done ? "✓ 완료함" : "완료로 표시하기"}
+        </div>
+      </div>
+      ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
+    <//>
+  `;
+}
+
+function TestTaker({ activeTest, onExit, onSubmit }) {
+  const { type, test } = activeTest;
+  const questions = type === "vocab" ? test.words : test.questions;
+  const total = questions.length;
+  const [answers, setAnswers] = useState(type === "vocab" ? Array(total).fill("") : Array(total).fill(null));
+  const [submitted, setSubmitted] = useState(false);
+  const [result, setResult] = useState(null);
+  const [breakdown, setBreakdown] = useState(null);
+
+  function pick(qi, val) { if (submitted) return; setAnswers((a) => a.map((v, idx) => (idx === qi ? val : v))); }
+
+  function submit() {
+    let score = 0; const rows = [];
+    questions.forEach((q, i) => {
+      if (type === "vocab") {
+        const ok = checkVocabAnswer(answers[i], q.meaning);
+        if (ok) score++;
+        rows.push({ prompt: q.word, given: answers[i] || "(빈칸)", correct: q.meaning, ok });
+      } else {
+        const ok = answers[i] === q.answer;
+        if (ok) score++;
+        rows.push({ prompt: q.q, given: answers[i] != null ? q.choices[answers[i]] : "(선택 안 함)", correct: q.choices[q.answer], ok });
+      }
+    });
+    setResult(score); setBreakdown(rows); setSubmitted(true);
+  }
+
+  if (submitted) {
+    return html`
+      <div>
+        <${Card} style=${{ textAlign: "center", padding: 28 }}>
+          <div style=${{ ...serif, fontSize: 20, color: C.navy, marginBottom: 8 }}>${test.title}</div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 16 }}>채점 결과</div>
+          <div style=${{ fontSize: 34, ...serif, color: C.gold }}>${result} <span style=${{ fontSize: 18, color: C.slate }}>/ ${total}</span></div>
+        <//>
+        ${breakdown && html`
+          <${Card}>
+            ${breakdown.map((r, i) => html`
+              <div key=${i} style=${{ padding: "8px 0", borderBottom: i < breakdown.length - 1 ? `1px solid ${C.line}` : "none" }}>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${r.prompt}</div>
+                <div style=${{ fontSize: 12, marginTop: 3, color: r.ok ? C.navy : C.danger }}>내 답: ${r.given} ${r.ok ? "✓" : "✗"}</div>
+                ${!r.ok && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 1 }}>정답: ${r.correct}</div>`}
+              </div>
+            `)}
+          <//>
+        `}
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total)}>결과 저장하고 나가기<//>
+      </div>
+    `;
+  }
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onExit} />
+      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 12 }}>${test.title}</div>
+      ${questions.map((q, qi) => html`
+        <${Card} key=${qi}>
+          <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10, whiteSpace: "pre-wrap" }}>${qi + 1}. ${type === "vocab" ? q.word : q.q}</div>
+          ${type === "vocab" ? html`
+            <input style=${inputStyle} placeholder="뜻을 입력하세요" value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
+          ` : q.choices.map((opt, oi) => {
+            const selected = answers[qi] === oi;
+            return html`
+              <div key=${oi} onClick=${() => pick(qi, oi)} style=${{ padding: "9px 12px", border: `1px solid ${selected ? C.gold : C.line}`, background: selected ? "#FBF4EA" : C.white, borderRadius: 3, marginBottom: 6, fontSize: 13, cursor: "pointer" }}>${opt}</div>
+            `;
+          })}
+        <//>
+      `)}
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${answers.some((a) => a === null || a === "")} onClick=${submit}>제출하기<//>
+    </div>
+  `;
+}
+
+// ---------- Parent dashboard ----------
+function ParentDash({ student, ensureData, dataCache, onLogout }) {
+  const [tab, setTab] = useState("logs");
+  const [data, setData] = useState(null);
+  useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
+  useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
+
+  const tabs = [
+    { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "scores", label: "성적", icon: "✅" },
+    { key: "homework", label: "숙제", icon: "📝" },
+    { key: "feedback", label: "선생님 피드백", icon: "💬" },
+  ];
+
+  if (!data) return html`<${Empty} text="불러오는 중..." />`;
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생 학부모님</div>
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+
+      ${tab === "logs" && (data.logs.length === 0 ? html`<${Empty} text="아직 등록된 학습 기록이 없어요." />` : data.logs.map((l) => html`
+        <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
+      `))}
+
+      ${tab === "scores" && (data.scores.length === 0 ? html`<${Empty} text="아직 등록된 성적이 없어요." />` : data.scores.map((s) => html`
+        <${Card} key=${s.id}>
+          <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(s.date)}</div>
+          <div style=${{ fontSize: 14, fontWeight: 700, color: C.navy, marginTop: 2 }}>${s.title}</div>
+          <div style=${{ fontSize: 16, marginTop: 4 }}>${s.score} <span style=${{ color: C.slate, fontSize: 12 }}>/ ${s.max}</span></div>
+        <//>
+      `))}
+
+      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` : (data.homework || []).map((h) => html`
+        <${Card} key=${h.id}>
+          <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
+          <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
+          ${h.photo && html`<img src=${h.photo} style=${{ maxWidth: 140, borderRadius: 4, marginTop: 8, border: `1px solid ${C.line}`, display: "block" }} />`}
+          <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? "✓ 완료함" : "아직 미완료"}</div>
+        <//>
+      `))}
+
+      ${tab === "feedback" && (data.feedback.length === 0 ? html`<${Empty} text="아직 선생님 피드백이 없어요." />` : data.feedback.map((f) => html`
+        <${Card} key=${f.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(f.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${f.text}</div><//>
+      `))}
+    </div>
+  `;
+}
+
+const root = createRoot(document.getElementById("root"));
+root.render(html`<${App} />`);
+</script>
+</body>
+</html>
