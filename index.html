@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="preconnect" href="https://esm.sh" />
+<link rel="preconnect" href="https://www.gstatic.com" />
+<link rel="preconnect" href="https://firestore.googleapis.com" />
 <title>Sarah's English</title>
 <style>
   * { box-sizing: border-box; }
@@ -39,13 +42,16 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 
-async function fsGet(col, id) {
-  try {
-    const snap = await getDoc(doc(db, col, id));
-    return snap.exists() ? snap.data() : null;
-  } catch (e) {
-    console.error("fsGet error", e);
-    return null;
+async function fsGet(col, id, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const snap = await getDoc(doc(db, col, id));
+      return snap.exists() ? snap.data() : null; // null here means "genuinely doesn't exist"
+    } catch (e) {
+      console.error("fsGet error", e);
+      if (i === attempts - 1) throw e; // exhausted retries: let the caller know this FAILED, not "empty"
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
   }
 }
 async function fsSet(col, id, data) {
@@ -239,19 +245,30 @@ function App() {
   const [dataCache, setDataCache] = useState({});
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [err, setErr] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [loadTick, setLoadTick] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
-      const r = await fsGet("meta", "roster");
-      setRoster((r && r.list) || []);
-      const ta = await fsGet("meta", "teacherAuth");
-      setTeacherAuth(ta);
+      setLoadError(false);
+      try {
+        const r = await fsGet("meta", "roster");
+        if (cancelled) return;
+        setRoster((r && r.list) || []);
+        const ta = await fsGet("meta", "teacherAuth");
+        if (cancelled) return;
+        setTeacherAuth(ta);
+      } catch (e) {
+        if (!cancelled) setLoadError(true);
+      }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [loadTick]);
 
   async function ensureData(id) {
     if (dataCache[id]) return dataCache[id];
-    const d = (await fsGet("studentData", id)) || emptyData();
+    const d = (await fsGet("studentData", id)) || emptyData(); // throws on real failure, caller must handle
     setDataCache((prev) => ({ ...prev, [id]: d }));
     return d;
   }
@@ -268,6 +285,16 @@ function App() {
 
   function logout() {
     setSession(null); setSelectedStudentId(null); setErr(""); setScreen("role");
+  }
+
+  if (loadError) {
+    return html`
+      <div style=${{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: C.slate, gap: 14, padding: 20, textAlign: "center" }}>
+        <div style=${{ fontSize: 15, color: C.navy, fontWeight: 700 }}>데이터를 불러오지 못했어요</div>
+        <div style=${{ fontSize: 13 }}>네트워크 상태를 확인하고 다시 시도해 주세요. (안전을 위해, 불러오기 전에는 아무 것도 저장하지 않아요)</div>
+        <${Button} variant="gold" onClick=${() => setLoadTick((n) => n + 1)}>다시 시도<//>
+      </div>
+    `;
   }
 
   if (roster === null) {
