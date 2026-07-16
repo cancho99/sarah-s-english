@@ -55,6 +55,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
 
 async function fsGet(col, id, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
