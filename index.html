@@ -1096,7 +1096,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
       const newOnes = [];
       for (const file of files) {
         const dataUrl = await compressImage(file, 900, 0.6);
-        if (dataUrl.length > 900000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
+        if (dataUrl.length > 400000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
         newOnes.push(dataUrl);
       }
       if (newOnes.length > 0) {
@@ -1121,7 +1121,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
     setAudioErr(""); setAudioBusy(true);
     try {
       const dataUrl = await fileToDataURL(file);
-      if (dataUrl.length > 3000000) { setAudioErr("녹음 파일 용량이 너무 커요 (최대 약 2MB). 더 짧게 녹음해서 다시 올려주세요."); setAudioBusy(false); return; }
+      if (dataUrl.length > 350000) { setAudioErr("녹음 파일 용량이 너무 커요. 20~30초 이내로 짧게 녹음해서 다시 올려주세요."); setAudioBusy(false); return; }
       await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audio: dataUrl, done: true } : x)) }));
     } catch { setAudioErr("파일을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
     setAudioBusy(false);
