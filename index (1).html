@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sarah's English — 단어 시험지 관리</title>
+<style>
+  :root{
+    --black:#111111;
+    --navy:#1c2b4a;
+    --navy-soft:#33456b;
+    --gray-rule:#d7d7d7;
+    --paper:#fafafa;
+    --ink:#1b1b1b;
+    --muted:#767676;
+
+    --charcoal:#2b2a28;
+    --gold:#a8853f;
+    --gold-soft:#cdb372;
+    --ivory:#faf6ec;
+    --slate:#5c6470;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    display:flex;
+    min-height:100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:250px;flex:0 0 250px;
+    background:#fff;
+    border-right:1px solid var(--gray-rule);
+    display:flex;flex-direction:column;
+    padding:24px 16px;
+  }
+  .sidebar .brandmark{
+    display:flex;align-items:center;gap:10px;
+    margin-bottom:26px;padding-bottom:18px;
+    border-bottom:1px solid var(--gray-rule);
+  }
+  .sidebar .brandmark .mono{
+    width:34px;height:34px;border-radius:50%;
+    border:1.3px solid var(--navy);color:var(--navy);
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;
+  }
+  .sidebar .brandmark .txt{font-size:12px;color:var(--navy);letter-spacing:1px;font-weight:700;}
+  .sidebar .brandmark .txt small{display:block;font-size:10px;color:var(--muted);font-weight:400;letter-spacing:0.5px;}
+
+  .sidebar-label{
+    font-size:11px;font-weight:700;color:var(--muted);
+    letter-spacing:1px;text-transform:uppercase;
+    margin-bottom:10px;
+  }
+
+  .book-list{flex:1;overflow-y:auto;margin-bottom:14px;}
+  .book-item{
+    padding:12px 12px;border-radius:8px;
+    cursor:pointer;margin-bottom:6px;
+    border:1px solid transparent;
+  }
+  .book-item:hover{background:#f4f5f7;}
+  .book-item.active{background:var(--navy);border-color:var(--navy);}
+  .book-item .b-name{font-size:13.5px;font-weight:600;color:var(--ink);}
+  .book-item.active .b-name{color:#fff;}
+  .book-item .b-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+  .book-item.active .b-meta{color:#cfd6e4;}
+  .book-empty-msg{font-size:12.5px;color:var(--muted);padding:10px 2px;}
+
+  .addbook-btn{
+    width:100%;padding:10px;border-radius:7px;
+    border:1px dashed var(--navy-soft);background:none;
+    color:var(--navy-soft);font-size:13px;font-weight:600;
+    cursor:pointer;margin-bottom:14px;
+  }
+  .addbook-btn:hover{background:#f3f5f9;}
+
+  .addbook-form{
+    border:1px solid var(--gray-rule);border-radius:8px;
+    padding:12px;margin-bottom:14px;background:#fbfbfb;
+  }
+  .addbook-form input{
+    width:100%;padding:8px 10px;margin-bottom:8px;
+    border:1px solid var(--gray-rule);border-radius:6px;font-size:12.5px;
+  }
+  .addbook-form .form-row{display:flex;gap:6px;}
+  .addbook-form .form-row button{flex:1;padding:8px;font-size:12px;border-radius:6px;cursor:pointer;}
+
+  .sidebar-footer{border-top:1px solid var(--gray-rule);padding-top:14px;}
+  .sidebar-footer button{
+    width:100%;padding:9px;margin-bottom:6px;
+    border:1px solid var(--gray-rule);border-radius:6px;
+    background:#fff;font-size:12px;color:var(--ink);cursor:pointer;
+  }
+  .sidebar-footer button:hover{border-color:var(--navy);color:var(--navy);}
+
+  /* ---------- Main ---------- */
+  .main{flex:1;min-width:0;padding:0;}
+  .main-header{
+    padding:28px 40px 18px;border-bottom:1px solid var(--gray-rule);
+    background:#fff;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;
+  }
+  .main-header h2{margin:0;font-size:21px;}
+  .main-header p{margin:4px 0 0;font-size:12.5px;color:var(--muted);}
+  .book-actions button{
+    background:none;border:1px solid var(--gray-rule);border-radius:6px;
+    padding:7px 14px;font-size:12px;color:var(--ink);cursor:pointer;margin-left:6px;
+  }
+  .book-actions button:hover{border-color:var(--navy);color:var(--navy);}
+
+  .no-book-state{
+    text-align:center;padding:100px 20px;color:var(--muted);
+  }
+  .no-book-state h3{color:var(--ink);font-size:18px;margin-bottom:8px;}
+
+  /* ---------- Tabs ---------- */
+  .tabs{
+    display:flex;justify-content:center;gap:0;
+    max-width:640px;margin:26px auto 26px;
+    border-bottom:1px solid var(--gray-rule);
+  }
+  .tab-btn{
+    flex:1;padding:12px 0;background:none;border:none;
+    font-size:14px;font-weight:600;color:var(--muted);
+    cursor:pointer;border-bottom:2px solid transparent;letter-spacing:0.5px;
+  }
+  .tab-btn.active{color:var(--navy);border-bottom-color:var(--navy);}
+
+  .panel{display:none;max-width:900px;margin:0 auto;padding:0 40px 60px;}
+  .panel.active{display:block;}
+
+  .day-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:22px;}
+  .day-btn{
+    padding:10px 4px;border:1px solid var(--gray-rule);background:#fff;
+    border-radius:6px;font-size:12.5px;color:var(--ink);cursor:pointer;
+    position:relative;text-align:center;
+  }
+  .day-btn .dot{position:absolute;top:5px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--gold-soft);display:none;}
+  .day-btn.has-words .dot{display:block;}
+  .day-btn.selected{border-color:var(--navy);background:var(--navy);color:#fff;}
+  .day-btn.selected .dot{background:#fff;}
+
+  .input-box{border:1px solid var(--gray-rule);border-radius:10px;padding:22px;background:#fff;}
+  .input-box label{display:block;font-size:13px;font-weight:600;color:var(--navy-soft);margin-bottom:8px;letter-spacing:0.5px;}
+  .input-box textarea{
+    width:100%;min-height:220px;border:1px solid var(--gray-rule);border-radius:6px;
+    padding:14px;font-size:13.5px;line-height:1.7;font-family:inherit;resize:vertical;
+  }
+  .hint{font-size:12px;color:var(--muted);margin:8px 0 16px;line-height:1.6;}
+  .row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+  .count-badge{font-size:12.5px;color:var(--muted);}
+
+  button.primary{background:var(--navy);color:#fff;border:none;padding:11px 22px;border-radius:6px;font-size:13.5px;font-weight:600;cursor:pointer;letter-spacing:0.3px;}
+  button.primary:hover{background:var(--navy-soft);}
+  button.ghost{background:none;border:1px solid var(--gray-rule);padding:10px 18px;border-radius:6px;font-size:13px;color:var(--ink);cursor:pointer;}
+  button.ghost:hover{border-color:var(--navy);color:var(--navy);}
+
+  .section-label{font-size:12.5px;font-weight:700;color:var(--navy-soft);letter-spacing:1px;margin:26px 0 10px;text-transform:uppercase;}
+  .format-options{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .format-card{flex:1;min-width:180px;border:1px solid var(--gray-rule);border-radius:8px;padding:14px 16px;cursor:pointer;font-size:13.5px;}
+  .format-card.selected{border-color:var(--navy);background:#f3f5f9;}
+  .format-card input{margin-right:8px;}
+
+  .toggle-row{display:flex;align-items:center;gap:8px;font-size:13.5px;margin:14px 0 20px;}
+  .generate-cta{text-align:center;margin:26px 0 10px;}
+
+  #sheetOutput{margin-top:30px;}
+  .no-data-msg{text-align:center;color:var(--muted);font-size:13px;padding:30px 0;}
+  .sheet-actions{text-align:center;margin-bottom:18px;}
+
+  .sheet-page{
+    background:var(--ivory);border:1px solid #e3dcc7;padding:46px 50px;
+    margin:0 auto 34px;max-width:720px;font-family:Georgia,'Nanum Myeongjo',serif;color:var(--charcoal);
+  }
+  .sheet-rule{border:none;border-top:1px solid var(--gold-soft);margin:18px 0;}
+  .sheet-header{text-align:center;margin-bottom:8px;}
+  .sheet-header .eng-tag{font-style:italic;font-size:12.5px;color:var(--slate);letter-spacing:1px;}
+  .sheet-header h3{margin:6px 0 2px;font-size:24px;letter-spacing:2px;color:var(--charcoal);}
+  .sheet-header .daymeta{font-size:13px;color:var(--slate);margin-top:4px;}
+
+  .info-row{display:flex;justify-content:space-between;font-size:13px;color:var(--charcoal);margin:22px 0 6px;}
+  .info-row span{border-bottom:1px solid var(--slate);padding-bottom:2px;min-width:120px;display:inline-block;}
+
+  .section-heading{display:flex;align-items:center;gap:10px;margin:26px 0 14px;}
+  .section-heading .bar{width:5px;height:20px;background:var(--gold);border-radius:1px;}
+  .section-heading span{font-size:15px;letter-spacing:1px;color:var(--charcoal);font-weight:bold;}
+
+  ol.qlist{list-style:none;padding:0;margin:0;}
+  ol.qlist li{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;}
+  .qnum{color:var(--gold);font-weight:bold;min-width:26px;}
+  .qprompt{flex:0 0 auto;min-width:150px;}
+  .qblank{flex:1;border-bottom:1px solid var(--slate);height:16px;}
+
+  .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
+  .answer-box .a-item{display:inline-block;width:49%;font-size:13.5px;margin-bottom:10px;vertical-align:top;}
+  .answer-box .a-num{color:var(--gold);font-weight:bold;margin-right:4px;}
+
+  .page-break{page-break-before:always;}
+
+  @media print{
+    body *{visibility:hidden;}
+    #printArea, #printArea *{visibility:visible;}
+    #printArea{position:absolute;left:0;top:0;width:100%;}
+    .sheet-page{border:none;margin:0 auto;box-shadow:none;}
+  }
+
+  @media (max-width:800px){
+    body{flex-direction:column;}
+    .sidebar{width:100%;flex:none;border-right:none;border-bottom:1px solid var(--gray-rule);}
+    .main-header,.panel{padding-left:20px;padding-right:20px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="brandmark">
+    <div class="mono">S·E</div>
+    <div class="txt">SARAH'S ENGLISH<small>Vocabulary Test Builder</small></div>
+  </div>
+
+  <div class="sidebar-label">교재 목록</div>
+  <div class="book-list" id="bookList"></div>
+
+  <button class="addbook-btn" id="showAddBookBtn">+ 새 교재 추가</button>
+  <div class="addbook-form" id="addBookForm" style="display:none;">
+    <input type="text" id="newBookName" placeholder="교재 이름 (예: 능률 보카)">
+    <input type="number" id="newBookDays" placeholder="총 Day 수 (기본 30)" min="1">
+    <div class="form-row">
+      <button class="primary" id="confirmAddBook" style="padding:8px;">추가</button>
+      <button class="ghost" id="cancelAddBook" style="padding:8px;">취소</button>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">☁️ Firebase에 자동 저장/동기화됩니다</div>
+    <button id="exportBtn">전체 백업 파일로 저장</button>
+    <button id="importBtn">백업 파일 불러오기</button>
+    <input type="file" id="importFile" accept="application/json" style="display:none;">
+  </div>
+</div>
+
+<div class="main" id="mainArea">
+  <!-- filled dynamically -->
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
+  authDomain: "sarah-s-english.firebaseapp.com",
+  databaseURL: "https://sarah-s-english-default-rtdb.firebaseio.com",
+  projectId: "sarah-s-english",
+  storageBucket: "sarah-s-english.firebasestorage.app",
+  messagingSenderId: "444699532890",
+  appId: "1:444699532890:web:44084cd90d0aa0b5ca0263",
+  measurementId: "G-1SVW405RS7"
+};
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const storeDocRef = doc(db, 'sarahsEnglishWordbank', 'main');
+
+const STORAGE_KEY = 'sarahsEnglishWordbank_v2';
+const OLD_KEY = 'sarahsEnglishWordbank';
+let store = { books: [], activeBookId: null };
+
+// ---------- persistence (Firestore, with one-time migration from old localStorage) ----------
+async function loadStore(){
+  try{
+    const snap = await getDoc(storeDocRef);
+    if(snap.exists()){
+      store = snap.data();
+      return;
+    }
+    // no cloud data yet — check this browser's old local data once, and migrate it up
+    const rawV2 = localStorage.getItem(STORAGE_KEY);
+    if(rawV2){
+      store = JSON.parse(rawV2);
+      saveStore();
+      return;
+    }
+    const old = localStorage.getItem(OLD_KEY);
+    if(old){
+      const oldData = JSON.parse(old);
+      const id = 'book_' + Date.now();
+      store = { books: [{ id, name: '교재 1', totalDays: 30, days: oldData }], activeBookId: id };
+      saveStore();
+      return;
+    }
+    store = { books: [], activeBookId: null };
+  }catch(e){
+    console.error('loadStore failed', e);
+    store = { books: [], activeBookId: null };
+  }
+}
+function saveStore(){
+  setDoc(storeDocRef, store).catch(e => console.error('saveStore failed', e));
+}
+function getActiveBook(){
+  return store.books.find(b => b.id === store.activeBookId) || null;
+}
+
+// ---------- sidebar: book list ----------
+function renderBookList(){
+  const list = document.getElementById('bookList');
+  list.innerHTML = '';
+  if(store.books.length === 0){
+    list.innerHTML = '<div class="book-empty-msg">등록된 교재가 없습니다.<br>아래에서 교재를 추가해 주세요.</div>';
+    return;
+  }
+  store.books.forEach(book => {
+    const wordTotal = Object.values(book.days || {}).reduce((sum, arr) => sum + (arr ? arr.length : 0), 0);
+    const el = document.createElement('div');
+    el.className = 'book-item' + (book.id === store.activeBookId ? ' active' : '');
+    el.innerHTML = '<div class="b-name">' + escapeHtml(book.name) + '</div><div class="b-meta">Day ' + book.totalDays + ' · 단어 ' + wordTotal + '개</div>';
+    el.addEventListener('click', () => {
+      store.activeBookId = book.id;
+      saveStore();
+      renderAll();
+    });
+    list.appendChild(el);
+  });
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ---------- add book ----------
+document.getElementById('showAddBookBtn').addEventListener('click', () => {
+  document.getElementById('addBookForm').style.display = 'block';
+  document.getElementById('newBookName').focus();
+});
+document.getElementById('cancelAddBook').addEventListener('click', () => {
+  document.getElementById('addBookForm').style.display = 'none';
+  document.getElementById('newBookName').value = '';
+  document.getElementById('newBookDays').value = '';
+});
+document.getElementById('confirmAddBook').addEventListener('click', () => {
+  const name = document.getElementById('newBookName').value.trim();
+  if(!name){ alert('교재 이름을 입력해 주세요.'); return; }
+  let totalDays = parseInt(document.getElementById('newBookDays').value, 10);
+  if(isNaN(totalDays) || totalDays < 1) totalDays = 30;
+  const id = 'book_' + Date.now();
+  store.books.push({ id, name, totalDays, days: {} });
+  store.activeBookId = id;
+  saveStore();
+  document.getElementById('addBookForm').style.display = 'none';
+  document.getElementById('newBookName').value = '';
+  document.getElementById('newBookDays').value = '';
+  renderAll();
+});
+
+// ---------- backup / restore (whole store) ----------
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(store, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const now = new Date();
+  const stamp = now.getFullYear() + '' + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0');
+  a.download = 'sarahsenglish-wordbank-backup-' + stamp + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+document.getElementById('importFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try{
+      const data = JSON.parse(ev.target.result);
+      if(data.books){
+        store = data;
+      } else {
+        // old flat format backup
+        const id = 'book_' + Date.now();
+        store = { books: [{ id, name: '교재 1', totalDays: 30, days: data }], activeBookId: id };
+      }
+      saveStore();
+      renderAll();
+      alert('백업 파일을 불러왔습니다.');
+    }catch(err){
+      alert('파일을 읽지 못했습니다. 올바른 백업 파일(json)인지 확인해 주세요.');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// ---------- main area rendering ----------
+let currentInputDay = 1;
+let genSelectedDays = new Set();
+
+function renderAll(){
+  renderBookList();
+  const book = getActiveBook();
+  const main = document.getElementById('mainArea');
+  if(!book){
+    main.innerHTML = '<div class="no-book-state"><h3>선택된 교재가 없습니다</h3><p>왼쪽에서 교재를 선택하거나, "+ 새 교재 추가"로 첫 교재를 만들어 주세요.</p></div>';
+    return;
+  }
+  if(currentInputDay > book.totalDays) currentInputDay = 1;
+  genSelectedDays.forEach(d => { if(d > book.totalDays) genSelectedDays.delete(d); });
+
+  main.innerHTML = `
+    <div class="main-header">
+      <div>
+        <h2>${escapeHtml(book.name)}</h2>
+        <p>총 Day ${book.totalDays} · 단어 시험지 생성</p>
+      </div>
+      <div class="book-actions">
+        <button id="renameBookBtn">교재 이름 변경</button>
+        <button id="deleteBookBtn">교재 삭제</button>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="input">① 단어 입력</button>
+      <button class="tab-btn" data-tab="generate">② 시험지 생성</button>
+    </div>
+
+    <div class="panel active" id="panel-input">
+      <div class="day-grid" id="inputDayGrid"></div>
+      <div class="input-box">
+        <label id="inputLabel">Day 1 단어 입력</label>
+        <textarea id="wordTextarea" placeholder="한 줄에 하나씩, 영단어와 뜻을 탭(Tab) 또는 쉼표(,)로 구분해 붙여넣으세요.&#10;예)&#10;apple	사과&#10;brave	용감한&#10;※ 엑셀에서 두 열을 복사해 그대로 붙여넣으면 자동으로 인식됩니다."></textarea>
+        <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. PDF 단어장은 텍스트를 복사해서 같은 형식으로 붙여넣어 주세요.</div>
+        <div class="row">
+          <span class="count-badge" id="wordCount">저장된 단어: 0개</span>
+          <button class="primary" id="saveDayBtn">이 Day 저장하기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="panel-generate">
+      <div class="section-label">Day 선택 (여러 개 선택 시 하나의 시험지로 합쳐집니다)</div>
+      <div class="day-grid" id="genDayGrid"></div>
+      <div class="row" style="margin-bottom:20px;">
+        <button class="ghost" id="selectAllBtn">전체 선택</button>
+        <button class="ghost" id="clearSelBtn">선택 초기화</button>
+      </div>
+
+      <div class="section-label">문제 형식</div>
+      <div class="format-options" id="formatOptions">
+        <label class="format-card selected" data-fmt="e2k">
+          <input type="radio" name="fmt" value="e2k" checked> 영단어 → 뜻 쓰기
+        </label>
+        <label class="format-card" data-fmt="k2e">
+          <input type="radio" name="fmt" value="k2e"> 뜻 → 영단어 쓰기
+        </label>
+        <label class="format-card" data-fmt="mix">
+          <input type="radio" name="fmt" value="mix"> 혼합 (영↔한 랜덤 셔플)
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <input type="checkbox" id="includeAnswerKey" checked>
+        <label for="includeAnswerKey">정답지 포함 (별도 페이지)</label>
+      </div>
+
+      <div class="section-label">출제 문항 수</div>
+      <div class="row" style="margin-bottom:6px;">
+        <input type="number" id="qCountInput" min="1" placeholder="전체" style="width:120px;padding:9px 12px;border:1px solid var(--gray-rule);border-radius:6px;font-size:13.5px;">
+        <span class="count-badge" id="availableCount">선택된 Day의 전체 단어 수: 0개</span>
+      </div>
+      <div class="hint">비워두면 선택한 Day의 전체 단어가 출제돼요. 숫자를 입력하면 셔플된 단어 중 그 개수만큼만 뽑아 출제해요.</div>
+
+      <div class="generate-cta">
+        <button class="primary" id="generateBtn" style="padding:13px 34px;font-size:14.5px;">시험지 생성하기 (단어 셔플)</button>
+      </div>
+
+      <div id="sheetOutput"></div>
+    </div>
+  `;
+
+  wireMainEvents(book);
+  buildDayGrid(book, document.getElementById('inputDayGrid'), 'input');
+  buildDayGrid(book, document.getElementById('genDayGrid'), 'gen');
+  refreshInputPanel(book);
+  updateAvailableCount(book);
+}
+
+function wireMainEvents(book){
+  document.getElementById('renameBookBtn').addEventListener('click', () => {
+    const newName = prompt('새 교재 이름을 입력하세요.', book.name);
+    if(newName && newName.trim()){
+      book.name = newName.trim();
+      saveStore();
+      renderAll();
+    }
+  });
+  document.getElementById('deleteBookBtn').addEventListener('click', () => {
+    if(confirm('"' + book.name + '" 교재를 삭제하시겠습니까? 저장된 모든 Day의 단어가 함께 삭제됩니다.')){
+      store.books = store.books.filter(b => b.id !== book.id);
+      store.activeBookId = store.books.length > 0 ? store.books[0].id : null;
+      saveStore();
+      renderAll();
+    }
+  });
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  document.querySelectorAll('.format-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.format-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      card.querySelector('input').checked = true;
+    });
+  });
+
+  document.getElementById('saveDayBtn').addEventListener('click', () => {
+    const text = document.getElementById('wordTextarea').value;
+    const parsed = parseWords(text);
+    book.days['day' + currentInputDay] = parsed;
+    saveStore();
+    refreshInputPanel(book);
+    buildDayGrid(book, document.getElementById('genDayGrid'), 'gen');
+    renderBookList();
+    updateAvailableCount(book);
+  });
+
+  document.getElementById('selectAllBtn').addEventListener('click', () => {
+    genSelectedDays = new Set(Array.from({length: book.totalDays}, (_, i) => i + 1));
+    buildDayGrid(book, document.getElementById('genDayGrid'), 'gen');
+    updateAvailableCount(book);
+  });
+  document.getElementById('clearSelBtn').addEventListener('click', () => {
+    genSelectedDays.clear();
+    buildDayGrid(book, document.getElementById('genDayGrid'), 'gen');
+    updateAvailableCount(book);
+  });
+
+  document.getElementById('generateBtn').addEventListener('click', () => generateSheet(book));
+}
+
+function parseWords(text){
+  return text.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+    .map(line => {
+      let parts = line.includes('\t') ? line.split('\t') : line.split(',');
+      const en = (parts[0] || '').trim();
+      const ko = (parts.slice(1).join(',') || '').trim();
+      return { en, ko };
+    })
+    .filter(p => p.en && p.ko);
+}
+
+function buildDayGrid(book, container, mode){
+  container.innerHTML = '';
+  for(let i = 1; i <= book.totalDays; i++){
+    const btn = document.createElement('div');
+    btn.className = 'day-btn';
+    btn.dataset.day = i;
+    btn.innerHTML = 'Day ' + i + '<span class="dot"></span>';
+    if(book.days['day' + i] && book.days['day' + i].length > 0) btn.classList.add('has-words');
+
+    if(mode === 'input'){
+      if(i === currentInputDay) btn.classList.add('selected');
+      btn.addEventListener('click', () => {
+        currentInputDay = i;
+        refreshInputPanel(book);
+        buildDayGrid(book, container, 'input');
+      });
+    } else {
+      if(genSelectedDays.has(i)) btn.classList.add('selected');
+      btn.addEventListener('click', () => {
+        if(genSelectedDays.has(i)) genSelectedDays.delete(i);
+        else genSelectedDays.add(i);
+        buildDayGrid(book, container, 'gen');
+        updateAvailableCount(book);
+      });
+    }
+    container.appendChild(btn);
+  }
+}
+
+function refreshInputPanel(book){
+  document.getElementById('inputLabel').textContent = 'Day ' + currentInputDay + ' 단어 입력';
+  const list = book.days['day' + currentInputDay] || [];
+  document.getElementById('wordTextarea').value = list.map(w => w.en + '\t' + w.ko).join('\n');
+  document.getElementById('wordCount').textContent = '저장된 단어: ' + list.length + '개';
+}
+
+function updateAvailableCount(book){
+  const days = Array.from(genSelectedDays);
+  let total = 0;
+  days.forEach(d => { total += (book.days['day' + d] || []).length; });
+  document.getElementById('availableCount').textContent = '선택된 Day의 전체 단어 수: ' + total + '개';
+}
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function generateSheet(book){
+  const days = Array.from(genSelectedDays).sort((a,b) => a - b);
+  const output = document.getElementById('sheetOutput');
+
+  if(days.length === 0){
+    output.innerHTML = '<p class="no-data-msg">Day를 하나 이상 선택해 주세요.</p>';
+    return;
+  }
+
+  let words = [];
+  days.forEach(d => { words = words.concat(book.days['day' + d] || []); });
+
+  if(words.length === 0){
+    output.innerHTML = '<p class="no-data-msg">선택한 Day에 저장된 단어가 없습니다. 먼저 ① 단어 입력 탭에서 단어를 저장해 주세요.</p>';
+    return;
+  }
+
+  words = shuffle(words);
+
+  const qCountRaw = document.getElementById('qCountInput').value.trim();
+  if(qCountRaw !== ''){
+    const qCount = parseInt(qCountRaw, 10);
+    if(!isNaN(qCount) && qCount > 0 && qCount < words.length){
+      words = words.slice(0, qCount);
+    }
+  }
+
+  const fmt = document.querySelector('input[name="fmt"]:checked').value;
+  const includeKey = document.getElementById('includeAnswerKey').checked;
+  const dayLabel = days.length === 1 ? ('Day ' + days[0]) : ('Day ' + days[0] + '–' + days[days.length - 1]);
+
+  const directions = words.map(() => {
+    if(fmt === 'e2k') return 'e2k';
+    if(fmt === 'k2e') return 'k2e';
+    return Math.random() < 0.5 ? 'e2k' : 'k2e';
+  });
+
+  const sectionTitle = fmt === 'mix'
+    ? 'Ⅰ. 다음 영단어의 뜻을, 다음 뜻의 영단어를 각각 쓰시오'
+    : (fmt === 'e2k' ? 'Ⅰ. 다음 영단어의 뜻을 쓰시오' : 'Ⅰ. 다음 뜻에 해당하는 영단어를 쓰시오');
+
+  let qHtml = '';
+  words.forEach((w, idx) => {
+    const prompt = directions[idx] === 'e2k' ? w.en : w.ko;
+    qHtml += '<li><span class="qnum">' + (idx+1) + '.</span><span class="qprompt">' + escapeHtml(prompt) + '</span><span class="qblank"></span></li>';
+  });
+
+  let answerHtml = '';
+  words.forEach((w, idx) => {
+    const prompt = directions[idx] === 'e2k' ? w.en : w.ko;
+    const ans = directions[idx] === 'e2k' ? w.ko : w.en;
+    answerHtml += '<span class="a-item"><span class="a-num">' + (idx+1) + '.</span>' + escapeHtml(prompt) + ' → ' + escapeHtml(ans) + '</span>';
+  });
+
+  let html = '<div class="sheet-actions"><button class="primary" onclick="window.print()">인쇄 / PDF로 저장</button></div>';
+  html += '<div id="printArea">';
+  html += '<div class="sheet-page">';
+  html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>단어 시험지</h3><div class="daymeta">' + dayLabel + ' · 총 ' + words.length + '문항</div></div>';
+  html += '<hr class="sheet-rule">';
+  html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
+  html += '<div class="section-heading"><div class="bar"></div><span>' + sectionTitle + '</span></div>';
+  html += '<ol class="qlist">' + qHtml + '</ol>';
+  html += '</div>';
+
+  if(includeKey){
+    html += '<div class="sheet-page page-break">';
+    html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>정답지</h3><div class="daymeta">' + dayLabel + '</div></div>';
+    html += '<hr class="sheet-rule">';
+    html += '<div class="answer-box">' + answerHtml + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+
+  output.innerHTML = html;
+}
+
+// ---------- init ----------
+(async function init(){
+  await loadStore();
+  renderAll();
+})();
+</script>
+
+</body>
+</html>
