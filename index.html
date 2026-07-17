@@ -460,6 +460,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
+  const [showStatus, setShowStatus] = useState(false);
   const selected = roster.find((r) => r.id === selectedStudentId);
 
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
@@ -477,6 +478,10 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     if (selectedStudentId === id) setSelectedStudentId(null);
   }
 
+  if (showStatus) {
+    return html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setShowStatus(false)} onLogout=${onLogout} />`;
+  }
+
   if (!selected) {
     return html`
       <div>
@@ -484,6 +489,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
           <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
         <${SectionLabel} n=${1} label="STUDENTS" />
+        <${Button} variant="ghost" onClick=${() => setShowStatus(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>📋 숙제 현황 한눈에 보기<//>
         ${roster.map((r) => html`
           <${Card} key=${r.id}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -517,6 +523,56 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const data = dataCache[selected.id] || emptyData();
   return html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
     updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} />`;
+}
+
+function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogout }) {
+  const [loaded, setLoaded] = useState(false);
+  const [selDate, setSelDate] = useState(today());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const rows = roster.map((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const items = (d.homework || []).filter((h) => h.dueDate === selDate);
+    return { student: s, items };
+  });
+  const withHw = rows.filter((r) => r.items.length > 0);
+  const doneCount = withHw.filter((r) => r.items.every((h) => h.done)).length;
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <${BackBtn} onClick=${onBack} />
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>숙제 현황</div>
+      <${Card}>
+        <${Field} label="기한 날짜"><input style=${inputStyle} type="date" value=${selDate} onChange=${(e) => setSelDate(e.target.value)} /><//>
+      <//>
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : html`
+        ${withHw.length > 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 10 }}>이 날짜 숙제 있는 학생 ${withHw.length}명 중 <b style=${{ color: C.navy }}>${doneCount}명</b> 완료</div>`}
+        ${withHw.length === 0 && html`<${Empty} text="이 날짜에 기한인 숙제가 있는 학생이 없어요." />`}
+        ${withHw.map((r) => html`
+          <${Card} key=${r.student.id}>
+            <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 6 }}>${r.student.name}</div>
+            ${r.items.map((h, i) => html`
+              <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: h.done ? C.gold : C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+              </div>
+            `)}
+          <//>
+        `)}
+      `}
+    </div>
+  `;
 }
 
 function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout }) {
@@ -643,7 +699,7 @@ function HomeworkEditor({ data, updateData }) {
                     ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
                   </div>
                 `}
-                ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
+                ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
                 <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.navy : C.slate }}>${h.done ? "✓ 학생 완료 표시함" : "아직 미완료"}</div>
               </div>
               <div style=${{ display: "flex", gap: 10 }}>
@@ -1155,9 +1211,66 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 function HomeworkStudentCard({ h, studentId, updateData }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [audioBusy, setAudioBusy] = useState(false); const [audioErr, setAudioErr] = useState("");
+  const [recording, setRecording] = useState(false); const [recSeconds, setRecSeconds] = useState(0);
   const inputId = `hwphoto-${h.id}`;
   const audioInputId = `hwaudio-${h.id}`;
   const photos = h.photos || (h.photo ? [h.photo] : []);
+  const audios = h.audios || (h.audio ? [h.audio] : []);
+  const MAX_REC_SECONDS = 90;
+  const AUDIO_SIZE_CAP = 1500000; // ~1.1MB raw, generous for jsonbin
+
+  const mediaRecorderRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+  const timerRef = React.useRef(null);
+  const streamRef = React.useRef(null);
+
+  async function saveAudio(dataUrl) {
+    if (dataUrl.length > AUDIO_SIZE_CAP) { setAudioErr("녹음이 너무 길어요. 조금 더 짧게 다시 녹음해 주세요."); return; }
+    await updateData(studentId, (d) => ({
+      ...d,
+      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audios: [...(x.audios || (x.audio ? [x.audio] : [])), dataUrl], audio: undefined, done: true } : x)),
+    }));
+  }
+
+  async function startRecording() {
+    setAudioErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(timerRef.current);
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: mime || "audio/webm" });
+        setAudioBusy(true);
+        try {
+          const dataUrl = await fileToDataURL(new File([blob], "recording", { type: blob.type }));
+          await saveAudio(dataUrl);
+        } catch { setAudioErr("녹음을 저장하는 데 문제가 있었어요."); }
+        setAudioBusy(false);
+        setRecSeconds(0);
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+      setRecSeconds(0);
+      timerRef.current = setInterval(() => {
+        setRecSeconds((s) => {
+          if (s + 1 >= MAX_REC_SECONDS) { stopRecording(); return s; }
+          return s + 1;
+        });
+      }, 1000);
+    } catch (e) {
+      setAudioErr("마이크 사용 권한이 필요해요. 브라우저 설정에서 마이크 접근을 허용해 주세요.");
+    }
+  }
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+  }
 
   async function handleFile(e) {
     const files = Array.from(e.target.files || []);
@@ -1186,22 +1299,27 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
       homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: (x.photos || (x.photo ? [x.photo] : [])).filter((_, i) => i !== idx), photo: undefined } : x)),
     }));
   }
-  async function handleAudio(e) {
+  async function handleAudioFile(e) {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
     setAudioErr(""); setAudioBusy(true);
     try {
       const dataUrl = await fileToDataURL(file);
-      if (dataUrl.length > 350000) { setAudioErr("녹음 파일 용량이 너무 커요. 20~30초 이내로 짧게 녹음해서 다시 올려주세요."); setAudioBusy(false); return; }
-      await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audio: dataUrl, done: true } : x)) }));
+      await saveAudio(dataUrl);
     } catch { setAudioErr("파일을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
     setAudioBusy(false);
   }
-  async function removeAudio() {
-    await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audio: null } : x)) }));
+  async function removeAudio(idx) {
+    await updateData(studentId, (d) => ({
+      ...d,
+      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audios: (x.audios || (x.audio ? [x.audio] : [])).filter((_, i) => i !== idx), audio: undefined } : x)),
+    }));
   }
   async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
+
+  const mm = String(Math.floor(recSeconds / 60)).padStart(2, "0");
+  const ss = String(recSeconds % 60).padStart(2, "0");
 
   return html`
     <${Card}>
@@ -1217,10 +1335,14 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
           `)}
         </div>
       `}
-      ${h.audio && html`
-        <div style=${{ marginTop: 8 }}>
-          <audio controls src=${h.audio} style=${{ width: "100%", height: 32 }} />
-          <button onClick=${removeAudio} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11.5, cursor: "pointer", padding: 0, marginTop: 4 }}>녹음 지우고 다시 올리기</button>
+      ${audios.length > 0 && html`
+        <div style=${{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+          ${audios.map((a, ai) => html`
+            <div key=${ai} style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+              <audio controls src=${a} style=${{ flex: 1, height: 32 }} />
+              <button onClick=${() => removeAudio(ai)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 13, cursor: "pointer" }}>✕</button>
+            </div>
+          `)}
         </div>
       `}
       <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
@@ -1228,14 +1350,20 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
           ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
         </label>
         <input id=${inputId} type="file" accept="image/*" capture="environment" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
-        <label htmlFor=${audioInputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
-          ${audioBusy ? "업로드 중..." : h.audio ? "녹음 다시 올리기" : "녹음 파일 올리기"}
-        </label>
-        <input id=${audioInputId} type="file" accept="audio/*" onChange=${handleAudio} style=${{ display: "none" }} disabled=${audioBusy} />
+
+        ${recording ? html`
+          <${Button} variant="danger" onClick=${stopRecording}>⏹ 녹음 중지 ${mm}:${ss}<//>
+        ` : html`
+          <${Button} variant="ghost" onClick=${startRecording} disabled=${audioBusy}>${audioBusy ? "처리 중..." : "🎙 녹음하기"}<//>
+        `}
+        <label htmlFor=${audioInputId} style=${{ fontSize: 12, color: C.slate, cursor: "pointer", textDecoration: "underline" }}>파일로 올리기</label>
+        <input id=${audioInputId} type="file" accept="audio/*" onChange=${handleAudioFile} style=${{ display: "none" }} disabled=${audioBusy} />
+
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
         </div>
       </div>
+      ${recording && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 6 }}>최대 ${MAX_REC_SECONDS}초까지 녹음돼요. 다 말했으면 "녹음 중지"를 눌러주세요.</div>`}
       ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
       ${audioErr && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${audioErr}</div>`}
     <//>
@@ -1435,7 +1563,7 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
                     ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
                   </div>
                 `}
-                ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
+                ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
                 <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? "✓ 완료함" : "아직 미완료"}</div>
               <//>
             `)}
