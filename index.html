@@ -117,6 +117,16 @@ function parseAnswerKey(text) {
   return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
+function groupByDate(items, dateField) {
+  const map = {};
+  items.forEach((it) => {
+    const d = it[dateField] || "";
+    if (!map[d]) map[d] = [];
+    map[d].push(it);
+  });
+  return Object.keys(map).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0)).map((d) => ({ date: d, items: map[d] }));
+}
+
 function splitFirst(line, delim) {
   const idx = line.indexOf(delim);
   if (idx === -1) return null;
@@ -601,7 +611,10 @@ function HomeworkEditor({ data, updateData }) {
         <${Button} variant="gold" onClick=${add}>숙제 추가<//>
       <//>
       ${list.length === 0 && html`<${Empty} text="아직 등록된 숙제가 없어요." />`}
-      ${list.map((h) => html`
+      ${groupByDate(list, "assignedDate").map((grp) => html`
+        <div key=${grp.date}>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${fmtDate(grp.date)}</div>
+          ${grp.items.map((h) => html`
         <${Card} key=${h.id}>
           ${editId === h.id ? html`
             <div style=${{ display: "flex", gap: 8 }}>
@@ -616,7 +629,7 @@ function HomeworkEditor({ data, updateData }) {
           ` : html`
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div style=${{ flex: 1 }}>
-                <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
+                <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>기한 ${fmtDate(h.dueDate)}</div>
                 <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
                 ${(h.photos || (h.photo ? [h.photo] : [])).length > 0 && html`
                   <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -633,6 +646,8 @@ function HomeworkEditor({ data, updateData }) {
             </div>
           `}
         <//>
+          `)}
+        </div>
       `)}
     </div>
   `;
@@ -866,15 +881,28 @@ function ExamEditor({ data, updateData }) {
 // ---------- Mock exam (모의고사): answer-key only, auto-graded ----------
 function MockExamEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [keyText, setKeyText] = useState("");
+  const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyText, setKeyText] = useState("");
   const [msg, setMsg] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyText, setEditKeyText] = useState("");
+  const [editMsg, setEditMsg] = useState("");
+
   async function save() {
     const key = parseAnswerKey(keyText);
     if (!title || key.length === 0) { setMsg("이름과 정답을 입력해 주세요."); return; }
-    await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, answerKey: key }, ...(d.mockExams || [])] }));
-    setTitle(""); setKeyText(""); setMsg(""); setCreating(false);
+    await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key }, ...(d.mockExams || [])] }));
+    setTitle(""); setKeyText(""); setPageRange(""); setMsg(""); setCreating(false);
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
+  function startEdit(t) {
+    setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyText((t.answerKey || []).join(", ")); setEditMsg("");
+  }
+  async function saveEdit() {
+    const key = parseAnswerKey(editKeyText);
+    if (!editTitle || key.length === 0) { setEditMsg("이름과 정답을 입력해 주세요."); return; }
+    await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key } : t)) }));
+    setEditId(null);
+  }
   const list = data.mockExams || [];
   return html`
     <div>
@@ -885,6 +913,7 @@ function MockExamEditor({ data, updateData }) {
         <${Card}>
           <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
           <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+          <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${pageRange} onChange=${(e) => setPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
           <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)">
             <textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${keyText} onChange=${(e) => setKeyText(e.target.value)} placeholder=${"예: 2,3,1,4,5,2,1,3,4,5 ...\n(1번부터 순서대로 정답 번호)"} />
           <//>
@@ -901,17 +930,32 @@ function MockExamEditor({ data, updateData }) {
         const results = (data.mockExamResults || []).filter((r) => r.testId === t.id);
         return html`
           <${Card} key=${t.id}>
-            <div style=${{ display: "flex", justifyContent: "space-between" }}>
-              <div>
-                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
-                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문항 ${t.answerKey.length}개</div>
+            ${editId === t.id ? html`
+              <${Field} label="모의고사 이름"><input style=${inputStyle} value=${editTitle} onChange=${(e) => setEditTitle(e.target.value)} /><//>
+              <${Field} label="날짜"><input style=${inputStyle} type="date" value=${editDate} onChange=${(e) => setEditDate(e.target.value)} /><//>
+              <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${editPageRange} onChange=${(e) => setEditPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
+              <${Field} label="정답 (순서대로)"><textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${editKeyText} onChange=${(e) => setEditKeyText(e.target.value)} /><//>
+              ${editMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${editMsg}</div>`}
+              <div style=${{ display: "flex", gap: 8 }}>
+                <${Button} variant="gold" onClick=${saveEdit}>저장<//>
+                <${Button} variant="ghost" onClick=${() => setEditId(null)}>취소<//>
               </div>
-              <button onClick=${() => removeExam(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
-            </div>
-            ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
-              <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}${r.wrong && r.wrong.length > 0 ? ` (틀린 문제: ${r.wrong.join(", ")})` : ""}</div>`)}
+            ` : html`
+              <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                <div>
+                  <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                  <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
+                </div>
+                <div style=${{ display: "flex", gap: 10 }}>
+                  <button onClick=${() => startEdit(t)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
+                  <button onClick=${() => removeExam(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+                </div>
               </div>
+              ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
+                <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
+                  ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}${r.wrong && r.wrong.length > 0 ? ` (틀린 문제: ${r.wrong.join(", ")})` : ""}</div>`)}
+                </div>
+              `}
             `}
           <//>
         `;
@@ -955,7 +999,8 @@ function MockExamTaker({ test, onExit, onSubmit }) {
   return html`
     <div>
       <${BackBtn} onClick=${onExit} />
-      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 12 }}>${test.title}</div>
+      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 2 }}>${test.title}</div>
+      ${test.pageRange && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>${test.pageRange}</div>`}
       <${Card}>
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 10 }}>
           ${test.answerKey.map((_, i) => html`
@@ -1032,7 +1077,12 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
       `))}
 
       ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
-        (data.homework || []).map((h) => html`<${HomeworkStudentCard} key=${h.id} h=${h} studentId=${student.id} updateData=${updateData} />`))}
+        groupByDate(data.homework || [], "assignedDate").map((grp) => html`
+          <div key=${grp.date}>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${fmtDate(grp.date)}</div>
+            ${grp.items.map((h) => html`<${HomeworkStudentCard} key=${h.id} h=${h} studentId=${student.id} updateData=${updateData} />`)}
+          </div>
+        `))}
 
       ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 재시험이 없어요." />` : data.vocabTests.map((t) => {
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
@@ -1073,7 +1123,7 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
-                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
                 ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
               </div>
               <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => setActiveMock(t)}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
@@ -1138,7 +1188,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
 
   return html`
     <${Card}>
-      <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
+      <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>기한 ${fmtDate(h.dueDate)}</div>
       <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
       ${photos.length > 0 && html`
         <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -1355,19 +1405,25 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
         <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
       `))}
 
-      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` : (data.homework || []).map((h) => html`
-        <${Card} key=${h.id}>
-          <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(h.assignedDate)} 부여 · 기한 ${fmtDate(h.dueDate)}</div>
-          <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
-          ${(h.photos || (h.photo ? [h.photo] : [])).length > 0 && html`
-            <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-              ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
-            </div>
-          `}
-          ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
-          <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? "✓ 완료함" : "아직 미완료"}</div>
-        <//>
-      `))}
+      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
+        groupByDate(data.homework || [], "assignedDate").map((grp) => html`
+          <div key=${grp.date}>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${fmtDate(grp.date)}</div>
+            ${grp.items.map((h) => html`
+              <${Card} key=${h.id}>
+                <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>기한 ${fmtDate(h.dueDate)}</div>
+                <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
+                ${(h.photos || (h.photo ? [h.photo] : [])).length > 0 && html`
+                  <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    ${(h.photos || (h.photo ? [h.photo] : [])).map((p, pi) => html`<img key=${pi} src=${p} style=${{ width: 70, height: 70, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}` }} />`)}
+                  </div>
+                `}
+                ${h.audio && html`<audio controls src=${h.audio} style=${{ width: "100%", height: 32, marginTop: 8 }} />`}
+                <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? "✓ 완료함" : "아직 미완료"}</div>
+              <//>
+            `)}
+          </div>
+        `))}
 
       ${tab === "feedback" && html`
         <${Card}>
