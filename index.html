@@ -933,7 +933,10 @@ function MockExamEditor({ data, updateData }) {
       `}
       <${SectionLabel} n=${2} label="등록된 모의고사" />
       ${list.length === 0 && html`<${Empty} text="아직 만든 모의고사가 없어요." />`}
-      ${list.map((t) => {
+      ${groupByDate(list, "date").map((grp) => html`
+        <div key=${grp.date}>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${fmtDateDay(grp.date)}</div>
+          ${grp.items.map((t) => {
         const results = (data.mockExamResults || []).filter((r) => r.testId === t.id);
         return html`
           <${Card} key=${t.id}>
@@ -951,7 +954,7 @@ function MockExamEditor({ data, updateData }) {
               <div style=${{ display: "flex", justifyContent: "space-between" }}>
                 <div>
                   <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
-                  <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
+                  <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
                 </div>
                 <div style=${{ display: "flex", gap: 10 }}>
                   <button onClick=${() => startEdit(t)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
@@ -966,7 +969,9 @@ function MockExamEditor({ data, updateData }) {
             `}
           <//>
         `;
-      })}
+          })}
+        </div>
+      `)}
     </div>
   `;
 }
@@ -1123,7 +1128,10 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
         `;
       }))}
 
-      ${tab === "mock" && ((data.mockExams || []).length === 0 ? html`<${Empty} text="등록된 모의고사가 없어요." />` : (data.mockExams || []).map((t) => {
+      ${tab === "mock" && ((data.mockExams || []).length === 0 ? html`<${Empty} text="등록된 모의고사가 없어요." />` : groupByDate(data.mockExams || [], "date").map((grp) => html`
+        <div key=${grp.date}>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${fmtDateDay(grp.date)}</div>
+          ${grp.items.map((t) => {
         const myResults = (data.mockExamResults || []).filter((r) => r.testId === t.id);
         return html`
           <${Card} key=${t.id}>
@@ -1137,7 +1145,9 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
             </div>
           <//>
         `;
-      }))}
+          })}
+        </div>
+      `))}
     </div>
   `;
 }
