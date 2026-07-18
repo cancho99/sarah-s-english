@@ -157,7 +157,7 @@ function shuffle(arr) {
   }
   return a;
 }
-const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [] });
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [] });
 
 function parseAnswerKey(text) {
   return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -623,9 +623,12 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "logs", label: "학습 기록", icon: "📘" },
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "feedback", label: "학부모 피드백", icon: "💬" },
-    { key: "vocab", label: "단어 재시험", icon: "🔤" },
+    { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
+    { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
     { key: "exam", label: "추가 시험", icon: "🗒" },
     { key: "mock", label: "모의고사", icon: "📄" },
+    { key: "regularExam", label: "정기시험", icon: "🏫" },
+    { key: "report", label: "월말리포트", icon: "📊" },
   ];
   return html`
     <div>
@@ -641,8 +644,174 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
       ${tab === "feedback" && html`<${FeedbackEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
       ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
       ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "report" && html`<${MonthlyReportView} student=${student} data=${data} />`}
+    </div>
+  `;
+}
+
+// ---------- 단어시험 기록 (수기 입력, 자동 합격판정) ----------
+function VocabLogEditor({ data, updateData }) {
+  const [date, setDate] = useState(today());
+  const [book, setBook] = useState("");
+  const [range, setRange] = useState("");
+  const [correct, setCorrect] = useState("");
+  const [total, setTotal] = useState("");
+  const [retest, setRetest] = useState("");
+
+  const isCumulative = range.includes("누적");
+  const threshold = isCumulative ? 90 : 80;
+  const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
+
+  async function add() {
+    if (!date || !total || !range) return;
+    const scorePct = Math.round((Number(correct) / Number(total)) * 100);
+    const passed = scorePct >= (range.includes("누적") ? 90 : 80);
+    await updateData((d) => ({
+      ...d,
+      vocabLog: [{ id: uid(), date, book, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
+    }));
+    setBook(""); setRange(""); setCorrect(""); setTotal(""); setRetest("");
+  }
+  async function remove(id) { await updateData((d) => ({ ...d, vocabLog: (d.vocabLog || []).filter((v) => v.id !== id) })); }
+
+  const list = data.vocabLog || [];
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90% 기준, 아니면 80% 기준으로 자동 합격 판정돼요.</div>
+      <${Card}>
+        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="교재"><input style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)} placeholder="예: 능률 VOCA 중등 기본" /><//>
+        <${Field} label="시험범위"><input style=${inputStyle} value=${range} onChange=${(e) => setRange(e.target.value)} placeholder="예: Day 1-9 누적" /><//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="총 문항"><input style=${inputStyle} type="number" value=${total} onChange=${(e) => setTotal(e.target.value)} /><//></div>
+        </div>
+        ${pct !== null && html`<div style=${{ fontSize: 12.5, marginBottom: 10, color: pct >= threshold ? C.navy : C.danger, fontWeight: 700 }}>${pct}% · 기준 ${threshold}% 이상 → ${pct >= threshold ? "합격" : "불합격"}</div>`}
+        <${Field} label="재시험 메모 (선택)"><input style=${inputStyle} value=${retest} onChange=${(e) => setRetest(e.target.value)} placeholder="예: 7/20 10시" /><//>
+        <${Button} variant="gold" onClick=${add}>기록 추가<//>
+      <//>
+      ${list.length === 0 && html`<${Empty} text="아직 기록이 없어요." />`}
+      ${list.map((v) => html`
+        <${Card} key=${v.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(v.date)} · ${v.book}</div>
+              <div style=${{ fontSize: 13, marginTop: 4 }}>${v.range} — ${v.correct}/${v.total} (${v.score}%)</div>
+              ${v.retest && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>재시험: ${v.retest}</div>`}
+            </div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: v.passed ? "#E9F1EA" : "#F7E9E6", color: v.passed ? "#3D6B4F" : C.danger }}>${v.passed ? "합격" : "불합격"}</span>
+              <button onClick=${() => remove(v.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+// ---------- 정기시험 (내신 · 모의고사 점수) ----------
+function RegularExamEditor({ data, updateData }) {
+  const [date, setDate] = useState(today());
+  const [examName, setExamName] = useState("");
+  const [subject, setSubject] = useState("영어");
+  const [score, setScore] = useState("");
+  const [target, setTarget] = useState("");
+  const [note, setNote] = useState("");
+
+  async function add() {
+    if (!date || !examName) return;
+    await updateData((d) => ({ ...d, regularExams: [{ id: uid(), date, examName, subject, score, target, note }, ...(d.regularExams || [])] }));
+    setExamName(""); setScore(""); setTarget(""); setNote("");
+  }
+  async function remove(id) { await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).filter((x) => x.id !== id) })); }
+
+  const list = data.regularExams || [];
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
+      <${Card}>
+        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="시험명"><input style=${inputStyle} value=${examName} onChange=${(e) => setExamName(e.target.value)} placeholder="예: 1학기 기말고사" /><//>
+        <${Field} label="과목"><input style=${inputStyle} value=${subject} onChange=${(e) => setSubject(e.target.value)} /><//>
+        <${Field} label="점수 / 등급"><input style=${inputStyle} value=${score} onChange=${(e) => setScore(e.target.value)} placeholder="예: 92점 / 1등급" /><//>
+        <${Field} label="목표 대비 (선택)"><input style=${inputStyle} value=${target} onChange=${(e) => setTarget(e.target.value)} placeholder="예: 목표 90점 대비 +2" /><//>
+        <${Field} label="비고 (선택)"><input style=${inputStyle} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        <${Button} variant="gold" onClick=${add}>기록 추가<//>
+      <//>
+      ${list.length === 0 && html`<${Empty} text="아직 기록이 없어요." />`}
+      ${list.map((x) => html`
+        <${Card} key=${x.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(x.date)} · ${x.examName} (${x.subject})</div>
+              <div style=${{ fontSize: 13, marginTop: 4 }}>${x.score} ${x.target ? "· " + x.target : ""}</div>
+              ${x.note && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>${x.note}</div>`}
+            </div>
+            <button onClick=${() => remove(x.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+// ---------- 월말리포트 ----------
+function MonthlyReportView({ student, data }) {
+  const [month, setMonth] = useState(today().slice(0, 7));
+
+  const inMonth = (s) => s && s.startsWith(month);
+  const hwRows = (data.homework || []).filter((h) => inMonth(h.dueDate));
+  const hwDone = hwRows.filter((h) => h.done).length;
+  const hwRate = hwRows.length ? Math.round((hwDone / hwRows.length) * 100) : null;
+
+  const vcRows = (data.vocabLog || []).filter((v) => inMonth(v.date));
+  const vcPass = vcRows.filter((v) => v.passed).length;
+  const vcRate = vcRows.length ? Math.round((vcPass / vcRows.length) * 100) : null;
+
+  const exRows = (data.regularExams || []).filter((x) => inMonth(x.date));
+  const [y, m] = month.split("-");
+
+  return html`
+    <div>
+      <${Card}>
+        <${Field} label="기준월"><input style=${inputStyle} type="month" value=${month} onChange=${(e) => setMonth(e.target.value)} /><//>
+        <${Button} variant="ghost" onClick=${() => window.print()}>인쇄 / PDF 저장<//>
+      <//>
+      <div style=${{ background: C.white, border: `1px solid ${C.line}`, maxWidth: 480, margin: "0 auto" }}>
+        <div style=${{ background: C.ink, height: 6 }} />
+        <div style=${{ padding: "26px 28px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
+          <div style=${{ width: 40, height: 40, borderRadius: "50%", border: `1.5px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", color: C.navy, ...serif, fontSize: 15 }}>S·E</div>
+          <div style=${{ ...serif, fontSize: 19, color: C.navy }}>Sarah's English</div>
+          <div style=${{ fontSize: 10.5, letterSpacing: 2, color: C.slate, marginTop: 4 }}>MONTHLY LEARNING REPORT</div>
+          <div style=${{ fontSize: 12, color: C.slate, marginTop: 14 }}>${y}년 ${Number(m)}월 학습 리포트</div>
+          <div style=${{ ...serif, fontSize: 18, color: C.ink, marginTop: 6, fontWeight: 700 }}>${student.name}</div>
+        </div>
+        <div style=${{ padding: "20px 28px" }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
+            <div style=${{ fontSize: 12, color: C.slate }}>숙제 완료율</div>
+            <div style=${{ ...serif, fontSize: 16, color: C.navy, fontWeight: 700 }}>${hwRate === null ? "기록 없음" : hwRate + "%"} ${hwRows.length ? `(${hwDone}/${hwRows.length})` : ""}</div>
+          </div>
+          <div style=${{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
+            <div style=${{ fontSize: 12, color: C.slate }}>단어시험 합격율</div>
+            <div style=${{ ...serif, fontSize: 16, color: C.navy, fontWeight: 700 }}>${vcRate === null ? "기록 없음" : vcRate + "%"} ${vcRows.length ? `(${vcPass}/${vcRows.length})` : ""}</div>
+          </div>
+          <div style=${{ marginTop: 16 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>정기시험 결과</div>
+            ${exRows.length === 0 ? html`<${Empty} text="해당 월 정기시험 기록이 없어요." />` : exRows.map((x) => html`
+              <div key=${x.id} style=${{ fontSize: 12.5, padding: "6px 0", display: "flex", justifyContent: "space-between", borderBottom: `1px dotted ${C.line}` }}>
+                <span>${x.date} · ${x.examName} (${x.subject})</span>
+                <span><b>${x.score}</b> ${x.target ? "· " + x.target : ""}</span>
+              </div>
+            `)}
+          </div>
+        </div>
+        <div style=${{ padding: "14px 28px 22px", textAlign: "center", fontSize: 10, letterSpacing: 1.5, color: C.slate, textTransform: "uppercase" }}>Prepared by Teacher Sarah · Sarah's English</div>
+      </div>
     </div>
   `;
 }
