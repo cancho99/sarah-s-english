@@ -532,7 +532,7 @@ function HomePage({ setScreen }) {
             <div style=${{ marginTop: 14 }}>
               <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
             </div>
-            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>숙제가 밀리면 주말 Zoom 보충으로 채워드리며, 별도 비용은 받지 않습니다. 고3은 주 1회 실전 모의고사를 Zoom으로 함께 진행합니다 (무료).</div>
+            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>숙제가 밀리면 주말 Zoom 보충으로 채워드리며, 별도 비용은 받지 않습니다. 고3은 주 1회 실전 모의고사를 Zoom으로 함께 진행합니다.</div>
           </div>
         </div>
       </div>
@@ -543,8 +543,8 @@ function HomePage({ setScreen }) {
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
           ${[
             { title: "엄격한 단어시험 기준", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 다음 날 화상으로 재시험을 봅니다." },
-            { title: "매일 발음 녹음 제출", body: "그날 외운 단어를 직접 발음해 녹음 제출. 눈으로만 외우지 않도록, 발음과 강세까지 관리합니다." },
-            { title: "데일리 숙제 카카오톡 보고", body: "매일 숙제 사진·영상을 자정 전까지 제출받고, 제출 여부와 누적 추이를 정기적으로 공유합니다." },
+            { title: "매일 단어 녹음 제출", body: "그날 외운 단어를 직접 발음해 녹음 제출. 눈으로만 외우지 않도록, 발음과 강세까지 관리합니다." },
+            { title: "전용 관리 페이지로 기록", body: "숙제 완료 여부, 단어시험 점수, 학습 내용을 카카오톡 대화 속에 흘려보내지 않고 이 페이지 안에 날짜별로 정리해 남깁니다. 학부모님도 로그인해서 언제든 확인하실 수 있어요." },
             { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 모드로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
             { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
             { title: "정기 학부모 보고", body: "주간 점검, 월간 리포트, 정기평가·내신 결과까지 — 분기 상담과 함께 아이의 학습을 투명하게 공유합니다." },
@@ -552,6 +552,32 @@ function HomePage({ setScreen }) {
             <div key=${s.title} style=${{ background: C.white, padding: "22px 22px" }}>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 8 }}>${s.title}</div>
               <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${s.body}</div>
+            </div>
+          `)}
+        </div>
+      </div>
+
+      <div style=${{ padding: "10px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Management</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>이 페이지로, 이렇게 관리합니다</div>
+        <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+          카카오톡으로 흘려보내는 대신, 학생 한 명 한 명의 기록을 이 페이지 안에 날짜별로 쌓습니다. 학부모님도 로그인해서 언제든 직접 확인하실 수 있어요.
+        </div>
+        <div>
+          ${[
+            { n: "01", title: "수업 직후 — 학습 기록", body: "그날 다룬 문법·독해 내용을 바로 기록해 남깁니다. 무슨 수업을 했는지 기억에 의존하지 않아요." },
+            { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 대상으로 바로 표시됩니다." },
+            { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다." },
+            { n: "04", title: "정기시험 볼 때마다 — 성적 추이 기록", body: "내신·모의고사 점수를 목표 대비로 기록해, 등락이 아니라 흐름을 봅니다." },
+            { n: "05", title: "매일 — 데일리 리포트", body: "그날 배운 내용·단어시험 결과·숙제 여부를 정리한 리포트를 바로 보내드립니다." },
+            { n: "06", title: "매달 말 — 월말 리포트", body: "숙제 완료율, 단어시험 합격율, 정기시험 결과를 한 장으로 정리해 전달드립니다." },
+          ].map((s) => html`
+            <div key=${s.n} style=${{ display: "flex", gap: 18, padding: "16px 4px", borderBottom: `1px solid ${C.line}` }}>
+              <div style=${{ ...serif, fontStyle: "italic", fontSize: 15, color: C.gold, flexShrink: 0, width: 26 }}>${s.n}</div>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${s.title}</div>
+                <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 5, lineHeight: 1.7 }}>${s.body}</div>
+              </div>
             </div>
           `)}
         </div>
