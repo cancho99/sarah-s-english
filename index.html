@@ -513,25 +513,47 @@ function HomePage({ setScreen }) {
         `)}
       </div>
 
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
-        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 14, textAlign: "center" }}>Curriculum</div>
-        <div style=${{ background: C.white, border: `1px solid ${C.line}` }}>
-          <div style=${{ display: "flex", flexWrap: "wrap", borderBottom: `1px solid ${C.line}` }}>
-            <div style=${{ flex: "1 1 260px", padding: "20px 24px", borderRight: `1px solid ${C.line}` }}>
-              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>초5 이하</div>
-              <div style=${{ fontSize: 15, color: C.navy, fontWeight: 700, marginTop: 6 }}>주 3회 · 1시간 30분</div>
-              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 6, lineHeight: 1.6 }}>기초를 탄탄히 다지는 시기. 잦은 노출로 영어 감각을 키웁니다.</div>
+      <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Regions</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>두 지역, 같은 기준</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "24px 26px" }}>
+            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>강서 · 마곡 / 목동</div>
+            <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>초등부터 고등까지</div>
+            <div style=${{ marginTop: 14 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}><span style=${{ color: C.slate }}>초등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 3회 · 1시간 30분</span></div>
+              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
             </div>
-            <div style=${{ flex: "1 1 260px", padding: "20px 24px" }}>
-              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>예비중등(초6)부터</div>
-              <div style=${{ fontSize: 15, color: C.navy, fontWeight: 700, marginTop: 6 }}>주 2회 · 2시간</div>
-              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 6, lineHeight: 1.6 }}>본격적인 내신·수능 대비 로드맵이 시작되는 시기입니다.</div>
+            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>단어·숙제·진도를 매 회차 안에서 통합으로 점검합니다. 숙제가 밀리면 주말 보충으로 반드시 그 주 안에 채워드려요.</div>
+          </div>
+          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "24px 26px" }}>
+            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>대치 · 과천 / 양재</div>
+            <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>중등부터 고등까지</div>
+            <div style=${{ marginTop: 14 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
             </div>
+            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>숙제가 밀리면 주말 Zoom 보충으로 채워드리며, 별도 비용은 받지 않습니다. 고3은 주 1회 실전 모의고사를 Zoom으로 함께 진행합니다 (무료).</div>
           </div>
-          <div style=${{ padding: "18px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-            <div style=${{ fontSize: 12.5, color: C.slate }}>구체적인 학습 로드맵은 예비중등(초6)부터 개인별로 설계해 드립니다.</div>
-            <div style=${{ fontSize: 12.5, color: C.navy, fontWeight: 700 }}>목표는 언제나 — 1등급</div>
-          </div>
+        </div>
+      </div>
+
+      <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>System</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>믿을 수 있는 건, 결국 시스템</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
+          ${[
+            { title: "엄격한 단어시험 기준", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 다음 날 화상으로 재시험을 봅니다." },
+            { title: "매일 발음 녹음 제출", body: "그날 외운 단어를 직접 발음해 녹음 제출. 눈으로만 외우지 않도록, 발음과 강세까지 관리합니다." },
+            { title: "데일리 숙제 카카오톡 보고", body: "매일 숙제 사진·영상을 자정 전까지 제출받고, 제출 여부와 누적 추이를 정기적으로 공유합니다." },
+            { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 모드로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
+            { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
+            { title: "정기 학부모 보고", body: "주간 점검, 월간 리포트, 정기평가·내신 결과까지 — 분기 상담과 함께 아이의 학습을 투명하게 공유합니다." },
+          ].map((s) => html`
+            <div key=${s.title} style=${{ background: C.white, padding: "22px 22px" }}>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 8 }}>${s.title}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${s.body}</div>
+            </div>
+          `)}
         </div>
       </div>
 
