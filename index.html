@@ -151,6 +151,10 @@ const inputStyle = {
 
 // ---------- Utilities ----------
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const BOOK_LIST = [
+  "능률 Voca 중등 고난도", "능률VOCA 수능 고난도", "능률 VOCA 중등 필수", "능률 VOCA 중등 기본",
+  "달곰한 Literacy 2", "달곰한 Literacy 5", "Hacker's TOEFL", "능률 VOCA 초등 기본", "워드마스터 고등 베이직",
+];
 const today = () => new Date().toISOString().slice(0, 10);
 function fmtDate(d) {
   try {
@@ -900,7 +904,8 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
 // ---------- 단어시험 기록 (수기 입력, 자동 합격판정) ----------
 function VocabLogEditor({ data, updateData }) {
   const [date, setDate] = useState(today());
-  const [book, setBook] = useState("");
+  const [book, setBook] = useState(BOOK_LIST[0]);
+  const [customBook, setCustomBook] = useState("");
   const [range, setRange] = useState("");
   const [correct, setCorrect] = useState("");
   const [total, setTotal] = useState("");
@@ -909,16 +914,17 @@ function VocabLogEditor({ data, updateData }) {
   const isCumulative = range.includes("누적");
   const threshold = isCumulative ? 90 : 80;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
+  const effectiveBook = book === "__other__" ? customBook.trim() : book;
 
   async function add() {
-    if (!date || !total || !range) return;
+    if (!date || !total || !range || !effectiveBook) return;
     const scorePct = Math.round((Number(correct) / Number(total)) * 100);
     const passed = scorePct >= (range.includes("누적") ? 90 : 80);
     await updateData((d) => ({
       ...d,
-      vocabLog: [{ id: uid(), date, book, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
+      vocabLog: [{ id: uid(), date, book: effectiveBook, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
     }));
-    setBook(""); setRange(""); setCorrect(""); setTotal(""); setRetest("");
+    setRange(""); setCorrect(""); setTotal(""); setRetest("");
   }
   async function remove(id) { await updateData((d) => ({ ...d, vocabLog: (d.vocabLog || []).filter((v) => v.id !== id) })); }
 
@@ -928,7 +934,13 @@ function VocabLogEditor({ data, updateData }) {
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90% 기준, 아니면 80% 기준으로 자동 합격 판정돼요.</div>
       <${Card}>
         <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
-        <${Field} label="교재"><input style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)} placeholder="예: 능률 VOCA 중등 기본" /><//>
+        <${Field} label="교재">
+          <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
+            ${BOOK_LIST.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
+            <option value="__other__">기타 (직접 입력)</option>
+          </select>
+        <//>
+        ${book === "__other__" && html`<${Field} label="교재명 직접 입력"><input style=${inputStyle} value=${customBook} onChange=${(e) => setCustomBook(e.target.value)} placeholder="교재 이름 입력" /><//>`}
         <${Field} label="시험범위"><input style=${inputStyle} value=${range} onChange=${(e) => setRange(e.target.value)} placeholder="예: Day 1-9 누적" /><//>
         <div style=${{ display: "flex", gap: 8 }}>
           <div style=${{ flex: 1 }}><${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//></div>
@@ -1308,11 +1320,44 @@ function VocabEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [words, setWords] = useState([{ word: "", meaning: "" }]);
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
+  const [showBank, setShowBank] = useState(false); const [bankBooks, setBankBooks] = useState(null);
+  const [bankBookId, setBankBookId] = useState(""); const [bankFrom, setBankFrom] = useState(1); const [bankTo, setBankTo] = useState(1);
+  const [bankMsg, setBankMsg] = useState("");
 
   function runParse() {
     const parsed = parseVocabPaste(pasteText);
     if (parsed.length === 0) { setPasteMsg("인식된 단어가 없어요. 형식을 확인해 주세요."); return; }
     setWords(parsed); setPasteMsg(`${parsed.length}개 단어를 불러왔어요. 아래에서 확인 후 저장하세요.`); setShowPaste(false); setPasteText("");
+  }
+  async function openBank() {
+    setShowBank(true);
+    if (bankBooks === null) {
+      try {
+        const ref = window.__doc(window.__db, "sarahsEnglishWordbank", "main");
+        const snap = await window.__getDoc(ref);
+        const rec = snap.exists() ? snap.data() : {};
+        const books = Array.isArray(rec.books) ? rec.books : [];
+        setBankBooks(books);
+        if (books[0]) { setBankBookId(books[0].id); setBankTo(books[0].totalDays || 1); }
+        if (books.length === 0) setBankMsg("워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요.");
+      } catch (e) { setBankBooks([]); setBankMsg("워드뱅크를 불러오지 못했어요."); }
+    }
+  }
+  function importFromBank() {
+    const book = (bankBooks || []).find((b) => b.id === bankBookId);
+    if (!book) return;
+    const from = Math.max(1, Number(bankFrom) || 1);
+    const to = Math.max(from, Math.min(book.totalDays || from, Number(bankTo) || from));
+    let picked = [];
+    for (let d = from; d <= to; d++) {
+      const arr = (book.days || {})["day" + d] || [];
+      picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
+    }
+    if (picked.length === 0) { setBankMsg("해당 범위에 저장된 단어가 없어요."); return; }
+    setWords(picked);
+    setTitle((t) => t || `${book.name} Day ${from}-${to}`);
+    setBankMsg(`${picked.length}개 단어를 불러왔어요. 아래에서 확인 후 저장하세요.`);
+    setShowBank(false);
   }
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
@@ -1332,9 +1377,11 @@ function VocabEditor({ data, updateData }) {
       ` : html`
         <${Card}>
           <${Field} label="재시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 재시험" /><//>
-          ${!showPaste ? html`
+          <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <${Button} variant="ghost" onClick=${() => setShowPaste(true)} style=${{ marginBottom: 12 }}>붙여넣기로 한번에 가져오기<//>
-          ` : html`
+            <${Button} variant="ghost" onClick=${openBank} style=${{ marginBottom: 12 }}>📚 워드뱅크에서 가져오기<//>
+          </div>
+          ${showPaste && html`
             <${Card} style=${{ background: C.ivory }}>
               <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6 }}>한 줄에 단어 하나씩, "단어 - 뜻" 형식으로 붙여넣어 주세요. 뜻이 여러 개면 콤마(,)나 세미콜론(;)으로 이어서 써도 돼요.</div>
               <textarea style=${{ ...inputStyle, minHeight: 110, fontFamily: "monospace", fontSize: 12.5 }} placeholder=${"apple - 사과\nhesitate - 주저하다, 망설이다"} value=${pasteText} onChange=${(e) => setPasteText(e.target.value)} />
@@ -1344,7 +1391,27 @@ function VocabEditor({ data, updateData }) {
               </div>
             <//>
           `}
+          ${showBank && html`
+            <${Card} style=${{ background: C.ivory }}>
+              ${bankBooks === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : bankBooks.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>${bankMsg}</div>` : html`
+                <${Field} label="교재">
+                  <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankFrom(1); setBankTo(b ? b.totalDays : 1); }}>
+                    ${bankBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
+                  </select>
+                <//>
+                <div style=${{ display: "flex", gap: 8 }}>
+                  <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${bankFrom} onChange=${(e) => setBankFrom(e.target.value)} /><//></div>
+                  <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${bankTo} onChange=${(e) => setBankTo(e.target.value)} /><//></div>
+                </div>
+                <div style=${{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <${Button} variant="gold" onClick=${importFromBank}>이 범위로 가져오기<//>
+                  <${Button} variant="ghost" onClick=${() => setShowBank(false)}>취소<//>
+                </div>
+              `}
+            <//>
+          `}
           ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
+          ${bankMsg && bankBooks && bankBooks.length > 0 && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${bankMsg}</div>`}
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개, 4지선다로 출제됩니다)</div>
           ${words.map((w, i) => html`
             <div key=${i} style=${{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
@@ -1375,7 +1442,12 @@ function VocabEditor({ data, updateData }) {
             </div>
             ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
               <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}</div>`)}
+                ${results.map((r) => { const pct = Math.round((r.score / r.total) * 100); const ok = pct >= 90; return html`
+                  <div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
+                    <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${ok ? "합격" : "재시험 필요"}</span>
+                  </div>
+                `; })}
               </div>
             `}
           <//>
@@ -1695,15 +1767,23 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 
       ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 재시험이 없어요." />` : data.vocabTests.map((t) => {
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
+        const latest = myResults[0];
+        const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
+        const needsRetest = latest && latestPct < 90;
         return html`
-          <${Card} key=${t.id}>
+          <${Card} key=${t.id} style=${needsRetest ? { borderLeft: `3px solid ${C.danger}` } : {}}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>단어 ${t.words.length}개</div>
-                ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
+                ${latest && html`
+                  <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                    <span style=${{ fontSize: 12 }}>최근 결과: ${latest.score} / ${latest.total} (${latestPct}%)</span>
+                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: needsRetest ? "#F7E9E6" : "#E9F1EA", color: needsRetest ? C.danger : "#3D6B4F" }}>${needsRetest ? "재시험 필요 (90% 미만)" : "합격"}</span>
+                  </div>
+                `}
               </div>
-              <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+              <${Button} variant=${needsRetest ? "danger" : (myResults.length ? "ghost" : "gold")} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${needsRetest ? "재응시하기" : (myResults.length ? "다시 풀기" : "응시하기")}<//>
             </div>
           <//>
         `;
