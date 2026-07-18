@@ -1322,6 +1322,7 @@ function VocabEditor({ data, updateData }) {
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
   const [showBank, setShowBank] = useState(false); const [bankBooks, setBankBooks] = useState(null);
   const [bankBookId, setBankBookId] = useState(""); const [bankFrom, setBankFrom] = useState(1); const [bankTo, setBankTo] = useState(1);
+  const [bankCount, setBankCount] = useState("");
   const [bankMsg, setBankMsg] = useState("");
 
   function runParse() {
@@ -1354,6 +1355,8 @@ function VocabEditor({ data, updateData }) {
       picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
     }
     if (picked.length === 0) { setBankMsg("해당 범위에 저장된 단어가 없어요."); return; }
+    const n = Number(bankCount);
+    if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
     setBankMsg(`${picked.length}개 단어를 불러왔어요. 아래에서 확인 후 저장하세요.`);
@@ -1403,6 +1406,7 @@ function VocabEditor({ data, updateData }) {
                   <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${bankFrom} onChange=${(e) => setBankFrom(e.target.value)} /><//></div>
                   <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${bankTo} onChange=${(e) => setBankTo(e.target.value)} /><//></div>
                 </div>
+                <${Field} label="출제 문항 수 (비워두면 범위의 전체 단어)"><input style=${inputStyle} type="number" min="1" value=${bankCount} onChange=${(e) => setBankCount(e.target.value)} placeholder="예: 20" /><//>
                 <div style=${{ display: "flex", gap: 8, marginTop: 4 }}>
                   <${Button} variant="gold" onClick=${importFromBank}>이 범위로 가져오기<//>
                   <${Button} variant="ghost" onClick=${() => setShowBank(false)}>취소<//>
