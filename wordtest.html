@@ -218,6 +218,7 @@
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
@@ -441,10 +442,10 @@ function renderAll(){
       <div class="input-box">
         <label id="inputLabel">Day 1 단어 입력</label>
         <textarea id="wordTextarea" placeholder="한 줄에 하나씩, 영단어와 뜻을 탭(Tab) 또는 쉼표(,)로 구분해 붙여넣으세요.&#10;예)&#10;apple	사과&#10;brave	용감한&#10;※ 엑셀에서 두 열을 복사해 그대로 붙여넣으면 자동으로 인식됩니다."></textarea>
-        <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. 또는 아래 버튼으로 PDF 단어장을 업로드하면 Day별로 자동 인식해서 채워줘요.</div>
+        <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. 또는 아래 버튼으로 PDF나 워드(.docx) 단어장을 업로드하면 Day별로 자동 인식해서 채워줘요.</div>
         <div class="row" style="margin-bottom:10px;">
-          <button class="ghost" id="pdfImportBtn">📄 PDF에서 자동 입력</button>
-          <input type="file" id="pdfImportFile" accept="application/pdf" style="display:none;">
+          <button class="ghost" id="pdfImportBtn">📄 PDF/워드에서 자동 입력</button>
+          <input type="file" id="pdfImportFile" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
           <span class="count-badge" id="pdfImportStatus"></span>
         </div>
         <div class="row">
@@ -556,16 +557,16 @@ function wireMainEvents(book){
     e.target.value = '';
     if (!file) return;
     const statusEl = document.getElementById('pdfImportStatus');
-    statusEl.textContent = 'PDF 읽는 중...';
+    const isDocx = /\.docx$/i.test(file.name) || file.type.includes('wordprocessingml');
+    statusEl.textContent = isDocx ? '워드 파일 읽는 중...' : 'PDF 읽는 중...';
     try {
-      const fullText = await extractPdfText(file);
-      const byDay = splitTextByDay(fullText);
+      const byDay = isDocx ? await extractDocxByDay(file) : splitTextByDay(await extractPdfText(file));
       if (Object.keys(byDay).length > 0) {
         let dayCount = 0, wordCount = 0;
         let maxDay = book.totalDays;
         Object.keys(byDay).forEach((dayNum) => {
           const n = parseInt(dayNum, 10);
-          const pairs = extractEnKoPairs(byDay[dayNum]);
+          const pairs = isDocx ? byDay[dayNum] : extractEnKoPairs(byDay[dayNum]);
           if (pairs.length > 0) {
             book.days['day' + n] = pairs;
             dayCount++; wordCount += pairs.length;
@@ -576,18 +577,20 @@ function wireMainEvents(book){
         saveStore();
         renderAll();
         statusEl.textContent = `✓ Day ${dayCount}개, 단어 ${wordCount}개 자동 입력 완료`;
-      } else {
-        const pairs = extractEnKoPairs(fullText);
+      } else if (!isDocx) {
+        const pairs = extractEnKoPairs(await extractPdfText(file));
         if (pairs.length === 0) {
           statusEl.textContent = 'PDF에서 단어를 인식하지 못했어요. 직접 붙여넣어 주세요.';
         } else {
           document.getElementById('wordTextarea').value = pairs.map(p => p.en + '\t' + p.ko).join('\n');
           statusEl.textContent = `Day 표시를 찾지 못해 현재 선택된 Day ${currentInputDay}에 ${pairs.length}개 단어를 채워넣었어요. 확인 후 저장해 주세요.`;
         }
+      } else {
+        statusEl.textContent = '워드 파일에서 Day/단어를 인식하지 못했어요. 형식을 확인해 주세요.';
       }
     } catch (err) {
       console.error(err);
-      statusEl.textContent = 'PDF를 읽지 못했어요. 파일을 확인해 주세요.';
+      statusEl.textContent = '파일을 읽지 못했어요. 형식을 확인해 주세요.';
     }
   });
 
@@ -603,6 +606,57 @@ function wireMainEvents(book){
   });
 
   document.getElementById('generateBtn').addEventListener('click', () => generateSheet(book));
+}
+
+// ---------- DOCX import (번호/단어/품사/뜻 표 형식, DAY01/DAY02... 구간 표시) ----------
+async function extractDocxByDay(file) {
+  const buf = await file.arrayBuffer();
+  const zip = await window.JSZip.loadAsync(buf);
+  const xmlText = await zip.file('word/document.xml').async('string');
+  // pull every <w:t> text run in document order (tables included) — this preserves reading order
+  // regardless of how many nested tables the Word template uses.
+  const tokens = [];
+  const re = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+  let m;
+  while ((m = re.exec(xmlText)) !== null) {
+    const t = m[1].trim();
+    if (t) tokens.push(t);
+  }
+
+  const byDay = {};
+  let currentDay = null;
+  let i = 0;
+  while (i < tokens.length) {
+    const tok = tokens[i];
+    const dayMatch = tok.match(/^DAY\s*0*(\d+)$/i);
+    if (dayMatch) {
+      currentDay = dayMatch[1];
+      if (!byDay[currentDay]) byDay[currentDay] = [];
+      i++;
+      continue;
+    }
+    // a word row starts with a plain row-number token (1, 2, 3...) once we're inside a day section
+    if (currentDay && /^\d{1,3}$/.test(tok) && i + 2 < tokens.length) {
+      const word = tokens[i + 1];
+      const posOrMeaning = tokens[i + 2];
+      // template is [번호, 단어, 품사(1글자 안팎), 뜻] — 품사 컬럼이 짧은 한글 1~2자인 경우만 4칸으로 소비
+      const looksLikePos = /^[가-힣]{1,2}$/.test(posOrMeaning);
+      if (looksLikePos && i + 3 < tokens.length) {
+        const meaning = tokens[i + 3];
+        if (/^[A-Za-z]/.test(word) && /[가-힣]/.test(meaning)) {
+          byDay[currentDay].push({ en: word, ko: meaning });
+          i += 4;
+          continue;
+        }
+      } else if (/^[A-Za-z]/.test(word) && /[가-힣]/.test(posOrMeaning)) {
+        byDay[currentDay].push({ en: word, ko: posOrMeaning });
+        i += 3;
+        continue;
+      }
+    }
+    i++;
+  }
+  return byDay;
 }
 
 function parseWords(text){
