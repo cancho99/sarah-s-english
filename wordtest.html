@@ -217,6 +217,7 @@
     .main-header,.panel{padding-left:20px;padding-right:20px;}
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -440,7 +441,12 @@ function renderAll(){
       <div class="input-box">
         <label id="inputLabel">Day 1 단어 입력</label>
         <textarea id="wordTextarea" placeholder="한 줄에 하나씩, 영단어와 뜻을 탭(Tab) 또는 쉼표(,)로 구분해 붙여넣으세요.&#10;예)&#10;apple	사과&#10;brave	용감한&#10;※ 엑셀에서 두 열을 복사해 그대로 붙여넣으면 자동으로 인식됩니다."></textarea>
-        <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. PDF 단어장은 텍스트를 복사해서 같은 형식으로 붙여넣어 주세요.</div>
+        <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. 또는 아래 버튼으로 PDF 단어장을 업로드하면 Day별로 자동 인식해서 채워줘요.</div>
+        <div class="row" style="margin-bottom:10px;">
+          <button class="ghost" id="pdfImportBtn">📄 PDF에서 자동 입력</button>
+          <input type="file" id="pdfImportFile" accept="application/pdf" style="display:none;">
+          <span class="count-badge" id="pdfImportStatus"></span>
+        </div>
         <div class="row">
           <span class="count-badge" id="wordCount">저장된 단어: 0개</span>
           <button class="primary" id="saveDayBtn">이 Day 저장하기</button>
@@ -542,6 +548,49 @@ function wireMainEvents(book){
     updateAvailableCount(book);
   });
 
+  document.getElementById('pdfImportBtn').addEventListener('click', () => {
+    document.getElementById('pdfImportFile').click();
+  });
+  document.getElementById('pdfImportFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const statusEl = document.getElementById('pdfImportStatus');
+    statusEl.textContent = 'PDF 읽는 중...';
+    try {
+      const fullText = await extractPdfText(file);
+      const byDay = splitTextByDay(fullText);
+      if (Object.keys(byDay).length > 0) {
+        let dayCount = 0, wordCount = 0;
+        let maxDay = book.totalDays;
+        Object.keys(byDay).forEach((dayNum) => {
+          const n = parseInt(dayNum, 10);
+          const pairs = extractEnKoPairs(byDay[dayNum]);
+          if (pairs.length > 0) {
+            book.days['day' + n] = pairs;
+            dayCount++; wordCount += pairs.length;
+            if (n > maxDay) maxDay = n;
+          }
+        });
+        if (maxDay > book.totalDays) book.totalDays = maxDay;
+        saveStore();
+        renderAll();
+        statusEl.textContent = `✓ Day ${dayCount}개, 단어 ${wordCount}개 자동 입력 완료`;
+      } else {
+        const pairs = extractEnKoPairs(fullText);
+        if (pairs.length === 0) {
+          statusEl.textContent = 'PDF에서 단어를 인식하지 못했어요. 직접 붙여넣어 주세요.';
+        } else {
+          document.getElementById('wordTextarea').value = pairs.map(p => p.en + '\t' + p.ko).join('\n');
+          statusEl.textContent = `Day 표시를 찾지 못해 현재 선택된 Day ${currentInputDay}에 ${pairs.length}개 단어를 채워넣었어요. 확인 후 저장해 주세요.`;
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      statusEl.textContent = 'PDF를 읽지 못했어요. 파일을 확인해 주세요.';
+    }
+  });
+
   document.getElementById('selectAllBtn').addEventListener('click', () => {
     genSelectedDays = new Set(Array.from({length: book.totalDays}, (_, i) => i + 1));
     buildDayGrid(book, document.getElementById('genDayGrid'), 'gen');
@@ -567,6 +616,67 @@ function parseWords(text){
       return { en, ko };
     })
     .filter(p => p.en && p.ko);
+}
+
+// ---------- PDF import ----------
+async function extractPdfText(file) {
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    // group by approximate vertical position so words on the same printed line stay together
+    const rows = {};
+    content.items.forEach((it) => {
+      const y = Math.round(it.transform[5]);
+      if (!rows[y]) rows[y] = [];
+      rows[y].push(it.str);
+    });
+    const ys = Object.keys(rows).map(Number).sort((a, b) => b - a);
+    ys.forEach((y) => lines.push(rows[y].join(' ')));
+  }
+  return lines.join('\n');
+}
+
+// Splits full extracted text into { "1": "...text for day 1...", "2": "...", ... } based on "Day N" markers.
+function splitTextByDay(text) {
+  const lines = text.split('\n');
+  const dayRe = /^\s*day\s*\.?\s*(\d+)\b/i;
+  const result = {};
+  let current = null;
+  lines.forEach((line) => {
+    const m = line.match(dayRe);
+    if (m) {
+      current = m[1];
+      if (!result[current]) result[current] = [];
+      return;
+    }
+    if (current) result[current].push(line);
+  });
+  const out = {};
+  Object.keys(result).forEach((k) => { out[k] = result[k].join('\n'); });
+  return out;
+}
+
+// Extracts {en, ko} pairs from a block of text using the first Hangul character as the split point,
+// which works regardless of whether the PDF used tabs, spaces, or numbering before the word.
+function extractEnKoPairs(text) {
+  return text.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .map((line) => {
+      const idx = line.search(/[\uAC00-\uD7A3]/);
+      if (idx <= 0) return null;
+      const en = line.slice(0, idx).replace(/^[\s\-•·]*\d+[\.\)]?\s*/, '').trim();
+      const ko = line.slice(idx).trim();
+      if (!en || !ko || en.length > 40) return null;
+      return { en, ko };
+    })
+    .filter(Boolean);
 }
 
 function buildDayGrid(book, container, mode){
