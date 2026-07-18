@@ -4,7 +4,6 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
-<link rel="preconnect" href="https://api.jsonbin.io" />
 <title>Sarah's English</title>
 <style>
   * { box-sizing: border-box; }
@@ -15,6 +14,25 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/htm/2.1.0/htm.min.js" defer></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  const firebaseConfig = {
+    apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
+    authDomain: "sarah-s-english.firebaseapp.com",
+    databaseURL: "https://sarah-s-english-default-rtdb.firebaseio.com",
+    projectId: "sarah-s-english",
+    storageBucket: "sarah-s-english.firebasestorage.app",
+    messagingSenderId: "444699532890",
+    appId: "1:444699532890:web:44084cd90d0aa0b5ca0263",
+    measurementId: "G-1SVW405RS7"
+  };
+  const firebaseApp = initializeApp(firebaseConfig);
+  window.__db = getFirestore(firebaseApp);
+  window.__doc = doc;
+  window.__getDoc = getDoc;
+  window.__setDoc = setDoc;
+</script>
 </head>
 <body>
 <div id="root">
@@ -40,25 +58,27 @@ if (!window.React || !window.ReactDOM || !window.htm) {
 const html = htm.bind(React.createElement);
 const { useState, useEffect } = React;
 
-// ---------- JSONBin storage ----------
-const BIN_ID = "6a5873e2da38895dfe6476a9";
-const MASTER_KEY = "$2a$10$Y5nk0O7FO7xI4fY2nMQ6D.lMij8TVxWHPMPW.xwBxz4AEg6WqflaS";
+// ---------- Firestore storage ----------
+// roster/teacherAuth live in one small "meta" doc.
+// Each student's own data (logs/homework/feedback/tests/etc, including photos & audio)
+// lives in its own doc, so one student's data never affects another's, and we
+// stay well clear of Firestore's 1MB-per-document limit as the roster grows.
+const META_COLLECTION = "sarahsEnglishMeta";
+const META_DOC_ID = "main";
+const STUDENTS_COLLECTION = "sarahsEnglishStudents";
 
-let store = null; // whole-document in-memory cache: { roster, teacherAuth, studentData }
+let store = null; // in-memory cache: { roster, teacherAuth, studentData }
 
 async function loadStore(attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
-      const res = await fetch("https://api.jsonbin.io/v3/b/" + BIN_ID + "/latest", {
-        headers: { "X-Master-Key": MASTER_KEY },
-      });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const json = await res.json();
-      const rec = json && json.record && typeof json.record === "object" ? json.record : {};
+      const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
+      const snap = await window.__getDoc(ref);
+      const rec = snap.exists() ? snap.data() : {};
       store = {
         roster: Array.isArray(rec.roster) ? rec.roster : [],
         teacherAuth: rec.teacherAuth || null,
-        studentData: rec.studentData && typeof rec.studentData === "object" ? rec.studentData : {},
+        studentData: {}, // fetched per-student on demand via ensureData()
       };
       return store;
     } catch (e) {
@@ -69,16 +89,35 @@ async function loadStore(attempts = 3) {
   }
 }
 
-async function saveStore() {
+async function saveMeta() {
   try {
-    const res = await fetch("https://api.jsonbin.io/v3/b/" + BIN_ID, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Master-Key": MASTER_KEY },
-      body: JSON.stringify(store),
-    });
-    return res.ok;
+    const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth });
+    return true;
   } catch (e) {
-    console.error("saveStore error", e);
+    console.error("saveMeta error", e);
+    return false;
+  }
+}
+
+async function loadStudentDoc(id) {
+  try {
+    const ref = window.__doc(window.__db, STUDENTS_COLLECTION, id);
+    const snap = await window.__getDoc(ref);
+    return snap.exists() ? snap.data() : null;
+  } catch (e) {
+    console.error("loadStudentDoc error", e);
+    return null;
+  }
+}
+
+async function saveStudentDoc(id, data) {
+  try {
+    const ref = window.__doc(window.__db, STUDENTS_COLLECTION, id);
+    await window.__setDoc(ref, data);
+    return true;
+  } catch (e) {
+    console.error("saveStudentDoc error", e);
     return false;
   }
 }
@@ -314,8 +353,10 @@ function App() {
 
   async function ensureData(id) {
     if (dataCache[id]) return dataCache[id];
-    const d = (store && store.studentData[id]) || emptyData();
+    const remote = await loadStudentDoc(id);
+    const d = remote || emptyData();
     setDataCache((prev) => ({ ...prev, [id]: d }));
+    if (store) store.studentData[id] = d;
     return d;
   }
   async function updateData(id, updater) {
@@ -323,17 +364,17 @@ function App() {
     const next = updater(cur);
     setDataCache((prev) => ({ ...prev, [id]: next }));
     if (store) store.studentData[id] = next;
-    await saveStore();
+    await saveStudentDoc(id, next);
   }
   async function saveRosterList(list) {
     setRoster(list);
     if (store) store.roster = list;
-    await saveStore();
+    await saveMeta();
   }
   async function saveTeacherAuthGlobal(ta) {
     setTeacherAuth(ta);
     if (store) store.teacherAuth = ta;
-    await saveStore();
+    await saveMeta();
   }
 
   function logout() {
@@ -1217,7 +1258,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
   const photos = h.photos || (h.photo ? [h.photo] : []);
   const audios = h.audios || (h.audio ? [h.audio] : []);
   const MAX_REC_SECONDS = 90;
-  const AUDIO_SIZE_CAP = 1500000; // ~1.1MB raw, generous for jsonbin
+  const AUDIO_SIZE_CAP = 600000; // ~0.45MB raw — kept well under Firestore's 1MB-per-document limit, since this shares a document with the student's other logs/homework/photos
 
   const mediaRecorderRef = React.useRef(null);
   const chunksRef = React.useRef([]);
