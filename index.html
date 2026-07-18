@@ -78,6 +78,7 @@ async function loadStore(attempts = 3) {
       store = {
         roster: Array.isArray(rec.roster) ? rec.roster : [],
         teacherAuth: rec.teacherAuth || null,
+        levelTestBookings: Array.isArray(rec.levelTestBookings) ? rec.levelTestBookings : [],
         studentData: {}, // fetched per-student on demand via ensureData()
       };
       return store;
@@ -92,7 +93,7 @@ async function loadStore(attempts = 3) {
 async function saveMeta() {
   try {
     const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth });
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [] });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
@@ -325,9 +326,10 @@ function BackBtn({ onClick }) {
 
 // ---------- Root ----------
 function App() {
-  const [screen, setScreen] = useState("role");
+  const [screen, setScreen] = useState("home");
   const [roster, setRoster] = useState(null);
   const [teacherAuth, setTeacherAuth] = useState(null);
+  const [levelTestBookings, setLevelTestBookings] = useState([]);
   const [session, setSession] = useState(null);
   const [dataCache, setDataCache] = useState({});
   const [selectedStudentId, setSelectedStudentId] = useState(null);
@@ -344,12 +346,23 @@ function App() {
         if (cancelled) return;
         setRoster(s.roster);
         setTeacherAuth(s.teacherAuth);
+        setLevelTestBookings(s.levelTestBookings || []);
       } catch (e) {
         if (!cancelled) setLoadError(true);
       }
     })();
     return () => { cancelled = true; };
   }, [loadTick]);
+
+  async function saveBookingsList(list) {
+    setLevelTestBookings(list);
+    if (store) store.levelTestBookings = list;
+    await saveMeta();
+  }
+  async function addBooking(b) {
+    const next = [{ id: uid(), status: "대기", createdAt: today(), ...b }, ...levelTestBookings];
+    await saveBookingsList(next);
+  }
 
   async function ensureData(id) {
     if (dataCache[id]) return dataCache[id];
@@ -378,7 +391,7 @@ function App() {
   }
 
   function logout() {
-    setSession(null); setSelectedStudentId(null); setErr(""); setScreen("role");
+    setSession(null); setSelectedStudentId(null); setErr(""); setScreen("home");
   }
 
   if (loadError) {
@@ -395,10 +408,13 @@ function App() {
     return html`<div style=${{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.slate }}>불러오는 중...</div>`;
   }
 
+  const isWide = screen === "home";
   return html`
     <div style=${{ minHeight: "100vh", background: C.ivory }}>
-      <${TopBar} tagline=${screen === "teacherDash" ? "Teacher Console" : screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />
-      <div style=${{ maxWidth: 480, margin: "0 auto", padding: "18px 16px 60px" }}>
+      ${screen !== "home" && html`<${TopBar} tagline=${screen === "teacherDash" ? "Teacher Console" : screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />`}
+      <div style=${{ maxWidth: isWide ? 900 : 480, margin: "0 auto", padding: isWide ? "0 0 60px" : "18px 16px 60px" }}>
+        ${screen === "home" && html`<${HomePage} setScreen=${setScreen} />`}
+        ${screen === "levelTest" && html`<${LevelTestBooking} onBack=${() => setScreen("home")} onSubmit=${async (b) => { await addBooking(b); }} />`}
         ${screen === "role" && html`<${RoleSelect} setScreen=${setScreen} />`}
         ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("role")}
           onSetPass=${async (p) => { const ta = { passcode: p }; await saveTeacherAuthGlobal(ta); setSession({ role: "teacher" }); setScreen("teacherDash"); }}
@@ -410,10 +426,105 @@ function App() {
           onLogin=${(s) => { setSession({ role: "parent", student: s }); setScreen("parentDash"); }} />`}
         ${screen === "teacherDash" && html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
           selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
-          ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
+          ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
+          levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
         ${screen === "parentDash" && html`<${ParentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
       </div>
+    </div>
+  `;
+}
+
+// ---------- Public homepage ----------
+function HomePage({ setScreen }) {
+  const values = [
+    { n: "01", title: "1:1 맞춤 수업", body: "학생 한 명 한 명의 속도와 약점에 맞춰 커리큘럼을 그때그때 조정합니다. 정해진 진도표가 학생을 따라가는 게 아니라, 학생에 맞춰 진도표를 짭니다." },
+    { n: "02", title: "체계적인 기록 관리", body: "매 수업의 학습 내용, 단어시험 합격률, 숙제 완료율, 정기시험 성적까지 — 학원 못지않게 꼼꼼히 기록하고 추적합니다." },
+    { n: "03", title: "정기 학습 리포트", body: "매달 학부모님께 숙제·단어시험·정기시험 결과를 한 장으로 정리한 리포트를 전달해 드립니다. 아이의 학습 상황을 언제든 투명하게 확인하실 수 있어요." },
+  ];
+  return html`
+    <div>
+      <div style=${{ background: C.ink, height: 6 }} />
+      <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${C.line}`, background: C.ivory }}>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style=${{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy, ...serif, fontSize: 13 }}>S·E</div>
+          <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
+        </div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="ghost" style=${{ padding: "8px 14px", fontSize: 12.5 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
+          <${Button} variant="primary" style=${{ padding: "8px 16px", fontSize: 12.5 }} onClick=${() => setScreen("role")}>로그인<//>
+        </div>
+      </div>
+
+      <div style=${{ padding: "56px 24px 44px", textAlign: "center" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 3, color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>Private English Tutoring, Systematized</div>
+        <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도 + 학원의 체계적 관리</div>
+        <div style=${{ fontSize: 14, color: C.slate, marginTop: 14, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.7 }}>
+          한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 학습 기록과 성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 교습입니다.
+        </div>
+        <div style=${{ marginTop: 26, display: "flex", gap: 10, justifyContent: "center" }}>
+          <${Button} variant="gold" onClick=${() => setScreen("levelTest")}>레벨테스트 예약하기<//>
+          <${Button} variant="ghost" onClick=${() => setScreen("role")}>로그인<//>
+        </div>
+      </div>
+
+      <div style=${{ padding: "10px 24px 50px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
+        ${values.map((v) => html`
+          <div key=${v.n} style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: 22 }}>
+            <div style=${{ ...serif, fontStyle: "italic", fontSize: 13, color: C.gold, marginBottom: 8 }}>${v.n}</div>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 8 }}>${v.title}</div>
+            <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${v.body}</div>
+          </div>
+        `)}
+      </div>
+
+      <div style=${{ borderTop: `1px solid ${C.line}`, padding: "22px 24px", textAlign: "center", fontSize: 10.5, letterSpacing: 1.5, color: C.slate, textTransform: "uppercase" }}>
+        Sarah's English · Prepared with care
+      </div>
+    </div>
+  `;
+}
+
+// ---------- Level test booking ----------
+function LevelTestBooking({ onBack, onSubmit }) {
+  const [name, setName] = useState(""); const [grade, setGrade] = useState("");
+  const [phone, setPhone] = useState(""); const [date, setDate] = useState(""); const [time, setTime] = useState("");
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function submit() {
+    if (!name || !phone || !date) { setErr("이름, 연락처, 희망 날짜는 꼭 입력해 주세요."); return; }
+    await onSubmit({ name, grade, phone, date, time, note });
+    setDone(true);
+  }
+
+  if (done) {
+    return html`
+      <div style=${{ maxWidth: 440, margin: "60px auto", textAlign: "center", padding: "0 20px" }}>
+        <div style=${{ ...serif, fontSize: 20, color: C.navy, marginBottom: 10 }}>예약이 접수됐어요</div>
+        <div style=${{ fontSize: 13.5, color: C.slate, marginBottom: 22 }}>확인 후 입력하신 연락처로 연락드릴게요.</div>
+        <${Button} variant="ghost" onClick=${onBack}>홈으로 돌아가기<//>
+      </div>
+    `;
+  }
+
+  return html`
+    <div style=${{ maxWidth: 440, margin: "0 auto", padding: "24px 20px 60px" }}>
+      <${BackBtn} onClick=${onBack} />
+      <${SectionLabel} n=${1} label="LEVEL TEST" />
+      <${Card}>
+        <${Field} label="학생 이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+        <${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)} placeholder="예: 중2" /><//>
+        <${Field} label="연락처"><input style=${inputStyle} value=${phone} onChange=${(e) => setPhone(e.target.value)} placeholder="학부모님 연락처" /><//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="희망 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="희망 시간대"><input style=${inputStyle} value=${time} onChange=${(e) => setTime(e.target.value)} placeholder="예: 오후 4시" /><//></div>
+        </div>
+        <${Field} label="문의 사항 (선택)"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+        <${Button} variant="gold" onClick=${submit}>예약 신청<//>
+      <//>
     </div>
   `;
 }
@@ -427,6 +538,7 @@ function RoleSelect({ setScreen }) {
   ];
   return html`
     <div>
+      <${BackBtn} onClick=${() => setScreen("home")} />
       <${SectionLabel} n=${1} label="ACCESS" />
       ${options.map((o) => html`
         <${Card} key=${o.key}>
@@ -497,11 +609,12 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
 }
 
 // ---------- Teacher dashboard ----------
-function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout }) {
+function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList }) {
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
   const [showStatus, setShowStatus] = useState(false);
+  const [showBookings, setShowBookings] = useState(false);
   const selected = roster.find((r) => r.id === selectedStudentId);
 
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
@@ -523,13 +636,19 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     return html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setShowStatus(false)} onLogout=${onLogout} />`;
   }
 
+  if (showBookings) {
+    return html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList} onBack=${() => setShowBookings(false)} onLogout=${onLogout} />`;
+  }
+
   if (!selected) {
+    const pendingCount = (levelTestBookings || []).filter((b) => b.status !== "완료").length;
     return html`
       <div>
         <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
           <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
         </div>
         <${SectionLabel} n=${1} label="STUDENTS" />
+        <${Button} variant="ghost" onClick=${() => setShowBookings(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 8 }}>🗓 레벨테스트 예약 현황${pendingCount > 0 ? ` (대기 ${pendingCount}건)` : ""}<//>
         <${Button} variant="ghost" onClick=${() => setShowStatus(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>📋 숙제 현황 한눈에 보기<//>
         ${roster.map((r) => html`
           <${Card} key=${r.id}>
@@ -564,6 +683,44 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const data = dataCache[selected.id] || emptyData();
   return html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
     updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} />`;
+}
+
+function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogout }) {
+  async function setStatus(id, status) {
+    await saveBookingsList((bookings || []).map((b) => (b.id === id ? { ...b, status } : b)));
+  }
+  async function remove(id) {
+    await saveBookingsList((bookings || []).filter((b) => b.id !== id));
+  }
+  const list = bookings || [];
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <${BackBtn} onClick=${onBack} />
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>레벨테스트 예약 현황</div>
+      ${list.length === 0 && html`<${Empty} text="아직 접수된 예약이 없어요." />`}
+      ${list.map((b) => html`
+        <${Card} key=${b.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style=${{ fontWeight: 700, color: C.navy }}>${b.name} ${b.grade ? `(${b.grade})` : ""}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 3 }}>연락처 ${b.phone}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>희망일시 ${b.date}${b.time ? " · " + b.time : ""}</div>
+              ${b.note && html`<div style=${{ fontSize: 12.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${b.note}</div>`}
+            </div>
+            <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: b.status === "완료" ? "#E9F1EA" : "#F7E9E6", color: b.status === "완료" ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${b.status || "대기"}</span>
+          </div>
+          <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
+            ${b.status !== "완료" ? html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "완료")}>완료 처리<//>`
+              : html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "대기")}>대기로 되돌리기<//>`}
+            <${Button} variant="danger" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => remove(b.id)}>삭제<//>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
 }
 
 function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogout }) {
