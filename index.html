@@ -1924,163 +1924,17 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 }
 
 function HomeworkStudentCard({ h, studentId, updateData }) {
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const [audioBusy, setAudioBusy] = useState(false); const [audioErr, setAudioErr] = useState("");
-  const [recording, setRecording] = useState(false); const [recSeconds, setRecSeconds] = useState(0);
-  const inputId = `hwphoto-${h.id}`;
-  const audioInputId = `hwaudio-${h.id}`;
-  const photos = h.photos || (h.photo ? [h.photo] : []);
-  const audios = h.audios || (h.audio ? [h.audio] : []);
-  const MAX_REC_SECONDS = 90;
-  const AUDIO_SIZE_CAP = 600000; // ~0.45MB raw — kept well under Firestore's 1MB-per-document limit, since this shares a document with the student's other logs/homework/photos
-
-  const mediaRecorderRef = React.useRef(null);
-  const chunksRef = React.useRef([]);
-  const timerRef = React.useRef(null);
-  const streamRef = React.useRef(null);
-
-  async function saveAudio(dataUrl) {
-    if (dataUrl.length > AUDIO_SIZE_CAP) { setAudioErr("녹음이 너무 길어요. 조금 더 짧게 다시 녹음해 주세요."); return; }
-    await updateData(studentId, (d) => ({
-      ...d,
-      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audios: [...(x.audios || (x.audio ? [x.audio] : [])), dataUrl], audio: undefined, done: true } : x)),
-    }));
-  }
-
-  async function startRecording() {
-    setAudioErr("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : (MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "");
-      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        clearInterval(timerRef.current);
-        setRecording(false);
-        const blob = new Blob(chunksRef.current, { type: mime || "audio/webm" });
-        setAudioBusy(true);
-        try {
-          const dataUrl = await fileToDataURL(new File([blob], "recording", { type: blob.type }));
-          await saveAudio(dataUrl);
-        } catch { setAudioErr("녹음을 저장하는 데 문제가 있었어요."); }
-        setAudioBusy(false);
-        setRecSeconds(0);
-      };
-      mediaRecorderRef.current = mr;
-      mr.start();
-      setRecording(true);
-      setRecSeconds(0);
-      timerRef.current = setInterval(() => {
-        setRecSeconds((s) => {
-          if (s + 1 >= MAX_REC_SECONDS) { stopRecording(); return s; }
-          return s + 1;
-        });
-      }, 1000);
-    } catch (e) {
-      setAudioErr("마이크 사용 권한이 필요해요. 브라우저 설정에서 마이크 접근을 허용해 주세요.");
-    }
-  }
-  function stopRecording() {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
-  }
-
-  async function handleFile(e) {
-    const files = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (files.length === 0) return;
-    setErr(""); setBusy(true);
-    try {
-      const newOnes = [];
-      for (const file of files) {
-        const dataUrl = await compressImage(file, 900, 0.6);
-        if (dataUrl.length > 400000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
-        newOnes.push(dataUrl);
-      }
-      if (newOnes.length > 0) {
-        await updateData(studentId, (d) => ({
-          ...d,
-          homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newOnes], photo: undefined, done: true } : x)),
-        }));
-      }
-    } catch { setErr("사진을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
-    setBusy(false);
-  }
-  async function removePhoto(idx) {
-    await updateData(studentId, (d) => ({
-      ...d,
-      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: (x.photos || (x.photo ? [x.photo] : [])).filter((_, i) => i !== idx), photo: undefined } : x)),
-    }));
-  }
-  async function handleAudioFile(e) {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    setAudioErr(""); setAudioBusy(true);
-    try {
-      const dataUrl = await fileToDataURL(file);
-      await saveAudio(dataUrl);
-    } catch { setAudioErr("파일을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
-    setAudioBusy(false);
-  }
-  async function removeAudio(idx) {
-    await updateData(studentId, (d) => ({
-      ...d,
-      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, audios: (x.audios || (x.audio ? [x.audio] : [])).filter((_, i) => i !== idx), audio: undefined } : x)),
-    }));
-  }
   async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
-
-  const mm = String(Math.floor(recSeconds / 60)).padStart(2, "0");
-  const ss = String(recSeconds % 60).padStart(2, "0");
 
   return html`
     <${Card}>
       <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>내준 날짜 ${fmtDate(h.assignedDate)}</div>
       <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
-      ${photos.length > 0 && html`
-        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-          ${photos.map((p, pi) => html`
-            <div key=${pi} style=${{ position: "relative" }}>
-              <img src=${p} style=${{ width: 76, height: 76, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}`, display: "block" }} />
-              <button onClick=${() => removePhoto(pi)} style=${{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.danger, color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: "20px", padding: 0 }}>✕</button>
-            </div>
-          `)}
-        </div>
-      `}
-      ${audios.length > 0 && html`
-        <div style=${{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-          ${audios.map((a, ai) => html`
-            <div key=${ai} style=${{ display: "flex", alignItems: "center", gap: 8 }}>
-              <audio controls src=${a} style=${{ flex: 1, height: 32 }} />
-              <button onClick=${() => removeAudio(ai)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 13, cursor: "pointer" }}>✕</button>
-            </div>
-          `)}
-        </div>
-      `}
-      <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-        <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
-          ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
-        </label>
-        <input id=${inputId} type="file" accept="image/*" capture="environment" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
-
-        ${recording ? html`
-          <${Button} variant="danger" onClick=${stopRecording}>⏹ 녹음 중지 ${mm}:${ss}<//>
-        ` : html`
-          <${Button} variant="ghost" onClick=${startRecording} disabled=${audioBusy}>${audioBusy ? "처리 중..." : "🎙 녹음하기"}<//>
-        `}
-        <label htmlFor=${audioInputId} style=${{ fontSize: 12, color: C.slate, cursor: "pointer", textDecoration: "underline" }}>파일로 올리기</label>
-        <input id=${audioInputId} type="file" accept="audio/*" onChange=${handleAudioFile} style=${{ display: "none" }} disabled=${audioBusy} />
-
+      <div style=${{ marginTop: 10 }}>
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
         </div>
       </div>
-      ${recording && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 6 }}>최대 ${MAX_REC_SECONDS}초까지 녹음돼요. 다 말했으면 "녹음 중지"를 눌러주세요.</div>`}
-      ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
-      ${audioErr && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${audioErr}</div>`}
     <//>
   `;
 }
