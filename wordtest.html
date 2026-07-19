@@ -195,9 +195,8 @@
   ol.qlist{list-style:none;padding:0;margin:0;}
   ol.qlist li{display:grid;grid-template-columns:28px 1fr 92px;align-items:start;column-gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;break-inside:avoid;}
   .qnum{color:var(--gold);font-weight:bold;}
-  .qprompt{min-width:0;word-break:break-word;}
+  .qprompt{min-width:0;overflow-wrap:normal;}
   .qblank{align-self:end;border-bottom:1px solid var(--slate);height:16px;margin-bottom:2px;}
-  ol.qlist.two-col{column-count:2;column-gap:36px;}
   ol.qlist.two-col li{break-inside:avoid;-webkit-column-break-inside:avoid;}
 
   .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
@@ -211,6 +210,7 @@
     #printArea, #printArea *{visibility:visible;}
     #printArea{position:absolute;left:0;top:0;width:100%;}
     .sheet-page{border:none;margin:0 auto;box-shadow:none;}
+    ol.qlist.two-col{column-count:2;column-gap:36px;}
   }
 
   @media (max-width:800px){
@@ -847,7 +847,7 @@ function generateSheet(book){
     answerHtml += '<span class="a-item"><span class="a-num">' + (idx+1) + '.</span>' + escapeHtml(prompt) + ' → ' + escapeHtml(ans) + '</span>';
   });
 
-  let html = '<div class="sheet-actions"><button class="primary" onclick="window.print()">인쇄 / PDF로 저장</button></div>';
+  let html = '<div class="sheet-actions"><button class="primary" onclick="printSheet()">인쇄 / PDF로 저장</button></div>';
   html += '<div id="printArea">';
   html += '<div class="sheet-page">';
   html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>단어 시험지</h3><div class="daymeta">' + dayLabel + ' · 총 ' + words.length + '문항</div></div>';
@@ -868,6 +868,32 @@ function generateSheet(book){
 
   output.innerHTML = html;
 }
+
+// Printing from inside an <iframe> (this page is embedded inside the main site) doesn't
+// trigger the native print sheet on mobile Safari. Opening the content in a fresh top-level
+// window/tab and printing from there works around that restriction.
+window.printSheet = function () {
+  const printArea = document.getElementById('printArea');
+  if (!printArea) return;
+  const styleTag = document.querySelector('style') ? document.querySelector('style').outerHTML : '';
+  const w = window.open('', '_blank');
+  if (!w) {
+    // popup blocked — fall back to printing in place
+    window.print();
+    return;
+  }
+  w.document.open();
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>단어 시험지</title>' + styleTag + '</head><body>' + printArea.outerHTML + '</body></html>');
+  w.document.close();
+  let printed = false;
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    try { w.focus(); w.print(); } catch (e) {}
+  };
+  w.onload = () => setTimeout(doPrint, 300);
+  setTimeout(doPrint, 700); // fallback in case onload doesn't fire (Safari quirk)
+};
 
 // ---------- init ----------
 (async function init(){
