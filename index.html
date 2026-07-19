@@ -162,6 +162,169 @@ const BOOK_LIST = [
   "능률 Voca 중등 고난도", "능률VOCA 수능 고난도", "능률 VOCA 중등 필수", "능률 VOCA 중등 기본",
   "달곰한 Literacy 2", "달곰한 Literacy 5", "Hacker's TOEFL", "능률 VOCA 초등 기본", "워드마스터 고등 베이직",
 ];
+
+// ---- Free, offline English synonym dictionary (no API calls / no cost) ----
+// Covers common middle/high-school + TOEFL-level vocabulary so students' answers using a
+// synonym of the target word are still accepted, without the teacher typing them in by hand.
+// Coverage is necessarily limited to this list — it is not a full thesaurus.
+const SYNONYM_GROUPS = [
+  ["begin", "start", "commence", "initiate"],
+  ["end", "finish", "conclude", "terminate", "complete"],
+  ["show", "display", "exhibit", "demonstrate", "reveal"],
+  ["make", "create", "produce", "generate", "manufacture"],
+  ["get", "obtain", "acquire", "gain", "receive"],
+  ["give", "provide", "supply", "offer", "furnish"],
+  ["help", "assist", "aid", "support"],
+  ["use", "utilize", "employ", "apply"],
+  ["need", "require", "demand"],
+  ["want", "desire", "wish"],
+  ["think", "believe", "consider", "suppose"],
+  ["say", "state", "mention", "remark", "declare"],
+  ["ask", "inquire", "request", "question"],
+  ["answer", "respond", "reply"],
+  ["find", "discover", "locate", "detect"],
+  ["keep", "retain", "maintain", "preserve"],
+  ["change", "alter", "modify", "transform", "adjust"],
+  ["grow", "increase", "expand", "enlarge", "rise"],
+  ["decrease", "reduce", "decline", "diminish", "lessen", "shrink"],
+  ["improve", "enhance", "advance", "upgrade", "better"],
+  ["worsen", "deteriorate"],
+  ["cause", "bring about", "lead to", "result in"],
+  ["prevent", "stop", "block", "hinder", "impede", "obstruct"],
+  ["allow", "permit", "let", "enable"],
+  ["forbid", "prohibit", "ban", "restrict"],
+  ["accept", "agree", "approve", "consent"],
+  ["reject", "refuse", "decline", "deny", "turn down"],
+  ["include", "contain", "comprise", "involve", "encompass"],
+  ["exclude", "omit", "leave out"],
+  ["combine", "merge", "unite", "join", "integrate"],
+  ["separate", "divide", "split", "distinguish"],
+  ["build", "construct", "establish", "erect"],
+  ["destroy", "demolish", "ruin", "wreck"],
+  ["fix", "repair", "mend"],
+  ["break", "damage", "harm"],
+  ["move", "shift", "transfer", "relocate"],
+  ["remain", "stay", "continue", "persist"],
+  ["appear", "emerge", "arise", "show up", "surface"],
+  ["disappear", "vanish", "fade"],
+  ["arrive", "reach", "get to"],
+  ["leave", "depart", "exit", "go"],
+  ["enter", "come in"],
+  ["carry", "transport", "convey", "bring"],
+  ["carry out", "conduct", "perform", "execute", "implement"],
+  ["explain", "clarify", "describe", "illustrate", "interpret"],
+  ["confuse", "puzzle", "perplex", "baffle"],
+  ["understand", "comprehend", "grasp", "realize"],
+  ["remember", "recall", "recollect"],
+  ["forget", "overlook"],
+  ["decide", "determine", "resolve", "conclude"],
+  ["choose", "select", "pick", "opt"],
+  ["try", "attempt", "endeavor", "seek"],
+  ["succeed", "achieve", "accomplish", "attain"],
+  ["fail", "flop"],
+  ["failure", "flop", "defeat"],
+  ["success", "achievement", "accomplishment", "triumph"],
+  ["problem", "issue", "difficulty", "trouble"],
+  ["solve", "resolve", "settle"],
+  ["difficult", "hard", "tough", "challenging", "demanding"],
+  ["easy", "simple", "effortless", "straightforward"],
+  ["important", "significant", "crucial", "vital", "essential", "critical"],
+  ["unimportant", "trivial", "insignificant", "minor"],
+  ["big", "large", "huge", "enormous", "immense", "vast"],
+  ["small", "little", "tiny", "minor", "slight"],
+  ["slight", "minor", "small", "little"],
+  ["quantity", "amount", "volume", "sum"],
+  ["increase", "rise", "grow", "expand", "surge"],
+  ["fast", "quick", "rapid", "swift", "speedy"],
+  ["slow", "sluggish", "gradual"],
+  ["strong", "powerful", "robust", "sturdy"],
+  ["weak", "feeble", "fragile"],
+  ["happy", "glad", "pleased", "delighted", "joyful"],
+  ["sad", "unhappy", "sorrowful", "gloomy", "down"],
+  ["angry", "furious", "annoyed", "irritated", "mad"],
+  ["afraid", "scared", "frightened", "fearful", "terrified"],
+  ["jealous", "envious"],
+  ["indifferent", "unconcerned", "apathetic", "detached"],
+  ["grief", "sorrow", "sadness", "mourning"],
+  ["emotion", "feeling", "sentiment"],
+  ["belief", "conviction", "faith", "opinion"],
+  ["believe", "trust", "accept"],
+  ["certain", "sure", "confident", "definite", "positive"],
+  ["uncertain", "unsure", "doubtful", "unclear"],
+  ["common", "usual", "ordinary", "typical", "general", "normal"],
+  ["rare", "uncommon", "unusual", "scarce"],
+  ["similar", "alike", "comparable", "resembling"],
+  ["different", "distinct", "diverse", "varied"],
+  ["superior", "better", "greater", "higher"],
+  ["inferior", "lesser", "lower", "worse"],
+  ["practical", "useful", "functional", "pragmatic"],
+  ["theoretical", "abstract"],
+  ["experience", "encounter", "undergo"],
+  ["situation", "circumstance", "condition", "case"],
+  ["moment", "instant", "point", "second"],
+  ["recover", "heal", "recuperate"],
+  ["depend on", "rely on", "count on"],
+  ["refuse", "decline", "reject", "turn down"],
+  ["reject", "refuse", "decline", "dismiss"],
+  ["produce", "generate", "create", "manufacture", "yield"],
+  ["supply", "provide", "furnish", "deliver"],
+  ["share", "distribute", "divide"],
+  ["express", "convey", "communicate", "voice", "articulate"],
+  ["seek", "search for", "look for", "pursue"],
+  ["fade", "diminish", "dwindle"],
+  ["run into", "encounter", "come across", "meet"],
+  ["consider", "contemplate", "ponder", "reflect on"],
+  ["nearby", "close", "adjacent", "neighboring"],
+  ["overseas", "abroad", "foreign"],
+  ["transportation", "transit", "conveyance"],
+  ["loosen", "unfasten", "release"],
+  ["tighten", "fasten", "secure"],
+  ["injury", "wound", "harm", "damage"],
+  ["require", "need", "necessitate"],
+  ["obvious", "clear", "evident", "apparent", "plain"],
+  ["hide", "conceal", "cover"],
+  ["reveal", "disclose", "expose", "uncover"],
+  ["true", "accurate", "correct", "valid"],
+  ["false", "incorrect", "wrong", "inaccurate"],
+  ["real", "genuine", "authentic"],
+  ["fake", "artificial", "false", "counterfeit"],
+  ["beautiful", "pretty", "attractive", "gorgeous", "lovely"],
+  ["ugly", "unattractive", "hideous"],
+  ["polite", "courteous", "respectful"],
+  ["rude", "impolite", "disrespectful"],
+  ["kind", "gentle", "caring", "considerate"],
+  ["cruel", "harsh", "mean", "brutal"],
+  ["brave", "courageous", "bold", "fearless"],
+  ["cowardly", "timid"],
+  ["honest", "truthful", "sincere"],
+  ["dishonest", "deceptive", "lying"],
+  ["generous", "giving", "charitable"],
+  ["selfish", "stingy", "greedy"],
+  ["wealthy", "rich", "affluent"],
+  ["poor", "impoverished", "needy"],
+  ["ancient", "old", "antique", "historic"],
+  ["modern", "contemporary", "current", "new"],
+  ["huge", "enormous", "massive", "gigantic", "immense"],
+  ["tiny", "minuscule", "microscopic"],
+  ["clear", "transparent", "obvious", "evident"],
+  ["vague", "unclear", "ambiguous"],
+  ["complex", "complicated", "intricate"],
+  ["simple", "basic", "straightforward"],
+];
+
+const SYNONYM_LOOKUP = {};
+SYNONYM_GROUPS.forEach((group) => {
+  group.forEach((word) => {
+    const key = normText(word);
+    if (!SYNONYM_LOOKUP[key]) SYNONYM_LOOKUP[key] = new Set();
+    group.forEach((other) => { if (other !== word) SYNONYM_LOOKUP[key].add(normText(other)); });
+  });
+});
+function isKnownSynonym(a, b) {
+  const na = normText(a), nb = normText(b);
+  if (!na || !nb) return false;
+  return (SYNONYM_LOOKUP[na] && SYNONYM_LOOKUP[na].has(nb)) || (SYNONYM_LOOKUP[nb] && SYNONYM_LOOKUP[nb].has(na));
+}
 const today = () => new Date().toISOString().slice(0, 10);
 function fmtDate(d) {
   try {
@@ -254,11 +417,12 @@ function parseExamPaste(text) {
   return out;
 }
 function normText(s) { return (s || "").replace(/\s+/g, "").toLowerCase(); }
-function checkVocabAnswer(userAnswer, correctMeaning) {
+function checkVocabAnswer(userAnswer, correctMeaning, synonyms) {
   const norm = normText(userAnswer);
   if (!norm) return false;
   const segments = correctMeaning.split(/[,;/·]|\(|\)|\[|\]/).map((s) => normText(s)).filter(Boolean);
-  return segments.some((seg) => seg === norm || (seg.length >= 2 && norm.length >= 2 && (seg.includes(norm) || norm.includes(seg))));
+  const extra = (synonyms || []).map((s) => normText(s)).filter(Boolean);
+  return [...segments, ...extra].some((seg) => seg === norm || (seg.length >= 2 && norm.length >= 2 && (seg.includes(norm) || norm.includes(seg))));
 }
 async function compressImage(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
@@ -1305,6 +1469,7 @@ function HomeworkEditor({ data, updateData }) {
     await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => (h.id === editId ? { ...h, assignedDate: editAssigned, dueDate: editDue, content: editContent } : h)) }));
     setEditId(null);
   }
+  async function toggleDone(id) { await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => (h.id === id ? { ...h, done: !h.done } : h)) })); }
   const list = data.homework || [];
   return html`
     <div>
@@ -1343,7 +1508,9 @@ function HomeworkEditor({ data, updateData }) {
                   </div>
                 `}
                 ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
-                <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.navy : C.slate }}>${h.done ? "✓ 학생 완료 표시함" : "아직 미완료"}</div>
+                <div onClick=${() => toggleDone(h.id)} style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: h.done ? C.gold : C.slate }}>
+                  ${h.done ? "✓ 완료함 (누르면 미완료로)" : "완료로 표시하기"}
+                </div>
               </div>
               <div style=${{ display: "flex", gap: 10 }}>
                 <button onClick=${() => startEdit(h)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
@@ -1456,7 +1623,10 @@ function VocabEditor({ data, updateData }) {
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
   function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
   async function save() {
-    const clean = words.filter((w) => w.word && w.meaning);
+    const clean = words.filter((w) => w.word && w.meaning).map((w) => ({
+      word: w.word, meaning: w.meaning,
+      synonyms: (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
+    }));
     if (!title || clean.length < 2) return;
     await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean }, ...d.vocabTests] }));
     setTitle(""); setWords([{ word: "", meaning: "" }]); setCreating(false);
@@ -1506,12 +1676,15 @@ function VocabEditor({ data, updateData }) {
           `}
           ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
           ${bankMsg && bankBooks && bankBooks.length > 0 && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${bankMsg}</div>`}
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개, 4지선다로 출제됩니다)</div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개, 직접 입력 방식으로 출제됩니다)</div>
           ${words.map((w, i) => html`
-            <div key=${i} style=${{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center" }}>
-              <input style=${{ ...inputStyle, flex: 1 }} placeholder="단어" value=${w.word} onChange=${(e) => setRow(i, "word", e.target.value)} />
-              <input style=${{ ...inputStyle, flex: 1 }} placeholder="뜻" value=${w.meaning} onChange=${(e) => setRow(i, "meaning", e.target.value)} />
-              ${words.length > 1 && html`<button onClick=${() => removeRow(i)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+            <div key=${i} style=${{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${C.line}` }}>
+              <div style=${{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input style=${{ ...inputStyle, flex: 1 }} placeholder="단어" value=${w.word} onChange=${(e) => setRow(i, "word", e.target.value)} />
+                <input style=${{ ...inputStyle, flex: 1 }} placeholder="뜻" value=${w.meaning} onChange=${(e) => setRow(i, "meaning", e.target.value)} />
+                ${words.length > 1 && html`<button onClick=${() => removeRow(i)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+              </div>
+              <input style=${{ ...inputStyle, marginTop: 6 }} placeholder="비슷한 답도 정답 처리 (콤마로 구분, 선택) — 한국어 뜻이든 영어 단어든 상관없이 입력" value=${w.synonyms || ""} onChange=${(e) => setRow(i, "synonyms", e.target.value)} />
             </div>
           `)}
           <${Button} variant="ghost" onClick=${addRow} style=${{ marginBottom: 12 }}>+ 단어 추가<//>
@@ -1781,7 +1954,7 @@ function MockExamTaker({ test, onExit, onSubmit }) {
           ${test.answerKey.map((_, i) => html`
             <div key=${i} style=${{ width: 62 }}>
               <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 3, textAlign: "center" }}>${i + 1}</div>
-              <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} value=${answers[i]} onChange=${(e) => pick(i, e.target.value)} />
+              <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" value=${answers[i]} onChange=${(e) => pick(i, e.target.value.replace(/[^0-9]/g, ""))} />
             </div>
           `)}
         </div>
@@ -1986,8 +2159,12 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
   `;
 }
 
-function checkWordAnswer(userAnswer, correctWord) {
-  return normText(userAnswer) === normText(correctWord) && normText(userAnswer).length > 0;
+function checkWordAnswer(userAnswer, correctWord, synonyms) {
+  const norm = normText(userAnswer);
+  if (!norm) return false;
+  if (norm === normText(correctWord)) return true;
+  if ((synonyms || []).some((s) => normText(s) === norm)) return true;
+  return isKnownSynonym(userAnswer, correctWord);
 }
 
 function TestTaker({ activeTest, onExit, onSubmit }) {
@@ -2008,13 +2185,14 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
       if (type === "vocab") {
         const dir = directions[i];
         if (dir === "w2m") {
-          const ok = checkVocabAnswer(answers[i], q.meaning);
+          const ok = checkVocabAnswer(answers[i], q.meaning, q.synonyms);
           if (ok) score++;
           rows.push({ prompt: q.word, given: answers[i] || "(빈칸)", correct: q.meaning, ok });
         } else {
-          const ok = checkWordAnswer(answers[i], q.word);
+          const ok = checkWordAnswer(answers[i], q.word, q.synonyms);
           if (ok) score++;
-          rows.push({ prompt: q.meaning, given: answers[i] || "(빈칸)", correct: q.word, ok });
+          const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word} (${q.synonyms.join(", ")}도 정답)` : q.word;
+          rows.push({ prompt: q.meaning, given: answers[i] || "(빈칸)", correct: correctDisplay, ok });
         }
       } else {
         const ok = answers[i] === q.answer;
