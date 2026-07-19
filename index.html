@@ -9,6 +9,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: #FAF7F1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; }
   input, textarea, select, button { font-family: inherit; }
+  input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
 
   /* ---- responsive admin shell: sidebar on desktop, top scroller on mobile ---- */
@@ -493,7 +494,7 @@ function HomePage({ setScreen }) {
 
       <div style=${{ padding: "56px 24px 44px", textAlign: "center" }}>
         <div style=${{ fontSize: 11, letterSpacing: 3, color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>Private English Tutoring, Systematized</div>
-        <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도 + 학원의 체계적 관리</div>
+        <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도<br />+<br />학원의 체계적 관리</div>
         <div style=${{ fontSize: 14, color: C.slate, marginTop: 14, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.7 }}>
           한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 학습 기록과 성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 과외입니다.
         </div>
@@ -515,7 +516,7 @@ function HomePage({ setScreen }) {
 
       <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Regions</div>
-        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>두 지역, 같은 기준</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>과외 지역</div>
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
           <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "24px 26px" }}>
             <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>강서 · 마곡 / 목동</div>
@@ -543,7 +544,6 @@ function HomePage({ setScreen }) {
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
           ${[
             { title: "엄격한 단어시험 기준", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 다음 날 화상으로 재시험을 봅니다." },
-            { title: "매일 단어 녹음 제출", body: "그날 외운 단어를 직접 발음해 녹음 제출. 눈으로만 외우지 않도록, 발음과 강세까지 관리합니다." },
             { title: "전용 관리 페이지로 기록", body: "숙제 완료 여부, 단어시험 점수, 학습 내용을 카카오톡 대화 속에 흘려보내지 않고 이 페이지 안에 날짜별로 정리해 남깁니다. 학부모님도 로그인해서 언제든 확인하실 수 있어요." },
             { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 모드로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
             { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
@@ -559,9 +559,9 @@ function HomePage({ setScreen }) {
 
       <div style=${{ padding: "10px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Management</div>
-        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>이 페이지로, 이렇게 관리합니다</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>학생 관리 전용 페이지로, 이렇게 관리합니다</div>
         <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
-          카카오톡으로 흘려보내는 대신, 학생 한 명 한 명의 기록을 이 페이지 안에 날짜별로 쌓습니다. 학부모님도 로그인해서 언제든 직접 확인하실 수 있어요.
+          학생 한 명 한 명의 기록을 이 페이지 안에 날짜별로 쌓습니다. 학부모님도 로그인해서 언제든 직접 확인하실 수 있어요.
         </div>
         <div>
           ${[
@@ -865,7 +865,6 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogou
 
 function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogout }) {
   const [loaded, setLoaded] = useState(false);
-  const [selDate, setSelDate] = useState(today());
 
   useEffect(() => {
     let cancelled = false;
@@ -876,13 +875,18 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
     return () => { cancelled = true; };
   }, []);
 
-  const rows = roster.map((s) => {
+  const byDate = {};
+  roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
-    const items = (d.homework || []).filter((h) => h.dueDate === selDate);
-    return { student: s, items };
+    (d.homework || []).forEach((h) => {
+      const date = h.dueDate || h.assignedDate;
+      if (!date) return;
+      if (!byDate[date]) byDate[date] = {};
+      if (!byDate[date][s.id]) byDate[date][s.id] = { student: s, items: [] };
+      byDate[date][s.id].items.push(h);
+    });
   });
-  const withHw = rows.filter((r) => r.items.length > 0);
-  const doneCount = withHw.filter((r) => r.items.every((h) => h.done)).length;
+  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
 
   return html`
     <div>
@@ -891,24 +895,22 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>숙제 현황</div>
-      <${Card}>
-        <${Field} label="기한 날짜"><input style=${inputStyle} type="date" value=${selDate} onChange=${(e) => setSelDate(e.target.value)} /><//>
-      <//>
-      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : html`
-        ${withHw.length > 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 10 }}>이 날짜 숙제 있는 학생 ${withHw.length}명 중 <b style=${{ color: C.navy }}>${doneCount}명</b> 완료</div>`}
-        ${withHw.length === 0 && html`<${Empty} text="이 날짜에 기한인 숙제가 있는 학생이 없어요." />`}
-        ${withHw.map((r) => html`
-          <${Card} key=${r.student.id}>
-            <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 6 }}>${r.student.name}</div>
-            ${r.items.map((h, i) => html`
-              <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
-                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
-                <div style=${{ fontSize: 12.5, fontWeight: 700, color: h.done ? C.gold : C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
-              </div>
-            `)}
-          <//>
-        `)}
-      `}
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="등록된 숙제가 없어요." />` : dates.map((date) => html`
+        <div key=${date} style=${{ marginTop: 20 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.gold, letterSpacing: 1, marginBottom: 8, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>${fmtDate(date)}</div>
+          ${Object.values(byDate[date]).map((r) => html`
+            <${Card} key=${r.student.id}>
+              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 6 }}>${r.student.name}</div>
+              ${r.items.map((h, i) => html`
+                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
+                  <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
+                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: h.done ? C.gold : C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+                </div>
+              `)}
+            <//>
+          `)}
+        </div>
+      `)}
     </div>
   `;
 }
