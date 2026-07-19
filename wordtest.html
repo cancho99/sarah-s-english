@@ -197,7 +197,7 @@
   .qnum{color:var(--gold);font-weight:bold;}
   .qprompt{min-width:0;overflow-wrap:normal;}
   .qblank{align-self:end;border-bottom:1px solid var(--slate);height:16px;margin-bottom:2px;}
-  ol.qlist.two-col li{break-inside:avoid;-webkit-column-break-inside:avoid;}
+  .qlist-2col ol.qlist{margin-bottom:18px;}
 
   .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
   .answer-box .a-item{display:inline-block;width:49%;font-size:13.5px;margin-bottom:10px;vertical-align:top;}
@@ -210,7 +210,8 @@
     #printArea, #printArea *{visibility:visible;}
     #printArea{position:absolute;left:0;top:0;width:100%;}
     .sheet-page{border:none;margin:0 auto;box-shadow:none;}
-    ol.qlist.two-col{column-count:2;column-gap:36px;}
+    .qlist-2col{display:flex;align-items:flex-start;gap:36px;}
+    .qlist-2col ol.qlist{flex:1;min-width:0;margin-bottom:0;}
   }
 
   @media (max-width:800px){
@@ -834,11 +835,19 @@ function generateSheet(book){
     ? 'Ⅰ. 다음 영단어의 뜻을, 다음 뜻의 영단어를 각각 쓰시오'
     : (fmt === 'e2k' ? 'Ⅰ. 다음 영단어의 뜻을 쓰시오' : 'Ⅰ. 다음 뜻에 해당하는 영단어를 쓰시오');
 
-  let qHtml = '';
-  words.forEach((w, idx) => {
+  const qItems = words.map((w, idx) => {
     const prompt = directions[idx] === 'e2k' ? w.en : w.ko;
-    qHtml += '<li><span class="qnum">' + (idx+1) + '.</span><span class="qprompt">' + escapeHtml(prompt) + '</span><span class="qblank"></span></li>';
+    return '<li><span class="qnum">' + (idx+1) + '.</span><span class="qprompt">' + escapeHtml(prompt) + '</span><span class="qblank"></span></li>';
   });
+  let qSectionHtml;
+  if (twoCol) {
+    const half = Math.ceil(qItems.length / 2);
+    const left = qItems.slice(0, half).join('');
+    const right = qItems.slice(half).join('');
+    qSectionHtml = '<div class="qlist-2col"><ol class="qlist">' + left + '</ol><ol class="qlist">' + right + '</ol></div>';
+  } else {
+    qSectionHtml = '<ol class="qlist">' + qItems.join('') + '</ol>';
+  }
 
   let answerHtml = '';
   words.forEach((w, idx) => {
@@ -854,7 +863,7 @@ function generateSheet(book){
   html += '<hr class="sheet-rule">';
   html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
   html += '<div class="section-heading"><div class="bar"></div><span>' + sectionTitle + '</span></div>';
-  html += '<ol class="qlist' + (twoCol ? ' two-col' : '') + '">' + qHtml + '</ol>';
+  html += qSectionHtml;
   html += '</div>';
 
   if(includeKey){
