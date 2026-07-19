@@ -889,6 +889,7 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogou
 
 function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogout }) {
   const [loaded, setLoaded] = useState(false);
+  const [studentFilter, setStudentFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -901,8 +902,10 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
 
   const byDate = {};
   roster.forEach((s) => {
+    if (studentFilter && s.id !== studentFilter) return;
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
+      if (h.done) return; // only show incomplete homework
       const date = h.dueDate || h.assignedDate;
       if (!date) return;
       if (!byDate[date]) byDate[date] = {};
@@ -918,8 +921,16 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
         <${BackBtn} onClick=${onBack} />
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>숙제 현황</div>
-      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="등록된 숙제가 없어요." />` : dates.map((date) => html`
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>숙제 현황 <span style=${{ fontSize: 12, color: C.slate, fontWeight: 400 }}>(미완료만 표시)</span></div>
+      <${Card}>
+        <${Field} label="학생 필터">
+          <select style=${inputStyle} value=${studentFilter} onChange=${(e) => setStudentFilter(e.target.value)}>
+            <option value="">전체 학생</option>
+            ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
+          </select>
+        <//>
+      <//>
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="미완료 숙제가 없어요." />` : dates.map((date) => html`
         <div key=${date} style=${{ marginTop: 20 }}>
           <div style=${{ fontSize: 12, fontWeight: 700, color: C.gold, letterSpacing: 1, marginBottom: 8, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>${fmtDate(date)}</div>
           ${Object.values(byDate[date]).map((r) => html`
@@ -928,7 +939,7 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
               ${r.items.map((h, i) => html`
                 <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
                   <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
-                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: h.done ? C.gold : C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>✗ 미완료</div>
                 </div>
               `)}
             <//>
@@ -1126,6 +1137,7 @@ function ReportsSection({ roster, ensureData, dataCache }) {
 
 function DailyReportGenerator({ student, data }) {
   const [date, setDate] = useState(today());
+  const [hwFrom, setHwFrom] = useState(today());
   const [copied, setCopied] = useState(false);
   const [text, setText] = useState("");
 
@@ -1142,15 +1154,17 @@ function DailyReportGenerator({ student, data }) {
       ? vocabToday.map((v) => `${v.book} ${v.range}: ${v.correct}/${v.total} (${v.score}%) - ${v.passed ? "합격" : "불합격"}`).join("\n")
       : "기록 없음";
 
-    const hwToday = (data.homework || []).filter((h) => h.assignedDate === date || h.dueDate === date);
-    const hwBlock = hwToday.length > 0
-      ? hwToday.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
+    const fromD = hwFrom && hwFrom <= date ? hwFrom : date;
+    const inRange = (d) => d && d >= fromD && d <= date;
+    const hwRange = (data.homework || []).filter((h) => inRange(h.assignedDate) || inRange(h.dueDate));
+    const hwBlock = hwRange.length > 0
+      ? hwRange.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
       : "기록 없음";
 
     const msg = `[${student.name}] ${md} 수업 안내\n📖 오늘 배운 내용\n${learnedBlock}\n✏️ 단어시험 결과\n${vocabBlock}\n📝 숙제 확인\n${hwBlock}`;
     setText(msg);
     setCopied(false);
-  }, [student.id, date, data]);
+  }, [student.id, date, hwFrom, data]);
 
   async function copy() {
     try {
@@ -1165,7 +1179,9 @@ function DailyReportGenerator({ student, data }) {
   return html`
     <div>
       <${Card}>
-        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="수업 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="숙제 확인 시작일 (직전 수업 다음날)"><input style=${inputStyle} type="date" value=${hwFrom} onChange=${(e) => setHwFrom(e.target.value)} /><//>
+        <div style=${{ fontSize: 11.5, color: C.slate }}>지난 수업 이후 낸 숙제를 전부 담으려면 시작일을 직전 수업 다음날로 넓혀 주세요. 그 사이 낸 숙제가 전부 이 리포트에 포함됩니다.</div>
       <//>
       <${Card}>
         <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
