@@ -1924,17 +1924,64 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 }
 
 function HomeworkStudentCard({ h, studentId, updateData }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const inputId = `hwphoto-${h.id}`;
+  const photos = h.photos || (h.photo ? [h.photo] : []);
+
+  async function handleFile(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setErr(""); setBusy(true);
+    try {
+      const newOnes = [];
+      for (const file of files) {
+        const dataUrl = await compressImage(file, 900, 0.6);
+        if (dataUrl.length > 400000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
+        newOnes.push(dataUrl);
+      }
+      if (newOnes.length > 0) {
+        await updateData(studentId, (d) => ({
+          ...d,
+          homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newOnes], photo: undefined, done: true } : x)),
+        }));
+      }
+    } catch { setErr("사진을 처리하는 데 문제가 있었어요. 다시 시도해 주세요."); }
+    setBusy(false);
+  }
+  async function removePhoto(idx) {
+    await updateData(studentId, (d) => ({
+      ...d,
+      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, photos: (x.photos || (x.photo ? [x.photo] : [])).filter((_, i) => i !== idx), photo: undefined } : x)),
+    }));
+  }
   async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
 
   return html`
     <${Card}>
       <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>내준 날짜 ${fmtDate(h.assignedDate)}</div>
       <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
-      <div style=${{ marginTop: 10 }}>
+      ${photos.length > 0 && html`
+        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          ${photos.map((p, pi) => html`
+            <div key=${pi} style=${{ position: "relative" }}>
+              <img src=${p} style=${{ width: 76, height: 76, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}`, display: "block" }} />
+              <button onClick=${() => removePhoto(pi)} style=${{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.danger, color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: "20px", padding: 0 }}>✕</button>
+            </div>
+          `)}
+        </div>
+      `}
+      <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+        <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
+          ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
+        </label>
+        <input id=${inputId} type="file" accept="image/*" capture="environment" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
+
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
         </div>
       </div>
+      ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
     <//>
   `;
 }
