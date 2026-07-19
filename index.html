@@ -12,19 +12,25 @@
   input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
 
-  /* ---- responsive admin shell: sidebar on desktop, top scroller on mobile ---- */
-  .ap-shell { display: flex; align-items: flex-start; gap: 0; }
-  .ap-side { display: flex; flex-direction: column; width: 196px; flex-shrink: 0; border-right: 1px solid #DCD8CF; padding: 6px 0; }
+  /* ---- responsive admin shell: sidebar on desktop, "more" dropdown on mobile ---- */
+  .ap-shell { display: flex; align-items: flex-start; gap: 0; width: 100%; }
+  .ap-side-desktop { display: flex; flex-direction: column; width: 196px; flex-shrink: 0; border-right: 1px solid #DCD8CF; padding: 6px 0; }
   .ap-side-item { padding: 11px 16px; font-size: 13px; color: #5B6270; cursor: pointer; border-left: 3px solid transparent; white-space: nowrap; display:flex; align-items:center; gap:8px; }
   .ap-side-item.active { color: #1C2B4A; font-weight: 700; border-left-color: #B8935A; background: #FAF7F1; }
   .ap-side-item:hover { color: #1C2B4A; }
-  .ap-main { flex: 1; min-width: 0; padding: 4px 0 4px 20px; }
+  .ap-side-mobile { display: none; }
+  .ap-main { flex: 1; min-width: 0; width: 100%; padding: 4px 0 4px 20px; }
   @media (max-width: 760px) {
-    .ap-shell { flex-direction: column; }
-    .ap-side { flex-direction: row; width: 100%; overflow-x: auto; border-right: none; border-bottom: 1px solid #DCD8CF; padding: 2px 4px; }
-    .ap-side-item { border-left: none; border-bottom: 3px solid transparent; padding: 10px 12px; }
-    .ap-side-item.active { border-left-color: transparent; border-bottom-color: #B8935A; background: none; }
-    .ap-main { padding: 14px 0 0; }
+    .ap-shell { flex-direction: column; width: 100%; }
+    .ap-side-desktop { display: none; }
+    .ap-side-mobile { display: block; position: relative; width: 100%; margin-bottom: 14px; }
+    .ap-more-btn { width: 100%; box-sizing: border-box; text-align: left; padding: 10px 14px; background: #fff; border: 1px solid #DCD8CF; border-radius: 3px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #1C2B4A; font-weight: 700; cursor: pointer; }
+    .ap-more-btn .arrow { margin-left: auto; color: #5B6270; font-weight: 400; }
+    .ap-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #DCD8CF; border-radius: 3px; z-index: 30; box-shadow: 0 6px 16px rgba(20,22,26,0.1); max-height: 60vh; overflow-y: auto; }
+    .ap-dropdown-item { padding: 11px 16px; font-size: 13px; color: #5B6270; cursor: pointer; border-bottom: 1px solid #F0EDE5; }
+    .ap-dropdown-item:last-child { border-bottom: none; }
+    .ap-dropdown-item.active { color: #1C2B4A; font-weight: 700; background: #FAF7F1; }
+    .ap-main { width: 100%; min-width: 0; padding: 0; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
@@ -340,13 +346,31 @@ function Tabs({ tabs, active, onChange }) {
 
 // Responsive admin shell: vertical sidebar on desktop, horizontal scroller on mobile (see .ap-* CSS)
 function SideNav({ items, active, onChange }) {
+  const [open, setOpen] = useState(false);
+  const activeItem = items.find((it) => it.key === active) || items[0];
   return html`
-    <div className="ap-side">
-      ${items.map((it) => html`
-        <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
-          <span>${it.icon}</span><span>${it.label}</span>
-        </div>
-      `)}
+    <div>
+      <div className="ap-side-desktop">
+        ${items.map((it) => html`
+          <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
+            <span>${it.icon}</span><span>${it.label}</span>
+          </div>
+        `)}
+      </div>
+      <div className="ap-side-mobile">
+        <button className="ap-more-btn" onClick=${() => setOpen((o) => !o)}>
+          <span>⋯</span><span>${activeItem.icon} ${activeItem.label}</span><span className="arrow">${open ? "▲" : "▾"}</span>
+        </button>
+        ${open && html`
+          <div className="ap-dropdown">
+            ${items.map((it) => html`
+              <div key=${it.key} className=${"ap-dropdown-item" + (active === it.key ? " active" : "")} onClick=${() => { onChange(it.key); setOpen(false); }}>
+                ${it.icon} ${it.label}
+              </div>
+            `)}
+          </div>
+        `}
+      </div>
     </div>
   `;
 }
