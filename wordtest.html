@@ -197,7 +197,8 @@
   .qnum{color:var(--gold);font-weight:bold;}
   .qprompt{min-width:0;overflow-wrap:normal;}
   .qblank{align-self:end;border-bottom:1px solid var(--slate);height:16px;margin-bottom:2px;}
-  .qlist-2col ol.qlist{margin-bottom:18px;}
+  .qlist-2col{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;}
+  .qlist-2col ol.qlist{flex:1 1 280px;min-width:0;margin-bottom:18px;}
 
   .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
   .answer-box .a-item{display:inline-block;width:49%;font-size:13.5px;margin-bottom:10px;vertical-align:top;}
@@ -210,8 +211,6 @@
     #printArea, #printArea *{visibility:visible;}
     #printArea{position:absolute;left:0;top:0;width:100%;}
     .sheet-page{border:none;margin:0 auto;box-shadow:none;}
-    .qlist-2col{display:flex;align-items:flex-start;gap:36px;}
-    .qlist-2col ol.qlist{flex:1;min-width:0;margin-bottom:0;}
   }
 
   @media (max-width:800px){
