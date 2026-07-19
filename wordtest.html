@@ -193,10 +193,12 @@
   .section-heading span{font-size:15px;letter-spacing:1px;color:var(--charcoal);font-weight:bold;}
 
   ol.qlist{list-style:none;padding:0;margin:0;}
-  ol.qlist li{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;}
-  .qnum{color:var(--gold);font-weight:bold;min-width:26px;}
-  .qprompt{flex:0 0 auto;min-width:150px;}
-  .qblank{flex:1;border-bottom:1px solid var(--slate);height:16px;}
+  ol.qlist li{display:grid;grid-template-columns:28px 1fr 92px;align-items:start;column-gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;break-inside:avoid;}
+  .qnum{color:var(--gold);font-weight:bold;}
+  .qprompt{min-width:0;word-break:break-word;}
+  .qblank{align-self:end;border-bottom:1px solid var(--slate);height:16px;margin-bottom:2px;}
+  ol.qlist.two-col{column-count:2;column-gap:36px;}
+  ol.qlist.two-col li{break-inside:avoid;-webkit-column-break-inside:avoid;}
 
   .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
   .answer-box .a-item{display:inline-block;width:49%;font-size:13.5px;margin-bottom:10px;vertical-align:top;}
@@ -445,7 +447,7 @@ function renderAll(){
         <div class="hint">엑셀에서 [영단어] [뜻] 두 열을 드래그해 복사한 뒤 그대로 붙여넣으면 자동으로 나뉩니다. 또는 아래 버튼으로 PDF나 워드(.docx) 단어장을 업로드하면 Day별로 자동 인식해서 채워줘요.</div>
         <div class="row" style="margin-bottom:10px;">
           <button class="ghost" id="pdfImportBtn">📄 PDF/워드에서 자동 입력</button>
-          <input type="file" id="pdfImportFile" accept="application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
+          <input type="file" id="pdfImportFile" accept=".pdf,.docx" style="display:none;">
           <span class="count-badge" id="pdfImportStatus"></span>
         </div>
         <div class="row">
@@ -479,6 +481,11 @@ function renderAll(){
       <div class="toggle-row">
         <input type="checkbox" id="includeAnswerKey" checked>
         <label for="includeAnswerKey">정답지 포함 (별도 페이지)</label>
+      </div>
+
+      <div class="toggle-row">
+        <input type="checkbox" id="twoColumnLayout">
+        <label for="twoColumnLayout">인쇄 시 2단(2열) 레이아웃으로 배치</label>
       </div>
 
       <div class="section-label">출제 문항 수</div>
@@ -814,6 +821,7 @@ function generateSheet(book){
 
   const fmt = document.querySelector('input[name="fmt"]:checked').value;
   const includeKey = document.getElementById('includeAnswerKey').checked;
+  const twoCol = document.getElementById('twoColumnLayout').checked;
   const dayLabel = days.length === 1 ? ('Day ' + days[0]) : ('Day ' + days[0] + '–' + days[days.length - 1]);
 
   const directions = words.map(() => {
@@ -846,7 +854,7 @@ function generateSheet(book){
   html += '<hr class="sheet-rule">';
   html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
   html += '<div class="section-heading"><div class="bar"></div><span>' + sectionTitle + '</span></div>';
-  html += '<ol class="qlist">' + qHtml + '</ol>';
+  html += '<ol class="qlist' + (twoCol ? ' two-col' : '') + '">' + qHtml + '</ol>';
   html += '</div>';
 
   if(includeKey){
