@@ -78,7 +78,7 @@ if (!window.React || !window.ReactDOM || !window.htm) {
 }
 
 const html = htm.bind(React.createElement);
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 // ---------- Firestore storage ----------
 // roster/teacherAuth live in one small "meta" doc.
@@ -560,6 +560,7 @@ function App() {
   const [err, setErr] = useState("");
   const [loadError, setLoadError] = useState(false);
   const [loadTick, setLoadTick] = useState(0);
+  const updateQueuesRef = useRef({});
 
   useEffect(() => {
     let cancelled = false;
@@ -599,12 +600,21 @@ function App() {
     // Always re-read the latest server data right before writing. Using the local cache here
     // would silently overwrite changes made from another device/session in the meantime
     // (e.g. a student's photo upload disappearing after the teacher made an unrelated edit).
-    const remote = await loadStudentDoc(id);
-    const cur = remote || dataCache[id] || emptyData();
-    const next = updater(cur);
-    setDataCache((prev) => ({ ...prev, [id]: next }));
-    if (store) store.studentData[id] = next;
-    await saveStudentDoc(id, next);
+    // Also chain calls for the same student so two rapid actions (e.g. taking two photos back
+    // to back) never read-modify-write concurrently and clobber each other.
+    const prevInFlight = updateQueuesRef.current[id] || Promise.resolve();
+    const run = async () => {
+      const remote = await loadStudentDoc(id);
+      const cur = remote || dataCache[id] || emptyData();
+      const next = updater(cur);
+      setDataCache((prev) => ({ ...prev, [id]: next }));
+      if (store) store.studentData[id] = next;
+      await saveStudentDoc(id, next);
+      return next;
+    };
+    const chained = prevInFlight.then(run, run);
+    updateQueuesRef.current[id] = chained.catch(() => {});
+    return chained;
   }
   async function saveRosterList(list) {
     setRoster(list);
@@ -1583,6 +1593,51 @@ function FeedbackEditor({ data, updateData }) {
   `;
 }
 
+function VocabResultRow({ r, updateData }) {
+  const [open, setOpen] = useState(false);
+  const pct = Math.round((r.score / r.total) * 100);
+  const ok = pct >= 90;
+  const hasBreakdown = Array.isArray(r.breakdown) && r.breakdown.length > 0;
+
+  async function markCorrect(idx) {
+    await updateData((d) => ({
+      ...d,
+      vocabResults: d.vocabResults.map((x) => {
+        if (x.id !== r.id) return x;
+        const breakdown = x.breakdown.map((row, i) => (i === idx ? { ...row, ok: true, manualOverride: true } : row));
+        const score = breakdown.filter((row) => row.ok).length;
+        return { ...x, breakdown, score };
+      }),
+    }));
+  }
+
+  return html`
+    <div style=${{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.line}` }}>
+      <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, cursor: hasBreakdown ? "pointer" : "default" }} onClick=${() => hasBreakdown && setOpen((o) => !o)}>
+        <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${ok ? "합격" : "재시험 필요"}</span>
+        ${hasBreakdown && html`<span style=${{ fontSize: 11, color: C.slate, marginLeft: "auto" }}>${open ? "▲ 답안 닫기" : "▼ 답안 보기"}</span>`}
+      </div>
+      ${open && hasBreakdown && html`
+        <div style=${{ marginTop: 8, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 4, padding: 10 }}>
+          ${r.breakdown.map((row, i) => html`
+            <div key=${i} style=${{ padding: "6px 0", borderBottom: i < r.breakdown.length - 1 ? `1px dotted ${C.line}` : "none" }}>
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${row.prompt}</div>
+              <div style=${{ fontSize: 12, marginTop: 2, color: row.ok ? C.navy : C.danger }}>학생 답: ${row.given} ${row.ok ? "✓" : "✗"}${row.manualOverride ? " (선생님 확인 정답 처리)" : ""}</div>
+              ${!row.ok && html`
+                <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                  <div style=${{ fontSize: 11.5, color: C.slate }}>정답: ${row.correct}</div>
+                  <button onClick=${() => markCorrect(i)} style=${{ fontSize: 11, padding: "3px 9px", borderRadius: 20, border: `1px solid ${C.gold}`, background: "none", color: C.gold, cursor: "pointer" }}>맞는 걸로 처리</button>
+                </div>
+              `}
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function VocabEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [words, setWords] = useState([{ word: "", meaning: "" }]);
@@ -1719,12 +1774,7 @@ function VocabEditor({ data, updateData }) {
             </div>
             ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
               <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                ${results.map((r) => { const pct = Math.round((r.score / r.total) * 100); const ok = pct >= 90; return html`
-                  <div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
-                    <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${ok ? "합격" : "재시험 필요"}</span>
-                  </div>
-                `; })}
+                ${results.map((r) => html`<${VocabResultRow} key=${r.id} r=${r} updateData=${updateData} />`)}
               </div>
             `}
           <//>
@@ -2009,10 +2059,10 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 
   if (activeTest) {
     return html`<${TestTaker} activeTest=${activeTest} onExit=${() => setActiveTest(null)}
-      onSubmit=${async (score, total) => {
+      onSubmit=${async (score, total, breakdown) => {
         try {
-          if (activeTest.type === "vocab") await updateData(student.id, (d) => ({ ...d, vocabResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total }, ...d.vocabResults] }));
-          else await updateData(student.id, (d) => ({ ...d, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total }, ...d.examResults] }));
+          if (activeTest.type === "vocab") await updateData(student.id, (d) => ({ ...d, vocabResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.vocabResults] }));
+          else await updateData(student.id, (d) => ({ ...d, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
         } catch (e) {
           console.error("결과 저장 실패", e);
         }
@@ -2159,7 +2209,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
         </div>
       `}
       <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-        <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
+        <label htmlFor=${busy ? undefined : inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: busy ? C.slate : C.navy, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }}>
           ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
         </label>
         <input id=${inputId} type="file" accept="image/*" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
@@ -2236,7 +2286,7 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
             `)}
           <//>
         `}
-        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total)}>결과 저장하고 나가기<//>
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total, breakdown)}>결과 저장하고 나가기<//>
       </div>
     `;
   }
