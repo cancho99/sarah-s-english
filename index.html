@@ -2118,9 +2118,13 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
     setErr(""); setBusy(true);
     try {
       const newOnes = [];
+      let runningTotal = photos.reduce((sum, p) => sum + p.length, 0);
+      const BUDGET = 650000; // leaves headroom under Firestore's 1MB-per-document cap for this student's other data
       for (const file of files) {
-        const dataUrl = await compressImage(file, 900, 0.6);
-        if (dataUrl.length > 400000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
+        const dataUrl = await compressImage(file, 700, 0.55);
+        if (dataUrl.length > 250000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
+        if (runningTotal + dataUrl.length > BUDGET) { setErr("사진을 더 담기엔 용량이 부족해요. 몇 장을 지우고 다시 추가해 주세요."); break; }
+        runningTotal += dataUrl.length;
         newOnes.push(dataUrl);
       }
       if (newOnes.length > 0) {
@@ -2158,7 +2162,7 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
         <label htmlFor=${inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer" }}>
           ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
         </label>
-        <input id=${inputId} type="file" accept="image/*" capture="environment" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
+        <input id=${inputId} type="file" accept="image/*" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
 
         <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
           ${h.done ? "✓ 완료함" : "완료로 표시하기"}
