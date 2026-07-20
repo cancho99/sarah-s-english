@@ -1166,12 +1166,16 @@ function VocabLogEditor({ data, updateData }) {
   const isCumulative = range.includes("누적");
   const threshold = isCumulative ? 90 : 80;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
+  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.10 : 0.20)) : null;
+  const wrongCount = total && correct !== "" ? Number(total) - Number(correct) : null;
+  const willPass = wrongCount !== null ? wrongCount <= allowedWrong : null;
   const effectiveBook = book === "__other__" ? customBook.trim() : book;
 
   async function add() {
     if (!date || !total || !range || !effectiveBook) return;
     const scorePct = Math.round((Number(correct) / Number(total)) * 100);
-    const passed = scorePct >= (range.includes("누적") ? 90 : 80);
+    const allowed = Math.round(Number(total) * (range.includes("누적") ? 0.10 : 0.20));
+    const passed = (Number(total) - Number(correct)) <= allowed;
     await updateData((d) => ({
       ...d,
       vocabLog: [{ id: uid(), date, book: effectiveBook, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
@@ -1183,7 +1187,7 @@ function VocabLogEditor({ data, updateData }) {
   const list = data.vocabLog || [];
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90% 기준, 아니면 80% 기준으로 자동 합격 판정돼요.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90%(오답 10% 이내), 아니면 80%(오답 20% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
       <${Card}>
         <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
         <${Field} label="교재">
@@ -1198,7 +1202,7 @@ function VocabLogEditor({ data, updateData }) {
           <div style=${{ flex: 1 }}><${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//></div>
           <div style=${{ flex: 1 }}><${Field} label="총 문항"><input style=${inputStyle} type="number" value=${total} onChange=${(e) => setTotal(e.target.value)} /><//></div>
         </div>
-        ${pct !== null && html`<div style=${{ fontSize: 12.5, marginBottom: 10, color: pct >= threshold ? C.navy : C.danger, fontWeight: 700 }}>${pct}% · 기준 ${threshold}% 이상 → ${pct >= threshold ? "합격" : "불합격"}</div>`}
+        ${pct !== null && html`<div style=${{ fontSize: 12.5, marginBottom: 10, color: willPass ? C.navy : C.danger, fontWeight: 700 }}>${pct}% (오답 ${wrongCount}개) · ${total}문항 중 오답 ${allowedWrong}개까지 허용 → ${willPass ? "합격" : "불합격"}</div>`}
         <${Field} label="재시험 메모 (선택)"><input style=${inputStyle} value=${retest} onChange=${(e) => setRetest(e.target.value)} placeholder="예: 7/20 10시" /><//>
         <${Button} variant="gold" onClick=${add}>기록 추가<//>
       <//>
@@ -1321,9 +1325,12 @@ function DailyReportGenerator({ student, data }) {
       ? vocabToday.map((v) => `${v.book} ${v.range}: ${v.correct}/${v.total} (${v.score}%) - ${v.passed ? "합격" : "불합격"}`).join("\n")
       : "기록 없음";
 
-    const fromD = hwFrom && hwFrom <= date ? hwFrom : date;
-    const inRange = (d) => d && d >= fromD && d <= date;
-    const hwRange = (data.homework || []).filter((h) => inRange(h.assignedDate) || inRange(h.dueDate));
+    const yesterday = new Date(dt); yesterday.setDate(yesterday.getDate() - 1);
+    const y = yesterday.getFullYear(), m2 = String(yesterday.getMonth() + 1).padStart(2, "0"), d2 = String(yesterday.getDate()).padStart(2, "0");
+    const yesterdayStr = `${y}-${m2}-${d2}`;
+    const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
+    const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
+    const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
     const hwBlock = hwRange.length > 0
       ? hwRange.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
       : "기록 없음";
@@ -1348,7 +1355,7 @@ function DailyReportGenerator({ student, data }) {
       <${Card}>
         <${Field} label="수업 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
         <${Field} label="숙제 확인 시작일 (직전 수업 다음날)"><input style=${inputStyle} type="date" value=${hwFrom} onChange=${(e) => setHwFrom(e.target.value)} /><//>
-        <div style=${{ fontSize: 11.5, color: C.slate }}>지난 수업 이후 낸 숙제를 전부 담으려면 시작일을 직전 수업 다음날로 넓혀 주세요. 그 사이 낸 숙제가 전부 이 리포트에 포함됩니다.</div>
+        <div style=${{ fontSize: 11.5, color: C.slate }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
       <//>
       <${Card}>
         <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
