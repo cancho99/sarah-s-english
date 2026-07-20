@@ -589,15 +589,18 @@ function App() {
   }
 
   async function ensureData(id) {
-    if (dataCache[id]) return dataCache[id];
     const remote = await loadStudentDoc(id);
-    const d = remote || emptyData();
+    const d = remote || dataCache[id] || emptyData();
     setDataCache((prev) => ({ ...prev, [id]: d }));
     if (store) store.studentData[id] = d;
     return d;
   }
   async function updateData(id, updater) {
-    const cur = await ensureData(id);
+    // Always re-read the latest server data right before writing. Using the local cache here
+    // would silently overwrite changes made from another device/session in the meantime
+    // (e.g. a student's photo upload disappearing after the teacher made an unrelated edit).
+    const remote = await loadStudentDoc(id);
+    const cur = remote || dataCache[id] || emptyData();
     const next = updater(cur);
     setDataCache((prev) => ({ ...prev, [id]: next }));
     if (store) store.studentData[id] = next;
