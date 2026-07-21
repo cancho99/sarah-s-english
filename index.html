@@ -2324,11 +2324,14 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   if (activeMock) {
     return html`<${MockExamTaker} test=${activeMock} onExit=${() => setActiveMock(null)}
       onSubmit=${async (score, total, wrong) => {
+        const save = () => updateData(student.id, (d) => ({ ...d, mockExamResults: [{ id: uid(), testId: activeMock.id, date: today(), score, total, wrong }, ...(d.mockExamResults || [])] }));
         try {
-          await updateData(student.id, (d) => ({ ...d, mockExamResults: [{ id: uid(), testId: activeMock.id, date: today(), score, total, wrong }, ...(d.mockExamResults || [])] }));
+          await save();
         } catch (e) {
           console.error("결과 저장 실패", e);
-          alert(friendlyErrorMessage(e));
+          let recovered = false;
+          if (isDocSizeError(e)) recovered = await attemptAutoShrinkAndRetry(student.id, updateData, save);
+          if (!recovered) alert(friendlyErrorMessage(e));
         }
         setActiveMock(null);
       }} />`;
@@ -2337,12 +2340,16 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   if (activeTest) {
     return html`<${TestTaker} activeTest=${activeTest} onExit=${() => setActiveTest(null)}
       onSubmit=${async (score, total, breakdown) => {
+        const save = () => activeTest.type === "vocab"
+          ? updateData(student.id, (d) => ({ ...d, vocabResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.vocabResults] }))
+          : updateData(student.id, (d) => ({ ...d, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
         try {
-          if (activeTest.type === "vocab") await updateData(student.id, (d) => ({ ...d, vocabResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.vocabResults] }));
-          else await updateData(student.id, (d) => ({ ...d, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
+          await save();
         } catch (e) {
           console.error("결과 저장 실패", e);
-          alert(friendlyErrorMessage(e));
+          let recovered = false;
+          if (isDocSizeError(e)) recovered = await attemptAutoShrinkAndRetry(student.id, updateData, save);
+          if (!recovered) alert(friendlyErrorMessage(e));
         }
         setActiveTest(null);
       }} />`;
@@ -2455,10 +2462,17 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
         newUrls.push(url);
       }
       if (newUrls.length > 0) {
-        await updateData(studentId, (d) => ({
+        const save = () => updateData(studentId, (d) => ({
           ...d,
           homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newUrls], done: true } : x)),
         }));
+        try {
+          await save();
+        } catch (saveErr) {
+          let recovered = false;
+          if (isDocSizeError(saveErr)) recovered = await attemptAutoShrinkAndRetry(studentId, updateData, save);
+          if (!recovered) throw saveErr;
+        }
       }
     } catch (e) { setErr(friendlyErrorMessage(e)); }
     setBusy(false);
@@ -2508,14 +2522,45 @@ function withoutLegacyPhoto(obj) {
   const { photo, ...rest } = obj;
   return rest;
 }
+function isDocSizeError(e) {
+  const msg = ((e && e.message) || "").toLowerCase();
+  return msg.includes("1048487") || msg.includes("1048576") || msg.includes("maximum allowed size") || (msg.includes("longer than") && msg.includes("byte"));
+}
+function shrinkStudentData(d) {
+  return {
+    ...d,
+    homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: (h.photos || (h.photo ? [h.photo] : [])).filter((p) => p && p.startsWith("http")) })),
+    vocabResults: (d.vocabResults || []).slice(0, 30),
+    examResults: (d.examResults || []).slice(0, 30),
+    mockExamResults: (d.mockExamResults || []).slice(0, 30),
+    logs: (d.logs || []).slice(0, 60),
+  };
+}
+async function attemptAutoShrinkAndRetry(studentId, updateData, retryFn) {
+  if (!confirm("저장 공간이 가득 차서 실패했어요. 예전 방식 사진과 오래된 응시 기록을 정리하고 바로 다시 시도할까요? (최근 기록은 그대로 남아요)")) return false;
+  try {
+    await updateData(studentId, (d) => shrinkStudentData(d));
+    await retryFn();
+    return true;
+  } catch (e2) {
+    alert("정리는 됐지만 다시 저장하는 중 문제가 있었어요. 잠시 후 다시 시도해 주세요.");
+    return false;
+  }
+}
+
 function friendlyErrorMessage(e) {
+  const raw = (e && e.code) || (e && e.message) || String(e);
+  const base = friendlyErrorMessageBase(e);
+  return `${base} (오류 세부정보: ${raw})`;
+}
+function friendlyErrorMessageBase(e) {
   const msg = ((e && e.message) || "").toLowerCase();
   const code = (e && e.code) || "";
   if (code.startsWith("storage/")) {
     if (code === "storage/unauthorized") return "사진 저장 권한이 없어요. Firebase 콘솔에서 Storage가 켜져 있는지, 보안 규칙이 맞는지 확인해 주세요.";
     return "사진을 저장하는 중 문제가 있었어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
   }
-  if (msg.includes("longer than") || msg.includes("exceeds") || msg.includes("too large") || code === "invalid-argument" || code === "resource-exhausted") {
+  if (isDocSizeError(e)) {
     return "이 학생의 저장 공간이 가득 찼어요 (사진이 너무 많이 쌓였을 때 생겨요). 오래된 사진을 몇 장 지운 뒤 다시 시도해 주세요.";
   }
   if (code === "permission-denied") {
