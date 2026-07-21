@@ -962,9 +962,10 @@ function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, ann
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
-      if (h.assignedDate === todayStr || h.dueDate === todayStr) todayHomework.push({ student: s, hw: h });
+      if (h.dueDate && h.dueDate <= todayStr && !h.done) todayHomework.push({ student: s, hw: h });
     });
   });
+  todayHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
   const allConsults = [];
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
@@ -1018,15 +1019,19 @@ function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, ann
         `)}
       <//>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 숙제 현황</div>
-      <${Card} onClick=${onGoHwStatus} style=${{ cursor: "pointer" }}>
-        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 날짜와 관련된 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
-          <div key=${i} style=${{ fontSize: 12.5, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
-            <span><b>${student.name}</b> — ${hw.content}</span>
-            <span style=${{ color: hw.done ? C.gold : C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${hw.done ? "✓ 완료" : "✗ 미완료"}</span>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 숙제 ${todayHomework.length > 0 ? `(${todayHomework.length}건)` : ""}</div>
+      <${Card}>
+        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한이 오늘이거나 지났는데 아직 완료 표시 안 된 숙제를 학생 전체 기준으로 모았어요.</div>
+        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
+          <div key=${i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+            <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <span><b>${student.name}</b> — ${hw.content}</span>
+              <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
+            </div>
           </div>
         `)}
-        <div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>전체 숙제 현황 보기 →</div>
+        <div onClick=${onGoHwStatus} style=${{ fontSize: 11.5, color: C.gold, marginTop: 8, cursor: "pointer" }}>전체 숙제 현황 보기 →</div>
       <//>
     </div>
   `;
