@@ -622,7 +622,7 @@ function App() {
     await window.__runTransaction(window.__db, async (tx) => {
       const snap = await tx.get(ref);
       const cur = snap.exists() ? snap.data() : (dataCache[id] || emptyData());
-      next = updater(cur);
+      next = stripUndefinedDeep(updater(cur));
       tx.set(ref, next);
     });
     setDataCache((prev) => ({ ...prev, [id]: next }));
@@ -2518,6 +2518,17 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
   `;
 }
 
+function stripUndefinedDeep(value) {
+  if (Array.isArray(value)) return value.map(stripUndefinedDeep);
+  if (value && typeof value === "object") {
+    const out = {};
+    Object.keys(value).forEach((k) => {
+      if (value[k] !== undefined) out[k] = stripUndefinedDeep(value[k]);
+    });
+    return out;
+  }
+  return value;
+}
 function withoutLegacyPhoto(obj) {
   const { photo, ...rest } = obj;
   return rest;
@@ -2597,17 +2608,18 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
         if (dir === "w2m") {
           const ok = checkVocabAnswer(answers[i], q.meaning, q.synonyms);
           if (ok) score++;
-          rows.push({ prompt: q.word, given: answers[i] || "(빈칸)", correct: q.meaning, ok });
+          rows.push({ prompt: q.word || "(단어 없음)", given: answers[i] || "(빈칸)", correct: q.meaning || "(뜻 없음)", ok });
         } else {
           const ok = checkWordAnswer(answers[i], q.word, q.synonyms);
           if (ok) score++;
-          const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word} (${q.synonyms.join(", ")}도 정답)` : q.word;
-          rows.push({ prompt: q.meaning, given: answers[i] || "(빈칸)", correct: correctDisplay, ok });
+          const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word || ""} (${q.synonyms.join(", ")}도 정답)` : (q.word || "(단어 없음)");
+          rows.push({ prompt: q.meaning || "(뜻 없음)", given: answers[i] || "(빈칸)", correct: correctDisplay, ok });
         }
       } else {
         const ok = answers[i] === q.answer;
         if (ok) score++;
-        rows.push({ prompt: q.q, given: answers[i] != null ? q.choices[answers[i]] : "(선택 안 함)", correct: q.choices[q.answer], ok });
+        const givenChoice = answers[i] != null ? q.choices[answers[i]] : null;
+        rows.push({ prompt: q.q || "", given: givenChoice || "(선택 안 함)", correct: (q.choices && q.choices[q.answer]) || "", ok });
       }
     });
     setResult(score); setBreakdown(rows); setSubmitted(true);
