@@ -7,7 +7,7 @@
 <title>Sarah's English</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #FAF7F1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; }
+  body { margin: 0; background: #FAF7F1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
   input, textarea, select, button { font-family: inherit; }
   input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
@@ -348,7 +348,7 @@ function shuffle(arr) {
   }
   return a;
 }
-const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [] });
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [] });
 
 function parseAnswerKey(text) {
   return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -650,14 +650,13 @@ function App() {
       <div style=${{ maxWidth: isWide ? 1080 : 480, margin: "0 auto", padding: screen === "home" ? "0 0 60px" : isWide ? "18px 16px 60px" : "18px 16px 60px" }}>
         ${screen === "home" && html`<${HomePage} setScreen=${setScreen} />`}
         ${screen === "levelTest" && html`<${LevelTestBooking} onBack=${() => setScreen("home")} onSubmit=${async (b) => { await addBooking(b); }} />`}
-        ${screen === "role" && html`<${RoleSelect} setScreen=${setScreen} />`}
-        ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("role")}
+        ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("home")}
           onSetPass=${async (p) => { const ta = { passcode: p }; await saveTeacherAuthGlobal(ta); setSession({ role: "teacher" }); setScreen("teacherDash"); }}
           onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { setSession({ role: "teacher" }); setScreen("teacherDash"); } else setErr("비밀번호가 맞지 않아요."); }}
           err=${err} />`}
-        ${screen === "studentLogin" && html`<${StudentParentLogin} mode="student" roster=${roster} onBack=${() => setScreen("role")}
+        ${screen === "studentLogin" && html`<${StudentParentLogin} mode="student" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => { setSession({ role: "student", student: s }); setScreen("studentDash"); }} />`}
-        ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("role")}
+        ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => { setSession({ role: "parent", student: s }); setScreen("parentDash"); }} />`}
         ${screen === "teacherDash" && html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
           selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
@@ -685,9 +684,11 @@ function HomePage({ setScreen }) {
           <div style=${{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy, ...serif, fontSize: 13 }}>S·E</div>
           <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
         </div>
-        <div style=${{ display: "flex", gap: 8 }}>
-          <${Button} variant="ghost" style=${{ padding: "8px 14px", fontSize: 12.5 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
-          <${Button} variant="primary" style=${{ padding: "8px 16px", fontSize: 12.5 }} onClick=${() => setScreen("role")}>로그인<//>
+        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
+          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
+          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
+          <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
         </div>
       </div>
 
@@ -696,10 +697,6 @@ function HomePage({ setScreen }) {
         <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도<br />+<br />학원의 체계적 관리</div>
         <div style=${{ fontSize: 14, color: C.slate, marginTop: 14, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.7 }}>
           한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 학습 기록과 성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 과외입니다.
-        </div>
-        <div style=${{ marginTop: 26, display: "flex", gap: 10, justifyContent: "center" }}>
-          <${Button} variant="gold" onClick=${() => setScreen("levelTest")}>레벨테스트 예약하기<//>
-          <${Button} variant="ghost" onClick=${() => setScreen("role")}>로그인<//>
         </div>
       </div>
 
@@ -724,7 +721,7 @@ function HomePage({ setScreen }) {
               <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}><span style=${{ color: C.slate }}>초등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 3회 · 1시간 30분</span></div>
               <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
             </div>
-            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>단어·숙제·진도를 매 회차 안에서 통합으로 점검합니다. 숙제가 밀리면 주말 보충으로 반드시 그 주 안에 채워드려요.</div>
+            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>단어·숙제·진도를 매 회차 안에서 통합으로 점검합니다. 숙제가 밀리면 주말 보충으로 반드시 그 주 안에 채워드리며, 별도 비용은 받지 않습니다.</div>
           </div>
           <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "24px 26px" }}>
             <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>대치 · 과천 / 양재</div>
@@ -747,6 +744,7 @@ function HomePage({ setScreen }) {
             { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 모드로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
             { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
             { title: "정기 학부모 보고", body: "주간 점검, 월간 리포트, 정기평가·내신 결과까지 — 분기 상담과 함께 아이의 학습을 투명하게 공유합니다." },
+            { title: "학생별 맞춤 진도 관리", body: "반 편성이 아니라 학생 한 명 기준으로 교재·진도·목표를 따로 설정하고 관리합니다." },
           ].map((s) => html`
             <div key=${s.title} style=${{ background: C.white, padding: "22px 22px" }}>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 8 }}>${s.title}</div>
@@ -841,52 +839,32 @@ function LevelTestBooking({ onBack, onSubmit }) {
 }
 
 // ---------- Role select ----------
-function RoleSelect({ setScreen }) {
-  const options = [
-    { key: "teacherLogin", label: "선생님으로 접속", desc: "학습 기록 · 성적 · 시험 관리", icon: "✎" },
-    { key: "studentLogin", label: "학생으로 접속", desc: "학습 확인 · 재시험 응시", icon: "📘" },
-    { key: "parentLogin", label: "학부모로 접속", desc: "학습 · 성적 · 선생님 피드백 확인", icon: "💬" },
-  ];
-  return html`
-    <div>
-      <${BackBtn} onClick=${() => setScreen("home")} />
-      <${SectionLabel} n=${1} label="ACCESS" />
-      ${options.map((o) => html`
-        <${Card} key=${o.key}>
-          <div onClick=${() => setScreen(o.key)} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-            <div style=${{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style=${{ color: C.gold, fontSize: 18 }}>${o.icon}</div>
-              <div><div style=${{ fontWeight: 700, color: C.navy, fontSize: 15 }}>${o.label}</div><div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>${o.desc}</div></div>
-            </div>
-            <div style=${{ color: C.line, fontSize: 18 }}>›</div>
-          </div>
-        <//>
-      `)}
-    </div>
-  `;
-}
-
 // ---------- Teacher login ----------
 function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
   const [p, setP] = useState(""); const [p2, setP2] = useState("");
   const isNew = !teacherAuth;
   return html`
-    <div>
-      <${BackBtn} onClick=${onBack} />
-      <${SectionLabel} n=${2} label="TEACHER LOGIN" />
-      <${Card}>
-        ${isNew ? html`
-          <div style=${{ fontSize: 13, color: C.slate, marginBottom: 12 }}>처음 사용하시네요. 선생님 전용 비밀번호를 설정해 주세요.</div>
-          <${Field} label="비밀번호 설정"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} /><//>
-          <${Field} label="비밀번호 확인"><input style=${inputStyle} type="password" value=${p2} onChange=${(e) => setP2(e.target.value)} /><//>
-          ${p && p2 && p !== p2 && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>비밀번호가 서로 달라요.</div>`}
-          <${Button} variant="gold" disabled=${!p || p !== p2} onClick=${() => onSetPass(p)}>설정하고 시작하기<//>
-        ` : html`
-          <${Field} label="비밀번호"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} /><//>
-          ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
-          <${Button} variant="gold" disabled=${!p} onClick=${() => onLogin(p)}>로그인<//>
-        `}
-      <//>
+    <div style=${{ display: "flex", justifyContent: "center", padding: "30px 0" }}>
+      <div style=${{ width: "100%", maxWidth: 380 }}>
+        <${BackBtn} onClick=${onBack} />
+        <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "34px 30px", marginTop: 14 }}>
+          <div style=${{ textAlign: "center", marginBottom: 24 }}>
+            <div style=${{ width: 44, height: 44, borderRadius: "50%", border: `1px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy, ...serif, fontSize: 16, margin: "0 auto 12px" }}>S·E</div>
+            <div style=${{ ...serif, fontSize: 20, color: C.navy }}>선생님 로그인</div>
+          </div>
+          ${isNew ? html`
+            <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16, textAlign: "center" }}>처음 사용하시네요. 선생님 전용 비밀번호를 설정해 주세요.</div>
+            <${Field} label="비밀번호 설정"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} /><//>
+            <${Field} label="비밀번호 확인"><input style=${inputStyle} type="password" value=${p2} onChange=${(e) => setP2(e.target.value)} /><//>
+            ${p && p2 && p !== p2 && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>비밀번호가 서로 달라요.</div>`}
+            <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", marginTop: 6 }} disabled=${!p || p !== p2} onClick=${() => onSetPass(p)}>설정하고 시작하기<//>
+          ` : html`
+            <${Field} label="비밀번호"><input style=${inputStyle} type="password" value=${p} onChange=${(e) => setP(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && onLogin(p)} autoFocus /><//>
+            ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+            <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", marginTop: 6 }} disabled=${!p} onClick=${() => onLogin(p)}>로그인<//>
+          `}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -902,19 +880,24 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
     onLogin(s);
   }
   return html`
-    <div>
-      <${BackBtn} onClick=${onBack} />
-      <${SectionLabel} n=${2} label=${mode === "student" ? "STUDENT LOGIN" : "PARENT LOGIN"} />
-      ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
-        <${Card}>
-          <${Field} label=${mode === "student" ? "학생 코드" : "학부모 코드"}>
-            <input style=${inputStyle} value=${code} onChange=${(e) => setCode(e.target.value)}
-              onKeyDown=${(e) => e.key === "Enter" && submit()} placeholder="선생님께 받은 코드를 입력하세요" autoFocus />
-          <//>
-          ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
-          <${Button} variant="gold" onClick=${submit}>접속하기<//>
-        <//>
-      `}
+    <div style=${{ display: "flex", justifyContent: "center", padding: "30px 0" }}>
+      <div style=${{ width: "100%", maxWidth: 380 }}>
+        <${BackBtn} onClick=${onBack} />
+        <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "34px 30px", marginTop: 14 }}>
+          <div style=${{ textAlign: "center", marginBottom: 24 }}>
+            <div style=${{ width: 44, height: 44, borderRadius: "50%", border: `1px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy, ...serif, fontSize: 16, margin: "0 auto 12px" }}>S·E</div>
+            <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${mode === "student" ? "학생 로그인" : "학부모 로그인"}</div>
+          </div>
+          ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
+            <${Field} label=${mode === "student" ? "학생 코드" : "학부모 코드"}>
+              <input style=${inputStyle} value=${code} onChange=${(e) => setCode(e.target.value)}
+                onKeyDown=${(e) => e.key === "Enter" && submit()} placeholder="선생님께 받은 코드를 입력하세요" autoFocus />
+            <//>
+            ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+            <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick=${submit}>로그인<//>
+          `}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -928,6 +911,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const [showStatus, setShowStatus] = useState(false);
   const [showBookings, setShowBookings] = useState(false);
   const selected = roster.find((r) => r.id === selectedStudentId);
+  const pendingCount = (levelTestBookings || []).filter((b) => b.status !== "완료").length;
 
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
 
@@ -944,14 +928,26 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     if (selectedStudentId === id) setSelectedStudentId(null);
   }
 
+  const studentSubItems = section === "students" ? [
+    { key: "__bookings", label: `레벨테스트 예약${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
+    { key: "__hwstatus", label: "숙제 현황", icon: "📋" },
+    ...roster.map((r) => ({ key: "__student:" + r.id, label: r.name, icon: "👤" })),
+  ] : [];
   const navItems = [
     { key: "students", label: "학생 관리", icon: "🗂" },
+    ...studentSubItems,
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
   ];
-  function goSection(key) {
-    setSection(key);
-    setSelectedStudentId(null); setShowStatus(false); setShowBookings(false);
+
+  const activeKey = selected ? "__student:" + selected.id : showBookings ? "__bookings" : showStatus ? "__hwstatus" : section;
+
+  function handleNavChange(key) {
+    if (key === "students") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
+    else if (key === "wordbank" || key === "reports") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
+    else if (key === "__bookings") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(true); }
+    else if (key === "__hwstatus") { setSection("students"); setSelectedStudentId(null); setShowBookings(false); setShowStatus(true); }
+    else if (key.startsWith("__student:")) { setSection("students"); setShowStatus(false); setShowBookings(false); setSelectedStudentId(key.slice("__student:".length)); }
   }
 
   let body;
@@ -968,25 +964,12 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
       updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} />`;
   } else {
-    const pendingCount = (levelTestBookings || []).filter((b) => b.status !== "완료").length;
     body = html`
       <div>
-        <${Button} variant="ghost" onClick=${() => setShowBookings(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 8 }}>🗓 레벨테스트 예약 현황${pendingCount > 0 ? ` (대기 ${pendingCount}건)` : ""}<//>
-        <${Button} variant="ghost" onClick=${() => setShowStatus(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>📋 숙제 현황 한눈에 보기<//>
-        ${roster.map((r) => html`
-          <${Card} key=${r.id}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div onClick=${() => setSelectedStudentId(r.id)} style=${{ cursor: "pointer", flex: 1 }}>
-                <div style=${{ fontWeight: 700, color: C.navy }}>${r.name}</div>
-                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
-              </div>
-              <button onClick=${() => removeStudent(r.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
-            </div>
-          <//>
-        `)}
+        <div style=${{ fontSize: 13, color: C.slate, marginBottom: 14 }}>왼쪽 목록에서 학생을 선택하시거나, 새 학생을 등록해 주세요.</div>
         ${roster.length === 0 && html`<${Empty} text="학생을 추가해 주세요." />`}
         ${!showAdd ? html`
-          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 6 }}>+ 학생 추가<//>
+          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center" }}>+ 학생 추가<//>
         ` : html`
           <${Card}>
             <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
@@ -999,6 +982,22 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
             </div>
           <//>
         `}
+        ${roster.length > 0 && html`
+          <div style=${{ marginTop: 18 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8, fontWeight: 700, letterSpacing: 0.5 }}>학생 목록 (삭제)</div>
+            ${roster.map((r) => html`
+              <${Card} key=${r.id}>
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div onClick=${() => setSelectedStudentId(r.id)} style=${{ cursor: "pointer", flex: 1 }}>
+                    <div style=${{ fontWeight: 700, color: C.navy }}>${r.name}</div>
+                    <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
+                  </div>
+                  <button onClick=${() => removeStudent(r.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
+                </div>
+              <//>
+            `)}
+          </div>
+        `}
       </div>
     `;
   }
@@ -1009,7 +1008,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
         <div style=${{ ...serif, fontSize: 18, color: C.navy }}>Teacher Dashboard</div>
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
-      <${Shell} side=${html`<${SideNav} items=${navItems} active=${section} onChange=${goSection} />`}>${body}<//>
+      <${Shell} side=${html`<${SideNav} items=${navItems} active=${activeKey} onChange=${handleNavChange} />`}>${body}<//>
     </div>
   `;
 }
@@ -1137,6 +1136,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "exam", label: "추가 시험", icon: "🗒" },
     { key: "mock", label: "모의고사", icon: "📄" },
     { key: "regularExam", label: "정기시험", icon: "🏫" },
+    { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
   return html`
     <div>
@@ -1156,7 +1156,36 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
         ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} />`}
         ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+        ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
       <//>
+    </div>
+  `;
+}
+
+function ConsultRequestsTeacherView({ data, updateData }) {
+  const list = data.consultRequests || [];
+  async function setStatus(id, status) {
+    await updateData((d) => ({ ...d, consultRequests: (d.consultRequests || []).map((r) => (r.id === id ? { ...r, status } : r)) }));
+  }
+  if (list.length === 0) return html`<${Empty} text="아직 신청된 상담이 없어요." />`;
+  return html`
+    <div>
+      ${list.map((r) => html`
+        <${Card} key=${r.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>${r.method}</div>
+              ${r.choices.map((c, i) => html`<div key=${i} style=${{ fontSize: 12.5, marginTop: 4 }}>${i + 1}지망: ${c.date} ${c.time}</div>`)}
+              ${r.note && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 6, whiteSpace: "pre-wrap" }}>${r.note}</div>`}
+            </div>
+            <span style=${{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: r.status === "완료" ? "#E9F1EA" : "#F7E9E6", color: r.status === "완료" ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${r.status}</span>
+          </div>
+          <div style=${{ marginTop: 8 }}>
+            ${r.status !== "완료" ? html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(r.id, "완료")}>완료 처리<//>`
+              : html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(r.id, "대기")}>대기로 되돌리기<//>`}
+          </div>
+        <//>
+      `)}
     </div>
   `;
 }
@@ -2417,6 +2446,7 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
     { key: "logs", label: "학습 기록", icon: "📘" },
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "feedback", label: "선생님 상담", icon: "💬" },
+    { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
 
   if (!data) return html`<${Empty} text="불러오는 중..." />`;
@@ -2468,6 +2498,73 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
           <${Card} key=${f.id} style=${f.from === "parent" ? { borderLeft: `3px solid ${C.gold}` } : {}}>
             <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(f.date)} · ${f.from === "parent" ? "나의 코멘트" : "선생님"}</div>
             <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${f.text}</div>
+          <//>
+        `)}
+      `}
+
+      ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
+    </div>
+  `;
+}
+
+function ConsultRequestPanel({ data, updateData }) {
+  const [method, setMethod] = useState("카톡 상담");
+  const [d1, setD1] = useState(""); const [t1, setT1] = useState("");
+  const [d2, setD2] = useState(""); const [t2, setT2] = useState("");
+  const [d3, setD3] = useState(""); const [t3, setT3] = useState("");
+  const [note, setNote] = useState("");
+  const [sent, setSent] = useState(false);
+
+  async function submit() {
+    if (!d1 || !t1) return;
+    const req = {
+      id: uid(), createdAt: today(), method, note, status: "대기",
+      choices: [{ date: d1, time: t1 }, ...(d2 ? [{ date: d2, time: t2 }] : []), ...(d3 ? [{ date: d3, time: t3 }] : [])],
+    };
+    await updateData((d) => ({ ...d, consultRequests: [req, ...(d.consultRequests || [])] }));
+    setD1(""); setT1(""); setD2(""); setT2(""); setD3(""); setT3(""); setNote("");
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }
+
+  const list = data.consultRequests || [];
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>희망하시는 상담 방식과 날짜·시간대를 1지망부터 순서대로 입력해 주세요.</div>
+        <${Field} label="상담 방식">
+          <select style=${inputStyle} value=${method} onChange=${(e) => setMethod(e.target.value)}>
+            <option value="카톡 상담">카톡 상담</option>
+            <option value="전화 상담">전화 상담</option>
+            <option value="대면 상담">대면 상담</option>
+          </select>
+        <//>
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>1지망 (필수)</div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d1} onChange=${(e) => setD1(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t1} onChange=${(e) => setT1(e.target.value)} placeholder="예: 오후 3시" /></div>
+        </div>
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>2지망 (선택)</div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d2} onChange=${(e) => setD2(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t2} onChange=${(e) => setT2(e.target.value)} placeholder="예: 오후 3시" /></div>
+        </div>
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>3지망 (선택)</div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d3} onChange=${(e) => setD3(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t3} onChange=${(e) => setT3(e.target.value)} placeholder="예: 오후 3시" /></div>
+        </div>
+        <${Field} label="전하고 싶은 내용 (선택)"><textarea style=${{ ...inputStyle, minHeight: 60, marginTop: 6 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        <${Button} variant="gold" style=${{ marginTop: 10 }} disabled=${!d1 || !t1} onClick=${submit}>상담 신청하기<//>
+        ${sent && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>신청됐어요. 선생님이 확인 후 연락드릴 거예요.</div>`}
+      <//>
+      ${list.length > 0 && html`
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, margin: "16px 0 8px" }}>신청 내역</div>
+        ${list.map((r) => html`
+          <${Card} key=${r.id}>
+            <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>${r.method} · ${r.status}</div>
+            ${r.choices.map((c, i) => html`<div key=${i} style=${{ fontSize: 12.5, marginTop: 4 }}>${i + 1}지망: ${c.date} ${c.time}</div>`)}
+            ${r.note && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 4 }}>${r.note}</div>`}
           <//>
         `)}
       `}
