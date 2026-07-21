@@ -2457,8 +2457,8 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
         const dataUrl = await compressImage(file, 1000, 0.7);
         const path = `homework-photos/${studentId}/${h.id}/${uid()}.jpg`;
         const ref = window.__storageRef(window.__storage, path);
-        await window.__uploadString(ref, dataUrl, "data_url");
-        const url = await window.__getDownloadURL(ref);
+        await withTimeout(window.__uploadString(ref, dataUrl, "data_url"), 20000, "storage/timeout");
+        const url = await withTimeout(window.__getDownloadURL(ref), 20000, "storage/timeout");
         newUrls.push(url);
       }
       if (newUrls.length > 0) {
@@ -2518,6 +2518,12 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
   `;
 }
 
+function withTimeout(promise, ms, code) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject({ code: code || "timeout", message: `timed out after ${ms}ms` }), ms)),
+  ]);
+}
 function stripUndefinedDeep(value) {
   if (Array.isArray(value)) return value.map(stripUndefinedDeep);
   if (value && typeof value === "object") {
@@ -2567,6 +2573,9 @@ function friendlyErrorMessage(e) {
 function friendlyErrorMessageBase(e) {
   const msg = ((e && e.message) || "").toLowerCase();
   const code = (e && e.code) || "";
+  if (code === "storage/timeout") {
+    return "사진 저장이 너무 오래 걸려서 중단했어요. Firebase 콘솔에서 Storage 기능이 켜져 있는지 확인해 주세요 (빌드 → Storage → 시작하기).";
+  }
   if (code.startsWith("storage/")) {
     if (code === "storage/unauthorized") return "사진 저장 권한이 없어요. Firebase 콘솔에서 Storage가 켜져 있는지, 보안 규칙이 맞는지 확인해 주세요.";
     return "사진을 저장하는 중 문제가 있었어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
