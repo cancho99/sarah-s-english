@@ -39,6 +39,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getStorage, ref as storageRef, uploadString, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
     authDomain: "sarah-s-english.firebaseapp.com",
@@ -55,6 +56,11 @@
   window.__getDoc = getDoc;
   window.__setDoc = setDoc;
   window.__runTransaction = runTransaction;
+  window.__storage = getStorage(firebaseApp);
+  window.__storageRef = storageRef;
+  window.__uploadString = uploadString;
+  window.__getDownloadURL = getDownloadURL;
+  window.__deleteObject = deleteObject;
 </script>
 </head>
 <body>
@@ -935,7 +941,7 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
 }
 
 // ---------- Teacher dashboard ----------
-function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
   const [loaded, setLoaded] = useState(false);
   const [annText, setAnnText] = useState(announcement ? announcement.text : "");
   const [annSaved, setAnnSaved] = useState(false);
@@ -966,6 +972,28 @@ function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, ann
     });
   });
   todayHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
+
+  const LIMIT_KB = 1000;
+  const sizeInfo = roster.map((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const kb = Math.round(new Blob([JSON.stringify(d)]).size / 1024);
+    return { student: s, kb, pct: Math.min(100, Math.round((kb / LIMIT_KB) * 100)) };
+  }).filter((x) => x.pct >= 60).sort((a, b) => b.pct - a.pct);
+
+  async function bulkClearOldPhotos() {
+    if (!confirm("용량이 많이 찬 학생들의 예전 방식(용량이 큰) 사진을 한꺼번에 정리할까요? 숙제 내용과 완료 표시는 그대로 남고, 최근에 올라간 사진(용량이 작은 방식)은 그대로 유지돼요.")) return;
+    for (const { student } of sizeInfo) {
+      const d = dataCache[student.id] || emptyData();
+      const next = {
+        ...d,
+        homework: (d.homework || []).map((h) => {
+          const photos = (h.photos || (h.photo ? [h.photo] : [])).filter((p) => p && p.startsWith("http")); // keep only Storage-hosted (small) photos, drop old base64 ones
+          return { ...withoutLegacyPhoto(h), photos };
+        }),
+      };
+      await updateData(student.id, () => next);
+    }
+  }
   const allConsults = [];
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
@@ -1018,6 +1046,19 @@ function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, ann
           </div>
         `)}
       <//>
+
+      ${sizeInfo.length > 0 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠️ 저장 공간이 많이 찬 학생 (${sizeInfo.length}명)</div>
+        <${Card} style=${{ marginBottom: 20, borderLeft: `3px solid ${C.danger}` }}>
+          ${sizeInfo.map((x) => html`
+            <div key=${x.student.id} onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "4px 0", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+              <span>${x.student.name}</span><span style=${{ color: x.pct >= 90 ? C.danger : C.gold, fontWeight: 700 }}>${x.kb}KB (${x.pct}%)</span>
+            </div>
+          `)}
+          <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} onClick=${bulkClearOldPhotos}>예전 방식 사진 한꺼번에 정리<//>
+          <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 "저장 공간 관리" 탭에서 세부적으로 정리할 수도 있어요.</div>
+        <//>
+      `}
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 숙제 ${todayHomework.length > 0 ? `(${todayHomework.length}건)` : ""}</div>
       <${Card}>
@@ -1098,7 +1139,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
       updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} />`;
   } else {
-    body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache}
+    body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       onGoBookings=${() => { setShowBookings(true); }} onGoHwStatus=${() => { setShowStatus(true); }}
       onSelectStudent=${(id) => setSelectedStudentId(id)}
@@ -1694,10 +1735,15 @@ function HomeworkEditor({ data, updateData }) {
   }
   async function toggleDone(id) { await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => (h.id === id ? { ...h, done: !h.done } : h)) })); }
   async function removeHomeworkPhoto(hwId, idx) {
+    const hw = (data.homework || []).find((h) => h.id === hwId);
+    const target = hw && (hw.photos || (hw.photo ? [hw.photo] : []))[idx];
     await updateData((d) => ({
       ...d,
       homework: (d.homework || []).map((h) => (h.id === hwId ? { ...withoutLegacyPhoto(h), photos: (h.photos || (h.photo ? [h.photo] : [])).filter((_, i) => i !== idx) } : h)),
     }));
+    if (target && target.startsWith("http")) {
+      try { await window.__deleteObject(window.__storageRef(window.__storage, target)); } catch (e) { /* ignore */ }
+    }
   }
   const list = data.homework || [];
   const todayStr = today();
@@ -2399,30 +2445,33 @@ function HomeworkStudentCard({ h, studentId, updateData }) {
     if (files.length === 0) return;
     setErr(""); setBusy(true);
     try {
-      const newOnes = [];
-      let runningTotal = photos.reduce((sum, p) => sum + p.length, 0);
-      const BUDGET = 650000; // leaves headroom under Firestore's 1MB-per-document cap for this student's other data
+      const newUrls = [];
       for (const file of files) {
-        const dataUrl = await compressImage(file, 700, 0.55);
-        if (dataUrl.length > 250000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
-        if (runningTotal + dataUrl.length > BUDGET) { setErr("사진을 더 담기엔 용량이 부족해요. 몇 장을 지우고 다시 추가해 주세요."); break; }
-        runningTotal += dataUrl.length;
-        newOnes.push(dataUrl);
+        const dataUrl = await compressImage(file, 1000, 0.7);
+        const path = `homework-photos/${studentId}/${h.id}/${uid()}.jpg`;
+        const ref = window.__storageRef(window.__storage, path);
+        await window.__uploadString(ref, dataUrl, "data_url");
+        const url = await window.__getDownloadURL(ref);
+        newUrls.push(url);
       }
-      if (newOnes.length > 0) {
+      if (newUrls.length > 0) {
         await updateData(studentId, (d) => ({
           ...d,
-          homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newOnes], done: true } : x)),
+          homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newUrls], done: true } : x)),
         }));
       }
     } catch (e) { setErr(friendlyErrorMessage(e)); }
     setBusy(false);
   }
   async function removePhoto(idx) {
+    const target = photos[idx];
     await updateData(studentId, (d) => ({
       ...d,
       homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: (x.photos || (x.photo ? [x.photo] : [])).filter((_, i) => i !== idx) } : x)),
     }));
+    if (target && target.startsWith("http")) {
+      try { await window.__deleteObject(window.__storageRef(window.__storage, target)); } catch (e) { /* ignore — e.g. already deleted or legacy base64 entry */ }
+    }
   }
   async function toggleDone() { await updateData(studentId, (d) => ({ ...d, homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done } : x)) })); }
 
@@ -2462,6 +2511,10 @@ function withoutLegacyPhoto(obj) {
 function friendlyErrorMessage(e) {
   const msg = ((e && e.message) || "").toLowerCase();
   const code = (e && e.code) || "";
+  if (code.startsWith("storage/")) {
+    if (code === "storage/unauthorized") return "사진 저장 권한이 없어요. Firebase 콘솔에서 Storage가 켜져 있는지, 보안 규칙이 맞는지 확인해 주세요.";
+    return "사진을 저장하는 중 문제가 있었어요. 인터넷 연결을 확인하고 다시 시도해 주세요.";
+  }
   if (msg.includes("longer than") || msg.includes("exceeds") || msg.includes("too large") || code === "invalid-argument" || code === "resource-exhausted") {
     return "이 학생의 저장 공간이 가득 찼어요 (사진이 너무 많이 쌓였을 때 생겨요). 오래된 사진을 몇 장 지운 뒤 다시 시도해 주세요.";
   }
