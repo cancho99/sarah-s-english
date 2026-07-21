@@ -848,7 +848,7 @@ function LevelTestBooking({ onBack, onSubmit }) {
         <//>
         ${kind === "레벨테스트" && html`
           <div style=${{ fontSize: 12, color: C.slate, lineHeight: 1.75, background: C.ivory, border: `1px solid ${C.line}`, padding: "12px 14px", marginBottom: 14 }}>
-            레벨테스트는 선생님이 직접 온라인(Zoom)으로 진행합니다. 별도 응시료 없이 사비로 제공해 드리는 진단 절차이며, 아이의 현재 영어 실력을 객관적으로 확인하고 이후 학습 방향을 설계하는 자료로 활용됩니다.
+            레벨테스트는 아이가 집에서 온라인으로 직접 응시하는 방식입니다. 문법·듣기·독해·어휘 네 영역으로 구성되어 있으며, 소요 시간은 아이마다 다르지만 보통 30~40분 정도예요. 집중이 잘 되는 조용한 공간에서 응시해 주시면 좋습니다. 별도 응시료 없이 사비로 제공해 드리는 진단 절차이며, 아이의 현재 영어 실력을 객관적으로 확인하고 이후 학습 방향을 설계하는 자료로 활용됩니다.
           </div>
         `}
         <${Field} label="학생 이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
