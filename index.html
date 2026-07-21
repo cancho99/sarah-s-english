@@ -1636,8 +1636,21 @@ function HomeworkEditor({ data, updateData }) {
     }));
   }
   const list = data.homework || [];
+  const todayStr = today();
+  const dueToday = list.filter((h) => h.dueDate === todayStr);
   return html`
     <div>
+      ${dueToday.length > 0 && html`
+        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📌 오늘(${fmtDate(todayStr)}) 확인할 숙제</div>
+        <${Card} style=${{ borderLeft: `3px solid ${C.gold}`, marginBottom: 18 }}>
+          ${dueToday.map((h) => html`
+            <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
+              <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
+              <div onClick=${() => toggleDone(h.id)} style=${{ marginLeft: 10, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+            </div>
+          `)}
+        <//>
+      `}
       <${Card}>
         <div style=${{ display: "flex", gap: 8 }}>
           <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><input style=${inputStyle} type="date" value=${assignedDate} onChange=${(e) => setAssignedDate(e.target.value)} /><//></div>
