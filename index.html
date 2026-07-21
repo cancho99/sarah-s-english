@@ -1246,6 +1246,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "mock", label: "모의고사", icon: "📄" },
     { key: "regularExam", label: "정기시험", icon: "🏫" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
+    { key: "storage", label: "저장 공간 관리", icon: "💾" },
   ];
   function handleDelete() {
     if (confirm(`${student.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) onDeleteStudent();
@@ -1274,6 +1275,64 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} />`}
         ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
         ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
+        ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
+      <//>
+    </div>
+  `;
+}
+
+function StorageCleanupPanel({ data, updateData }) {
+  const [msg, setMsg] = useState("");
+  const sizeBytes = new Blob([JSON.stringify(data)]).size;
+  const sizeKB = Math.round(sizeBytes / 1024);
+  const LIMIT_KB = 1000; // Firestore's hard cap is 1MB per document
+  const pct = Math.min(100, Math.round((sizeBytes / (LIMIT_KB * 1024)) * 100));
+  const photoCount = (data.homework || []).reduce((sum, h) => sum + (h.photos || (h.photo ? [h.photo] : [])).length, 0);
+  const vocabResultCount = (data.vocabResults || []).length;
+  const examResultCount = (data.examResults || []).length;
+  const logCount = (data.logs || []).length;
+
+  async function clearAllPhotos() {
+    if (!confirm("이 학생의 모든 숙제 사진을 삭제할까요? 숙제 내용과 완료 표시는 그대로 남아요.")) return;
+    await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: [] })) }));
+    setMsg("사진을 모두 삭제했어요.");
+  }
+  async function clearVocabResults() {
+    if (!confirm("단어 재시험(퀴즈) 응시 기록을 전부 삭제할까요? 퀴즈 자체(문제)는 남고, 학생이 응시했던 결과 기록만 지워져요.")) return;
+    await updateData((d) => ({ ...d, vocabResults: [] }));
+    setMsg("단어 재시험 응시 기록을 정리했어요.");
+  }
+  async function clearExamResults() {
+    if (!confirm("추가 시험 응시 기록을 전부 삭제할까요? 시험 자체(문제)는 남고, 응시 결과 기록만 지워져요.")) return;
+    await updateData((d) => ({ ...d, examResults: [] }));
+    setMsg("추가 시험 응시 기록을 정리했어요.");
+  }
+  async function resetEverything() {
+    if (!confirm("이 학생의 모든 기록(학습기록·숙제·시험·사진 등)을 전부 초기화할까요? 학생 이름/코드는 그대로 남고 되돌릴 수 없어요.")) return;
+    await updateData(() => emptyData());
+    setMsg("전체 데이터를 초기화했어요.");
+  }
+
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>Firebase는 학생 한 명의 기록을 문서 하나(최대 1MB)에 저장해요. 여기서 현재 용량을 확인하고, 꽉 찼을 때 정리할 수 있어요.</div>
+        <div style=${{ fontSize: 20, fontWeight: 700, color: pct > 80 ? C.danger : C.navy }}>${sizeKB}KB <span style=${{ fontSize: 12, color: C.slate, fontWeight: 400 }}>/ 약 ${LIMIT_KB}KB 중</span></div>
+        <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
+          <div style=${{ height: "100%", width: pct + "%", background: pct > 80 ? C.danger : C.gold }} />
+        </div>
+        ${pct > 70 && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>공간이 얼마 안 남았어요. 아래에서 정리해 주세요.</div>`}
+      <//>
+
+      <${Card}>
+        <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어재시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건</div>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <${Button} variant="ghost" onClick=${clearAllPhotos}>숙제 사진 전체 삭제 (내용은 유지)<//>
+          <${Button} variant="ghost" onClick=${clearVocabResults}>단어 재시험 응시 기록 정리<//>
+          <${Button} variant="ghost" onClick=${clearExamResults}>추가 시험 응시 기록 정리<//>
+          <${Button} variant="danger" onClick=${resetEverything}>이 학생 전체 데이터 초기화<//>
+        </div>
+        ${msg && html`<div style=${{ fontSize: 12.5, color: C.navy, marginTop: 10 }}>${msg}</div>`}
       <//>
     </div>
   `;
