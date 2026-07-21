@@ -102,6 +102,7 @@ async function loadStore(attempts = 3) {
         roster: Array.isArray(rec.roster) ? rec.roster : [],
         teacherAuth: rec.teacherAuth || null,
         levelTestBookings: Array.isArray(rec.levelTestBookings) ? rec.levelTestBookings : [],
+        announcement: rec.announcement || null,
         studentData: {}, // fetched per-student on demand via ensureData()
       };
       return store;
@@ -116,7 +117,7 @@ async function loadStore(attempts = 3) {
 async function saveMeta() {
   try {
     const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [] });
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
@@ -555,6 +556,7 @@ function App() {
   const [roster, setRoster] = useState(null);
   const [teacherAuth, setTeacherAuth] = useState(null);
   const [levelTestBookings, setLevelTestBookings] = useState([]);
+  const [announcement, setAnnouncement] = useState(null);
   const [session, setSession] = useState(null);
   const [dataCache, setDataCache] = useState({});
   const [selectedStudentId, setSelectedStudentId] = useState(null);
@@ -572,6 +574,7 @@ function App() {
         setRoster(s.roster);
         setTeacherAuth(s.teacherAuth);
         setLevelTestBookings(s.levelTestBookings || []);
+        setAnnouncement(s.announcement || null);
       } catch (e) {
         if (!cancelled) setLoadError(true);
       }
@@ -587,6 +590,12 @@ function App() {
   async function addBooking(b) {
     const next = [{ id: uid(), status: "대기", createdAt: today(), ...b }, ...levelTestBookings];
     await saveBookingsList(next);
+  }
+  async function saveAnnouncement(text) {
+    const next = text ? { text, updatedAt: today() } : null;
+    setAnnouncement(next);
+    if (store) store.announcement = next;
+    await saveMeta();
   }
 
   async function ensureData(id) {
@@ -661,7 +670,8 @@ function App() {
         ${screen === "teacherDash" && html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
           selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
           ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
-          levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList} />`}
+          levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
+          announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
         ${screen === "parentDash" && html`<${ParentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
       </div>
@@ -903,7 +913,104 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
 }
 
 // ---------- Teacher dashboard ----------
-function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList }) {
+function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+  const [loaded, setLoaded] = useState(false);
+  const [annText, setAnnText] = useState(announcement ? announcement.text : "");
+  const [annSaved, setAnnSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => { setAnnText(announcement ? announcement.text : ""); }, [announcement]);
+
+  async function submitAnnouncement() {
+    await saveAnnouncement(annText.trim());
+    setAnnSaved(true);
+    setTimeout(() => setAnnSaved(false), 2500);
+  }
+
+  const pendingBookings = (levelTestBookings || []).filter((b) => b.status !== "완료");
+  const todayStr = today();
+  const todayHomework = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    (d.homework || []).forEach((h) => {
+      if (h.assignedDate === todayStr || h.dueDate === todayStr) todayHomework.push({ student: s, hw: h });
+    });
+  });
+  const allConsults = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    (d.consultRequests || []).forEach((r) => allConsults.push({ student: s, r }));
+  });
+  const pendingConsults = allConsults.filter((c) => c.r.status !== "완료");
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>왼쪽 목록에서 학생을 바로 선택하시거나, 아래에서 전체 현황을 확인하세요.</div>
+
+      ${!showAdd ? html`
+        <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 20 }}>+ 학생 추가<//>
+      ` : html`
+        <${Card}>
+          <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+          <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+          <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+          ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+          <div style=${{ display: "flex", gap: 8 }}>
+            <${Button} variant="gold" onClick=${addStudent}>저장<//>
+            <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+          </div>
+        <//>
+      `}
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📢 공지사항</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
+        <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+          <${Button} variant="gold" style=${{ padding: "7px 16px", fontSize: 12.5 }} onClick=${submitAnnouncement}>저장<//>
+          ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
+        </div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗓 새로운 레벨테스트 문의 ${pendingBookings.length > 0 ? `(${pendingBookings.length}건)` : ""}</div>
+      <${Card} style=${{ marginBottom: 20, cursor: "pointer" }} onClick=${onGoBookings}>
+        ${pendingBookings.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 문의가 없어요.</div>` : pendingBookings.slice(0, 3).map((b) => html`
+          <div key=${b.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${b.name} ${b.grade ? `(${b.grade})` : ""} — ${b.date}${b.time ? " · " + b.time : ""}</div>
+        `)}
+        <div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>전체 보기 →</div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>💬 학부모 상담 요청 ${pendingConsults.length > 0 ? `(${pendingConsults.length}건)` : ""}</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : pendingConsults.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 상담 요청이 없어요.</div>` : pendingConsults.map((c) => html`
+          <div key=${c.r.id} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+            <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
+          </div>
+        `)}
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 숙제 현황</div>
+      <${Card} onClick=${onGoHwStatus} style=${{ cursor: "pointer" }}>
+        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 날짜와 관련된 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
+          <div key=${i} style=${{ fontSize: 12.5, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
+            <span><b>${student.name}</b> — ${hw.content}</span>
+            <span style=${{ color: hw.done ? C.gold : C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${hw.done ? "✓ 완료" : "✗ 미완료"}</span>
+          </div>
+        `)}
+        <div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>전체 숙제 현황 보기 →</div>
+      <//>
+    </div>
+  `;
+}
+
+function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement }) {
   const [section, setSection] = useState("students");
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
@@ -962,44 +1069,14 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   } else if (selected) {
     const data = dataCache[selected.id] || emptyData();
     body = html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
-      updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} />`;
+      updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} />`;
   } else {
-    body = html`
-      <div>
-        <div style=${{ fontSize: 13, color: C.slate, marginBottom: 14 }}>왼쪽 목록에서 학생을 선택하시거나, 새 학생을 등록해 주세요.</div>
-        ${roster.length === 0 && html`<${Empty} text="학생을 추가해 주세요." />`}
-        ${!showAdd ? html`
-          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center" }}>+ 학생 추가<//>
-        ` : html`
-          <${Card}>
-            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
-            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
-            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
-            <div style=${{ display: "flex", gap: 8 }}>
-              <${Button} variant="gold" onClick=${addStudent}>저장<//>
-              <${Button} variant="ghost" onClick=${() => { setShowAdd(false); setAddErr(""); }}>취소<//>
-            </div>
-          <//>
-        `}
-        ${roster.length > 0 && html`
-          <div style=${{ marginTop: 18 }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8, fontWeight: 700, letterSpacing: 0.5 }}>학생 목록 (삭제)</div>
-            ${roster.map((r) => html`
-              <${Card} key=${r.id}>
-                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div onClick=${() => setSelectedStudentId(r.id)} style=${{ cursor: "pointer", flex: 1 }}>
-                    <div style=${{ fontWeight: 700, color: C.navy }}>${r.name}</div>
-                    <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
-                  </div>
-                  <button onClick=${() => removeStudent(r.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
-                </div>
-              <//>
-            `)}
-          </div>
-        `}
-      </div>
-    `;
+    body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache}
+      levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+      onGoBookings=${() => { setShowBookings(true); }} onGoHwStatus=${() => { setShowStatus(true); }}
+      onSelectStudent=${(id) => setSelectedStudentId(id)}
+      showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
+      addErr=${addErr} addStudent=${addStudent} />`;
   }
 
   return html`
@@ -1124,7 +1201,7 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
   `;
 }
 
-function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout }) {
+function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent }) {
   const [tab, setTab] = useState("logs");
   const tabs = [
     { key: "byDate", label: "날짜별 보기", icon: "📅" },
@@ -1138,14 +1215,22 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "regularExam", label: "정기시험", icon: "🏫" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
+  function handleDelete() {
+    if (confirm(`${student.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) onDeleteStudent();
+  }
   return html`
     <div>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <${BackBtn} onClick=${onBackToList} />
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 2 }}>${student.name} 학생</div>
-      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>학생코드 ${student.studentCode} · 학부모코드 ${student.parentCode}</div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 2 }}>${student.name} 학생</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>학생코드 ${student.studentCode} · 학부모코드 ${student.parentCode}</div>
+        </div>
+        <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
+      </div>
       <${Shell} side=${html`<${SideNav} items=${tabs} active=${tab} onChange=${setTab} />`}>
         ${tab === "byDate" && html`<${DateView} data=${data} role="teacher" />`}
         ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
@@ -2445,7 +2530,6 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
     { key: "byDate", label: "날짜별 보기", icon: "📅" },
     { key: "logs", label: "학습 기록", icon: "📘" },
     { key: "homework", label: "숙제", icon: "📝" },
-    { key: "feedback", label: "선생님 상담", icon: "💬" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
 
@@ -2484,23 +2568,6 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
             `)}
           </div>
         `))}
-
-      ${tab === "feedback" && html`
-        <${Card}>
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>선생님께 궁금한 점이나 상담 요청을 남겨보세요.</div>
-          <textarea style=${{ ...inputStyle, minHeight: 80 }} value=${commentText} onChange=${(e) => setCommentText(e.target.value)} placeholder="예: 다음 주 화요일에 상담 가능하실까요?" />
-          <div style=${{ marginTop: 8, display: "flex", alignItems: "center", gap: 10 }}>
-            <${Button} variant="gold" onClick=${sendComment}>전달하기<//>
-            ${commentSent && html`<span style=${{ fontSize: 12, color: C.navy }}>${commentSent}</span>`}
-          </div>
-        <//>
-        ${data.feedback.length === 0 ? html`<${Empty} text="아직 남긴 내용이 없어요." />` : data.feedback.map((f) => html`
-          <${Card} key=${f.id} style=${f.from === "parent" ? { borderLeft: `3px solid ${C.gold}` } : {}}>
-            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(f.date)} · ${f.from === "parent" ? "나의 코멘트" : "선생님"}</div>
-            <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${f.text}</div>
-          <//>
-        `)}
-      `}
 
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
     </div>
