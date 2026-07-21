@@ -695,7 +695,7 @@ function HomePage({ setScreen, announcement }) {
           <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
         </div>
         <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
+          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
           <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
           <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
           <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
@@ -812,15 +812,16 @@ function HomePage({ setScreen, announcement }) {
 
 // ---------- Level test booking ----------
 function LevelTestBooking({ onBack, onSubmit }) {
-  const [name, setName] = useState(""); const [grade, setGrade] = useState("");
+  const [kind, setKind] = useState("레벨테스트");
+  const [name, setName] = useState(""); const [grade, setGrade] = useState(""); const [school, setSchool] = useState("");
   const [phone, setPhone] = useState(""); const [date, setDate] = useState(""); const [time, setTime] = useState("");
-  const [note, setNote] = useState("");
+  const [level, setLevel] = useState(""); const [note, setNote] = useState("");
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
 
   async function submit() {
     if (!name || !phone || !date) { setErr("이름, 연락처, 희망 날짜는 꼭 입력해 주세요."); return; }
-    await onSubmit({ name, grade, phone, date, time, note });
+    await onSubmit({ kind, name, grade, school, phone, date, time, level, note });
     setDone(true);
   }
 
@@ -837,18 +838,33 @@ function LevelTestBooking({ onBack, onSubmit }) {
   return html`
     <div style=${{ maxWidth: 440, margin: "0 auto", padding: "24px 20px 60px" }}>
       <${BackBtn} onClick=${onBack} />
-      <${SectionLabel} n=${1} label="LEVEL TEST" />
+      <${SectionLabel} n=${1} label="LEVEL TEST · CONSULT" />
       <${Card}>
+        <${Field} label="예약 종류">
+          <select style=${inputStyle} value=${kind} onChange=${(e) => setKind(e.target.value)}>
+            <option value="레벨테스트">레벨테스트 예약</option>
+            <option value="상담">상담 예약</option>
+          </select>
+        <//>
+        ${kind === "레벨테스트" && html`
+          <div style=${{ fontSize: 12, color: C.slate, lineHeight: 1.75, background: C.ivory, border: `1px solid ${C.line}`, padding: "12px 14px", marginBottom: 14 }}>
+            레벨테스트는 선생님이 직접 온라인(Zoom)으로 진행합니다. 별도 응시료 없이 사비로 제공해 드리는 진단 절차이며, 아이의 현재 영어 실력을 객관적으로 확인하고 이후 학습 방향을 설계하는 자료로 활용됩니다.
+          </div>
+        `}
         <${Field} label="학생 이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-        <${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)} placeholder="예: 중2" /><//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)} placeholder="예: 중2" /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="학교"><input style=${inputStyle} value=${school} onChange=${(e) => setSchool(e.target.value)} placeholder="예: OO중학교" /><//></div>
+        </div>
         <${Field} label="연락처"><input style=${inputStyle} value=${phone} onChange=${(e) => setPhone(e.target.value)} placeholder="학부모님 연락처" /><//>
         <div style=${{ display: "flex", gap: 8 }}>
           <div style=${{ flex: 1 }}><${Field} label="희망 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//></div>
           <div style=${{ flex: 1 }}><${Field} label="희망 시간대"><input style=${inputStyle} value=${time} onChange=${(e) => setTime(e.target.value)} placeholder="예: 오후 4시" /><//></div>
         </div>
-        <${Field} label="문의 사항 (선택)"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        <${Field} label="아이 현재 실력 (간단히)"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${level} onChange=${(e) => setLevel(e.target.value)} placeholder="예: 어휘는 중2 수준, 문법은 아직 기초 단계" /><//>
+        <${Field} label="문의 사항 (선택)"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
         ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
-        <${Button} variant="gold" onClick=${submit}>예약 신청<//>
+        <${Button} variant="gold" onClick=${submit}>${kind} 신청<//>
       <//>
     </div>
   `;
@@ -985,7 +1001,7 @@ function TeacherOverview({ roster, ensureData, dataCache, levelTestBookings, ann
         </div>
       <//>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗓 새로운 레벨테스트 문의 ${pendingBookings.length > 0 ? `(${pendingBookings.length}건)` : ""}</div>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗓 새로운 레벨테스트·상담 문의 ${pendingBookings.length > 0 ? `(${pendingBookings.length}건)` : ""}</div>
       <${Card} style=${{ marginBottom: 20, cursor: "pointer" }} onClick=${onGoBookings}>
         ${pendingBookings.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 문의가 없어요.</div>` : pendingBookings.slice(0, 3).map((b) => html`
           <div key=${b.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${b.name} ${b.grade ? `(${b.grade})` : ""} — ${b.date}${b.time ? " · " + b.time : ""}</div>
@@ -1120,15 +1136,20 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogou
         <${BackBtn} onClick=${onBack} />
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>레벨테스트 예약 현황</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>레벨테스트 · 상담 예약 현황</div>
       ${list.length === 0 && html`<${Empty} text="아직 접수된 예약이 없어요." />`}
       ${list.map((b) => html`
         <${Card} key=${b.id}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style=${{ fontWeight: 700, color: C.navy }}>${b.name} ${b.grade ? `(${b.grade})` : ""}</div>
+              <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: b.kind === "상담" ? "#EFEAE0" : "#E7ECF3", color: C.navy }}>${b.kind || "레벨테스트"}</span>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${b.name} ${b.grade ? `(${b.grade})` : ""}</div>
+              </div>
+              ${b.school && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 4 }}>${b.school}</div>`}
               <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 3 }}>연락처 ${b.phone}</div>
               <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>희망일시 ${b.date}${b.time ? " · " + b.time : ""}</div>
+              ${b.level && html`<div style=${{ fontSize: 12.5, marginTop: 6 }}><b>현재 실력:</b> ${b.level}</div>`}
               ${b.note && html`<div style=${{ fontSize: 12.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${b.note}</div>`}
             </div>
             <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: b.status === "완료" ? "#E9F1EA" : "#F7E9E6", color: b.status === "완료" ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${b.status || "대기"}</span>
