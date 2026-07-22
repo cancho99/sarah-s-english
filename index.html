@@ -381,8 +381,10 @@ async function extractPdfTextForKeys(file) {
 }
 const CIRCLED_DIGIT = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
 function parseExamKeyPdfText(text) {
-  const ANSWER_RE = /(\d{1,2})\s*([①②③④⑤])/g;
+  const ANSWER_RE = /(\d{1,3})\s*([①②③④⑤])/g;
   function hasAnswerPairs(line) { return [...line.matchAll(ANSWER_RE)].length > 0; }
+  const ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ";
+  const topPattern = new RegExp(`^(\\d+[.\\s]|\\d+회|[${ROMAN}]+[.\\s])`);
 
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const sets = [];
@@ -402,16 +404,17 @@ function parseExamKeyPdfText(text) {
       pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
       return;
     }
-    const isNumberedHeader = /^\d+[.\s]/.test(line) || /^\d+회/.test(line);
-    if (isNumberedHeader) {
-      // top-level header — either "N회 시험이름" (round-based book) or "NN. 유형이름" (topic-based book)
-      // checked before the 학년도 check below, since a round's own title can itself contain "학년도"
-      // (e.g. "02회 2026학년도 6월 모의평가") and must not be mistaken for a bare year sub-header
+    if (topPattern.test(line)) {
+      // top-level header — "N회 시험이름", "NN. 유형이름", or "Ⅰ. 유형이름" (Roman-numeral books).
+      // Checked before treating anything as a bare sub-header, since a round's own title can itself
+      // contain words like "학년도" (e.g. "02회 2026학년도 6월 모의평가") and must not be split off.
       flush();
       topLevelName = clean;
-      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a bare 학년도 sub-header follows
-    } else if (/학년도/.test(line)) {
-      // bare sub-section header nested under the current top-level category (e.g. just "2026학년도")
+      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a sub-header follows
+    } else {
+      // any other non-answer line is treated as a sub-header nested under the current top-level
+      // (e.g. "2026학년도", "경찰대/사관학교 입학시험") — pure divider labels with no answers of their
+      // own (like "어법편"/"어휘편") are silently dropped by flush()'s answers.length check.
       flush();
       cur = { id: uid(), name: topLevelName ? `${topLevelName} - ${clean}` : clean, answers: [] };
     }
