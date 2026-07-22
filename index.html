@@ -381,26 +381,39 @@ async function extractPdfTextForKeys(file) {
 }
 const CIRCLED_DIGIT = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
 function parseExamKeyPdfText(text) {
-  const lines = text.split("\n");
-  const headerRe = /^(\d+)\s*회\s+(.+)/;
+  const ANSWER_RE = /(\d{1,2})\s*([①②③④⑤])/g;
+  function hasAnswerPairs(line) { return [...line.matchAll(ANSWER_RE)].length > 0; }
+
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const sets = [];
+  let topLevelName = null;
   let cur = null;
-  lines.forEach((raw) => {
-    const line = raw.trim();
-    if (!line) return;
-    const m = line.match(headerRe);
-    if (m) {
-      if (cur && cur.answers.length > 0) sets.push(cur);
-      const title = m[2].split(/문제편|해설편/)[0].trim();
-      cur = { id: uid(), name: `${m[1]}회 ${title}`.trim(), answers: [] };
+
+  function flush() {
+    if (cur && cur.answers.length > 0) sets.push(cur);
+    cur = null;
+  }
+
+  lines.forEach((line) => {
+    const clean = line.split(/문제편|해설편/)[0].trim();
+    if (hasAnswerPairs(line)) {
+      if (!cur) return;
+      const pairs = [...line.matchAll(ANSWER_RE)];
+      pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
       return;
     }
-    if (cur) {
-      const pairs = [...line.matchAll(/(\d{1,2})\s*([①②③④⑤])/g)];
-      pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
+    if (/학년도/.test(line)) {
+      // sub-section header nested under the current top-level category (e.g. "2026학년도")
+      flush();
+      cur = { id: uid(), name: topLevelName ? `${topLevelName} - ${clean}` : clean, answers: [] };
+    } else if (/^\d+[.\s]/.test(line) || /^\d+회/.test(line)) {
+      // top-level header — either "N회 시험이름" (round-based book) or "NN. 유형이름" (topic-based book)
+      flush();
+      topLevelName = clean;
+      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a 학년도 sub-header follows
     }
   });
-  if (cur && cur.answers.length > 0) sets.push(cur);
+  flush();
   return sets;
 }
 
@@ -2301,15 +2314,25 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
   const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyText, setEditKeyText] = useState("");
   const [editMsg, setEditMsg] = useState("");
 
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const pickedSet = (examKeyLibrary || []).find((x) => x.id === pickId);
+
   function pickFromLibrary(id) {
     setPickId(id);
     const s = (examKeyLibrary || []).find((x) => x.id === id);
     if (s) {
+      setRangeFrom("1"); setRangeTo(String(s.answers.length));
       setKeyText(s.answers.join(", "));
       setTitle((t) => t || s.name);
     }
   }
-
+  function applyRange() {
+    if (!pickedSet) return;
+    const from = Math.max(1, Number(rangeFrom) || 1);
+    const to = Math.min(pickedSet.answers.length, Number(rangeTo) || pickedSet.answers.length);
+    setKeyText(pickedSet.answers.slice(from - 1, to).join(", "));
+  }
   async function save() {
     const key = parseAnswerKey(keyText);
     if (!title || key.length === 0) { setMsg("이름과 정답을 입력해 주세요."); return; }
@@ -2341,6 +2364,13 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
                 ${examKeyLibrary.map((s) => html`<option key=${s.id} value=${s.id}>${s.name} (${s.answers.length}문항)</option>`)}
               </select>
             <//>
+            ${pickedSet && html`
+              <div style=${{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 12 }}>
+                <div style=${{ flex: 1 }}><${Field} label="시작 문항"><input style=${inputStyle} type="number" min="1" max=${pickedSet.answers.length} value=${rangeFrom} onChange=${(e) => setRangeFrom(e.target.value)} /><//></div>
+                <div style=${{ flex: 1 }}><${Field} label="끝 문항"><input style=${inputStyle} type="number" min="1" max=${pickedSet.answers.length} value=${rangeTo} onChange=${(e) => setRangeTo(e.target.value)} /><//></div>
+                <${Button} variant="ghost" style=${{ padding: "9px 14px", fontSize: 12, marginBottom: 1 }} onClick=${applyRange}>범위 적용<//>
+              </div>
+            `}
           `}
           <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
           <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
