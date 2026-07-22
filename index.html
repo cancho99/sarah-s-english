@@ -364,20 +364,59 @@ async function extractPdfTextForKeys(file) {
   }
   const buf = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-  let lines = [];
+  let allLines = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    const rows = {};
+    const viewport = page.getViewport({ scale: 1 });
+
+    // Group items into rows by Y first (rounded), keeping each item's X position.
+    const rowMap = {};
     content.items.forEach((it) => {
       const y = Math.round(it.transform[5]);
-      if (!rows[y]) rows[y] = [];
-      rows[y].push(it.str);
+      const x = it.transform[4];
+      if (!rowMap[y]) rowMap[y] = [];
+      rowMap[y].push({ x, str: it.str });
     });
-    const ys = Object.keys(rows).map(Number).sort((a, b) => b - a);
-    ys.forEach((y) => lines.push(rows[y].join(" ")));
+    const ys = Object.keys(rowMap).map(Number);
+
+    // Detect column boundaries from the overall spread of X start-positions on this page —
+    // a page laid out in 2-3 columns (like these 정답표 PDFs) has big horizontal gaps between
+    // columns; a single-column page has none, and this correctly falls back to one column.
+    const allX = [];
+    ys.forEach((y) => rowMap[y].forEach((it) => allX.push(it.x)));
+    allX.sort((a, b) => a - b);
+    const gapThreshold = viewport.width * 0.06;
+    const boundaries = [];
+    for (let i = 1; i < allX.length; i++) {
+      if (allX[i] - allX[i - 1] > gapThreshold) boundaries.push((allX[i] + allX[i - 1]) / 2);
+    }
+    function colIndexOf(x) {
+      let idx = 0;
+      for (const b of boundaries) { if (x > b) idx++; }
+      return idx;
+    }
+    const numCols = boundaries.length + 1;
+
+    // Split each Y-row's items by column, then rebuild lines within each column separately.
+    const colLines = Array.from({ length: numCols }, () => []);
+    ys.forEach((y) => {
+      const byCol = Array.from({ length: numCols }, () => []);
+      rowMap[y].forEach((it) => byCol[colIndexOf(it.x)].push(it));
+      byCol.forEach((items, c) => {
+        if (items.length === 0) return;
+        items.sort((a, b) => a.x - b.x);
+        colLines[c].push({ y, text: items.map((i) => i.str).join(" ") });
+      });
+    });
+
+    // Emit column by column, left to right; each column read top-to-bottom.
+    colLines.forEach((linesInCol) => {
+      linesInCol.sort((a, b) => b.y - a.y);
+      linesInCol.forEach((l) => allLines.push(l.text));
+    });
   }
-  return lines.join("\n");
+  return allLines.join("\n");
 }
 const CIRCLED_DIGIT = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
 function parseExamKeyPdfText(text) {
