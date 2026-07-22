@@ -36,6 +36,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/htm/2.1.0/htm.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -103,6 +104,7 @@ async function loadStore(attempts = 3) {
         teacherAuth: rec.teacherAuth || null,
         levelTestBookings: Array.isArray(rec.levelTestBookings) ? rec.levelTestBookings : [],
         announcement: rec.announcement || null,
+        examKeyLibrary: Array.isArray(rec.examKeyLibrary) ? rec.examKeyLibrary : [],
         studentData: {}, // fetched per-student on demand via ensureData()
       };
       return store;
@@ -117,7 +119,7 @@ async function loadStore(attempts = 3) {
 async function saveMeta() {
   try {
     const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null });
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [] });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
@@ -355,6 +357,53 @@ function parseAnswerKey(text) {
   return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
 
+// ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
+async function extractPdfTextForKeys(file) {
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows = {};
+    content.items.forEach((it) => {
+      const y = Math.round(it.transform[5]);
+      if (!rows[y]) rows[y] = [];
+      rows[y].push(it.str);
+    });
+    const ys = Object.keys(rows).map(Number).sort((a, b) => b - a);
+    ys.forEach((y) => lines.push(rows[y].join(" ")));
+  }
+  return lines.join("\n");
+}
+const CIRCLED_DIGIT = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
+function parseExamKeyPdfText(text) {
+  const lines = text.split("\n");
+  const headerRe = /^(\d+)\s*회\s+(.+)/;
+  const sets = [];
+  let cur = null;
+  lines.forEach((raw) => {
+    const line = raw.trim();
+    if (!line) return;
+    const m = line.match(headerRe);
+    if (m) {
+      if (cur && cur.answers.length > 0) sets.push(cur);
+      const title = m[2].split(/문제편|해설편/)[0].trim();
+      cur = { id: uid(), name: `${m[1]}회 ${title}`.trim(), answers: [] };
+      return;
+    }
+    if (cur) {
+      const pairs = [...line.matchAll(/(\d{1,2})\s*([①②③④⑤])/g)];
+      pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
+    }
+  });
+  if (cur && cur.answers.length > 0) sets.push(cur);
+  return sets;
+}
+
 function groupByDate(items, dateField) {
   const map = {};
   items.forEach((it) => {
@@ -557,6 +606,7 @@ function App() {
   const [teacherAuth, setTeacherAuth] = useState(null);
   const [levelTestBookings, setLevelTestBookings] = useState([]);
   const [announcement, setAnnouncement] = useState(null);
+  const [examKeyLibrary, setExamKeyLibrary] = useState([]);
   const [session, setSession] = useState(null);
   const [dataCache, setDataCache] = useState({});
   const [selectedStudentId, setSelectedStudentId] = useState(null);
@@ -575,6 +625,7 @@ function App() {
         setTeacherAuth(s.teacherAuth);
         setLevelTestBookings(s.levelTestBookings || []);
         setAnnouncement(s.announcement || null);
+        setExamKeyLibrary(s.examKeyLibrary || []);
       } catch (e) {
         if (!cancelled) setLoadError(true);
       }
@@ -595,6 +646,11 @@ function App() {
     const next = text ? { text, updatedAt: today() } : null;
     setAnnouncement(next);
     if (store) store.announcement = next;
+    await saveMeta();
+  }
+  async function saveExamKeyLibrary(list) {
+    setExamKeyLibrary(list);
+    if (store) store.examKeyLibrary = list;
     await saveMeta();
   }
 
@@ -671,7 +727,8 @@ function App() {
           selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
           ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
           levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
-          announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
+          announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+          examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
         ${screen === "parentDash" && html`<${ParentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
       </div>
@@ -1072,7 +1129,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   `;
 }
 
-function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement }) {
+function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary }) {
   const [section, setSection] = useState("students");
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
@@ -1106,6 +1163,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "students", label: "학생 관리", icon: "🗂" },
     ...studentSubItems,
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
+    { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
   ];
 
@@ -1113,7 +1171,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 
   function handleNavChange(key) {
     if (key === "students") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
-    else if (key === "wordbank" || key === "reports") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
+    else if (key === "wordbank" || key === "reports" || key === "examkeys") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
     else if (key === "__bookings") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(true); }
     else if (key === "__hwstatus") { setSection("students"); setSelectedStudentId(null); setShowBookings(false); setShowStatus(true); }
     else if (key.startsWith("__student:")) { setSection("students"); setShowStatus(false); setShowBookings(false); setSelectedStudentId(key.slice("__student:".length)); }
@@ -1122,6 +1180,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   let body;
   if (section === "wordbank") {
     body = html`<${WordbankSection} />`;
+  } else if (section === "examkeys") {
+    body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
   } else if (showStatus) {
@@ -1131,7 +1191,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   } else if (selected) {
     const data = dataCache[selected.id] || emptyData();
     body = html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
-      updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} />`;
+      updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />`;
   } else {
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
@@ -1153,6 +1213,91 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 }
 
 // ---------- 단어 시험지 생성 (기존 wordtest.html 도구를 그대로 임베드) ----------
+function ExamKeyLibrarySection({ library, saveLibrary }) {
+  const [status, setStatus] = useState("");
+  const [pending, setPending] = useState(null); // sets parsed from a PDF, awaiting confirmation
+  const [manualName, setManualName] = useState("");
+  const [manualKey, setManualKey] = useState("");
+  const [manualMsg, setManualMsg] = useState("");
+
+  async function handlePdf(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setStatus("PDF 읽는 중...");
+    setPending(null);
+    try {
+      const text = await extractPdfTextForKeys(file);
+      const sets = parseExamKeyPdfText(text);
+      if (sets.length === 0) {
+        setStatus("정답표 형식을 인식하지 못했어요. 'N회 시험이름' 형식 제목과 '01 ① 02 ③...' 형식의 답이 있는 PDF인지 확인해 주세요.");
+      } else {
+        setPending(sets);
+        setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 아래에서 확인하고 저장해 주세요.`);
+      }
+    } catch (err) {
+      setStatus("PDF를 읽지 못했어요. 파일을 확인해 주세요.");
+    }
+  }
+
+  async function confirmSavePending() {
+    await saveLibrary([...(pending || []), ...(library || [])]);
+    setPending(null); setStatus("저장했어요.");
+  }
+
+  async function addManual() {
+    const key = parseAnswerKey(manualKey).map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!manualName || key.length === 0) { setManualMsg("이름과 정답을 입력해 주세요."); return; }
+    await saveLibrary([{ id: uid(), name: manualName, answers: key }, ...(library || [])]);
+    setManualName(""); setManualKey(""); setManualMsg("");
+  }
+  async function removeSet(id) {
+    await saveLibrary((library || []).filter((s) => s.id !== id));
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>여기에 정답표를 미리 등록해두면, 모의고사 만들 때 매번 손으로 입력할 필요 없이 골라서 바로 채점할 수 있어요.</div>
+
+      <${Card}>
+        <h3>PDF로 한 번에 등록하기</h3>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, 여러 회차를 한 번에 인식해서 등록해요.</div>
+        <label style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer", display: "inline-block" }}>
+          PDF 선택
+          <input type="file" accept="application/pdf" onChange=${handlePdf} style=${{ display: "none" }} />
+        </label>
+        ${status && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>${status}</div>`}
+        ${pending && html`
+          <div style=${{ marginTop: 12 }}>
+            ${pending.map((s) => html`<div key=${s.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${s.name} — ${s.answers.length}문항</div>`)}
+            <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>이대로 저장하기<//>
+          </div>
+        `}
+      <//>
+
+      <${Card}>
+        <h3>직접 하나씩 등록하기</h3>
+        <${Field} label="시험 이름"><input style=${inputStyle} value=${manualName} onChange=${(e) => setManualName(e.target.value)} placeholder="예: 17회 2024년 3월 학력평가" /><//>
+        <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)"><textarea style=${{ ...inputStyle, minHeight: 80, fontFamily: "monospace" }} value=${manualKey} onChange=${(e) => setManualKey(e.target.value)} placeholder="예: 5,5,1,3,5,3,2,5,4,3 ..." /><//>
+        ${manualMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${manualMsg}</div>`}
+        <${Button} variant="gold" onClick=${addManual}>등록<//>
+      <//>
+
+      <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, margin: "18px 0 8px" }}>등록된 정답표 (${(library || []).length}개)</div>
+      ${(!library || library.length === 0) && html`<${Empty} text="아직 등록된 정답표가 없어요." />`}
+      ${(library || []).map((s) => html`
+        <${Card} key=${s.id}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${s.name}</div>
+            <button onClick=${() => removeSet(s.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
+          </div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${s.answers.length}문항</div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
 function WordbankSection() {
   return html`
     <div>
@@ -1268,7 +1413,7 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
   `;
 }
 
-function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent }) {
+function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent, examKeyLibrary }) {
   const [tab, setTab] = useState("logs");
   const tabs = [
     { key: "byDate", label: "날짜별 보기", icon: "📅" },
@@ -1307,7 +1452,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
         ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
         ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} />`}
+        ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
         ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
         ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
         ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
@@ -2147,19 +2292,29 @@ function ExamEditor({ data, updateData }) {
 }
 
 // ---------- Mock exam (모의고사): answer-key only, auto-graded ----------
-function MockExamEditor({ data, updateData }) {
+function MockExamEditor({ data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyText, setKeyText] = useState("");
+  const [pickId, setPickId] = useState("");
   const [msg, setMsg] = useState("");
   const [editId, setEditId] = useState(null);
   const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyText, setEditKeyText] = useState("");
   const [editMsg, setEditMsg] = useState("");
 
+  function pickFromLibrary(id) {
+    setPickId(id);
+    const s = (examKeyLibrary || []).find((x) => x.id === id);
+    if (s) {
+      setKeyText(s.answers.join(", "));
+      setTitle((t) => t || s.name);
+    }
+  }
+
   async function save() {
     const key = parseAnswerKey(keyText);
     if (!title || key.length === 0) { setMsg("이름과 정답을 입력해 주세요."); return; }
     await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key }, ...(d.mockExams || [])] }));
-    setTitle(""); setKeyText(""); setPageRange(""); setMsg(""); setCreating(false);
+    setTitle(""); setKeyText(""); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
   function startEdit(t) {
@@ -2179,6 +2334,14 @@ function MockExamEditor({ data, updateData }) {
         <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 모의고사 만들기<//>
       ` : html`
         <${Card}>
+          ${(examKeyLibrary || []).length > 0 && html`
+            <${Field} label="정답표 라이브러리에서 불러오기 (선택)">
+              <select style=${inputStyle} value=${pickId} onChange=${(e) => pickFromLibrary(e.target.value)}>
+                <option value="">직접 입력</option>
+                ${examKeyLibrary.map((s) => html`<option key=${s.id} value=${s.id}>${s.name} (${s.answers.length}문항)</option>`)}
+              </select>
+            <//>
+          `}
           <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
           <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
           <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${pageRange} onChange=${(e) => setPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
