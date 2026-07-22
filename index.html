@@ -402,15 +402,18 @@ function parseExamKeyPdfText(text) {
       pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
       return;
     }
-    if (/학년도/.test(line)) {
-      // sub-section header nested under the current top-level category (e.g. "2026학년도")
-      flush();
-      cur = { id: uid(), name: topLevelName ? `${topLevelName} - ${clean}` : clean, answers: [] };
-    } else if (/^\d+[.\s]/.test(line) || /^\d+회/.test(line)) {
+    const isNumberedHeader = /^\d+[.\s]/.test(line) || /^\d+회/.test(line);
+    if (isNumberedHeader) {
       // top-level header — either "N회 시험이름" (round-based book) or "NN. 유형이름" (topic-based book)
+      // checked before the 학년도 check below, since a round's own title can itself contain "학년도"
+      // (e.g. "02회 2026학년도 6월 모의평가") and must not be mistaken for a bare year sub-header
       flush();
       topLevelName = clean;
-      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a 학년도 sub-header follows
+      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a bare 학년도 sub-header follows
+    } else if (/학년도/.test(line)) {
+      // bare sub-section header nested under the current top-level category (e.g. just "2026학년도")
+      flush();
+      cur = { id: uid(), name: topLevelName ? `${topLevelName} - ${clean}` : clean, answers: [] };
     }
   });
   flush();
