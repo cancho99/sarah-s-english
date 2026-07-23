@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>지문 변형 문제 생성 — Sarah's English</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+  :root{
+    --paper:#FAF7EF;
+    --panel:#FFFFFF;
+    --ink:#1B2A3D;
+    --ink-soft:#3C4A5C;
+    --rule:#D8D2BE;
+    --rule-strong:#B9AF95;
+    --muted:#8A8370;
+    --red:#B23A2E;
+    --gold:#A9803F;
+    --blue:#2F5D8A;
+    --sidebar:#152238;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Noto Sans KR', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .app{
+    display:grid;
+    grid-template-columns:72px 1fr;
+    min-height:100vh;
+  }
+  @media (max-width:800px){
+    .app{grid-template-columns:1fr;}
+    .sidenav{display:none;}
+  }
+
+  /* ---------- 좌측 아이콘 내비게이션 (실제 사이트임을 보여주는 골격) ---------- */
+  .sidenav{
+    background:var(--sidebar);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:18px 0;
+    gap:4px;
+  }
+  .sidenav .logo{
+    width:34px;height:34px;
+    border-radius:50%;
+    background:var(--gold);
+    color:var(--sidebar);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Noto Serif KR', serif;
+    font-weight:700;
+    font-size:15px;
+    margin-bottom:28px;
+  }
+  .nav-item{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+    padding:12px 4px;
+    color:#8A93A6;
+    cursor:pointer;
+    border-left:2px solid transparent;
+    font-size:10.5px;
+    text-align:center;
+    line-height:1.3;
+  }
+  .nav-item .ic{
+    width:20px;height:20px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-item.active{
+    color:var(--paper);
+    border-left:2px solid var(--gold);
+    background:rgba(255,255,255,0.04);
+  }
+  .nav-item:hover{color:var(--paper);}
+
+  /* ---------- 메인 영역 ---------- */
+  .main{display:flex;flex-direction:column;min-height:100vh;}
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:16px 28px;
+    border-bottom:1px solid var(--rule);
+    background:var(--panel);
+  }
+  .brand-line{display:flex;align-items:baseline;gap:10px;}
+  .brand{
+    font-family:'Noto Serif KR', serif;
+    font-weight:700;
+    font-size:18px;
+  }
+  .crumb{font-size:12px;color:var(--muted);}
+  .user-chip{
+    font-size:12px;
+    color:var(--ink-soft);
+    display:flex;align-items:center;gap:8px;
+  }
+  .user-chip .dot{width:7px;height:7px;border-radius:50%;background:#4C9A63;}
+
+  .layout{
+    display:grid;
+    grid-template-columns:420px 1fr;
+    gap:0;
+    flex:1;
+    align-items:start;
+  }
+  @media (max-width:960px){
+    .layout{grid-template-columns:1fr;}
+  }
+
+  .panel{
+    padding:26px;
+    border-right:1px solid var(--rule);
+    background:var(--panel);
+    align-self:stretch;
+  }
+  @media (max-width:960px){
+    .panel{border-right:none;border-bottom:1px solid var(--rule);}
+  }
+
+  .field-label{
+    font-size:12.5px;font-weight:600;color:var(--ink-soft);
+    margin-bottom:8px;display:flex;align-items:center;gap:6px;
+  }
+  .field-label::before{content:"";width:3px;height:12px;background:var(--gold);display:inline-block;border-radius:1px;}
+
+  textarea{
+    width:100%;min-height:140px;padding:14px;
+    border:1px solid var(--rule-strong);border-radius:2px;
+    background:var(--paper);
+    font-family:'Noto Serif KR', serif;font-size:13.5px;line-height:1.7;color:var(--ink);
+    resize:vertical;margin-bottom:18px;
+  }
+  textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(169,128,63,0.12);}
+  textarea::placeholder{color:#B7B0A0;}
+
+  .analysis-toggle{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px;border:1px solid var(--rule-strong);
+    background:#FBF6EA;margin-bottom:20px;cursor:pointer;
+  }
+  .analysis-toggle .t-name{font-size:13.5px;font-weight:600;}
+  .analysis-toggle .t-desc{font-size:11px;color:var(--muted);margin-top:2px;}
+  .switch{width:36px;height:20px;border-radius:10px;background:var(--rule-strong);position:relative;flex-shrink:0;transition:background .15s;}
+  .switch::after{content:"";width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:left .15s;}
+  .switch.on{background:var(--gold);}
+  .switch.on::after{left:18px;}
+
+  .type-cat-title{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em;margin:16px 0 8px;text-transform:uppercase;}
+  .type-cat-title:first-of-type{margin-top:0;}
+  .chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px;}
+  .chip{padding:7px 13px;border:1px solid var(--rule-strong);border-radius:20px;font-size:12.5px;color:var(--ink-soft);background:var(--paper);cursor:pointer;user-select:none;transition:all .12s;}
+  .chip:hover{border-color:var(--gold);}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper);}
+
+  .subrow{display:flex;gap:10px;margin:20px 0;}
+  .select-wrap{flex:1;}
+  select{width:100%;padding:10px 12px;border:1px solid var(--rule-strong);border-radius:2px;background:var(--paper);font-size:13.5px;color:var(--ink);}
+
+  .generate-btn{
+    width:100%;padding:14px;background:var(--ink);color:var(--paper);border:none;border-radius:2px;
+    font-size:14.5px;font-weight:600;letter-spacing:.01em;cursor:pointer;transition:background .15s;
+  }
+  .generate-btn:hover{background:#0F1A28;}
+  .generate-btn:active{transform:translateY(1px);}
+  .cost-note{margin-top:10px;font-size:11.5px;color:var(--muted);text-align:center;}
+  .selected-count{font-size:11.5px;color:var(--gold);margin:6px 0 2px;}
+
+  /* ---------- 미리보기 ---------- */
+  .preview-wrap{padding:26px 32px;background:var(--paper);align-self:stretch;}
+  .preview-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .preview-label{font-size:12px;color:var(--muted);letter-spacing:.04em;}
+  .key-toggle{font-size:12px;color:var(--gold);border:1px solid var(--gold);padding:5px 12px;border-radius:20px;cursor:pointer;background:none;}
+  .key-toggle.active{background:var(--gold);color:white;}
+
+  .paper-sheet{background:var(--panel);border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(27,42,61,.06);}
+  .sheet-title{text-align:center;padding:18px 20px 14px;border-bottom:2px solid var(--ink);font-family:'Noto Serif KR', serif;}
+  .sheet-title .school{font-size:11px;color:var(--muted);letter-spacing:.05em;}
+  .sheet-title .name{font-size:16px;font-weight:700;margin-top:4px;}
+  .sheet-title .kr-name{font-size:12px;color:var(--muted);margin-top:3px;}
+
+  /* 요약/흐름 박스 */
+  .meta-block{padding:18px 24px;border-bottom:1px solid var(--rule);background:#FDFBF6;}
+  .meta-row{display:flex;gap:16px;margin-bottom:12px;flex-wrap:wrap;}
+  .meta-box{flex:1;min-width:180px;border:1px solid var(--rule-strong);padding:10px 14px;background:var(--panel);}
+  .meta-box .m-label{font-size:10.5px;font-weight:700;color:var(--blue);letter-spacing:.05em;margin-bottom:4px;}
+  .meta-box .m-body{font-size:12px;line-height:1.7;color:var(--ink-soft);}
+  .flow-row{display:flex;gap:0;border:1px solid var(--rule-strong);}
+  .flow-col{flex:1;padding:10px 12px;border-right:1px solid var(--rule);}
+  .flow-col:last-child{border-right:none;}
+  .flow-col .f-num{font-size:10.5px;font-weight:700;color:var(--gold);margin-bottom:4px;}
+  .flow-col .f-body{font-size:11.5px;line-height:1.6;color:var(--ink-soft);}
+
+  /* 구문 분석 */
+  .analysis-card{padding:22px 24px;border-bottom:2px solid var(--ink);}
+  .analysis-card .a-title{font-size:12px;font-weight:700;color:var(--blue);margin-bottom:18px;letter-spacing:.03em;}
+  .sent-block{margin-bottom:26px;}
+  .sent-row-wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;}
+  .sent-num{
+    display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--ink);color:var(--paper);
+    align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;
+  }
+  .sent-row{
+    display:flex;flex-wrap:wrap;align-items:flex-end;column-gap:16px;row-gap:10px;
+    font-family:'Noto Serif KR', serif;font-size:14.5px;color:var(--ink);
+  }
+  .seg{display:flex;flex-direction:column;align-items:center;}
+  .seg .txt{padding:0 2px 2px;white-space:nowrap;}
+  .seg.tag .txt{border-bottom:1.5px solid var(--ink);}
+  .seg .lbl{
+    font-size:10px;font-weight:600;color:var(--blue);margin-top:5px;min-height:13px;
+    font-family:'Noto Sans KR', sans-serif;letter-spacing:.01em;
+  }
+  .seg.tag.v .lbl{color:var(--red);}
+  .seg:not(.tag) .lbl{visibility:hidden;}
+  .interpret-line{font-size:12.5px;color:var(--muted);margin:0 0 4px;padding-left:32px;}
+  .tip-line{font-size:11.5px;color:var(--ink-soft);background:#F1ECDD;padding:6px 10px;margin-left:32px;border-left:2px solid var(--gold);}
+
+  /* 문제 블록 */
+  .q-block{padding:22px 24px;border-bottom:1px solid var(--rule);}
+  .q-block:last-child{border-bottom:none;}
+  .q-num{font-family:'Noto Serif KR', serif;font-weight:700;font-size:14.5px;margin-bottom:10px;}
+  .q-type-tag{display:inline-block;font-size:10.5px;color:var(--gold);border:1px solid var(--gold);padding:1px 8px;border-radius:10px;margin-left:8px;font-weight:500;}
+  .passage-box{font-family:'Noto Serif KR', serif;font-size:13.5px;line-height:1.9;color:var(--ink-soft);border:1px solid var(--rule);padding:16px 18px;margin:10px 0 14px;background:#FEFDFA;}
+  .blank{display:inline-block;border-bottom:1.5px solid var(--ink);min-width:64px;text-align:center;color:var(--red);font-weight:600;}
+  .options{display:flex;flex-wrap:wrap;gap:10px 22px;font-family:'Noto Serif KR', serif;font-size:13.5px;}
+  .opt{display:flex;align-items:center;gap:5px;}
+  .opt .circ{width:18px;height:18px;border:1px solid var(--ink);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;flex-shrink:0;}
+  .opt.answer .circ{background:var(--red);border-color:var(--red);color:white;}
+  .answer-mark{display:none;color:var(--red);font-size:12px;margin-left:6px;font-weight:600;}
+  .key-on .answer-mark{display:inline;}
+  .key-on .opt.answer{color:var(--red);}
+
+  /* 어휘 박스 */
+  .vocab-block{padding:20px 24px;}
+  .vocab-block .a-title{font-size:12px;font-weight:700;color:var(--blue);margin-bottom:12px;letter-spacing:.03em;}
+  .vocab-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 24px;font-size:12.5px;}
+  .vocab-grid .vw{font-weight:600;color:var(--ink);}
+  .vocab-grid .vw span{font-weight:400;color:var(--muted);}
+
+  .empty-state{padding:60px 24px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.8;}
+  .empty-state .big{font-family:'Noto Serif KR', serif;font-size:15px;color:var(--ink-soft);margin-bottom:8px;font-weight:600;}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="sidenav">
+    <div class="logo">S</div>
+    <div class="nav-item active">
+      <div class="ic">📄</div>
+      지문분석
+    </div>
+    <div class="nav-item">
+      <div class="ic">✏️</div>
+      문제생성
+    </div>
+    <div class="nav-item">
+      <div class="ic">🗂</div>
+      보관함
+    </div>
+    <div class="nav-item">
+      <div class="ic">👥</div>
+      학생별
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="brand-line">
+        <div class="brand">Sarah's English</div>
+        <div class="crumb">지문 변형 · 구문분석</div>
+      </div>
+      <div class="user-chip"><span class="dot"></span> Sarah 선생님</div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <div class="field-label">지문 붙여넣기</div>
+        <textarea id="passageInput" placeholder="여기에 영어 지문을 붙여넣으세요...">All the actors on the stage were focused on their acting. Then, suddenly, Arthur fell into the corner of the stage. Jeevan immediately approached Arthur and found his heart wasn't beating.</textarea>
+
+        <div class="analysis-toggle" id="analysisToggle">
+          <div>
+            <div class="t-name">지문 분석 포함</div>
+            <div class="t-desc">구문분석(밑줄+품사 표시) · 직독직해 · 요약 · 글의 흐름 · 어휘</div>
+          </div>
+          <div class="switch on" id="analysisSwitch"></div>
+        </div>
+
+        <div class="field-label">문제 유형 선택 (수능 17개 유형)</div>
+
+        <div class="type-cat-title">유형 파악</div>
+        <div class="chip-row">
+          <div class="chip" data-t="목적">목적 파악</div>
+          <div class="chip on" data-t="심경">심경 파악</div>
+          <div class="chip" data-t="주장">필자의 주장</div>
+          <div class="chip" data-t="의미추론">밑줄 의미 추론</div>
+          <div class="chip" data-t="요지">요지 추론</div>
+          <div class="chip" data-t="주제">주제 추론</div>
+          <div class="chip" data-t="제목">제목 추론</div>
+        </div>
+
+        <div class="type-cat-title">정보 파악</div>
+        <div class="chip-row">
+          <div class="chip" data-t="도표">도표의 이해</div>
+          <div class="chip" data-t="일치">내용 일치</div>
+        </div>
+
+        <div class="type-cat-title">어법 · 어휘</div>
+        <div class="chip-row">
+          <div class="chip on" data-t="어휘">어휘</div>
+          <div class="chip" data-t="어법">어법</div>
+        </div>
+
+        <div class="type-cat-title">빈칸 · 논리 전개</div>
+        <div class="chip-row">
+          <div class="chip" data-t="빈칸">빈칸 추론</div>
+          <div class="chip" data-t="무관">무관한 문장 찾기</div>
+          <div class="chip" data-t="순서">문장 배열</div>
+          <div class="chip" data-t="위치">주어진 문장 위치</div>
+          <div class="chip" data-t="문단요약">문단 요약</div>
+        </div>
+
+        <div class="type-cat-title">장문</div>
+        <div class="chip-row">
+          <div class="chip" data-t="장문">장문의 이해</div>
+        </div>
+
+        <div class="selected-count" id="selectedCount">2개 유형 선택됨</div>
+
+        <div class="subrow">
+          <div class="select-wrap">
+            <div class="field-label">난이도</div>
+            <select id="levelSelect">
+              <option>중1~2 수준</option>
+              <option>중3~고1 수준</option>
+              <option selected>고2~수능 수준</option>
+            </select>
+          </div>
+          <div class="select-wrap">
+            <div class="field-label">유형당 문항 수</div>
+            <select id="countSelect">
+              <option>1문제</option>
+              <option selected>2문제</option>
+              <option>3문제</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="generate-btn" id="generateBtn">문제 만들기</button>
+        <div class="cost-note">1회 생성 예상 비용: 약 10~40원 (선택한 유형 수에 따라 달라짐)</div>
+      </div>
+
+      <div class="preview-wrap">
+        <div class="preview-header">
+          <div class="preview-label">미리보기 — 인쇄용 시험지</div>
+          <button class="key-toggle" id="keyToggle">정답 보기</button>
+        </div>
+
+        <div class="paper-sheet" id="paperSheet">
+          <div class="empty-state">
+            <div class="big">아직 생성된 문제가 없습니다</div>
+            왼쪽에서 지문과 문제 유형을 선택하고<br>"문제 만들기"를 눌러보세요.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const chips = document.querySelectorAll('.chip');
+  const selectedCount = document.getElementById('selectedCount');
+  function updateCount(){
+    const n = document.querySelectorAll('.chip.on').length;
+    selectedCount.textContent = n + '개 유형 선택됨';
+  }
+  chips.forEach(chip=>{
+    chip.addEventListener('click', ()=>{ chip.classList.toggle('on'); updateCount(); });
+  });
+  updateCount();
+
+  const analysisToggle = document.getElementById('analysisToggle');
+  const analysisSwitch = document.getElementById('analysisSwitch');
+  analysisToggle.addEventListener('click', ()=>{ analysisSwitch.classList.toggle('on'); });
+
+  const keyToggle = document.getElementById('keyToggle');
+  const sheet = document.getElementById('paperSheet');
+  keyToggle.addEventListener('click', ()=>{
+    keyToggle.classList.toggle('active');
+    sheet.classList.toggle('key-on');
+    keyToggle.textContent = keyToggle.classList.contains('active') ? '정답 숨기기' : '정답 보기';
+  });
+
+  // ── 실제 서버 연결 ──
+  // 배포된 Cloudflare Worker 주소. 서버 주소가 바뀌면 이 한 줄만 바꾸면 됩니다.
+  const WORKER_URL = "https://purple-voice-5e09sarah-english-worker.minji960514.workers.dev/";
+  const CIRCLES = ['①','②','③','④','⑤'];
+
+  function renderSheet(data){
+    let html = '';
+
+    html += `<div class="sheet-title">
+      <div class="school">2026학년도 지문 변형 문제지 · Sarah's English</div>
+      <div class="name">${data.title || ''}</div>
+      ${data.title_kr ? `<div class="kr-name">(${data.title_kr})</div>` : ''}
+    </div>`;
+
+    if (data.summary && (data.summary.topic || data.summary.summary) || (data.flow && data.flow.length)) {
+      html += `<div class="meta-block">`;
+      if (data.summary && (data.summary.topic || data.summary.summary)) {
+        html += `<div class="meta-row">
+          <div class="meta-box"><div class="m-label">주제</div><div class="m-body">${data.summary.topic || ''}</div></div>
+          <div class="meta-box"><div class="m-label">요약</div><div class="m-body">${data.summary.summary || ''}</div></div>
+        </div>`;
+      }
+      if (data.flow && data.flow.length) {
+        html += `<div class="flow-row">` + data.flow.map(f => `
+          <div class="flow-col">
+            <div class="f-num">${f.stage || ''} (${f.range || ''})</div>
+            <div class="f-body">${f.desc || ''}</div>
+          </div>`).join('') + `</div>`;
+      }
+      html += `</div>`;
+    }
+
+    if (data.sentences && data.sentences.length) {
+      html += `<div class="analysis-card"><div class="a-title">지문 분석 · 구문 분석 노트</div>`;
+      data.sentences.forEach((s, i) => {
+        const segsHtml = (s.segments || []).map(seg => {
+          const tag = (seg.tag || '').trim();
+          const isTagged = !!tag;
+          const isVerb = /^V/.test(tag);
+          return `<div class="seg${isTagged ? ' tag' : ''}${isVerb ? ' v' : ''}">
+            <div class="txt">${seg.text}</div>
+            <div class="lbl">${isTagged ? tag : '&nbsp;'}</div>
+          </div>`;
+        }).join('');
+        html += `<div class="sent-block">
+          <div class="sent-row-wrap">
+            <span class="sent-num">${i + 1}</span>
+            <div class="sent-row">${segsHtml}</div>
+          </div>
+          <div class="interpret-line">해석: ${s.interpretation || ''}</div>
+          <div class="tip-line">▸ ${s.tip || ''}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+
+    if (data.questions && data.questions.length) {
+      data.questions.forEach((q, i) => {
+        html += `<div class="q-block">
+          <div class="q-num">${i + 1}. ${q.prompt || ''} <span class="q-type-tag">${q.type || ''}</span></div>
+          ${q.passage_html ? `<div class="passage-box">${q.passage_html}</div>` : ''}
+          <div class="options">${(q.options || []).map((opt, oi) => `
+            <div class="opt${oi === q.answer_index ? ' answer' : ''}">
+              <span class="circ">${CIRCLES[oi] || (oi+1)}</span> ${opt}
+              ${oi === q.answer_index ? '<span class="answer-mark">← 정답</span>' : ''}
+            </div>`).join('')}</div>
+        </div>`;
+      });
+    }
+
+    if (data.vocab && data.vocab.length) {
+      html += `<div class="vocab-block"><div class="a-title">중요 어휘</div><div class="vocab-grid">` +
+        data.vocab.map(v => `<div class="vw">${v.word} <span>${v.meaning}</span></div>`).join('') +
+        `</div></div>`;
+    }
+
+    return html;
+  }
+
+  function renderError(msg){
+    return `<div class="empty-state"><div class="big">문제 생성에 실패했습니다</div>${msg}</div>`;
+  }
+
+  document.getElementById('generateBtn').addEventListener('click', async ()=>{
+    const btn = document.getElementById('generateBtn');
+    const passage = document.getElementById('passageInput').value.trim();
+    const types = [...document.querySelectorAll('.chip.on')].map(c => c.dataset.t);
+    const includeAnalysis = analysisSwitch.classList.contains('on');
+    const level = document.getElementById('levelSelect').value;
+    const countPerType = parseInt(document.getElementById('countSelect').value, 10) || 1;
+
+    if (!passage || passage.length < 20) {
+      sheet.innerHTML = renderError('지문을 20자 이상 입력해 주세요.');
+      return;
+    }
+
+    btn.textContent = '생성 중... (몇 초 정도 걸려요)';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ passage, includeAnalysis, questionTypes: types, level, countPerType })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        sheet.innerHTML = renderError(data.error || ('서버 오류 (' + res.status + ')'));
+      } else {
+        sheet.innerHTML = renderSheet(data);
+      }
+    } catch (e) {
+      sheet.innerHTML = renderError('서버에 연결하지 못했습니다. 인터넷 연결 또는 서버 주소를 확인해 주세요.');
+    } finally {
+      btn.textContent = '문제 만들기';
+      btn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
