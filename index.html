@@ -12,25 +12,43 @@
   input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
 
-  /* ---- responsive admin shell: sidebar on desktop, "more" dropdown on mobile ---- */
-  .ap-shell { display: flex; align-items: flex-start; gap: 0; width: 100%; }
-  .ap-side-desktop { display: flex; flex-direction: column; width: 196px; flex-shrink: 0; border-right: 1px solid #DCD8CF; padding: 6px 0; }
-  .ap-side-item { padding: 11px 16px; font-size: 13px; color: #5B6270; cursor: pointer; border-left: 3px solid transparent; white-space: nowrap; display:flex; align-items:center; gap:8px; }
-  .ap-side-item.active { color: #1C2B4A; font-weight: 700; border-left-color: #B8935A; background: #FAF7F1; }
-  .ap-side-item:hover { color: #1C2B4A; }
+  /* ---- responsive admin shell: dark icon sidebar on desktop, "more" dropdown on mobile ---- */
+  .ap-shell { display: flex; align-items: stretch; gap: 0; width: 100%; min-height: 100vh; }
+  .ap-side-desktop { display: flex; flex-direction: column; align-items: center; width: 92px; flex-shrink: 0; background: #1C2B4A; padding: 20px 0; }
+  .ap-side-logo { width: 34px; height: 34px; border-radius: 50%; background: #B8935A; color: #1C2B4A; display: flex; align-items: center; justify-content: center; font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 14px; margin-bottom: 22px; flex-shrink: 0; }
+  .ap-side-item { width: 100%; padding: 12px 4px; font-size: 10.5px; color: #8A93A6; cursor: pointer; border-left: 2px solid transparent; text-align: center; line-height: 1.3; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .ap-side-item .ic { font-size: 18px; }
+  .ap-side-item.active { color: #FAF7F1; font-weight: 700; border-left-color: #B8935A; background: rgba(255,255,255,0.05); }
+  .ap-side-item:hover { color: #FAF7F1; }
+  .ap-side-logout { margin-top: auto; background: none; border: none; color: #8A93A6; font-size: 10.5px; cursor: pointer; padding: 10px 4px; }
   .ap-side-mobile { display: none; }
-  .ap-main { flex: 1; min-width: 0; width: 100%; padding: 4px 0 4px 20px; }
+  .ap-main { flex: 1; min-width: 0; width: 100%; }
+  .ap-main-header { padding: 16px 24px; border-bottom: 1px solid #DCD8CF; background: #fff; display: flex; align-items: baseline; gap: 10px; }
+  .ap-main-body { padding: 20px 24px 60px; }
+  .ap-split { display: flex; align-items: flex-start; gap: 20px; }
+  .ap-split-left { width: 260px; flex-shrink: 0; }
+  .ap-split-left-title { font-size: 11px; letterSpacing: 1px; color: #5B6270; font-weight: 700; text-transform: uppercase; margin-bottom: 10px; }
+  .ap-roster-item { padding: 11px 13px; border: 1px solid #DCD8CF; border-radius: 4px; margin-bottom: 7px; cursor: pointer; background: #fff; }
+  .ap-roster-item .name { font-weight: 700; color: #1C2B4A; font-size: 13.5px; }
+  .ap-roster-item .code { font-size: 11px; color: #5B6270; margin-top: 3px; }
+  .ap-roster-item.active { border-color: #B8935A; background: #FBF6EA; }
+  .ap-split-right { flex: 1; min-width: 0; border-left: 1px solid #DCD8CF; padding-left: 20px; }
   @media (max-width: 760px) {
-    .ap-shell { flex-direction: column; width: 100%; }
+    .ap-shell { flex-direction: column; width: 100%; min-height: 0; }
     .ap-side-desktop { display: none; }
-    .ap-side-mobile { display: block; position: relative; width: 100%; margin-bottom: 14px; }
-    .ap-more-btn { width: 100%; box-sizing: border-box; text-align: left; padding: 10px 14px; background: #fff; border: 1px solid #DCD8CF; border-radius: 3px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #1C2B4A; font-weight: 700; cursor: pointer; }
-    .ap-more-btn .arrow { margin-left: auto; color: #5B6270; font-weight: 400; }
-    .ap-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid #DCD8CF; border-radius: 3px; z-index: 30; box-shadow: 0 6px 16px rgba(20,22,26,0.1); max-height: 60vh; overflow-y: auto; }
-    .ap-dropdown-item { padding: 11px 16px; font-size: 13px; color: #5B6270; cursor: pointer; border-bottom: 1px solid #F0EDE5; }
+    .ap-side-mobile { display: block; position: relative; width: 100%; }
+    .ap-more-btn { width: 100%; box-sizing: border-box; text-align: left; padding: 10px 14px; background: #1C2B4A; border: none; border-radius: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #FAF7F1; font-weight: 700; cursor: pointer; }
+    .ap-more-btn .arrow { margin-left: auto; color: #8A93A6; font-weight: 400; }
+    .ap-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #1C2B4A; border: none; border-radius: 0; z-index: 30; box-shadow: 0 6px 16px rgba(20,22,26,0.25); max-height: 60vh; overflow-y: auto; }
+    .ap-dropdown-item { padding: 11px 16px; font-size: 13px; color: #8A93A6; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08); }
     .ap-dropdown-item:last-child { border-bottom: none; }
-    .ap-dropdown-item.active { color: #1C2B4A; font-weight: 700; background: #FAF7F1; }
-    .ap-main { width: 100%; min-width: 0; padding: 0; }
+    .ap-dropdown-item.active { color: #FAF7F1; font-weight: 700; background: rgba(255,255,255,0.06); }
+    .ap-dropdown-logout { padding: 11px 16px; font-size: 13px; color: #8A93A6; cursor: pointer; }
+    .ap-main-header { padding: 14px 16px; }
+    .ap-main-body { padding: 16px 16px 40px; }
+    .ap-split { flex-direction: column; }
+    .ap-split-left { width: 100%; }
+    .ap-split-right { border-left: none; padding-left: 0; border-top: 1px solid #DCD8CF; padding-top: 16px; margin-top: 4px; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
@@ -617,18 +635,20 @@ function Tabs({ tabs, active, onChange }) {
   `;
 }
 
-// Responsive admin shell: vertical sidebar on desktop, horizontal scroller on mobile (see .ap-* CSS)
-function SideNav({ items, active, onChange }) {
+// Responsive admin shell: dark icon sidebar on desktop, horizontal dropdown on mobile (see .ap-* CSS)
+function SideNav({ items, active, onChange, onLogout }) {
   const [open, setOpen] = useState(false);
   const activeItem = items.find((it) => it.key === active) || items[0];
   return html`
     <div>
       <div className="ap-side-desktop">
+        <div className="ap-side-logo">S·E</div>
         ${items.map((it) => html`
           <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
-            <span>${it.icon}</span><span>${it.label}</span>
+            <span className="ic">${it.icon}</span><span>${it.label}</span>
           </div>
         `)}
+        ${onLogout && html`<button className="ap-side-logout" onClick=${onLogout}>로그아웃</button>`}
       </div>
       <div className="ap-side-mobile">
         <button className="ap-more-btn" onClick=${() => setOpen((o) => !o)}>
@@ -641,14 +661,15 @@ function SideNav({ items, active, onChange }) {
                 ${it.icon} ${it.label}
               </div>
             `)}
+            ${onLogout && html`<div className="ap-dropdown-logout" onClick=${() => { setOpen(false); onLogout(); }}>로그아웃</div>`}
           </div>
         `}
       </div>
     </div>
   `;
 }
-function Shell({ side, children }) {
-  return html`<div className="ap-shell">${side}<div className="ap-main">${children}</div></div>`;
+function Shell({ side, header, children }) {
+  return html`<div className="ap-shell">${side}<div className="ap-main">${header && html`<div className="ap-main-header">${header}</div>`}<div className="ap-main-body">${children}</div></div></div>`;
 }
 function Empty({ text }) {
   return html`<div style=${{ color: C.slate, fontSize: 13, textAlign: "center", padding: "28px 8px", border: `1px dashed ${C.line}`, borderRadius: 4 }}>${text}</div>`;
@@ -766,11 +787,20 @@ function App() {
     return html`<div style=${{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.slate }}>불러오는 중...</div>`;
   }
 
-  const isWide = screen === "home" || screen === "teacherDash";
+  if (screen === "teacherDash") {
+    return html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
+      selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
+      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
+      levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
+      announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+      examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} />`;
+  }
+
+  const isWide = screen === "home";
   return html`
     <div style=${{ minHeight: "100vh", background: C.ivory }}>
-      ${screen !== "home" && html`<${TopBar} tagline=${screen === "teacherDash" ? "Teacher Console" : screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />`}
-      <div style=${{ maxWidth: isWide ? 1080 : 480, margin: "0 auto", padding: screen === "home" ? "0 0 60px" : isWide ? "18px 16px 60px" : "18px 16px 60px" }}>
+      ${screen !== "home" && html`<${TopBar} tagline=${screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />`}
+      <div style=${{ maxWidth: isWide ? 1080 : 480, margin: "0 auto", padding: screen === "home" ? "0 0 60px" : "18px 16px 60px" }}>
         ${screen === "home" && html`<${HomePage} setScreen=${setScreen} announcement=${announcement} />`}
         ${screen === "levelTest" && html`<${LevelTestBooking} onBack=${() => setScreen("home")} onSubmit=${async (b) => { await addBooking(b); }} />`}
         ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("home")}
@@ -781,12 +811,6 @@ function App() {
           onLogin=${(s) => { setSession({ role: "student", student: s }); setScreen("studentDash"); }} />`}
         ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => { setSession({ role: "parent", student: s }); setScreen("parentDash"); }} />`}
-        ${screen === "teacherDash" && html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
-          selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
-          ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
-          levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
-          announcement=${announcement} saveAnnouncement=${saveAnnouncement}
-          examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
         ${screen === "parentDash" && html`<${ParentDash} student=${session.student} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
       </div>
@@ -1188,7 +1212,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
 }
 
 function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary }) {
-  const [section, setSection] = useState("students");
+  const [section, setSection] = useState("mainpage");
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
@@ -1212,29 +1236,23 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     if (selectedStudentId === id) setSelectedStudentId(null);
   }
 
-  const studentSubItems = section === "students" ? [
-    { key: "__bookings", label: `레벨테스트 예약${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
-    { key: "__hwstatus", label: "숙제 현황", icon: "📋" },
-    ...roster.map((r) => ({ key: "__student:" + r.id, label: r.name, icon: "👤" })),
-  ] : [];
   const navItems = [
     { key: "students", label: "학생 관리", icon: "🗂" },
-    ...studentSubItems,
     { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
+    { key: "mainpage", label: `Main Page${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🏠" },
   ];
 
-  const activeKey = selected ? "__student:" + selected.id : showBookings ? "__bookings" : showStatus ? "__hwstatus" : section;
+  const activeKey = section;
 
   function handleNavChange(key) {
-    if (key === "students") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
-    else if (key === "wordbank" || key === "reports" || key === "examkeys" || key === "passage" || key === "archive") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
-    else if (key === "__bookings") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(true); }
-    else if (key === "__hwstatus") { setSection("students"); setSelectedStudentId(null); setShowBookings(false); setShowStatus(true); }
-    else if (key.startsWith("__student:")) { setSection("students"); setShowStatus(false); setShowBookings(false); setSelectedStudentId(key.slice("__student:".length)); }
+    setSection(key);
+    setSelectedStudentId(null);
+    setShowStatus(false);
+    setShowBookings(false);
   }
 
   let body;
@@ -1248,30 +1266,72 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
+  } else if (section === "students") {
+    body = html`<${StudentsSection} roster=${roster} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
+      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
+      showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
+      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
   } else if (showStatus) {
     body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setShowStatus(false)} onLogout=${onLogout} />`;
   } else if (showBookings) {
     body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList} onBack=${() => setShowBookings(false)} onLogout=${onLogout} />`;
-  } else if (selected) {
-    const data = dataCache[selected.id] || emptyData();
-    body = html`<${TeacherStudentPanel} student=${selected} data=${data} onBackToList=${() => setSelectedStudentId(null)}
-      updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />`;
   } else {
+    // section === "mainpage"
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       onGoBookings=${() => { setShowBookings(true); }} onGoHwStatus=${() => { setShowStatus(true); }}
-      onSelectStudent=${(id) => setSelectedStudentId(id)}
+      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); }}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
       addErr=${addErr} addStudent=${addStudent} />`;
   }
 
   return html`
-    <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style=${{ ...serif, fontSize: 18, color: C.navy }}>Teacher Dashboard</div>
-        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+    <div style=${{ minHeight: "100vh", background: C.ivory }}>
+      <${Shell}
+        side=${html`<${SideNav} items=${navItems} active=${activeKey} onChange=${handleNavChange} onLogout=${onLogout} />`}
+        header=${html`<div style=${{ ...serif, fontSize: 18, color: C.navy, fontWeight: 700 }}>Sarah's English</div><div style=${{ fontSize: 12, color: C.slate }}>${(navItems.find((n) => n.key === activeKey) || {}).label || ""}</div>`}
+      >${body}<//>
+    </div>
+  `;
+}
+
+// ---------- 학생 관리: 왼쪽 학생 목록 / 오른쪽 선택한 학생 정보 (2단 레이아웃) ----------
+function StudentsSection({ roster, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, examKeyLibrary, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+  const selected = roster.find((r) => r.id === selectedStudentId);
+  useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
+
+  return html`
+    <div className="ap-split">
+      <div className="ap-split-left">
+        <div className="ap-split-left-title">학생 목록</div>
+        ${roster.map((r) => html`
+          <div key=${r.id} className=${"ap-roster-item" + (selectedStudentId === r.id ? " active" : "")} onClick=${() => setSelectedStudentId(r.id)}>
+            <div className="name">${r.name}</div>
+            <div className="code">학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
+          </div>
+        `)}
+        ${roster.length === 0 && html`<${Empty} text="학생을 추가해 주세요." />`}
+        ${!showAdd ? html`
+          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 8 }}>+ 학생 추가<//>
+        ` : html`
+          <${Card} style=${{ marginTop: 8 }}>
+            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="gold" onClick=${addStudent}>저장<//>
+              <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+            </div>
+          <//>
+        `}
       </div>
-      <${Shell} side=${html`<${SideNav} items=${navItems} active=${activeKey} onChange=${handleNavChange} />`}>${body}<//>
+      <div className="ap-split-right">
+        ${selected
+          ? html`<${TeacherStudentPanel} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
+              updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />`
+          : html`<${Empty} text="왼쪽에서 학생을 선택하면 정보가 여기에 표시돼요." />`}
+      </div>
     </div>
   `;
 }
