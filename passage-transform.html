@@ -487,7 +487,8 @@
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        sheet.innerHTML = renderError(data.error || ('서버 오류 (' + res.status + ')'));
+        const msg = (data.error || ('서버 오류 (' + res.status + ')')) + (data.detail ? '<br><span style="font-size:11.5px;color:#8A8370;">세부 정보: ' + String(data.detail).slice(0, 400) + '</span>' : '');
+        sheet.innerHTML = renderError(msg);
       } else {
         sheet.innerHTML = renderSheet(data);
       }
