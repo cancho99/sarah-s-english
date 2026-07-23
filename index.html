@@ -993,6 +993,23 @@ function MiniCalendar({ selected, onSelect }) {
   `;
 }
 
+function DateField({ value, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <div style=${{ position: "relative" }}>
+      <div onClick=${() => setOpen((o) => !o)} style=${{ ...inputStyle, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", color: value ? C.ink : "#9a9488" }}>
+        <span>${value ? fmtDateDay(value) : (placeholder || "날짜 선택")}</span>
+        <span style=${{ color: C.gold }}>📅</span>
+      </div>
+      ${open && html`
+        <div style=${{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 40, boxShadow: "0 6px 16px rgba(20,22,26,0.15)" }}>
+          <${MiniCalendar} selected=${value} onSelect=${(d) => { onChange(d); setOpen(false); }} />
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function LevelTestBooking({ onBack, onSubmit }) {
   const [kind, setKind] = useState("레벨테스트");
   const [name, setName] = useState(""); const [grade, setGrade] = useState(""); const [school, setSchool] = useState("");
@@ -1045,7 +1062,7 @@ function LevelTestBooking({ onBack, onSubmit }) {
               <option value="">선택 안 함</option><option value="남">남학생</option><option value="여">여학생</option>
             </select>
           <//></div>
-          <div style=${{ flex: 1 }}><${Field} label="생년월일"><input style=${inputStyle} type="date" value=${birth} onChange=${(e) => setBirth(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="생년월일"><${DateField} value=${birth} onChange=${setBirth} /><//></div>
         </div>
         <${Field} label="연락처"><input style=${inputStyle} value=${phone} onChange=${(e) => setPhone(e.target.value)} placeholder="학부모님 연락처" /><//>
         <${Field} label="응시 장소">
@@ -1202,36 +1219,62 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
     <div>
       <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>왼쪽 목록에서 학생을 바로 선택하시거나, 아래에서 전체 현황을 확인하세요.</div>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📢 공지사항</div>
-      <${Card} style=${{ marginBottom: 20, padding: 22 }}>
-        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
-        <textarea style=${{ ...inputStyle, minHeight: 130, fontSize: 14.5 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
-        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${submitAnnouncement}>저장<//>
-          ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
-        </div>
-      <//>
-
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗓 새로운 레벨테스트·상담 문의 ${pendingBookings.length > 0 ? `(${pendingBookings.length}건)` : ""}</div>
-      <${Card} style=${{ marginBottom: 20, cursor: "pointer" }} onClick=${onGoBookings}>
-        ${pendingBookings.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 문의가 없어요.</div>` : pendingBookings.slice(0, 3).map((b) => html`
-          <div key=${b.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${b.name} ${b.grade ? `(${b.grade})` : ""} — ${b.date}${b.time ? " · " + b.time : ""}</div>
-        `)}
-        <div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>전체 보기 →</div>
-      <//>
-
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>💬 학부모 상담 요청 ${pendingConsults.length > 0 ? `(${pendingConsults.length}건)` : ""}</div>
-      <${Card} style=${{ marginBottom: 20 }}>
-        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : pendingConsults.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 상담 요청이 없어요.</div>` : pendingConsults.map((c) => html`
-          <div key=${c.r.id} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-            <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📢 공지사항</div>
+            <${Card} style=${{ padding: 22, marginBottom: 0 }}>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
+              <textarea style=${{ ...inputStyle, minHeight: 130, fontSize: 14.5 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
+              <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${submitAnnouncement}>저장<//>
+                ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
+              </div>
+            <//>
           </div>
-        `)}
-      <//>
+          <div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 숙제 ${todayHomework.length > 0 ? `(${todayHomework.length}건)` : ""}</div>
+            <${Card} style=${{ marginBottom: 0 }}>
+              <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한이 오늘이거나 지났는데 아직 완료 표시 안 된 숙제를 학생 전체 기준으로 모았어요.</div>
+              ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
+                <div key=${i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                  <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
+                  <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                    <span><b>${student.name}</b> — ${hw.content}</span>
+                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
+                  </div>
+                </div>
+              `)}
+              <div onClick=${onGoHwStatus} style=${{ fontSize: 11.5, color: C.gold, marginTop: 8, cursor: "pointer" }}>전체 숙제 현황 보기 →</div>
+            <//>
+          </div>
+        </div>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗓 레벨테스트·상담 문의 ${pendingBookings.length > 0 ? `(${pendingBookings.length}건)` : ""}</div>
+            <${Card} onClick=${onGoBookings} style=${{ marginBottom: 0 }}>
+              ${pendingBookings.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 문의가 없어요.</div>` : pendingBookings.slice(0, 3).map((b) => html`
+                <div key=${b.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${b.name} ${b.grade ? `(${b.grade})` : ""} — ${b.date}${b.time ? " · " + b.time : ""}</div>
+              `)}
+              <div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>전체 보기 →</div>
+            <//>
+          </div>
+          <div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>💬 학부모 상담 요청 ${pendingConsults.length > 0 ? `(${pendingConsults.length}건)` : ""}</div>
+            <${Card} style=${{ marginBottom: 0 }}>
+              ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : pendingConsults.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>대기 중인 상담 요청이 없어요.</div>` : pendingConsults.map((c) => html`
+                <div key=${c.r.id} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                  <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
+                </div>
+              `)}
+            <//>
+          </div>
+        </div>
+      </div>
 
       ${sizeInfo.length > 0 && html`
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠️ 저장 공간이 많이 찬 학생 (${sizeInfo.length}명)</div>
-        <${Card} style=${{ marginBottom: 20, borderLeft: `3px solid ${C.danger}` }}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginTop: 20, marginBottom: 8 }}>⚠️ 저장 공간이 많이 찬 학생 (${sizeInfo.length}명)</div>
+        <${Card} style=${{ borderLeft: `3px solid ${C.danger}` }}>
           ${sizeInfo.map((x) => html`
             <div key=${x.student.id} onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "4px 0", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
               <span>${x.student.name}</span><span style=${{ color: x.pct >= 90 ? C.danger : C.gold, fontWeight: 700 }}>${x.kb}KB (${x.pct}%)</span>
@@ -1241,21 +1284,6 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
           <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 "저장 공간 관리" 탭에서 세부적으로 정리할 수도 있어요.</div>
         <//>
       `}
-
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 숙제 ${todayHomework.length > 0 ? `(${todayHomework.length}건)` : ""}</div>
-      <${Card}>
-        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한이 오늘이거나 지났는데 아직 완료 표시 안 된 숙제를 학생 전체 기준으로 모았어요.</div>
-        ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
-          <div key=${i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-            <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
-            <div style=${{ display: "flex", justifyContent: "space-between" }}>
-              <span><b>${student.name}</b> — ${hw.content}</span>
-              <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
-            </div>
-          </div>
-        `)}
-        <div onClick=${onGoHwStatus} style=${{ fontSize: 11.5, color: C.gold, marginTop: 8, cursor: "pointer" }}>전체 숙제 현황 보기 →</div>
-      <//>
     </div>
   `;
 }
@@ -1286,7 +1314,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const navItems = [
     { key: "mainpage", label: "Main Page", icon: "🏠" },
     { key: "students", label: "학생 관리", icon: "🗂" },
-    { key: "bookings", label: `새로운 레벨테스트·상담 문의${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
+    { key: "bookings", label: `레벨테스트·상담 문의${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
     { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
@@ -1489,14 +1517,71 @@ function ArchiveSection() {
   return html`<${Empty} text="보관함 기능은 준비 중이에요. 만든 지문·문제를 저장해서 나중에 다시 꺼내 쓸 수 있게 곧 추가할게요." />`;
 }
 
+function BookingsCalendar({ bookings, selected, onSelect }) {
+  const [viewDate, setViewDate] = useState(() => (selected ? new Date(selected + "T00:00:00") : new Date()));
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const countByDate = {};
+  (bookings || []).forEach((b) => { countByDate[b.date] = (countByDate[b.date] || 0) + 1; });
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  function fmt(d) { return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+  return html`
+    <div style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 14, background: C.white }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month - 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 16, padding: "2px 8px" }}>‹</button>
+        <div style=${{ ...serif, fontSize: 15, color: C.navy, fontWeight: 700 }}>${year}년 ${month + 1}월</div>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month + 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 16, padding: "2px 8px" }}>›</button>
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3, marginBottom: 2 }}>
+        ${weekdays.map((w, i) => html`<div key=${i} style=${{ textAlign: "center", fontSize: 11, color: C.slate, fontWeight: 700, padding: "5px 0" }}>${w}</div>`)}
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 3 }}>
+        ${cells.map((d, i) => {
+          if (d === null) return html`<div key=${i}></div>`;
+          const dateStr = fmt(d);
+          const isSelected = dateStr === selected;
+          const count = countByDate[dateStr] || 0;
+          return html`
+            <div key=${i} onClick=${() => onSelect(dateStr)} style=${{
+              textAlign: "center", padding: "8px 0 6px", fontSize: 13, borderRadius: 3, cursor: "pointer", position: "relative",
+              color: isSelected ? C.white : C.ink,
+              background: isSelected ? C.gold : (count > 0 ? "#FBF6EA" : "transparent"),
+              fontWeight: isSelected || count > 0 ? 700 : 400,
+            }}>
+              ${d}
+              ${count > 0 && html`<div style=${{ fontSize: 9, marginTop: 2, color: isSelected ? C.white : C.gold }}>●${count > 1 ? count : ""}</div>`}
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
 function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogout }) {
+  const list = bookings || [];
+  const dates = [...new Set(list.map((b) => b.date))].sort();
+  const [selectedDate, setSelectedDate] = useState(() => dates[0] || today());
+  const [resultDrafts, setResultDrafts] = useState({});
+
   async function setStatus(id, status) {
-    await saveBookingsList((bookings || []).map((b) => (b.id === id ? { ...b, status } : b)));
+    await saveBookingsList(list.map((b) => (b.id === id ? { ...b, status } : b)));
   }
   async function remove(id) {
-    await saveBookingsList((bookings || []).filter((b) => b.id !== id));
+    await saveBookingsList(list.filter((b) => b.id !== id));
   }
-  const list = bookings || [];
+  async function saveResult(id) {
+    const text = resultDrafts[id] != null ? resultDrafts[id] : "";
+    await saveBookingsList(list.map((b) => (b.id === id ? { ...b, result: text } : b)));
+  }
+
+  const dayList = list.filter((b) => b.date === selectedDate);
+
   return html`
     <div>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -1504,30 +1589,48 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogou
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>레벨테스트 · 상담 예약 현황</div>
-      ${list.length === 0 && html`<${Empty} text="아직 접수된 예약이 없어요." />`}
-      ${list.map((b) => html`
-        <${Card} key=${b.id}>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: b.kind === "상담" ? "#EFEAE0" : "#E7ECF3", color: C.navy }}>${b.kind || "레벨테스트"}</span>
-                <div style=${{ fontWeight: 700, color: C.navy }}>${b.name} ${b.grade ? `(${b.grade})` : ""}</div>
-              </div>
-              ${b.school && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 4 }}>${b.school}</div>`}
-              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 3 }}>연락처 ${b.phone}</div>
-              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>희망일시 ${b.date}${b.time ? " · " + b.time : ""}</div>
-              ${b.level && html`<div style=${{ fontSize: 12.5, marginTop: 6 }}><b>현재 실력:</b> ${b.level}</div>`}
-              ${b.note && html`<div style=${{ fontSize: 12.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${b.note}</div>`}
-            </div>
-            <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: b.status === "완료" ? "#E9F1EA" : "#F7E9E6", color: b.status === "완료" ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${b.status || "대기"}</span>
+      ${list.length === 0 ? html`<${Empty} text="아직 접수된 예약이 없어요." />` : html`
+        <div className="ap-split">
+          <div className="ap-split-left">
+            <${BookingsCalendar} bookings=${list} selected=${selectedDate} onSelect=${setSelectedDate} />
           </div>
-          <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
-            ${b.status !== "완료" ? html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "완료")}>완료 처리<//>`
-              : html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "대기")}>대기로 되돌리기<//>`}
-            <${Button} variant="danger" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => remove(b.id)}>삭제<//>
+          <div className="ap-split-right">
+            <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>${fmtDateDay(selectedDate)} · ${dayList.length}건</div>
+            ${dayList.length === 0 && html`<${Empty} text="이 날짜엔 예약이 없어요. 달력에서 점(●)이 있는 날짜를 눌러 보세요." />`}
+            ${dayList.map((b) => html`
+              <${Card} key=${b.id}>
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: b.kind === "상담" ? "#EFEAE0" : "#E7ECF3", color: C.navy }}>${b.kind || "레벨테스트"}</span>
+                      <div style=${{ fontWeight: 700, color: C.navy }}>${b.name} ${b.grade ? `(${b.grade})` : ""}</div>
+                    </div>
+                    ${b.school && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 4 }}>${b.school}</div>`}
+                    <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 3 }}>연락처 ${b.phone}</div>
+                    <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>희망일시 ${b.date}${b.time ? " · " + b.time : ""}</div>
+                    ${b.venue && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>응시 장소: ${b.venue}</div>`}
+                    ${b.level && html`<div style=${{ fontSize: 12.5, marginTop: 6 }}><b>현재 실력:</b> ${b.level}</div>`}
+                    ${b.note && html`<div style=${{ fontSize: 12.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${b.note}</div>`}
+                  </div>
+                  <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: b.status === "완료" ? "#E9F1EA" : "#F7E9E6", color: b.status === "완료" ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${b.status || "대기"}</span>
+                </div>
+                <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
+                  ${b.status !== "완료" ? html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "완료")}>완료 처리<//>`
+                    : html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setStatus(b.id, "대기")}>대기로 되돌리기<//>`}
+                  <${Button} variant="danger" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => remove(b.id)}>삭제<//>
+                </div>
+                <div style=${{ marginTop: 12, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
+                  <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 6 }}>상담·테스트 결과 기록</div>
+                  <textarea style=${{ ...inputStyle, minHeight: 60 }} placeholder="예: 문법 기초 부족, 독해는 학년 수준. 주 2회 권장 / 상담 후 대치반 배정하기로 함"
+                    value=${resultDrafts[b.id] != null ? resultDrafts[b.id] : (b.result || "")}
+                    onChange=${(e) => setResultDrafts((prev) => ({ ...prev, [b.id]: e.target.value }))} />
+                  <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12, marginTop: 6 }} onClick=${() => saveResult(b.id)}>결과 저장<//>
+                </div>
+              <//>
+            `)}
           </div>
-        <//>
-      `)}
+        </div>
+      `}
     </div>
   `;
 }
@@ -1761,7 +1864,7 @@ function VocabLogEditor({ data, updateData }) {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90%(오답 10% 이내), 아니면 80%(오답 20% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
       <${Card}>
-        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="날짜"><${DateField} value=${date} onChange=${setDate} /><//>
         <${Field} label="교재">
           <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
             ${BOOK_LIST.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
@@ -1819,7 +1922,7 @@ function RegularExamEditor({ data, updateData }) {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
       <${Card}>
-        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="날짜"><${DateField} value=${date} onChange=${setDate} /><//>
         <${Field} label="시험명"><input style=${inputStyle} value=${examName} onChange=${(e) => setExamName(e.target.value)} placeholder="예: 1학기 기말고사" /><//>
         <${Field} label="과목"><input style=${inputStyle} value=${subject} onChange=${(e) => setSubject(e.target.value)} /><//>
         <${Field} label="점수 / 등급"><input style=${inputStyle} value=${score} onChange=${(e) => setScore(e.target.value)} placeholder="예: 92점 / 1등급" /><//>
@@ -1869,10 +1972,9 @@ function ReportsSection({ roster, ensureData, dataCache }) {
         <//>
       <//>
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : html`
-        <${Shell} side=${html`<${SideNav} items=${navItems} active=${kind} onChange=${setKind} />`}>
-          ${kind === "daily" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
-          ${kind === "monthly" && html`<${MonthlyReportView} student=${student} data=${data} />`}
-        <//>
+        <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
+        ${kind === "daily" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
+        ${kind === "monthly" && html`<${MonthlyReportView} student=${student} data=${data} />`}
       `}
     </div>
   `;
@@ -1925,8 +2027,8 @@ function DailyReportGenerator({ student, data }) {
   return html`
     <div>
       <${Card}>
-        <${Field} label="수업 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
-        <${Field} label="숙제 확인 시작일 (직전 수업 다음날)"><input style=${inputStyle} type="date" value=${hwFrom} onChange=${(e) => setHwFrom(e.target.value)} /><//>
+        <${Field} label="수업 날짜"><${DateField} value=${date} onChange=${setDate} /><//>
+        <${Field} label="숙제 확인 시작일 (직전 수업 다음날)"><${DateField} value=${hwFrom} onChange=${setHwFrom} /><//>
         <div style=${{ fontSize: 11.5, color: C.slate }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
       <//>
       <${Card}>
@@ -2009,7 +2111,7 @@ function LogsEditor({ data, updateData }) {
   return html`
     <div>
       <${Card}>
-        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="날짜"><${DateField} value=${date} onChange=${setDate} /><//>
         <${Field} label="오늘 배운 내용"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: Unit 5 관계대명사 who/which 개념 설명, 워크북 12-14p 풀이" /><//>
         <${Button} variant="gold" onClick=${add}>기록 추가<//>
       <//>
@@ -2017,7 +2119,7 @@ function LogsEditor({ data, updateData }) {
       ${data.logs.map((l) => html`
         <${Card} key=${l.id}>
           ${editId === l.id ? html`
-            <${Field} label="날짜"><input style=${inputStyle} type="date" value=${editDate} onChange=${(e) => setEditDate(e.target.value)} /><//>
+            <${Field} label="날짜"><${DateField} value=${editDate} onChange=${setEditDate} /><//>
             <${Field} label="내용"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${editContent} onChange=${(e) => setEditContent(e.target.value)} /><//>
             <div style=${{ display: "flex", gap: 8 }}>
               <${Button} variant="gold" onClick=${saveEdit}>저장<//>
@@ -2079,8 +2181,8 @@ function HomeworkEditor({ data, updateData }) {
       `}
       <${Card}>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><input style=${inputStyle} type="date" value=${assignedDate} onChange=${(e) => setAssignedDate(e.target.value)} /><//></div>
-          <div style=${{ flex: 1 }}><${Field} label="제출 기한"><input style=${inputStyle} type="date" value=${dueDate} onChange=${(e) => setDueDate(e.target.value)} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><${DateField} value=${assignedDate} onChange=${setAssignedDate} /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="제출 기한"><${DateField} value=${dueDate} onChange=${setDueDate} /><//></div>
         </div>
         <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
         <${Button} variant="gold" onClick=${add}>숙제 추가<//>
@@ -2093,8 +2195,8 @@ function HomeworkEditor({ data, updateData }) {
         <${Card} key=${h.id}>
           ${editId === h.id ? html`
             <div style=${{ display: "flex", gap: 8 }}>
-              <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><input style=${inputStyle} type="date" value=${editAssigned} onChange=${(e) => setEditAssigned(e.target.value)} /><//></div>
-              <div style=${{ flex: 1 }}><${Field} label="제출 기한"><input style=${inputStyle} type="date" value=${editDue} onChange=${(e) => setEditDue(e.target.value)} /><//></div>
+              <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><${DateField} value=${editAssigned} onChange=${setEditAssigned} /><//></div>
+              <div style=${{ flex: 1 }}><${Field} label="제출 기한"><${DateField} value=${editDue} onChange=${setEditDue} /><//></div>
             </div>
             <${Field} label="내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${editContent} onChange=${(e) => setEditContent(e.target.value)} /><//>
             <div style=${{ display: "flex", gap: 8 }}>
@@ -2150,7 +2252,7 @@ function FeedbackEditor({ data, updateData }) {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학부모님께 보내는 메모와, 학부모님이 남긴 코멘트·상담 요청이 함께 표시돼요. 학생에게는 안 보여요.</div>
       <${Card}>
-        <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+        <${Field} label="날짜"><${DateField} value=${date} onChange=${setDate} /><//>
         <${Field} label="학부모 전용 메모"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${text} onChange=${(e) => setText(e.target.value)} placeholder="예: 이번 주 독해 속도가 눈에 띄게 좋아졌어요." /><//>
         <${Button} variant="gold" onClick=${add}>메모 추가<//>
       <//>
@@ -2158,7 +2260,7 @@ function FeedbackEditor({ data, updateData }) {
       ${data.feedback.map((f) => html`
         <${Card} key=${f.id} style=${f.from === "parent" ? { borderLeft: `3px solid ${C.gold}` } : {}}>
           ${editId === f.id ? html`
-            <${Field} label="날짜"><input style=${inputStyle} type="date" value=${editDate} onChange=${(e) => setEditDate(e.target.value)} /><//>
+            <${Field} label="날짜"><${DateField} value=${editDate} onChange=${setEditDate} /><//>
             <${Field} label="내용"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${editText} onChange=${(e) => setEditText(e.target.value)} /><//>
             <div style=${{ display: "flex", gap: 8 }}>
               <${Button} variant="gold" onClick=${saveEdit}>저장<//>
@@ -2539,7 +2641,7 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
             `}
           `}
           <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
-          <${Field} label="날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//>
+          <${Field} label="날짜"><${DateField} value=${date} onChange=${setDate} /><//>
           <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${pageRange} onChange=${(e) => setPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
           <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)">
             <textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${keyText} onChange=${(e) => setKeyText(e.target.value)} placeholder=${"예: 2,3,1,4,5,2,1,3,4,5 ...\n(1번부터 순서대로 정답 번호)"} />
@@ -2562,7 +2664,7 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
           <${Card} key=${t.id}>
             ${editId === t.id ? html`
               <${Field} label="모의고사 이름"><input style=${inputStyle} value=${editTitle} onChange=${(e) => setEditTitle(e.target.value)} /><//>
-              <${Field} label="날짜"><input style=${inputStyle} type="date" value=${editDate} onChange=${(e) => setEditDate(e.target.value)} /><//>
+              <${Field} label="날짜"><${DateField} value=${editDate} onChange=${setEditDate} /><//>
               <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${editPageRange} onChange=${(e) => setEditPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
               <${Field} label="정답 (순서대로)"><textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${editKeyText} onChange=${(e) => setEditKeyText(e.target.value)} /><//>
               ${editMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${editMsg}</div>`}
@@ -2659,7 +2761,6 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
 
   const tabs = [
-    { key: "byDate", label: "날짜별 보기", icon: "📅" },
     { key: "logs", label: "오늘의 학습", icon: "📘" },
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "vocab", label: "단어 재시험", icon: "🔤" },
@@ -2710,8 +2811,6 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
-
-      ${tab === "byDate" && html`<${DateView} data=${data} role="student" />`}
 
       ${tab === "logs" && (data.logs.length === 0 ? html`<${Empty} text="아직 등록된 학습 기록이 없어요." />` : data.logs.map((l) => html`
         <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
@@ -3040,7 +3139,7 @@ function DateView({ data, role }) {
   return html`
     <div>
       <${Card}>
-        <${Field} label="날짜 선택"><input style=${inputStyle} type="date" value=${selDate} onChange=${(e) => setSelDate(e.target.value)} /><//>
+        <${Field} label="날짜 선택"><${DateField} value=${selDate} onChange=${setSelDate} /><//>
       <//>
       ${nothing && html`<${Empty} text="이 날짜에 기록된 내용이 없어요." />`}
       ${logs.length > 0 && html`
@@ -3094,7 +3193,6 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   }
 
   const tabs = [
-    { key: "byDate", label: "날짜별 보기", icon: "📅" },
     { key: "logs", label: "학습 기록", icon: "📘" },
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "feedback", label: "선생님 피드백", icon: "💬" },
@@ -3110,8 +3208,6 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
-
-      ${tab === "byDate" && html`<${DateView} data=${data} role="parent" />`}
 
       ${tab === "logs" && (data.logs.length === 0 ? html`<${Empty} text="아직 등록된 학습 기록이 없어요." />` : data.logs.map((l) => html`
         <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
@@ -3193,17 +3289,17 @@ function ConsultRequestPanel({ data, updateData }) {
         <//>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>1지망 (필수)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d1} onChange=${(e) => setD1(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d1} onChange=${setD1} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t1} onChange=${(e) => setT1(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>2지망 (선택)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d2} onChange=${(e) => setD2(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d2} onChange=${setD2} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t2} onChange=${(e) => setT2(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>3지망 (선택)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><input style=${inputStyle} type="date" value=${d3} onChange=${(e) => setD3(e.target.value)} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d3} onChange=${setD3} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t3} onChange=${(e) => setT3(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <${Field} label="전하고 싶은 내용 (선택)"><textarea style=${{ ...inputStyle, minHeight: 60, marginTop: 6 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
