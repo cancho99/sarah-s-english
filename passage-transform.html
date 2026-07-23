@@ -31,13 +31,8 @@
   }
 
   .app{
-    display:grid;
-    grid-template-columns:72px 1fr;
+    display:block;
     min-height:100vh;
-  }
-  @media (max-width:800px){
-    .app{grid-template-columns:1fr;}
-    .sidenav{display:none;}
   }
 
   /* ---------- 좌측 아이콘 내비게이션 (실제 사이트임을 보여주는 골격) ---------- */
@@ -258,26 +253,6 @@
 <body>
 
 <div class="app">
-  <div class="sidenav">
-    <div class="logo">S</div>
-    <div class="nav-item active">
-      <div class="ic">📄</div>
-      지문분석
-    </div>
-    <div class="nav-item">
-      <div class="ic">✏️</div>
-      문제생성
-    </div>
-    <div class="nav-item">
-      <div class="ic">🗂</div>
-      보관함
-    </div>
-    <div class="nav-item">
-      <div class="ic">👥</div>
-      학생별
-    </div>
-  </div>
-
   <div class="main">
     <div class="topbar">
       <div class="brand-line">
