@@ -605,8 +605,8 @@ function SectionLabel({ n, label }) {
     </div>
   `;
 }
-function Card({ children, style }) {
-  return html`<div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16, marginBottom: 12, ...style }}>${children}</div>`;
+function Card({ children, style, onClick }) {
+  return html`<div onClick=${onClick} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16, marginBottom: 12, cursor: onClick ? "pointer" : "default", ...style }}>${children}</div>`;
 }
 function Button({ children, onClick, variant = "primary", style, disabled }) {
   const base = { fontSize: 13.5, fontWeight: 600, padding: "10px 18px", borderRadius: 3, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
@@ -950,9 +950,53 @@ function HomePage({ setScreen, announcement }) {
 }
 
 // ---------- Level test booking ----------
+function MiniCalendar({ selected, onSelect }) {
+  const [viewDate, setViewDate] = useState(() => (selected ? new Date(selected + "T00:00:00") : new Date()));
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const startWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const todayStr = today();
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  function fmt(d) { return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+  return html`
+    <div style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 12, background: C.white }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month - 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 15, padding: "2px 8px" }}>‹</button>
+        <div style=${{ ...serif, fontSize: 14, color: C.navy, fontWeight: 700 }}>${year}년 ${month + 1}월</div>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month + 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 15, padding: "2px 8px" }}>›</button>
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
+        ${weekdays.map((w, i) => html`<div key=${i} style=${{ textAlign: "center", fontSize: 10.5, color: C.slate, fontWeight: 700, padding: "4px 0" }}>${w}</div>`)}
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        ${cells.map((d, i) => {
+          if (d === null) return html`<div key=${i}></div>`;
+          const dateStr = fmt(d);
+          const isPast = dateStr < todayStr;
+          const isSelected = dateStr === selected;
+          return html`
+            <div key=${i} onClick=${() => !isPast && onSelect(dateStr)} style=${{
+              textAlign: "center", padding: "7px 0", fontSize: 12.5, borderRadius: 3,
+              cursor: isPast ? "default" : "pointer",
+              color: isPast ? "#C7C2B4" : (isSelected ? C.white : C.ink),
+              background: isSelected ? C.gold : "transparent",
+              fontWeight: isSelected ? 700 : 400,
+            }}>${d}</div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
 function LevelTestBooking({ onBack, onSubmit }) {
   const [kind, setKind] = useState("레벨테스트");
   const [name, setName] = useState(""); const [grade, setGrade] = useState(""); const [school, setSchool] = useState("");
+  const [gender, setGender] = useState(""); const [birth, setBirth] = useState(""); const [venue, setVenue] = useState("자택");
   const [phone, setPhone] = useState(""); const [date, setDate] = useState(""); const [time, setTime] = useState("");
   const [level, setLevel] = useState(""); const [note, setNote] = useState("");
   const [done, setDone] = useState(false);
@@ -960,7 +1004,7 @@ function LevelTestBooking({ onBack, onSubmit }) {
 
   async function submit() {
     if (!name || !phone || !date) { setErr("이름, 연락처, 희망 날짜는 꼭 입력해 주세요."); return; }
-    await onSubmit({ kind, name, grade, school, phone, date, time, level, note });
+    await onSubmit({ kind, name, grade, school, gender, birth, venue, phone, date, time, level, note });
     setDone(true);
   }
 
@@ -995,11 +1039,31 @@ function LevelTestBooking({ onBack, onSubmit }) {
           <div style=${{ flex: 1 }}><${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)} placeholder="예: 중2" /><//></div>
           <div style=${{ flex: 1 }}><${Field} label="학교"><input style=${inputStyle} value=${school} onChange=${(e) => setSchool(e.target.value)} placeholder="예: OO중학교" /><//></div>
         </div>
-        <${Field} label="연락처"><input style=${inputStyle} value=${phone} onChange=${(e) => setPhone(e.target.value)} placeholder="학부모님 연락처" /><//>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><${Field} label="희망 날짜"><input style=${inputStyle} type="date" value=${date} onChange=${(e) => setDate(e.target.value)} /><//></div>
-          <div style=${{ flex: 1 }}><${Field} label="희망 시간대"><input style=${inputStyle} value=${time} onChange=${(e) => setTime(e.target.value)} placeholder="예: 오후 4시" /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="성별">
+            <select style=${inputStyle} value=${gender} onChange=${(e) => setGender(e.target.value)}>
+              <option value="">선택 안 함</option><option value="남">남학생</option><option value="여">여학생</option>
+            </select>
+          <//></div>
+          <div style=${{ flex: 1 }}><${Field} label="생년월일"><input style=${inputStyle} type="date" value=${birth} onChange=${(e) => setBirth(e.target.value)} /><//></div>
         </div>
+        <${Field} label="연락처"><input style=${inputStyle} value=${phone} onChange=${(e) => setPhone(e.target.value)} placeholder="학부모님 연락처" /><//>
+        <${Field} label="응시 장소">
+          <div style=${{ display: "flex", gap: 10 }}>
+            ${["자택", "학원 방문"].map((v) => html`
+              <div key=${v} onClick=${() => setVenue(v)} style=${{
+                flex: 1, textAlign: "center", padding: "10px 0", borderRadius: 3, cursor: "pointer", fontSize: 13,
+                border: `1px solid ${venue === v ? C.gold : C.line}`, background: venue === v ? "#FBF6EA" : C.white,
+                fontWeight: venue === v ? 700 : 400, color: venue === v ? C.navy : C.slate,
+              }}>${v}</div>
+            `)}
+          </div>
+        <//>
+        <${Field} label="희망 날짜">
+          <${MiniCalendar} selected=${date} onSelect=${setDate} />
+          ${date && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 6 }}>선택한 날짜: ${date}</div>`}
+        <//>
+        <${Field} label="희망 시간대"><input style=${inputStyle} value=${time} onChange=${(e) => setTime(e.target.value)} placeholder="예: 오후 4시" /><//>
         <${Field} label="아이 현재 실력 (간단히)"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${level} onChange=${(e) => setLevel(e.target.value)} placeholder="예: 어휘는 중2 수준, 문법은 아직 기초 단계" /><//>
         <${Field} label="문의 사항 (선택)"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
         ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
@@ -1138,27 +1202,12 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
     <div>
       <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>왼쪽 목록에서 학생을 바로 선택하시거나, 아래에서 전체 현황을 확인하세요.</div>
 
-      ${!showAdd ? html`
-        <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 20 }}>+ 학생 추가<//>
-      ` : html`
-        <${Card}>
-          <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-          <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
-          <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
-          ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
-          <div style=${{ display: "flex", gap: 8 }}>
-            <${Button} variant="gold" onClick=${addStudent}>저장<//>
-            <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
-          </div>
-        <//>
-      `}
-
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📢 공지사항</div>
-      <${Card} style=${{ marginBottom: 20 }}>
-        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
-        <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
-        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-          <${Button} variant="gold" style=${{ padding: "7px 16px", fontSize: 12.5 }} onClick=${submitAnnouncement}>저장<//>
+      <${Card} style=${{ marginBottom: 20, padding: 22 }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
+        <textarea style=${{ ...inputStyle, minHeight: 130, fontSize: 14.5 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${submitAnnouncement}>저장<//>
           ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
         </div>
       <//>
@@ -1216,8 +1265,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
-  const [showStatus, setShowStatus] = useState(false);
-  const [showBookings, setShowBookings] = useState(false);
   const selected = roster.find((r) => r.id === selectedStudentId);
   const pendingCount = (levelTestBookings || []).filter((b) => b.status !== "완료").length;
 
@@ -1237,13 +1284,14 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   }
 
   const navItems = [
+    { key: "mainpage", label: "Main Page", icon: "🏠" },
     { key: "students", label: "학생 관리", icon: "🗂" },
+    { key: "bookings", label: `새로운 레벨테스트·상담 문의${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
     { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
-    { key: "mainpage", label: `Main Page${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🏠" },
   ];
 
   const activeKey = section;
@@ -1251,8 +1299,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   function handleNavChange(key) {
     setSection(key);
     setSelectedStudentId(null);
-    setShowStatus(false);
-    setShowBookings(false);
   }
 
   let body;
@@ -1271,18 +1317,16 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
       addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
-  } else if (showStatus) {
-    body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setShowStatus(false)} onLogout=${onLogout} />`;
-  } else if (showBookings) {
-    body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList} onBack=${() => setShowBookings(false)} onLogout=${onLogout} />`;
+  } else if (section === "hwstatus") {
+    body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
+  } else if (section === "bookings") {
+    body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
   } else {
     // section === "mainpage"
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
-      onGoBookings=${() => { setShowBookings(true); }} onGoHwStatus=${() => { setShowStatus(true); }}
-      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); }}
-      showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
-      addErr=${addErr} addStudent=${addStudent} />`;
+      onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
+      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); }} />`;
   }
 
   return html`
@@ -1581,18 +1625,17 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         </div>
         <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
       </div>
-      <${Shell} side=${html`<${SideNav} items=${tabs} active=${tab} onChange=${setTab} />`}>
-        ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "dailyReport" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
-        ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
-        ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
-        ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
-        ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
-      <//>
+      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+      ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "dailyReport" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
+      ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
+      ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
+      ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
     </div>
   `;
 }
