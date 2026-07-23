@@ -1220,6 +1220,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const navItems = [
     { key: "students", label: "학생 관리", icon: "🗂" },
     ...studentSubItems,
+    { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
+    { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
@@ -1229,7 +1231,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 
   function handleNavChange(key) {
     if (key === "students") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
-    else if (key === "wordbank" || key === "reports" || key === "examkeys") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
+    else if (key === "wordbank" || key === "reports" || key === "examkeys" || key === "passage" || key === "archive") { setSection(key); setSelectedStudentId(null); setShowStatus(false); setShowBookings(false); }
     else if (key === "__bookings") { setSection("students"); setSelectedStudentId(null); setShowStatus(false); setShowBookings(true); }
     else if (key === "__hwstatus") { setSection("students"); setSelectedStudentId(null); setShowBookings(false); setShowStatus(true); }
     else if (key.startsWith("__student:")) { setSection("students"); setShowStatus(false); setShowBookings(false); setSelectedStudentId(key.slice("__student:".length)); }
@@ -1238,6 +1240,10 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   let body;
   if (section === "wordbank") {
     body = html`<${WordbankSection} />`;
+  } else if (section === "passage") {
+    body = html`<${PassageToolSection} />`;
+  } else if (section === "archive") {
+    body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "reports") {
@@ -1363,6 +1369,20 @@ function WordbankSection() {
       <iframe src="wordtest.html" style=${{ width: "100%", height: "78vh", border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff" }} />
     </div>
   `;
+}
+
+// ---------- 지문 변형·문제 생성 (passage-transform.html 도구를 그대로 임베드) ----------
+function PassageToolSection() {
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>지문을 붙여넣으면 구문 분석과 수능 유형 문제를 자동으로 만들어 주는 도구예요.</div>
+      <iframe src="passage-transform.html" style=${{ width: "100%", height: "82vh", border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff" }} />
+    </div>
+  `;
+}
+
+function ArchiveSection() {
+  return html`<${Empty} text="보관함 기능은 준비 중이에요. 만든 지문·문제를 저장해서 나중에 다시 꺼내 쓸 수 있게 곧 추가할게요." />`;
 }
 
 function LevelTestBookingsOverview({ bookings, saveBookingsList, onBack, onLogout }) {
