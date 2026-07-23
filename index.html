@@ -2126,15 +2126,13 @@ function DailyReportGenerator({ student, data }) {
             <${MiniCalendar} selected=${hwFrom} onSelect=${setHwFrom} />
           </div>
           <div className="ap-split-right">
-            <div style=${{ fontSize: 11.5, color: C.slate }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 12 }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
+            <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
+            <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+              <${Button} variant="gold" onClick=${copy}>복사하기<//>
+              ${copied && html`<span style=${{ fontSize: 12, color: C.navy }}>복사됐어요 — 문자로 붙여넣으세요.</span>`}
+            </div>
           </div>
-        </div>
-      <//>
-      <${Card}>
-        <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
-        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-          <${Button} variant="gold" onClick=${copy}>복사하기<//>
-          ${copied && html`<span style=${{ fontSize: 12, color: C.navy }}>복사됐어요 — 문자로 붙여넣으세요.</span>`}
         </div>
       <//>
     </div>
