@@ -234,10 +234,10 @@
   .options{display:flex;flex-wrap:wrap;gap:10px 22px;font-family:'Noto Serif KR', serif;font-size:13.5px;}
   .opt{display:flex;align-items:center;gap:5px;}
   .opt .circ{width:18px;height:18px;border:1px solid var(--ink);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;flex-shrink:0;}
-  .opt.answer .circ{background:var(--red);border-color:var(--red);color:white;}
   .answer-mark{display:none;color:var(--red);font-size:12px;margin-left:6px;font-weight:600;}
   .key-on .answer-mark{display:inline;}
   .key-on .opt.answer{color:var(--red);}
+  .key-on .opt.answer .circ{background:var(--red);border-color:var(--red);color:white;}
 
   /* 어휘 박스 */
   .vocab-block{padding:20px 24px;}
@@ -336,13 +336,17 @@
         </div>
 
         <button class="generate-btn" id="generateBtn">문제 만들기</button>
+        <button class="generate-btn" id="analysisOnlyBtn" style="background:var(--panel);color:var(--ink);border:1px solid var(--rule-strong);margin-top:8px;">지문 분석만 보기</button>
         <div class="cost-note">1회 생성 예상 비용: 약 10~40원 (선택한 유형 수에 따라 달라짐)</div>
       </div>
 
       <div class="preview-wrap">
         <div class="preview-header">
           <div class="preview-label">미리보기 — 인쇄용 시험지</div>
-          <button class="key-toggle" id="keyToggle">정답 보기</button>
+          <div style="display:flex;gap:8px;">
+            <button class="key-toggle" id="printBtn">인쇄 / PDF 저장</button>
+            <button class="key-toggle" id="keyToggle">정답 보기</button>
+          </div>
         </div>
 
         <div class="paper-sheet" id="paperSheet">
@@ -463,11 +467,10 @@
     return `<div class="empty-state"><div class="big">문제 생성에 실패했습니다</div>${msg}</div>`;
   }
 
-  document.getElementById('generateBtn').addEventListener('click', async ()=>{
-    const btn = document.getElementById('generateBtn');
+  async function runGenerate(btn, { analysisOnly } = {}){
     const passage = document.getElementById('passageInput').value.trim();
-    const types = [...document.querySelectorAll('.chip.on')].map(c => c.dataset.t);
-    const includeAnalysis = analysisSwitch.classList.contains('on');
+    const types = analysisOnly ? [] : [...document.querySelectorAll('.chip.on')].map(c => c.dataset.t);
+    const includeAnalysis = analysisOnly ? true : analysisSwitch.classList.contains('on');
     const level = document.getElementById('levelSelect').value;
     const countPerType = parseInt(document.getElementById('countSelect').value, 10) || 1;
 
@@ -476,6 +479,7 @@
       return;
     }
 
+    const originalText = btn.textContent;
     btn.textContent = '생성 중... (몇 초 정도 걸려요)';
     btn.disabled = true;
 
@@ -495,9 +499,30 @@
     } catch (e) {
       sheet.innerHTML = renderError('서버에 연결하지 못했습니다. 인터넷 연결 또는 서버 주소를 확인해 주세요.');
     } finally {
-      btn.textContent = '문제 만들기';
+      btn.textContent = originalText;
       btn.disabled = false;
     }
+  }
+
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    runGenerate(document.getElementById('generateBtn'), { analysisOnly: false });
+  });
+  document.getElementById('analysisOnlyBtn').addEventListener('click', () => {
+    runGenerate(document.getElementById('analysisOnlyBtn'), { analysisOnly: true });
+  });
+
+  document.getElementById('printBtn').addEventListener('click', () => {
+    const printWin = window.open('', '_blank');
+    if (!printWin) { alert('팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요.'); return; }
+    printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>인쇄</title>
+      <style>
+        body{font-family:'Noto Serif KR',serif;margin:0;padding:24px;color:#1B2A3D;}
+        ${document.querySelector('style') ? document.querySelector('style').innerHTML : ''}
+        .paper-sheet{box-shadow:none;border:none;}
+      </style></head><body>${sheet.innerHTML}</body></html>`);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => { printWin.print(); }, 300);
   });
 </script>
 
