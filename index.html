@@ -1238,10 +1238,10 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
       <div className="main-quad-grid" style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 20, height: "calc(100vh - 190px)", minHeight: 480 }}>
         <div style=${{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📢 공지사항</div>
-          <${Card} style=${{ padding: 22, marginBottom: 0, flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
-            <textarea style=${{ ...inputStyle, minHeight: 100, fontSize: 14.5 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
-            <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <${Card} style=${{ padding: 22, marginBottom: 0, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10, flexShrink: 0 }}>여기에 적으신 내용은 추후 학생·학부모 화면에도 표시할 수 있어요.</div>
+            <textarea style=${{ ...inputStyle, flex: 1, minHeight: 0, fontSize: 14.5, resize: "none" }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
+            <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexShrink: 0 }}>
               <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${submitAnnouncement}>저장<//>
               ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
             </div>
