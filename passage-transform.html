@@ -181,7 +181,9 @@
   .key-toggle{font-size:12px;color:var(--gold);border:1px solid var(--gold);padding:5px 12px;border-radius:20px;cursor:pointer;background:none;}
   .key-toggle.active{background:var(--gold);color:white;}
 
-  .paper-sheet{background:var(--panel);border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(27,42,61,.06);}
+  .paper-sheet{background:var(--panel);border:1px solid var(--ink);box-shadow:4px 4px 0 rgba(27,42,61,.06);overflow-x:hidden;outline:none;}
+  .layout, .panel, .preview-wrap, .app, .main, body, html{max-width:100%;overflow-x:hidden;}
+  .sent-row{max-width:100%;}
   .sheet-title{text-align:center;padding:18px 20px 14px;border-bottom:2px solid var(--ink);font-family:'Noto Serif KR', serif;}
   .sheet-title .school{font-size:11px;color:var(--muted);letter-spacing:.05em;}
   .sheet-title .name{font-size:16px;font-weight:700;margin-top:4px;}
@@ -212,8 +214,8 @@
     display:flex;flex-wrap:wrap;align-items:flex-end;column-gap:16px;row-gap:10px;
     font-family:'Noto Serif KR', serif;font-size:14.5px;color:var(--ink);
   }
-  .seg{display:flex;flex-direction:column;align-items:center;}
-  .seg .txt{padding:0 2px 2px;white-space:nowrap;}
+  .seg{display:flex;flex-direction:column;align-items:center;max-width:100%;}
+  .seg .txt{padding:0 2px 2px;white-space:normal;overflow-wrap:break-word;word-break:keep-all;}
   .seg.tag .txt{border-bottom:1.5px solid var(--ink);}
   .seg .lbl{
     font-size:10px;font-weight:600;color:var(--blue);margin-top:5px;min-height:13px;
@@ -248,6 +250,7 @@
 
   .empty-state{padding:60px 24px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.8;}
   .empty-state .big{font-family:'Noto Serif KR', serif;font-size:15px;color:var(--ink-soft);margin-bottom:8px;font-weight:600;}
+  .chg{background:#FBF0DC;color:var(--red);font-weight:700;border-bottom:1.5px solid var(--gold);padding:0 2px;}
 </style>
 </head>
 <body>
@@ -337,6 +340,7 @@
 
         <button class="generate-btn" id="generateBtn">문제 만들기</button>
         <button class="generate-btn" id="analysisOnlyBtn" style="background:var(--panel);color:var(--ink);border:1px solid var(--rule-strong);margin-top:8px;">지문 분석만 보기</button>
+        <button class="generate-btn" id="transformBtn" style="background:var(--gold);margin-top:8px;">지문 변형 (어법·어휘)</button>
         <div class="cost-note">1회 생성 예상 비용: 약 10~40원 (선택한 유형 수에 따라 달라짐)</div>
       </div>
 
@@ -349,7 +353,7 @@
           </div>
         </div>
 
-        <div class="paper-sheet" id="paperSheet">
+        <div class="paper-sheet" id="paperSheet" contenteditable="true" spellcheck="false">
           <div class="empty-state">
             <div class="big">아직 생성된 문제가 없습니다</div>
             왼쪽에서 지문과 문제 유형을 선택하고<br>"문제 만들기"를 눌러보세요.
@@ -467,12 +471,37 @@
     return `<div class="empty-state"><div class="big">문제 생성에 실패했습니다</div>${msg}</div>`;
   }
 
-  async function runGenerate(btn, { analysisOnly } = {}){
+  function renderTransformResult(data){
+    let html = `<div class="sheet-title">
+      <div class="school">2026학년도 지문 변형 · Sarah's English</div>
+      <div class="name">${data.title || ''}</div>
+      ${data.title_kr ? `<div class="kr-name">(${data.title_kr})</div>` : ''}
+    </div>`;
+    html += `<div class="analysis-card">
+      <div class="a-title">변형된 지문</div>
+      <div class="passage-box" style="font-size:14.5px;">${data.transformed_html || ''}</div>
+    </div>`;
+    if (data.changes && data.changes.length){
+      html += `<div class="vocab-block"><div class="a-title">변경 지점 (원래 → 변형, 이유)</div>`;
+      data.changes.forEach((c, i) => {
+        html += `<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--rule);">
+          <span class="q-type-tag" style="margin-left:0;">${c.type || ''}</span>
+          <span style="font-family:'Noto Serif KR',serif;font-size:13.5px;margin-left:8px;"><b>${c.original || ''}</b> → <b style="color:var(--red);">${c.changed || ''}</b></span>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">${c.explanation || ''}</div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    return html;
+  }
+
+  async function runGenerate(btn, { analysisOnly, transform } = {}){
     const passage = document.getElementById('passageInput').value.trim();
-    const types = analysisOnly ? [] : [...document.querySelectorAll('.chip.on')].map(c => c.dataset.t);
-    const includeAnalysis = analysisOnly ? true : analysisSwitch.classList.contains('on');
+    const types = (analysisOnly || transform) ? [] : [...document.querySelectorAll('.chip.on')].map(c => c.dataset.t);
+    const includeAnalysis = analysisOnly ? true : (transform ? false : analysisSwitch.classList.contains('on'));
     const level = document.getElementById('levelSelect').value;
     const countPerType = parseInt(document.getElementById('countSelect').value, 10) || 1;
+    const mode = transform ? 'transform' : 'question';
 
     if (!passage || passage.length < 20) {
       sheet.innerHTML = renderError('지문을 20자 이상 입력해 주세요.');
@@ -487,12 +516,14 @@
       const res = await fetch(WORKER_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ passage, includeAnalysis, questionTypes: types, level, countPerType })
+        body: JSON.stringify({ passage, includeAnalysis, questionTypes: types, level, countPerType, mode })
       });
       const data = await res.json();
       if (!res.ok || data.error) {
         const msg = (data.error || ('서버 오류 (' + res.status + ')')) + (data.detail ? '<br><span style="font-size:11.5px;color:#8A8370;">세부 정보: ' + String(data.detail).slice(0, 400) + '</span>' : '');
         sheet.innerHTML = renderError(msg);
+      } else if (mode === 'transform') {
+        sheet.innerHTML = renderTransformResult(data);
       } else {
         sheet.innerHTML = renderSheet(data);
       }
@@ -505,10 +536,13 @@
   }
 
   document.getElementById('generateBtn').addEventListener('click', () => {
-    runGenerate(document.getElementById('generateBtn'), { analysisOnly: false });
+    runGenerate(document.getElementById('generateBtn'), {});
   });
   document.getElementById('analysisOnlyBtn').addEventListener('click', () => {
     runGenerate(document.getElementById('analysisOnlyBtn'), { analysisOnly: true });
+  });
+  document.getElementById('transformBtn').addEventListener('click', () => {
+    runGenerate(document.getElementById('transformBtn'), { transform: true });
   });
 
   document.getElementById('printBtn').addEventListener('click', () => {
