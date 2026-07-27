@@ -171,6 +171,9 @@ async function saveStudentDoc(id, data) {
 }
 
 // ---------- Design tokens ----------
+// NELT 성적표 PDF 업로드 분석용 (지문 변형 도구와 동일한 서버)
+const NELT_WORKER_URL = "https://purple-voice-5e09sarah-english-worker.minji960514.workers.dev/";
+
 const C = {
   ink: "#14161A", navy: "#1C2B4A", gold: "#B8935A", ivory: "#FAF7F1",
   slate: "#5B6270", line: "#DCD8CF", white: "#FFFFFF", danger: "#A6473A",
@@ -2180,6 +2183,128 @@ function buildScoreChartSVG(rows) {
   </svg>`;
 }
 
+function NeltUploadSection({ data, updateData }) {
+  const [uploading, setUploading] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [err, setErr] = useState("");
+  const results = data.neltResults || [];
+  const CATS = [["vocab", "어휘"], ["grammar", "문법"], ["listening", "듣기"], ["reading", "독해"]];
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true); setErr(""); setDraft(null);
+    try {
+      const pdfBase64 = await fileToBase64(file);
+      const res = await fetch(NELT_WORKER_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "nelt", pdfBase64 }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setErr((json.error || "분석에 실패했습니다.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
+      } else {
+        setDraft({
+          test_name: json.test_name || "", student_name: json.student_name || "", grade: json.grade || "",
+          test_date: json.test_date || today(),
+          overall_level: json.overall_level || "", overall_level_desc: json.overall_level_desc || "", overall_percentile: json.overall_percentile || "",
+          categories: {
+            vocab: json.categories?.vocab || {}, grammar: json.categories?.grammar || {},
+            listening: json.categories?.listening || {}, reading: json.categories?.reading || {},
+          },
+        });
+      }
+    } catch (ex) {
+      setErr("서버에 연결하지 못했습니다: " + String(ex).slice(0, 150));
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  function updateDraftField(field, val) { setDraft((d) => ({ ...d, [field]: val })); }
+  function updateDraftCat(cat, field, val) { setDraft((d) => ({ ...d, categories: { ...d.categories, [cat]: { ...d.categories[cat], [field]: val } } })); }
+
+  async function saveDraft() {
+    await updateData((d) => ({ ...d, neltResults: [{ id: uid(), ...draft }, ...(d.neltResults || [])] }));
+    setDraft(null);
+  }
+  async function removeResult(id) { await updateData((d) => ({ ...d, neltResults: (d.neltResults || []).filter((r) => r.id !== id) })); }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📄 NELT 성적표 업로드</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>NELT 성적표 PDF를 올리면 어휘·문법·듣기·독해별 수준과 석차를 자동으로 뽑아드려요 (1회 분석당 약 수십 원, 완료 전에 확인 후 저장할 수 있어요).</div>
+        <input type="file" accept="application/pdf" onChange=${handleFile} disabled=${uploading} style=${{ fontSize: 12.5 }} />
+        ${uploading && html`<div style=${{ fontSize: 12.5, color: C.gold, marginTop: 8 }}>분석 중... (10~20초 정도 걸려요)</div>`}
+        ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
+      <//>
+
+      ${draft && html`
+        <${Card} style=${{ marginBottom: 20, borderLeft: `3px solid ${C.gold}` }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>추출된 내용 확인 (필요하면 수정 후 저장하세요)</div>
+          <div style=${{ display: "flex", gap: 8 }}>
+            <div style=${{ flex: 1 }}><${Field} label="테스트명"><input style=${inputStyle} value=${draft.test_name} onChange=${(e) => updateDraftField("test_name", e.target.value)} /><//></div>
+            <div style=${{ flex: 1 }}><${Field} label="응시일"><${DateField} value=${draft.test_date} onChange=${(v) => updateDraftField("test_date", v)} /><//></div>
+          </div>
+          <div style=${{ display: "flex", gap: 8 }}>
+            <div style=${{ flex: 1 }}><${Field} label="종합 레벨"><input style=${inputStyle} value=${draft.overall_level} onChange=${(e) => updateDraftField("overall_level", e.target.value)} /><//></div>
+            <div style=${{ flex: 1 }}><${Field} label="종합 수준"><input style=${inputStyle} value=${draft.overall_level_desc} onChange=${(e) => updateDraftField("overall_level_desc", e.target.value)} /><//></div>
+            <div style=${{ flex: 1 }}><${Field} label="종합 석차"><input style=${inputStyle} value=${draft.overall_percentile} onChange=${(e) => updateDraftField("overall_percentile", e.target.value)} /><//></div>
+          </div>
+          ${CATS.map(([key, label]) => html`
+            <div key=${key} style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 10, marginTop: 6 }}>
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.gold, marginBottom: 6 }}>${label}</div>
+              <div style=${{ display: "flex", gap: 8 }}>
+                <div style=${{ flex: 1 }}><${Field} label="수준"><input style=${inputStyle} value=${draft.categories[key].level_desc || ""} onChange=${(e) => updateDraftCat(key, "level_desc", e.target.value)} /><//></div>
+                <div style=${{ flex: 1 }}><${Field} label="석차"><input style=${inputStyle} value=${draft.categories[key].percentile || ""} onChange=${(e) => updateDraftCat(key, "percentile", e.target.value)} /><//></div>
+              </div>
+              <${Field} label="추가 정보"><input style=${inputStyle} value=${draft.categories[key].extra || ""} onChange=${(e) => updateDraftCat(key, "extra", e.target.value)} /><//>
+            </div>
+          `)}
+          <div style=${{ display: "flex", gap: 8, marginTop: 6 }}>
+            <${Button} variant="gold" onClick=${saveDraft}>저장<//>
+            <${Button} variant="ghost" onClick=${() => setDraft(null)}>취소<//>
+          </div>
+        <//>
+      `}
+
+      ${results.map((r) => html`
+        <${Card} key=${r.id} style=${{ marginBottom: 12 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(r.test_date)} · ${r.test_name}</div>
+              <div style=${{ fontSize: 13, marginTop: 4 }}><b>${r.overall_level}</b> ${r.overall_level_desc} · ${r.overall_percentile}</div>
+            </div>
+            <button onClick=${() => removeResult(r.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+          </div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 10 }}>
+            ${CATS.map(([key, label]) => html`
+              <div key=${key} style=${{ border: `1px solid ${C.line}`, borderRadius: 3, padding: 8 }}>
+                <div style=${{ fontSize: 11, fontWeight: 700, color: C.navy }}>${label}</div>
+                <div style=${{ fontSize: 12, marginTop: 2 }}>${(r.categories && r.categories[key] && r.categories[key].level_desc) || "-"}</div>
+                <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>${(r.categories && r.categories[key] && r.categories[key].percentile) || ""}</div>
+                <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>${(r.categories && r.categories[key] && r.categories[key].extra) || ""}</div>
+              </div>
+            `)}
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
 function RegularExamEditor({ data, updateData }) {
   const [date, setDate] = useState(today());
   const [examName, setExamName] = useState("");
@@ -2199,6 +2324,7 @@ function RegularExamEditor({ data, updateData }) {
   const list = data.regularExams || [];
   return html`
     <div>
+      <${NeltUploadSection} data=${data} updateData=${updateData} />
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사, NELT 같은 월말 시험 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
       ${list.filter((x) => x.scoreNum != null).length >= 2 && html`
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📈 점수 추이</div>
@@ -2376,6 +2502,7 @@ function MonthlyReportView({ student, data, updateData }) {
   const attendedCount = new Set(logRows.map((l) => l.date)).size;
   const allExams = data.regularExams || [];
   const examRowsThisMonth = allExams.filter((x) => inMonth(x.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const neltThisMonth = (data.neltResults || []).filter((r) => inMonth(r.test_date));
 
   useEffect(() => {
     const s = (data.monthlyReports || {})[month] || {};
@@ -2467,6 +2594,18 @@ function MonthlyReportView({ student, data, updateData }) {
           </table>` : ""}
           ${allExams.filter((x) => x.scoreNum != null).length >= 2 ? `<div style="margin-top:14px;">${buildScoreChartSVG(allExams)}</div>` : ""}
         </div>` : ""}
+        ${neltThisMonth.length > 0 ? `
+        <div class="sec">
+          <div class="secttl"><span class="badge">1-2</span>NELT 성적</div>
+          ${neltThisMonth.map((r) => `
+            <div style="margin-bottom:10px;font-family:'Noto Sans KR',sans-serif;">
+              <div style="font-size:13px;font-weight:700;color:#1C2B4A;">${r.overall_level} ${r.overall_level_desc} · ${r.overall_percentile}</div>
+              <div style="font-size:11.5px;margin-top:4px;">
+                ${[["vocab", "어휘"], ["grammar", "문법"], ["listening", "듣기"], ["reading", "독해"]].map(([key, label]) => `<span style="margin-right:14px;"><b>${label}</b> ${(r.categories && r.categories[key] && r.categories[key].level_desc) || ""} (${(r.categories && r.categories[key] && r.categories[key].percentile) || ""})</span>`).join("")}
+              </div>
+            </div>
+          `).join("")}
+        </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
           <table><tr><th style="text-align:left;">평가 영역</th>${REPORT_RATINGS.map((r) => `<th>${r}</th>`).join("")}</tr>
@@ -2543,6 +2682,22 @@ function MonthlyReportView({ student, data, updateData }) {
           <div dangerouslySetInnerHTML=${{ __html: buildScoreChartSVG(allExams) }} />
         `}
       <//>
+
+      ${neltThisMonth.length > 0 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>NELT 성적 (이번 달)</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          ${neltThisMonth.map((r) => html`
+            <div key=${r.id} style=${{ marginBottom: 10 }}>
+              <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${r.overall_level} ${r.overall_level_desc} · ${r.overall_percentile}</div>
+              <div style=${{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12 }}>
+                ${[["vocab", "어휘"], ["grammar", "문법"], ["listening", "듣기"], ["reading", "독해"]].map(([key, label]) => html`
+                  <span key=${key}><b>${label}</b> ${(r.categories && r.categories[key] && r.categories[key].level_desc) || ""} (${(r.categories && r.categories[key] && r.categories[key].percentile) || ""})</span>
+                `)}
+              </div>
+            </div>
+          `)}
+        <//>
+      `}
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>2. 영역별 성취 평가</div>
       <${Card} style=${{ marginBottom: 20, overflowX: "auto" }}>
