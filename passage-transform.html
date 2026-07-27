@@ -251,7 +251,46 @@
   .empty-state{padding:60px 24px;text-align:center;color:var(--muted);font-size:13.5px;line-height:1.8;}
   .empty-state .big{font-family:'Noto Serif KR', serif;font-size:15px;color:var(--ink-soft);margin-bottom:8px;font-weight:600;}
   .chg{background:#FBF0DC;color:var(--red);font-weight:700;border-bottom:1.5px solid var(--gold);padding:0 2px;}
+  .mode-tabs{display:flex;gap:8px;padding:14px 32px 0;}
+  .mode-tab{padding:8px 18px;border:1px solid var(--rule-strong);border-radius:20px;background:var(--panel);color:var(--ink-soft);font-size:13px;cursor:pointer;}
+  .mode-tab.active{background:var(--ink);border-color:var(--ink);color:var(--paper);}
+  .archive-item{background:var(--panel);border:1px solid var(--rule);border-radius:3px;padding:14px 18px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;}
+  .archive-item:hover{border-color:var(--gold);}
+  .archive-item .meta{font-size:11px;color:var(--muted);margin-top:4px;}
+  .archive-del{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:6px 10px;}
 </style>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  const firebaseConfig = {
+    apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
+    authDomain: "sarah-s-english.firebaseapp.com",
+    databaseURL: "https://sarah-s-english-default-rtdb.firebaseio.com",
+    projectId: "sarah-s-english",
+    storageBucket: "sarah-s-english.firebasestorage.app",
+    messagingSenderId: "444699532890",
+    appId: "1:444699532890:web:44084cd90d0aa0b5ca0263",
+    measurementId: "G-1SVW405RS7"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const archiveCol = collection(db, "passageArchive");
+
+  window.__archiveSave = async (entry) => {
+    await addDoc(archiveCol, { ...entry, createdAt: serverTimestamp() });
+  };
+  window.__archiveList = async () => {
+    const q = query(archiveCol, orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const out = [];
+    snap.forEach((d) => out.push({ id: d.id, ...d.data() }));
+    return out;
+  };
+  window.__archiveDelete = async (id) => {
+    await deleteDoc(doc(db, "passageArchive", id));
+  };
+  window.__archiveReady = true;
+</script>
 </head>
 <body>
 
@@ -265,7 +304,12 @@
       <div class="user-chip"><span class="dot"></span> Sarah 선생님</div>
     </div>
 
-    <div class="layout">
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="modeBuildBtn">새로 만들기</button>
+      <button class="mode-tab" id="modeArchiveBtn">보관함</button>
+    </div>
+
+    <div class="layout" id="buildLayout">
       <div class="panel">
         <div class="field-label">지문 붙여넣기</div>
         <textarea id="passageInput" placeholder="여기에 영어 지문을 붙여넣으세요...">All the actors on the stage were focused on their acting. Then, suddenly, Arthur fell into the corner of the stage. Jeevan immediately approached Arthur and found his heart wasn't beating.</textarea>
@@ -348,6 +392,7 @@
         <div class="preview-header">
           <div class="preview-label">미리보기 — 인쇄용 시험지</div>
           <div style="display:flex;gap:8px;">
+            <button class="key-toggle" id="saveArchiveBtn" style="display:none;">보관함에 저장</button>
             <button class="key-toggle" id="printBtn">인쇄 / PDF 저장</button>
             <button class="key-toggle" id="keyToggle">정답 보기</button>
           </div>
@@ -360,6 +405,10 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div id="archiveView" style="display:none;padding:20px 32px 60px;">
+      <div id="archiveList"></div>
     </div>
   </div>
 </div>
@@ -391,6 +440,7 @@
   // ── 실제 서버 연결 ──
   // 배포된 Cloudflare Worker 주소. 서버 주소가 바뀌면 이 한 줄만 바꾸면 됩니다.
   const WORKER_URL = "https://purple-voice-5e09sarah-english-worker.minji960514.workers.dev/";
+  let lastResult = null;
   const CIRCLES = ['①','②','③','④','⑤'];
 
   function renderSheet(data){
@@ -522,13 +572,19 @@
       if (!res.ok || data.error) {
         const msg = (data.error || ('서버 오류 (' + res.status + ')')) + (data.detail ? '<br><span style="font-size:11.5px;color:#8A8370;">세부 정보: ' + String(data.detail).slice(0, 400) + '</span>' : '');
         sheet.innerHTML = renderError(msg);
+        document.getElementById('saveArchiveBtn').style.display = 'none';
       } else if (mode === 'transform') {
         sheet.innerHTML = renderTransformResult(data);
+        lastResult = { kind: 'transform', data, passage };
+        document.getElementById('saveArchiveBtn').style.display = 'inline-block';
       } else {
         sheet.innerHTML = renderSheet(data);
+        lastResult = { kind: 'question', data, passage };
+        document.getElementById('saveArchiveBtn').style.display = 'inline-block';
       }
     } catch (e) {
       sheet.innerHTML = renderError('서버에 연결하지 못했습니다. 인터넷 연결 또는 서버 주소를 확인해 주세요.');
+      document.getElementById('saveArchiveBtn').style.display = 'none';
     } finally {
       btn.textContent = originalText;
       btn.disabled = false;
@@ -558,6 +614,89 @@
     printWin.focus();
     setTimeout(() => { printWin.print(); }, 300);
   });
+
+  // ── 보관함 ──
+  const buildLayout = document.getElementById('buildLayout');
+  const archiveView = document.getElementById('archiveView');
+  const modeBuildBtn = document.getElementById('modeBuildBtn');
+  const modeArchiveBtn = document.getElementById('modeArchiveBtn');
+  const archiveList = document.getElementById('archiveList');
+  const saveArchiveBtn = document.getElementById('saveArchiveBtn');
+
+  function showBuild() {
+    buildLayout.style.display = '';
+    archiveView.style.display = 'none';
+    modeBuildBtn.classList.add('active');
+    modeArchiveBtn.classList.remove('active');
+  }
+  async function showArchive() {
+    buildLayout.style.display = 'none';
+    archiveView.style.display = '';
+    modeBuildBtn.classList.remove('active');
+    modeArchiveBtn.classList.add('active');
+    archiveList.innerHTML = '<div class="empty-state"><div class="big">불러오는 중...</div></div>';
+    try {
+      const items = await window.__archiveList();
+      if (items.length === 0) {
+        archiveList.innerHTML = '<div class="empty-state"><div class="big">보관된 항목이 없습니다</div>지문 변형·문제 생성 화면에서 "보관함에 저장"을 눌러보세요.</div>';
+        return;
+      }
+      archiveList.innerHTML = items.map((it) => {
+        const d = it.createdAt && it.createdAt.toDate ? it.createdAt.toDate() : null;
+        const dateStr = d ? `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}` : '';
+        const label = it.kind === 'transform' ? '지문 변형' : '지문 분석·문제';
+        const title = (it.data && it.data.title) || '(제목 없음)';
+        return `<div class="archive-item" data-id="${it.id}">
+          <div>
+            <div style="font-family:'Noto Serif KR',serif;font-size:14px;color:var(--ink);">${title}</div>
+            <div class="meta">${label} · ${dateStr}</div>
+          </div>
+          <button class="archive-del" data-id="${it.id}">삭제</button>
+        </div>`;
+      }).join('');
+      archiveList.querySelectorAll('.archive-item').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          if (e.target.classList.contains('archive-del')) return;
+          const item = items.find((it) => it.id === el.dataset.id);
+          if (!item) return;
+          lastResult = { kind: item.kind, data: item.data, passage: item.passage };
+          document.getElementById('passageInput').value = item.passage || '';
+          sheet.innerHTML = item.kind === 'transform' ? renderTransformResult(item.data) : renderSheet(item.data);
+          saveArchiveBtn.style.display = 'inline-block';
+          showBuild();
+        });
+      });
+      archiveList.querySelectorAll('.archive-del').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await window.__archiveDelete(btn.dataset.id);
+          showArchive();
+        });
+      });
+    } catch (e) {
+      archiveList.innerHTML = '<div class="empty-state"><div class="big">보관함을 불러오지 못했습니다</div>' + String(e).slice(0, 200) + '</div>';
+    }
+  }
+
+  modeBuildBtn.addEventListener('click', showBuild);
+  modeArchiveBtn.addEventListener('click', showArchive);
+
+  saveArchiveBtn.addEventListener('click', async () => {
+    if (!lastResult) return;
+    saveArchiveBtn.textContent = '저장 중...';
+    saveArchiveBtn.disabled = true;
+    try {
+      await window.__archiveSave(lastResult);
+      saveArchiveBtn.textContent = '저장됨 ✓';
+      setTimeout(() => { saveArchiveBtn.textContent = '보관함에 저장'; saveArchiveBtn.disabled = false; }, 1500);
+    } catch (e) {
+      alert('저장에 실패했습니다: ' + String(e).slice(0, 200));
+      saveArchiveBtn.textContent = '보관함에 저장';
+      saveArchiveBtn.disabled = false;
+    }
+  });
+
+  if (location.hash === '#archive') { showArchive(); }
 </script>
 
 </body>
