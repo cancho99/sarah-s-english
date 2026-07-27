@@ -1403,7 +1403,16 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState(student.schedule || []);
   const [goal, setGoal] = useState(student.goal || "");
-  useEffect(() => { setDays(student.schedule || []); setGoal(student.goal || ""); setOpen(false); }, [student.id]);
+  const [month, setMonth] = useState(today().slice(0, 7));
+  const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
+  useEffect(() => {
+    setDays(student.schedule || []); setGoal(student.goal || ""); setOpen(false);
+    setMonth(today().slice(0, 7));
+    setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
+  }, [student.id]);
+  useEffect(() => {
+    setMonthly((student.monthlyInstances || {})[month] || []);
+  }, [month]);
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -1411,12 +1420,31 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
   function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); }
 
+  function generateMonth() {
+    const [y, m] = month.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const generated = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(y, m - 1, d);
+      const dayName = DAY_NAMES[dt.getDay()];
+      const match = days.find((s) => s.day === dayName);
+      if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time });
+    }
+    setMonthly(generated);
+  }
+  function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
+  function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); }
+  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
+
   async function save() {
-    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: days, goal } : r)));
+    await saveRosterList(roster.map((r) => (r.id === student.id
+      ? { ...r, schedule: days, goal, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
+      : r)));
     setOpen(false);
   }
 
   const sorted = [...(student.schedule || [])].sort((a, b) => DAY_NAMES.indexOf(a.day) - DAY_NAMES.indexOf(b.day));
+  const currentMonthly = (student.monthlyInstances || {})[today().slice(0, 7)] || [];
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
@@ -1426,13 +1454,19 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       </div>
       ${!open ? html`
         <div style=${{ marginTop: 10 }}>
+          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>매주 반복 패턴</div>
           <div style=${{ fontSize: 12.5, color: C.ink }}>
             ${sorted.length === 0 ? html`<span style=${{ color: C.slate }}>등록된 수업 스케줄이 없어요.</span>` : sorted.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.day}요일 ${d.time}</span>`)}
           </div>
+          ${currentMonthly.length > 0 && html`
+            <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 4px" }}>이번 달 확정 일정 (${currentMonthly.length}회)</div>
+            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time}</span>`)}</div>
+          `}
           ${student.goal && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 8 }}><b style=${{ color: C.ink }}>목표:</b> ${student.goal}</div>`}
         </div>
       ` : html`
         <div style=${{ marginTop: 10 }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 6 }}>매주 반복 패턴</div>
           ${days.map((d, i) => html`
             <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
               <select style=${{ ...inputStyle, marginBottom: 0, width: 90 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
@@ -1442,7 +1476,20 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
           `)}
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 12 }} onClick=${addSlot}>+ 수업 시간 추가<//>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 16 }} onClick=${addSlot}>+ 수업 시간 추가<//>
+
+          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 6, borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>월별 확정 일정</div>
+          <div style=${{ marginBottom: 8 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 10 }} onClick=${generateMonth}>이 달 일정 위 패턴으로 생성<//>
+          ${monthly.map((d, i) => html`
+            <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
+              <${DateField} value=${d.date} onChange=${(v) => updateInstance(i, "date", v)} />
+              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateInstance(i, "time", e.target.value)} />
+              <button onClick=${() => removeInstance(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+          `)}
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 12 }} onClick=${addInstance}>+ 날짜 하나 추가<//>
+
           <${Field} label="학습 목표 (학부모 화면에도 표시돼요)"><input style=${inputStyle} value=${goal} onChange=${(e) => setGoal(e.target.value)} placeholder="예: 이번 학기 내신 어법 정확도 90% 이상" /><//>
           <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${save}>저장<//>
         </div>
@@ -1600,7 +1647,12 @@ function PassageToolSection() {
 }
 
 function ArchiveSection() {
-  return html`<${Empty} text="보관함 기능은 준비 중이에요. 만든 지문·문제를 저장해서 나중에 다시 꺼내 쓸 수 있게 곧 추가할게요." />`;
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>지문 변형·문제 생성 화면에서 "보관함에 저장"을 누른 항목들이 여기 모여요.</div>
+      <iframe src="passage-transform.html#archive" style=${{ width: "100%", height: "82vh", border: `1px solid ${C.line}`, borderRadius: 4, background: C.white }} />
+    </div>
+  `;
 }
 
 function BookingsCalendar({ items, selected, onSelect }) {
@@ -2944,16 +2996,19 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const [data, setData] = useState(null);
   const [activeTest, setActiveTest] = useState(null);
   const [activeMock, setActiveMock] = useState(null);
-  const [studyMinutes, setStudyMinutes] = useState("");
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerStart, setTimerStart] = useState(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [studySubject, setStudySubject] = useState("");
+  const [studyContent, setStudyContent] = useState("");
 
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
   useEffect(() => {
-    if (data) {
-      const t = (data.studyLog || []).find((s) => s.date === today());
-      setStudyMinutes(t ? String(t.minutes) : "");
-    }
-  }, [data && data.studyLog]);
+    if (!timerRunning) return;
+    const iv = setInterval(() => { setElapsedSec(Math.floor((Date.now() - timerStart) / 1000)); }, 1000);
+    return () => clearInterval(iv);
+  }, [timerRunning, timerStart]);
 
   const tabs = [
     { key: "logs", label: "오늘의 학습", icon: "📘" },
@@ -3017,14 +3072,23 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
     if (best) nextClassText = (bestOffset === 0 ? "오늘" : bestOffset === 1 ? "내일" : best.day + "요일") + " " + best.time;
   }
   const studyLog = data.studyLog || [];
-  const todayStudy = studyLog.find((s) => s.date === todayStr);
-  async function saveStudyMinutes() {
-    const m = parseInt(studyMinutes, 10);
-    if (!m || m <= 0) return;
-    await updateData(student.id, (d) => {
-      const rest = (d.studyLog || []).filter((s) => s.date !== todayStr);
-      return { ...d, studyLog: [{ date: todayStr, minutes: m }, ...rest] };
-    });
+  const todayEntries = studyLog.filter((s) => s.date === todayStr);
+  const todayTotalMin = todayEntries.reduce((sum, s) => sum + (s.minutes || 0), 0);
+
+  function startTimer() { setTimerStart(Date.now() - elapsedSec * 1000); setTimerRunning(true); }
+  function pauseTimer() { setTimerRunning(false); }
+  async function saveTimerEntry() {
+    const m = Math.round(elapsedSec / 60);
+    if (m <= 0) return;
+    await updateData(student.id, (d) => ({
+      ...d,
+      studyLog: [{ id: uid(), date: todayStr, minutes: m, subject: studySubject, content: studyContent }, ...(d.studyLog || [])],
+    }));
+    setTimerRunning(false); setElapsedSec(0); setStudySubject(""); setStudyContent("");
+  }
+  function fmtElapsed(sec) {
+    const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return (h > 0 ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
 
   return html`
@@ -3044,14 +3108,32 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
           <div style=${{ fontSize: 12.5, color: C.ink }}>${nextClassText}</div>
         <//>
         <${Card} style=${{ marginBottom: 0 }}>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⏱ 오늘 공부 시간 기록</div>
-          <div style=${{ display: "flex", gap: 6 }}>
-            <input style=${{ ...inputStyle, marginBottom: 0 }} type="number" placeholder="분" value=${studyMinutes} onChange=${(e) => setStudyMinutes(e.target.value)} />
-            <${Button} variant="gold" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${saveStudyMinutes}>저장<//>
+          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⏱ 공부 시간 기록</div>
+          <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", margin: "4px 0" }}>${fmtElapsed(elapsedSec)}</div>
+          <div style=${{ display: "flex", gap: 6, marginBottom: 8 }}>
+            ${!timerRunning
+              ? html`<${Button} variant="gold" style=${{ flex: 1, padding: "7px 0", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "이어서 시작" : "시작"}<//>`
+              : html`<${Button} variant="ghost" style=${{ flex: 1, padding: "7px 0", fontSize: 12 }} onClick=${pauseTimer}>일시정지<//>`}
           </div>
-          ${todayStudy && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>오늘 ${todayStudy.minutes}분 기록됨</div>`}
+          ${elapsedSec > 0 && html`
+            <input style=${{ ...inputStyle, marginBottom: 6, fontSize: 12.5 }} placeholder="과목 (예: 문법, 독해)" value=${studySubject} onChange=${(e) => setStudySubject(e.target.value)} />
+            <textarea style=${{ ...inputStyle, marginBottom: 6, minHeight: 50, fontSize: 12.5 }} placeholder="공부한 내용" value=${studyContent} onChange=${(e) => setStudyContent(e.target.value)} />
+            <${Button} variant="gold" style=${{ width: "100%", padding: "7px 0", fontSize: 12 }} onClick=${saveTimerEntry}>기록 저장<//>
+          `}
+          ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>오늘 총 ${todayTotalMin}분 기록됨 (${todayEntries.length}건)</div>`}
         <//>
       </div>
+
+      ${todayEntries.length > 0 && html`
+        <div style=${{ marginBottom: 16 }}>
+          ${todayEntries.map((e) => html`<${Card} key=${e.id} style=${{ marginBottom: 6, padding: 12 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+              <b style=${{ color: C.navy }}>${e.subject || "공부"}</b><span style=${{ color: C.gold }}>${e.minutes}분</span>
+            </div>
+            ${e.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 3 }}>${e.content}</div>`}
+          <//>`)}
+        </div>
+      `}
 
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
 
