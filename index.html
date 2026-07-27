@@ -2564,6 +2564,7 @@ function VocabResultRow({ r, updateData }) {
 
 function VocabEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
+  const [mode, setMode] = useState("mix");
   const [words, setWords] = useState([{ word: "", meaning: "" }]);
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
   const [showBank, setShowBank] = useState(false); const [bankBooks, setBankBooks] = useState(null);
@@ -2617,8 +2618,8 @@ function VocabEditor({ data, updateData }) {
       synonyms: (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
     }));
     if (!title || clean.length < 2) return;
-    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean }, ...d.vocabTests] }));
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setCreating(false);
+    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode }, ...d.vocabTests] }));
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
 
@@ -2629,6 +2630,17 @@ function VocabEditor({ data, updateData }) {
       ` : html`
         <${Card}>
           <${Field} label="재시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 재시험" /><//>
+          <${Field} label="출제 방식">
+            <div style=${{ display: "flex", gap: 8 }}>
+              ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
+                <div key=${val} onClick=${() => setMode(val)} style=${{
+                  flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 3, cursor: "pointer", fontSize: 12.5,
+                  border: `1px solid ${mode === val ? C.gold : C.line}`, background: mode === val ? "#FBF6EA" : C.white,
+                  fontWeight: mode === val ? 700 : 400, color: mode === val ? C.navy : C.slate,
+                }}>${label}</div>
+              `)}
+            </div>
+          <//>
           <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <${Button} variant="ghost" onClick=${() => setShowPaste(true)} style=${{ marginBottom: 12 }}>붙여넣기로 한번에 가져오기<//>
             <${Button} variant="ghost" onClick=${openBank} style=${{ marginBottom: 12 }}>📚 워드뱅크에서 가져오기<//>
@@ -3366,7 +3378,11 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
   const { type, test } = activeTest;
   const questions = type === "vocab" ? test.words : test.questions;
   const total = questions.length;
-  const [directions] = useState(() => (type === "vocab" ? questions.map(() => (Math.random() < 0.5 ? "w2m" : "m2w")) : null));
+  const [directions] = useState(() => {
+    if (type !== "vocab") return null;
+    const vmode = test.mode || "mix";
+    return questions.map(() => (vmode === "w2m" ? "w2m" : vmode === "m2w" ? "m2w" : (Math.random() < 0.5 ? "w2m" : "m2w")));
+  });
   const [answers, setAnswers] = useState(type === "vocab" ? Array(total).fill("") : Array(total).fill(null));
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
