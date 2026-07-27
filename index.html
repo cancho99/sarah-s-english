@@ -2183,6 +2183,35 @@ function buildScoreChartSVG(rows) {
   </svg>`;
 }
 
+function parsePercentNum(str) {
+  if (!str) return null;
+  const m = String(str).match(/(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : null;
+}
+function parseLvNum(str) {
+  if (!str) return null;
+  const m = String(str).match(/(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : null;
+}
+function compareNeltCategory(curr, other) {
+  if (!curr || !other) return null;
+  const p1 = parsePercentNum(curr.percentile), p0 = parsePercentNum(other.percentile);
+  const diff = (p1 != null && p0 != null) ? p0 - p1 : null; // 양수면 향상 (상위 %가 낮아짐)
+  return { diff, levelOld: other.level_desc || "", levelNew: curr.level_desc || "" };
+}
+function neltDiffText(diff) {
+  if (diff == null) return "";
+  if (diff > 0) return `▲ 상위 ${diff}%p 향상`;
+  if (diff < 0) return `▼ 상위 ${Math.abs(diff)}%p 하락`;
+  return "변동 없음";
+}
+function buildNeltLevelChartSVG(results) {
+  const pts = (results || []).map((r) => ({ date: r.test_date, lv: parseLvNum(r.overall_level) })).filter((p) => p.lv != null).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (pts.length < 2) return '<div style="font-size:12.5px;color:#8A8370;padding:10px 0;">NELT 결과가 2개 이상 쌓이면 레벨 추이 그래프가 나타나요.</div>';
+  const rows = pts.map((p) => ({ date: p.date, examName: "NELT", scoreNum: p.lv }));
+  return buildScoreChartSVG(rows);
+}
+
 function NeltUploadSection({ data, updateData }) {
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -2241,6 +2270,14 @@ function NeltUploadSection({ data, updateData }) {
   }
   async function removeResult(id) { await updateData((d) => ({ ...d, neltResults: (d.neltResults || []).filter((r) => r.id !== id) })); }
 
+  const sortedResults = [...results].sort((a, b) => (a.test_date < b.test_date ? -1 : 1));
+  function getComparisons(r) {
+    const idx = sortedResults.findIndex((x) => x.id === r.id);
+    const prev = idx > 0 ? sortedResults[idx - 1] : null;
+    const first = sortedResults.length > 1 && idx > 0 ? sortedResults[0] : null;
+    return { prev, first };
+  }
+
   return html`
     <div>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📄 NELT 성적표 업로드</div>
@@ -2280,7 +2317,16 @@ function NeltUploadSection({ data, updateData }) {
         <//>
       `}
 
-      ${results.map((r) => html`
+      ${sortedResults.length >= 2 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📈 NELT 종합 레벨 추이</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          <div dangerouslySetInnerHTML=${{ __html: buildNeltLevelChartSVG(results) }} />
+        <//>
+      `}
+
+      ${[...results].reverse().map((r) => {
+        const { prev, first } = getComparisons(r);
+        return html`
         <${Card} key=${r.id} style=${{ marginBottom: 12 }}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
@@ -2289,18 +2335,25 @@ function NeltUploadSection({ data, updateData }) {
             </div>
             <button onClick=${() => removeResult(r.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
           </div>
-          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginTop: 10 }}>
-            ${CATS.map(([key, label]) => html`
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
+            ${CATS.map(([key, label]) => {
+              const cmpPrev = prev ? compareNeltCategory(r.categories[key], prev.categories[key]) : null;
+              const cmpFirst = first ? compareNeltCategory(r.categories[key], first.categories[key]) : null;
+              return html`
               <div key=${key} style=${{ border: `1px solid ${C.line}`, borderRadius: 3, padding: 8 }}>
                 <div style=${{ fontSize: 11, fontWeight: 700, color: C.navy }}>${label}</div>
                 <div style=${{ fontSize: 12, marginTop: 2 }}>${(r.categories && r.categories[key] && r.categories[key].level_desc) || "-"}</div>
                 <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>${(r.categories && r.categories[key] && r.categories[key].percentile) || ""}</div>
                 <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>${(r.categories && r.categories[key] && r.categories[key].extra) || ""}</div>
+                ${cmpPrev && html`<div style=${{ fontSize: 10.5, color: cmpPrev.diff > 0 ? C.navy : (cmpPrev.diff < 0 ? C.danger : C.slate), marginTop: 4, borderTop: `1px dotted ${C.line}`, paddingTop: 4 }}>직전 대비: ${neltDiffText(cmpPrev.diff)}</div>`}
+                ${cmpFirst && html`<div style=${{ fontSize: 10.5, color: cmpFirst.diff > 0 ? C.navy : (cmpFirst.diff < 0 ? C.danger : C.slate), marginTop: 2 }}>첫 시험 대비: ${neltDiffText(cmpFirst.diff)}</div>`}
               </div>
-            `)}
+            `;
+            })}
           </div>
         <//>
-      `)}
+      `;
+      })}
     </div>
   `;
 }
@@ -2594,7 +2647,7 @@ function MonthlyReportView({ student, data, updateData }) {
           </table>` : ""}
           ${allExams.filter((x) => x.scoreNum != null).length >= 2 ? `<div style="margin-top:14px;">${buildScoreChartSVG(allExams)}</div>` : ""}
         </div>` : ""}
-        ${neltThisMonth.length > 0 ? `
+        ${(neltThisMonth.length > 0 || (data.neltResults || []).length >= 2) ? `
         <div class="sec">
           <div class="secttl"><span class="badge">1-2</span>NELT 성적</div>
           ${neltThisMonth.map((r) => `
@@ -2605,6 +2658,7 @@ function MonthlyReportView({ student, data, updateData }) {
               </div>
             </div>
           `).join("")}
+          ${(data.neltResults || []).length >= 2 ? `<div style="margin-top:12px;">${buildNeltLevelChartSVG(data.neltResults)}</div>` : ""}
         </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
@@ -2683,8 +2737,8 @@ function MonthlyReportView({ student, data, updateData }) {
         `}
       <//>
 
-      ${neltThisMonth.length > 0 && html`
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>NELT 성적 (이번 달)</div>
+      ${(neltThisMonth.length > 0 || (data.neltResults || []).length >= 2) && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>NELT 성적 (이번 달) &amp; 누적 레벨 추이</div>
         <${Card} style=${{ marginBottom: 20 }}>
           ${neltThisMonth.map((r) => html`
             <div key=${r.id} style=${{ marginBottom: 10 }}>
@@ -2696,6 +2750,10 @@ function MonthlyReportView({ student, data, updateData }) {
               </div>
             </div>
           `)}
+          ${(data.neltResults || []).length >= 2 && html`
+            <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 6px" }}>전체 누적 레벨 추이</div>
+            <div dangerouslySetInnerHTML=${{ __html: buildNeltLevelChartSVG(data.neltResults) }} />
+          `}
         <//>
       `}
 
