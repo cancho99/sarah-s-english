@@ -980,16 +980,16 @@ function MiniCalendar({ selected, onSelect }) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   function fmt(d) { return `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
   return html`
-    <div style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 12, background: C.white }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <button type="button" onClick=${() => setViewDate(new Date(year, month - 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 15, padding: "2px 8px" }}>‹</button>
-        <div style=${{ ...serif, fontSize: 14, color: C.navy, fontWeight: 700 }}>${year}년 ${month + 1}월</div>
-        <button type="button" onClick=${() => setViewDate(new Date(year, month + 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 15, padding: "2px 8px" }}>›</button>
+    <div style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 9, background: C.white }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month - 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 14, padding: "2px 6px" }}>‹</button>
+        <div style=${{ ...serif, fontSize: 12.5, color: C.navy, fontWeight: 700 }}>${year}년 ${month + 1}월</div>
+        <button type="button" onClick=${() => setViewDate(new Date(year, month + 1, 1))} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 14, padding: "2px 6px" }}>›</button>
       </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2, marginBottom: 2 }}>
-        ${weekdays.map((w, i) => html`<div key=${i} style=${{ textAlign: "center", fontSize: 10.5, color: C.slate, fontWeight: 700, padding: "4px 0" }}>${w}</div>`)}
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, marginBottom: 1 }}>
+        ${weekdays.map((w, i) => html`<div key=${i} style=${{ textAlign: "center", fontSize: 9.5, color: C.slate, fontWeight: 700, padding: "2px 0" }}>${w}</div>`)}
       </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1 }}>
         ${cells.map((d, i) => {
           if (d === null) return html`<div key=${i}></div>`;
           const dateStr = fmt(d);
@@ -997,7 +997,7 @@ function MiniCalendar({ selected, onSelect }) {
           const isSelected = dateStr === selected;
           return html`
             <div key=${i} onClick=${() => !isPast && onSelect(dateStr)} style=${{
-              textAlign: "center", padding: "7px 0", fontSize: 12.5, borderRadius: 3,
+              textAlign: "center", padding: "4px 0", fontSize: 11.5, borderRadius: 3,
               cursor: isPast ? "default" : "pointer",
               color: isPast ? "#C7C2B4" : (isSelected ? C.white : C.ink),
               background: isSelected ? C.gold : "transparent",
@@ -2241,21 +2241,21 @@ function DailyReportGenerator({ student, data }) {
   return html`
     <div>
       <${Card}>
-        <div className="ap-split">
-          <div className="ap-split-left">
-            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>수업 날짜</div>
+        <div style=${{ display: "flex", gap: 12, marginBottom: 14 }}>
+          <div style=${{ flex: 1 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>수업 날짜</div>
             <${MiniCalendar} selected=${date} onSelect=${setDate} />
-            <div style=${{ fontSize: 12, color: C.slate, margin: "14px 0 8px", fontWeight: 600 }}>숙제 확인 시작일</div>
+          </div>
+          <div style=${{ flex: 1 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>숙제 확인 시작일</div>
             <${MiniCalendar} selected=${hwFrom} onSelect=${setHwFrom} />
           </div>
-          <div className="ap-split-right">
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 12 }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
-            <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
-            <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
-              <${Button} variant="gold" onClick=${copy}>복사하기<//>
-              ${copied && html`<span style=${{ fontSize: 12, color: C.navy }}>복사됐어요 — 문자로 붙여넣으세요.</span>`}
-            </div>
-          </div>
+        </div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 12 }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
+        <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <${Button} variant="gold" onClick=${copy}>복사하기<//>
+          ${copied && html`<span style=${{ fontSize: 12, color: C.navy }}>복사됐어요 — 문자로 붙여넣으세요.</span>`}
         </div>
       <//>
     </div>
@@ -2407,18 +2407,18 @@ function HomeworkEditor({ data, updateData }) {
         <//>
       `}
       <${Card}>
-        <div className="ap-split">
-          <div className="ap-split-left">
-            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>내준 날짜</div>
+        <div style=${{ display: "flex", gap: 12, marginBottom: 14 }}>
+          <div style=${{ flex: 1 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>내준 날짜</div>
             <${MiniCalendar} selected=${assignedDate} onSelect=${setAssignedDate} />
-            <div style=${{ fontSize: 12, color: C.slate, margin: "14px 0 8px", fontWeight: 600 }}>제출 기한</div>
+          </div>
+          <div style=${{ flex: 1 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>제출 기한</div>
             <${MiniCalendar} selected=${dueDate} onSelect=${setDueDate} />
           </div>
-          <div className="ap-split-right">
-            <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
-            <${Button} variant="gold" onClick=${add}>숙제 추가<//>
-          </div>
         </div>
+        <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
+        <${Button} variant="gold" onClick=${add}>숙제 추가<//>
       <//>
       ${list.length === 0 && html`<${Empty} text="아직 등록된 숙제가 없어요." />`}
       ${groupByDate(list, "dueDate").map((grp) => html`
