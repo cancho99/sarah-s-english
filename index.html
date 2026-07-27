@@ -969,7 +969,7 @@ function HomePage({ setScreen, announcement }) {
 }
 
 // ---------- Level test booking ----------
-function MiniCalendar({ selected, onSelect }) {
+function MiniCalendar({ selected, onSelect, disablePast }) {
   const [viewDate, setViewDate] = useState(() => (selected ? new Date(selected + "T00:00:00") : new Date()));
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -995,7 +995,7 @@ function MiniCalendar({ selected, onSelect }) {
         ${cells.map((d, i) => {
           if (d === null) return html`<div key=${i}></div>`;
           const dateStr = fmt(d);
-          const isPast = dateStr < todayStr;
+          const isPast = disablePast && dateStr < todayStr;
           const isSelected = dateStr === selected;
           return html`
             <div key=${i} onClick=${() => !isPast && onSelect(dateStr)} style=${{
@@ -1012,7 +1012,7 @@ function MiniCalendar({ selected, onSelect }) {
   `;
 }
 
-function DateField({ value, onChange, placeholder }) {
+function DateField({ value, onChange, placeholder, disablePast }) {
   const [open, setOpen] = useState(false);
   return html`
     <div style=${{ position: "relative" }}>
@@ -1022,7 +1022,7 @@ function DateField({ value, onChange, placeholder }) {
       </div>
       ${open && html`
         <div style=${{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 40, boxShadow: "0 6px 16px rgba(20,22,26,0.15)" }}>
-          <${MiniCalendar} selected=${value} onSelect=${(d) => { onChange(d); setOpen(false); }} />
+          <${MiniCalendar} selected=${value} onSelect=${(d) => { onChange(d); setOpen(false); }} disablePast=${disablePast} />
         </div>
       `}
     </div>
@@ -1111,7 +1111,7 @@ function LevelTestBooking({ onBack, onSubmit }) {
           </div>
         <//>
         <${Field} label="희망 날짜">
-          <${MiniCalendar} selected=${date} onSelect=${setDate} />
+          <${MiniCalendar} selected=${date} onSelect=${setDate} disablePast=${true} />
           ${date && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 6 }}>선택한 날짜: ${date}</div>`}
         <//>
         <${Field} label="희망 시간대"><input style=${inputStyle} value=${time} onChange=${(e) => setTime(e.target.value)} placeholder="예: 오후 4시" /><//>
@@ -1370,7 +1370,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "reports") {
-    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
+    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "students") {
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
@@ -2202,7 +2202,7 @@ function RegularExamEditor({ data, updateData }) {
 
 // ---------- 월말리포트 ----------
 // ---------- 리포트 작성 (top-level: 데일리 리포트 / 월말리포트) ----------
-function ReportsSection({ roster, ensureData, dataCache }) {
+function ReportsSection({ roster, ensureData, dataCache, updateData }) {
   const [kind, setKind] = useState("daily");
   const [studentId, setStudentId] = useState(roster[0]?.id || "");
   const student = roster.find((r) => r.id === studentId);
@@ -2227,7 +2227,7 @@ function ReportsSection({ roster, ensureData, dataCache }) {
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
         ${kind === "daily" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
-        ${kind === "monthly" && html`<${MonthlyReportView} student=${student} data=${data} />`}
+        ${kind === "monthly" && html`<${MonthlyReportView} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
       `}
     </div>
   `;
@@ -2301,8 +2301,26 @@ function DailyReportGenerator({ student, data }) {
   `;
 }
 
-function MonthlyReportView({ student, data }) {
+const REPORT_CATEGORIES = [
+  { key: "vocab", label: "어휘 (Vocabulary)", desc: "단어 암기·활용" },
+  { key: "grammar", label: "문법 (Grammar)", desc: "구문 이해·정확성" },
+  { key: "reading", label: "독해 (Reading)", desc: "지문 이해·속도" },
+  { key: "writing", label: "작문 (Writing)", desc: "영작·표현력" },
+  { key: "attitude", label: "수업 태도 (Attitude)", desc: "집중·참여도" },
+  { key: "homework", label: "과제 성실도 (Homework)", desc: "수행·완성도" },
+];
+const REPORT_RATINGS = ["매우 우수", "우수", "보통", "노력 요함"];
+
+function MonthlyReportView({ student, data, updateData }) {
   const [month, setMonth] = useState(today().slice(0, 7));
+  const saved = (data.monthlyReports || {})[month] || {};
+  const [ratings, setRatings] = useState(saved.ratings || {});
+  const [attendance, setAttendance] = useState(saved.attendance || null);
+  const [content, setContent] = useState(saved.content != null ? saved.content : null);
+  const [good, setGood] = useState(saved.good || "");
+  const [improve, setImprove] = useState(saved.improve || "");
+  const [comment, setComment] = useState(saved.comment || "");
+  const [nextMonth, setNextMonth] = useState(saved.nextMonth || "");
 
   const inMonth = (s) => s && s.startsWith(month);
   const hwRows = (data.homework || []).filter((h) => inMonth(h.dueDate));
@@ -2313,45 +2331,194 @@ function MonthlyReportView({ student, data }) {
   const vcPass = vcRows.filter((v) => v.passed).length;
   const vcRate = vcRows.length ? Math.round((vcPass / vcRows.length) * 100) : null;
 
-  const exRows = (data.regularExams || []).filter((x) => inMonth(x.date));
-  const [y, m] = month.split("-");
+  const logRows = (data.logs || []).filter((l) => inMonth(l.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const scheduledCount = ((student.monthlyInstances || {})[month] || []).length;
+  const attendedCount = new Set(logRows.map((l) => l.date)).size;
+
+  useEffect(() => {
+    const s = (data.monthlyReports || {})[month] || {};
+    setRatings(s.ratings || {});
+    setAttendance(s.attendance || null);
+    setContent(s.content != null ? s.content : null);
+    setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
+  }, [month]);
+
+  const att = attendance || {
+    classDays: scheduledCount || attendedCount || "",
+    attended: attendedCount || "",
+    absent: scheduledCount ? Math.max(scheduledCount - attendedCount, 0) : "",
+    hwRate: hwRate === null ? "" : hwRate + "%",
+    vocabRate: vcRate === null ? "" : vcRate + "%",
+  };
+  const draftContent = content != null ? content : (logRows.length === 0 ? "" : logRows.map((l) => `• ${fmtDate(l.date)}: ${l.content}`).join("\n"));
+
+  async function saveReport() {
+    await updateData((d) => ({
+      ...d,
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth } },
+    }));
+  }
+
+  function setRating(key, val) { setRatings((r) => ({ ...r, [key]: val })); }
+  function setAtt(key, val) { setAttendance({ ...att, [key]: val }); }
+
+  function printReport() {
+    const [y, m] = month.split("-");
+    const ratingCell = (key) => REPORT_RATINGS.map((r) => `<td style="text-align:center;">${ratings[key] === r ? "●" : ""}</td>`).join("");
+    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>월말 리포트</title>
+      <style>
+        @page { size: A4; margin: 20mm 16mm; }
+        body{font-family:'Noto Serif KR', serif; color:#1B2A3D; margin:0;}
+        .page{page-break-after: always; padding-bottom: 20px;}
+        .page:last-child{page-break-after: auto;}
+        .hd{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #C7A34E;padding-bottom:10px;margin-bottom:26px;}
+        .hd .brand{font-size:15px;font-weight:700;color:#1C2B4A;}
+        .hd .tag{font-size:10px;letter-spacing:2px;color:#B8935A;font-weight:700;}
+        .logowrap{text-align:center;margin-bottom:24px;}
+        .logo{width:56px;height:56px;border-radius:50%;border:1.5px solid #1C2B4A;display:inline-flex;align-items:center;justify-content:center;font-size:18px;color:#1C2B4A;margin-bottom:8px;}
+        h1{text-align:center;font-size:22px;color:#1C2B4A;margin:6px 0;}
+        .sub{text-align:center;font-size:10.5px;letter-spacing:2px;color:#B8935A;font-weight:700;}
+        .intro{text-align:center;font-size:11.5px;color:#5B6270;margin-top:10px;font-family:'Noto Sans KR',sans-serif;}
+        .metarow{display:flex;border-top:1px solid #D8D2BE;border-bottom:1px solid #D8D2BE;margin-top:22px;font-family:'Noto Sans KR',sans-serif;font-size:11.5px;}
+        .metarow div{flex:1;padding:10px 4px;}
+        .metarow .lbl{color:#8A8370;font-size:10px;display:block;margin-bottom:3px;}
+        .sec{margin-top:30px;}
+        .secttl{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:#1C2B4A;margin-bottom:12px;font-family:'Noto Sans KR',sans-serif;}
+        .badge{width:20px;height:20px;border-radius:3px;background:#B8935A;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center;font-family:'Noto Sans KR',sans-serif;}
+        table{width:100%;border-collapse:collapse;font-family:'Noto Sans KR',sans-serif;font-size:11.5px;}
+        th{background:#1C2B4A;color:#fff;padding:9px 6px;font-weight:600;font-size:11px;}
+        td{padding:9px 6px;border-bottom:1px solid #EDE9DD;}
+        .catcell b{font-family:'Noto Sans KR',sans-serif;}
+        .content-box{font-size:12px;line-height:1.9;white-space:pre-wrap;font-family:'Noto Sans KR',sans-serif;}
+        .twocol{display:flex;gap:20px;}
+        .twocol > div{flex:1;font-family:'Noto Sans KR',sans-serif;font-size:12px;line-height:1.8;white-space:pre-wrap;}
+        .twocol .ttl{font-weight:700;margin-bottom:6px;}
+        .closing{text-align:center;font-size:11.5px;color:#5B6270;margin-top:36px;font-family:'Noto Sans KR',sans-serif;}
+        .ft{text-align:center;font-size:9.5px;color:#8A8370;letter-spacing:1px;margin-top:30px;font-family:'Noto Sans KR',sans-serif;}
+      </style></head><body>
+      <div class="page">
+        <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
+        <div class="logowrap"><div class="logo">S·E</div></div>
+        <h1>${Number(m)}월 월말 학습 리포트</h1>
+        <div class="sub">${y} · MONTHLY PROGRESS REPORT</div>
+        <div class="intro">한 달 동안의 학습 태도와 성취를 정리해 학부모님께 전해 드립니다.</div>
+        <div class="metarow">
+          <div><span class="lbl">학생명</span>${student.name}</div>
+          <div><span class="lbl">학년</span>${student.grade || ""}</div>
+          <div><span class="lbl">담당 선생님</span>Sarah</div>
+        </div>
+        <div class="metarow">
+          <div><span class="lbl">작성일</span>${fmtDate(today())}</div>
+          <div><span class="lbl">평가 기간</span>${y}년 ${Number(m)}월</div>
+          <div></div>
+        </div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">1</span>출결 및 학습 현황</div>
+          <table><tr><th>수업일수</th><th>출석</th><th>결석 / 보강</th><th>과제 수행률</th><th>단어 통과율</th></tr>
+          <tr><td style="text-align:center;">${att.classDays || "-"}</td><td style="text-align:center;">${att.attended || "-"}</td><td style="text-align:center;">${att.absent || "-"}</td><td style="text-align:center;">${att.hwRate || "-"}</td><td style="text-align:center;">${att.vocabRate || "-"}</td></tr></table>
+        </div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
+          <table><tr><th style="text-align:left;">평가 영역</th>${REPORT_RATINGS.map((r) => `<th>${r}</th>`).join("")}</tr>
+          ${REPORT_CATEGORIES.map((c) => `<tr><td class="catcell"><b>${c.label}</b> ${c.desc}</td>${ratingCell(c.key)}</tr>`).join("")}
+          </table>
+          <div style="font-size:10px;color:#8A8370;margin-top:8px;font-family:'Noto Sans KR',sans-serif;">* 평가는 수업 중 관찰, 과제 수행, 단어·구문 확인 결과를 종합한 담당 선생님의 정성 평가입니다.</div>
+        </div>
+        <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 1</div>
+      </div>
+      <div class="page">
+        <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">3</span>이번 달 학습 내용</div>
+          <div class="content-box">${(draftContent || "기록된 내용이 없습니다.").replace(/</g, "&lt;")}</div>
+        </div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">4</span>칭찬할 점 &amp; 보완할 점</div>
+          <div class="twocol">
+            <div><div class="ttl">👍 잘하고 있어요</div>${(good || "").replace(/</g, "&lt;")}</div>
+            <div><div class="ttl">✏️ 더 챙기면 좋아요</div>${(improve || "").replace(/</g, "&lt;")}</div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">5</span>선생님 종합 코멘트</div>
+          <div class="content-box">${(comment || "").replace(/</g, "&lt;")}</div>
+        </div>
+        <div class="sec">
+          <div class="secttl"><span class="badge">6</span>다음 달 학습 방향</div>
+          <div class="content-box">${(nextMonth || "").replace(/</g, "&lt;")}</div>
+        </div>
+        <div class="closing">한 달 동안 함께 애써 준 우리 학생, 그리고 믿고 맡겨 주신 학부모님께 감사드립니다.</div>
+        <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 2</div>
+      </div>
+      </body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) { alert("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
+    win.document.write(html_);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  }
 
   return html`
     <div>
       <${Card}>
-        <${Field} label="기준월"><${MonthField} value=${month} onChange=${setMonth} /><//>
-        <${Button} variant="ghost" onClick=${() => window.print()}>인쇄 / PDF 저장<//>
+        <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style=${{ flex: 1 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+          <${Button} variant="ghost" onClick=${saveReport}>저장<//>
+          <${Button} variant="gold" onClick=${printReport}>인쇄 / PDF 저장<//>
+        </div>
       <//>
-      <div style=${{ background: C.white, border: `1px solid ${C.line}`, maxWidth: 480, margin: "0 auto" }}>
-        <div style=${{ background: C.ink, height: 6 }} />
-        <div style=${{ padding: "26px 28px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
-          <div style=${{ width: 40, height: 40, borderRadius: "50%", border: `1.5px solid ${C.navy}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", color: C.navy, ...serif, fontSize: 15 }}>S·E</div>
-          <div style=${{ ...serif, fontSize: 19, color: C.navy }}>Sarah's English</div>
-          <div style=${{ fontSize: 10.5, letterSpacing: 2, color: C.slate, marginTop: 4 }}>MONTHLY LEARNING REPORT</div>
-          <div style=${{ fontSize: 12, color: C.slate, marginTop: 14 }}>${y}년 ${Number(m)}월 학습 리포트</div>
-          <div style=${{ ...serif, fontSize: 18, color: C.ink, marginTop: 6, fontWeight: 700 }}>${student.name}</div>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>1. 출결 및 학습 현황 (자동 계산 · 직접 수정 가능)</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+          ${[["classDays", "수업일수"], ["attended", "출석"], ["absent", "결석/보강"], ["hwRate", "과제 수행률"], ["vocabRate", "단어 통과율"]].map(([key, label]) => html`
+            <div key=${key}>
+              <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>${label}</div>
+              <input style=${{ ...inputStyle, marginBottom: 0 }} value=${att[key]} onChange=${(e) => setAtt(key, e.target.value)} />
+            </div>
+          `)}
         </div>
-        <div style=${{ padding: "20px 28px" }}>
-          <div style=${{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
-            <div style=${{ fontSize: 12, color: C.slate }}>숙제 완료율</div>
-            <div style=${{ ...serif, fontSize: 16, color: C.navy, fontWeight: 700 }}>${hwRate === null ? "기록 없음" : hwRate + "%"} ${hwRows.length ? `(${hwDone}/${hwRows.length})` : ""}</div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>2. 영역별 성취 평가</div>
+      <${Card} style=${{ marginBottom: 20, overflowX: "auto" }}>
+        ${REPORT_CATEGORIES.map((c) => html`
+          <div key=${c.key} style=${{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px dotted ${C.line}` }}>
+            <div style=${{ width: 150, flexShrink: 0, fontSize: 12.5 }}><b>${c.label}</b><div style=${{ fontSize: 10.5, color: C.slate }}>${c.desc}</div></div>
+            <div style=${{ display: "flex", gap: 6, flex: 1 }}>
+              ${REPORT_RATINGS.map((r) => html`
+                <div key=${r} onClick=${() => setRating(c.key, r)} style=${{
+                  flex: 1, textAlign: "center", padding: "7px 2px", borderRadius: 3, cursor: "pointer", fontSize: 11.5,
+                  border: `1px solid ${ratings[c.key] === r ? C.gold : C.line}`, background: ratings[c.key] === r ? "#FBF6EA" : C.white,
+                  fontWeight: ratings[c.key] === r ? 700 : 400, color: ratings[c.key] === r ? C.navy : C.slate,
+                }}>${r}</div>
+              `)}
+            </div>
           </div>
-          <div style=${{ display: "flex", justifyContent: "space-between", padding: "12px 0", borderBottom: `1px solid ${C.line}` }}>
-            <div style=${{ fontSize: 12, color: C.slate }}>단어시험 합격율</div>
-            <div style=${{ ...serif, fontSize: 16, color: C.navy, fontWeight: 700 }}>${vcRate === null ? "기록 없음" : vcRate + "%"} ${vcRows.length ? `(${vcPass}/${vcRows.length})` : ""}</div>
-          </div>
-          <div style=${{ marginTop: 16 }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>정기시험 결과</div>
-            ${exRows.length === 0 ? html`<${Empty} text="해당 월 정기시험 기록이 없어요." />` : exRows.map((x) => html`
-              <div key=${x.id} style=${{ fontSize: 12.5, padding: "6px 0", display: "flex", justifyContent: "space-between", borderBottom: `1px dotted ${C.line}` }}>
-                <span>${x.date} · ${x.examName} (${x.subject})</span>
-                <span><b>${x.score}</b> ${x.target ? "· " + x.target : ""}</span>
-              </div>
-            `)}
-          </div>
-        </div>
-        <div style=${{ padding: "14px 28px 22px", textAlign: "center", fontSize: 10, letterSpacing: 1.5, color: C.slate, textTransform: "uppercase" }}>Prepared by Teacher Sarah · Sarah's English</div>
-      </div>
+        `)}
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>3. 이번 달 학습 내용 (학습 기록에서 자동으로 뽑아왔어요 · 수정 가능)</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <textarea style=${{ ...inputStyle, minHeight: 140, whiteSpace: "pre-wrap" }} value=${draftContent} onChange=${(e) => setContent(e.target.value)} placeholder="이번 달 학습 기록이 여기에 자동으로 정리돼요." />
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>4. 칭찬할 점 &amp; 보완할 점</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <${Field} label="👍 잘하고 있어요"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${good} onChange=${(e) => setGood(e.target.value)} /><//>
+        <${Field} label="✏️ 더 챙기면 좋아요"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${improve} onChange=${(e) => setImprove(e.target.value)} /><//>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>5. 선생님 종합 코멘트</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <textarea style=${{ ...inputStyle, minHeight: 90 }} value=${comment} onChange=${(e) => setComment(e.target.value)} placeholder="학부모님께 전하고 싶은 종합 코멘트를 적어주세요." />
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>6. 다음 달 학습 방향</div>
+      <${Card}>
+        <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${nextMonth} onChange=${(e) => setNextMonth(e.target.value)} />
+      <//>
     </div>
   `;
 }
@@ -3739,17 +3906,17 @@ function ConsultRequestPanel({ data, updateData }) {
         <//>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>1지망 (필수)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><${DateField} value=${d1} onChange=${setD1} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d1} onChange=${setD1} disablePast=${true} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t1} onChange=${(e) => setT1(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>2지망 (선택)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><${DateField} value=${d2} onChange=${setD2} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d2} onChange=${setD2} disablePast=${true} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t2} onChange=${(e) => setT2(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginTop: 10, marginBottom: 4 }}>3지망 (선택)</div>
         <div style=${{ display: "flex", gap: 8 }}>
-          <div style=${{ flex: 1 }}><${DateField} value=${d3} onChange=${setD3} /></div>
+          <div style=${{ flex: 1 }}><${DateField} value=${d3} onChange=${setD3} disablePast=${true} /></div>
           <div style=${{ flex: 1 }}><input style=${inputStyle} value=${t3} onChange=${(e) => setT3(e.target.value)} placeholder="예: 오후 3시" /></div>
         </div>
         <${Field} label="전하고 싶은 내용 (선택)"><textarea style=${{ ...inputStyle, minHeight: 60, marginTop: 6 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
