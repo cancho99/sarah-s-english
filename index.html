@@ -2944,9 +2944,16 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const [data, setData] = useState(null);
   const [activeTest, setActiveTest] = useState(null);
   const [activeMock, setActiveMock] = useState(null);
+  const [studyMinutes, setStudyMinutes] = useState("");
 
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
+  useEffect(() => {
+    if (data) {
+      const t = (data.studyLog || []).find((s) => s.date === today());
+      setStudyMinutes(t ? String(t.minutes) : "");
+    }
+  }, [data && data.studyLog]);
 
   const tabs = [
     { key: "logs", label: "오늘의 학습", icon: "📘" },
@@ -3011,7 +3018,6 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   }
   const studyLog = data.studyLog || [];
   const todayStudy = studyLog.find((s) => s.date === todayStr);
-  const [studyMinutes, setStudyMinutes] = useState(todayStudy ? String(todayStudy.minutes) : "");
   async function saveStudyMinutes() {
     const m = parseInt(studyMinutes, 10);
     if (!m || m <= 0) return;
