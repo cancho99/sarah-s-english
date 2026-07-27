@@ -2367,8 +2367,23 @@ function LogsEditor({ data, updateData }) {
     await updateData((d) => ({ ...d, logs: d.logs.map((l) => (l.id === editId ? { ...l, date: editDate, content: editContent } : l)) }));
     setEditId(null);
   }
+  const studyLog = data.studyLog || [];
   return html`
     <div>
+      ${studyLog.length > 0 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>⏱ 학생이 직접 기록한 공부 시간</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          ${studyLog.map((s) => html`
+            <div key=${s.id || s.date + s.minutes} style=${{ padding: "7px 0", borderBottom: `1px dotted ${C.line}` }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
+                <span><b style=${{ color: C.gold }}>${fmtDate(s.date)}</b> ${s.subject ? `· ${s.subject}` : ""}</span>
+                <span style=${{ color: C.navy, fontWeight: 700 }}>${s.minutes}분</span>
+              </div>
+              ${s.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 3 }}>${s.content}</div>`}
+            </div>
+          `)}
+        <//>
+      `}
       <${Card}>
         <div className="ap-split">
           <div className="ap-split-left">
@@ -3061,15 +3076,20 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
     const iv = setInterval(() => { setElapsedSec(Math.floor((Date.now() - timerStart) / 1000)); }, 1000);
     return () => clearInterval(iv);
   }, [timerRunning, timerStart]);
-  // 페이지를 나갔다 와도(새로고침 포함) 진행 중이던 타이머가 이어지도록, 시작 시각을 저장해두고 여기서 복원
+  // 페이지를 나갔다 와도(새로고침 포함) 진행 중이던/일시정지된 타이머가 그대로 이어지도록, 시작 시각과 실행 여부를 저장해두고 여기서 복원
   useEffect(() => {
-    if (data && data.activeStudySession && !resumedFromSession && !timerRunning) {
+    if (data && data.activeStudySession && !resumedFromSession) {
       const s = data.activeStudySession;
-      setTimerStart(s.startedAt);
-      setElapsedSec(Math.floor((Date.now() - s.startedAt) / 1000));
       setStudySubject(s.subject || "");
       setStudyContent(s.content || "");
-      setTimerRunning(true);
+      if (s.running) {
+        setTimerStart(s.startedAt);
+        setElapsedSec(Math.floor((Date.now() - s.startedAt) / 1000));
+        setTimerRunning(true);
+      } else {
+        setElapsedSec(s.frozenElapsedSec || 0);
+        setTimerRunning(false);
+      }
       setResumedFromSession(true);
     }
   }, [data]);
@@ -3142,11 +3162,11 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   async function startTimer() {
     const start = Date.now() - elapsedSec * 1000;
     setTimerStart(start); setTimerRunning(true);
-    await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: start, subject: studySubject, content: studyContent } }));
+    await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: start, running: true, frozenElapsedSec: elapsedSec, subject: studySubject, content: studyContent } }));
   }
   async function pauseTimer() {
     setTimerRunning(false);
-    await updateData(student.id, (d) => ({ ...d, activeStudySession: d.activeStudySession ? { ...d.activeStudySession, subject: studySubject, content: studyContent } : null }));
+    await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: timerStart, running: false, frozenElapsedSec: elapsedSec, subject: studySubject, content: studyContent } }));
   }
   async function saveTimerEntry() {
     const m = Math.round(elapsedSec / 60);
