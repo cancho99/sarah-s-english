@@ -2148,25 +2148,64 @@ function VocabLogEditor({ data, updateData }) {
 }
 
 // ---------- 정기시험 (내신 · 모의고사 점수) ----------
+function buildScoreChartSVG(rows) {
+  const pts = (rows || []).filter((r) => r.scoreNum != null && r.scoreNum !== "").map((r) => ({ date: r.date, examName: r.examName, score: Number(r.scoreNum) })).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (pts.length < 2) {
+    return '<div style="font-size:12.5px;color:#8A8370;padding:10px 0;">숫자 점수가 2개 이상 기록되면 그래프가 나타나요.</div>';
+  }
+  const W = 640, H = 220, padL = 36, padR = 20, padT = 20, padB = 34;
+  const scores = pts.map((p) => p.score);
+  let maxS = Math.max(...scores), minS = Math.min(...scores);
+  if (maxS === minS) { maxS += 5; minS -= 5; }
+  const rangePad = (maxS - minS) * 0.15;
+  maxS += rangePad; minS = Math.max(0, minS - rangePad);
+  const xStep = (W - padL - padR) / (pts.length - 1);
+  const yOf = (s) => padT + (H - padT - padB) * (1 - (s - minS) / (maxS - minS));
+  const xOf = (i) => padL + i * xStep;
+  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(p.score).toFixed(1)}`).join(" ");
+  const gridLines = [0, 0.5, 1].map((f) => {
+    const y = padT + (H - padT - padB) * f;
+    const val = Math.round(maxS - (maxS - minS) * f);
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#EDE9DD" stroke-width="1"/><text x="${padL - 6}" y="${y + 4}" font-size="10" fill="#8A8370" text-anchor="end">${val}</text>`;
+  }).join("");
+  const points = pts.map((p, i) => `
+    <circle cx="${xOf(i).toFixed(1)}" cy="${yOf(p.score).toFixed(1)}" r="3.5" fill="#B8935A"/>
+    <text x="${xOf(i).toFixed(1)}" y="${(yOf(p.score) - 10).toFixed(1)}" font-size="11" fill="#1C2B4A" text-anchor="middle" font-weight="700">${p.score}</text>
+    <text x="${xOf(i).toFixed(1)}" y="${H - 10}" font-size="9.5" fill="#8A8370" text-anchor="middle">${(p.date || "").slice(5)}</text>
+  `).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px;height:auto;font-family:'Noto Sans KR',sans-serif;">
+    ${gridLines}
+    <path d="${linePath}" fill="none" stroke="#1C2B4A" stroke-width="2"/>
+    ${points}
+  </svg>`;
+}
+
 function RegularExamEditor({ data, updateData }) {
   const [date, setDate] = useState(today());
   const [examName, setExamName] = useState("");
   const [subject, setSubject] = useState("영어");
   const [score, setScore] = useState("");
+  const [scoreNum, setScoreNum] = useState("");
   const [target, setTarget] = useState("");
   const [note, setNote] = useState("");
 
   async function add() {
     if (!date || !examName) return;
-    await updateData((d) => ({ ...d, regularExams: [{ id: uid(), date, examName, subject, score, target, note }, ...(d.regularExams || [])] }));
-    setExamName(""); setScore(""); setTarget(""); setNote("");
+    await updateData((d) => ({ ...d, regularExams: [{ id: uid(), date, examName, subject, score, scoreNum: scoreNum === "" ? null : Number(scoreNum), target, note }, ...(d.regularExams || [])] }));
+    setExamName(""); setScore(""); setScoreNum(""); setTarget(""); setNote("");
   }
   async function remove(id) { await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).filter((x) => x.id !== id) })); }
 
   const list = data.regularExams || [];
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사, NELT 같은 월말 시험 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
+      ${list.filter((x) => x.scoreNum != null).length >= 2 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📈 점수 추이</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          <div dangerouslySetInnerHTML=${{ __html: buildScoreChartSVG(list) }} />
+        <//>
+      `}
       <${Card}>
         <div className="ap-split">
           <div className="ap-split-left">
@@ -2174,9 +2213,10 @@ function RegularExamEditor({ data, updateData }) {
             <${MiniCalendar} selected=${date} onSelect=${setDate} />
           </div>
           <div className="ap-split-right">
-            <${Field} label="시험명"><input style=${inputStyle} value=${examName} onChange=${(e) => setExamName(e.target.value)} placeholder="예: 1학기 기말고사" /><//>
+            <${Field} label="시험명"><input style=${inputStyle} value=${examName} onChange=${(e) => setExamName(e.target.value)} placeholder="예: 1학기 기말고사, 7월 NELT 월말시험" /><//>
             <${Field} label="과목"><input style=${inputStyle} value=${subject} onChange=${(e) => setSubject(e.target.value)} /><//>
             <${Field} label="점수 / 등급"><input style=${inputStyle} value=${score} onChange=${(e) => setScore(e.target.value)} placeholder="예: 92점 / 1등급" /><//>
+            <${Field} label="숫자 점수 (그래프에 쓰여요, 선택)"><input style=${inputStyle} type="number" value=${scoreNum} onChange=${(e) => setScoreNum(e.target.value)} placeholder="예: 92" /><//>
             <${Field} label="목표 대비 (선택)"><input style=${inputStyle} value=${target} onChange=${(e) => setTarget(e.target.value)} placeholder="예: 목표 90점 대비 +2" /><//>
             <${Field} label="비고 (선택)"><input style=${inputStyle} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
             <${Button} variant="gold" onClick=${add}>기록 추가<//>
@@ -2334,6 +2374,8 @@ function MonthlyReportView({ student, data, updateData }) {
   const logRows = (data.logs || []).filter((l) => inMonth(l.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
   const scheduledCount = ((student.monthlyInstances || {})[month] || []).length;
   const attendedCount = new Set(logRows.map((l) => l.date)).size;
+  const allExams = data.regularExams || [];
+  const examRowsThisMonth = allExams.filter((x) => inMonth(x.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
 
   useEffect(() => {
     const s = (data.monthlyReports || {})[month] || {};
@@ -2417,6 +2459,14 @@ function MonthlyReportView({ student, data, updateData }) {
           <table><tr><th>수업일수</th><th>출석</th><th>결석 / 보강</th><th>과제 수행률</th><th>단어 통과율</th></tr>
           <tr><td style="text-align:center;">${att.classDays || "-"}</td><td style="text-align:center;">${att.attended || "-"}</td><td style="text-align:center;">${att.absent || "-"}</td><td style="text-align:center;">${att.hwRate || "-"}</td><td style="text-align:center;">${att.vocabRate || "-"}</td></tr></table>
         </div>
+        ${examRowsThisMonth.length > 0 || allExams.filter((x) => x.scoreNum != null).length >= 2 ? `
+        <div class="sec">
+          <div class="secttl"><span class="badge">1-1</span>정기·월말 시험 결과</div>
+          ${examRowsThisMonth.length > 0 ? `<table><tr><th>날짜</th><th>시험명</th><th>과목</th><th>결과</th></tr>
+          ${examRowsThisMonth.map((x) => `<tr><td style="text-align:center;">${fmtDate(x.date)}</td><td>${x.examName}</td><td style="text-align:center;">${x.subject}</td><td style="text-align:center;">${x.score}${x.target ? " · " + x.target : ""}</td></tr>`).join("")}
+          </table>` : ""}
+          ${allExams.filter((x) => x.scoreNum != null).length >= 2 ? `<div style="margin-top:14px;">${buildScoreChartSVG(allExams)}</div>` : ""}
+        </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
           <table><tr><th style="text-align:left;">평가 영역</th>${REPORT_RATINGS.map((r) => `<th>${r}</th>`).join("")}</tr>
@@ -2479,6 +2529,19 @@ function MonthlyReportView({ student, data, updateData }) {
             </div>
           `)}
         </div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>정기·월말 시험 결과 (이번 달) &amp; 누적 추이</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        ${examRowsThisMonth.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 10 }}>이번 달 등록된 시험 결과가 없어요. "정기시험" 탭에서 추가해 주세요.</div>` : examRowsThisMonth.map((x) => html`
+          <div key=${x.id} style=${{ fontSize: 12.5, padding: "5px 0", borderBottom: `1px dotted ${C.line}` }}>
+            <b>${fmtDate(x.date)}</b> · ${x.examName} (${x.subject}) — ${x.score}${x.target ? " · " + x.target : ""}
+          </div>
+        `)}
+        ${allExams.filter((x) => x.scoreNum != null).length >= 2 && html`
+          <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>전체 누적 점수 추이</div>
+          <div dangerouslySetInnerHTML=${{ __html: buildScoreChartSVG(allExams) }} />
+        `}
       <//>
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>2. 영역별 성취 평가</div>
