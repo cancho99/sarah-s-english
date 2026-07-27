@@ -49,6 +49,8 @@
     .ap-split { flex-direction: column; }
     .ap-split-left { width: 100%; }
     .ap-split-right { border-left: none; padding-left: 0; border-top: 1px solid #DCD8CF; padding-top: 16px; margin-top: 4px; }
+    .ap-split.has-selection .ap-split-left { display: none; }
+    .ap-split:not(.has-selection) .ap-split-right { display: none; }
     .main-quad-grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; height: auto !important; }
   }
 </style>
@@ -1539,7 +1541,7 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
 
   return html`
-    <div className="ap-split">
+    <div className=${"ap-split" + (selected ? " has-selection" : "")}>
       <div className="ap-split-left">
         <div className="ap-split-left-title">학생 목록</div>
         ${roster.map((r) => html`
