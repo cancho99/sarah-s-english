@@ -488,6 +488,11 @@ function renderAll(){
         <label for="twoColumnLayout">인쇄 시 2단(2열) 레이아웃으로 배치</label>
       </div>
 
+      <div class="toggle-row">
+        <input type="checkbox" id="noShuffle">
+        <label for="noShuffle">단어 순서 섞지 않기 (입력한 순서 그대로 · 복습용)</label>
+      </div>
+
       <div class="section-label">출제 문항 수</div>
       <div class="row" style="margin-bottom:6px;">
         <input type="number" id="qCountInput" min="1" placeholder="전체" style="width:120px;padding:9px 12px;border:1px solid var(--gray-rule);border-radius:6px;font-size:13.5px;">
@@ -809,7 +814,8 @@ function generateSheet(book){
     return;
   }
 
-  words = shuffle(words);
+  const noShuffle = document.getElementById('noShuffle').checked;
+  if (!noShuffle) words = shuffle(words);
 
   const qCountRaw = document.getElementById('qCountInput').value.trim();
   if(qCountRaw !== ''){
