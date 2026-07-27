@@ -1399,6 +1399,42 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 }
 
 // ---------- 학생 관리: 왼쪽 학생 목록 / 오른쪽 선택한 학생 정보 (2단 레이아웃) ----------
+function MonthlyGoalsEditor({ student, data, updateData }) {
+  const [newGoal, setNewGoal] = useState("");
+  const month = today().slice(0, 7);
+  const goals = (data.monthlyGoals || []).filter((g) => g.month === month);
+
+  async function addGoal() {
+    if (!newGoal.trim()) return;
+    await updateData(student.id, (d) => ({ ...d, monthlyGoals: [...(d.monthlyGoals || []), { id: uid(), month, text: newGoal.trim(), done: false }] }));
+    setNewGoal("");
+  }
+  async function toggleGoal(id) {
+    await updateData(student.id, (d) => ({ ...d, monthlyGoals: (d.monthlyGoals || []).map((g) => (g.id === id ? { ...g, done: !g.done } : g)) }));
+  }
+  async function removeGoal(id) {
+    await updateData(student.id, (d) => ({ ...d, monthlyGoals: (d.monthlyGoals || []).filter((g) => g.id !== id) }));
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 16 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>✅ 이번 달 성취 목표 (${month.replace("-", "년 ")}월)</div>
+      ${goals.length === 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>등록된 목표가 없어요.</div>`}
+      ${goals.map((g) => html`
+        <div key=${g.id} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+          <input type="checkbox" checked=${g.done} onChange=${() => toggleGoal(g.id)} style=${{ width: 16, height: 16, cursor: "pointer" }} />
+          <span style=${{ fontSize: 13, flex: 1, textDecoration: g.done ? "line-through" : "none", color: g.done ? C.slate : C.ink }}>${g.text}</span>
+          <button onClick=${() => removeGoal(g.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>×</button>
+        </div>
+      `)}
+      <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input style=${{ ...inputStyle, marginBottom: 0 }} placeholder="예: 어법 오답노트 3회 복습" value=${newGoal} onChange=${(e) => setNewGoal(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") addGoal(); }} />
+        <${Button} variant="gold" style=${{ padding: "8px 14px", fontSize: 12.5 }} onClick=${addGoal}>추가<//>
+      </div>
+    <//>
+  `;
+}
+
 function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState(student.schedule || []);
@@ -1532,6 +1568,7 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
         ${selected
           ? html`<div>
               <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
+              <${MonthlyGoalsEditor} student=${selected} data=${dataCache[selected.id] || emptyData()} updateData=${updateData} />
               <${TeacherStudentPanel} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
                 updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />
             </div>`
@@ -3013,6 +3050,7 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [studySubject, setStudySubject] = useState("");
   const [studyContent, setStudyContent] = useState("");
+  const [resumedFromSession, setResumedFromSession] = useState(false);
 
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
@@ -3021,6 +3059,18 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
     const iv = setInterval(() => { setElapsedSec(Math.floor((Date.now() - timerStart) / 1000)); }, 1000);
     return () => clearInterval(iv);
   }, [timerRunning, timerStart]);
+  // 페이지를 나갔다 와도(새로고침 포함) 진행 중이던 타이머가 이어지도록, 시작 시각을 저장해두고 여기서 복원
+  useEffect(() => {
+    if (data && data.activeStudySession && !resumedFromSession && !timerRunning) {
+      const s = data.activeStudySession;
+      setTimerStart(s.startedAt);
+      setElapsedSec(Math.floor((Date.now() - s.startedAt) / 1000));
+      setStudySubject(s.subject || "");
+      setStudyContent(s.content || "");
+      setTimerRunning(true);
+      setResumedFromSession(true);
+    }
+  }, [data]);
 
   const tabs = [
     { key: "logs", label: "오늘의 학습", icon: "📘" },
@@ -3087,16 +3137,24 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
   const todayTotalMin = todayEntries.reduce((sum, s) => sum + (s.minutes || 0), 0);
 
-  function startTimer() { setTimerStart(Date.now() - elapsedSec * 1000); setTimerRunning(true); }
-  function pauseTimer() { setTimerRunning(false); }
+  async function startTimer() {
+    const start = Date.now() - elapsedSec * 1000;
+    setTimerStart(start); setTimerRunning(true);
+    await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: start, subject: studySubject, content: studyContent } }));
+  }
+  async function pauseTimer() {
+    setTimerRunning(false);
+    await updateData(student.id, (d) => ({ ...d, activeStudySession: d.activeStudySession ? { ...d.activeStudySession, subject: studySubject, content: studyContent } : null }));
+  }
   async function saveTimerEntry() {
     const m = Math.round(elapsedSec / 60);
     if (m <= 0) return;
     await updateData(student.id, (d) => ({
       ...d,
       studyLog: [{ id: uid(), date: todayStr, minutes: m, subject: studySubject, content: studyContent }, ...(d.studyLog || [])],
+      activeStudySession: null,
     }));
-    setTimerRunning(false); setElapsedSec(0); setStudySubject(""); setStudyContent("");
+    setTimerRunning(false); setElapsedSec(0); setStudySubject(""); setStudyContent(""); setResumedFromSession(false);
   }
   function fmtElapsed(sec) {
     const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -3133,6 +3191,16 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
             <${Button} variant="gold" style=${{ width: "100%", padding: "7px 0", fontSize: 12 }} onClick=${saveTimerEntry}>기록 저장<//>
           `}
           ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>오늘 총 ${todayTotalMin}분 기록됨 (${todayEntries.length}건)</div>`}
+        <//>
+        <${Card} style=${{ marginBottom: 0 }}>
+          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>✅ 이번 달 목표</div>
+          ${(() => {
+            const monthGoals = (data.monthlyGoals || []).filter((g) => g.month === todayStr.slice(0, 7));
+            const remaining = monthGoals.filter((g) => !g.done);
+            if (monthGoals.length === 0) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 목표가 없어요.</div>`;
+            if (remaining.length === 0) return html`<div style=${{ fontSize: 12.5, color: C.navy }}>이번 달 목표를 모두 달성했어요! 🎉</div>`;
+            return remaining.map((g) => html`<div key=${g.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>☐ ${g.text}</div>`);
+          })()}
         <//>
       </div>
 
