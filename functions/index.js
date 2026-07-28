@@ -153,6 +153,62 @@ const NELT_SYSTEM_PROMPT = `당신은 NE능률 NELT(영어 레벨테스트) 성�
   }
 }`;
 
+// 월말 리포트 작성 보조. 선생님이 대충 적은 메모를 학부모님께 보낼 문장으로 다듬는다.
+const REPORT_MODEL = "claude-haiku-4-5-20251001";
+
+const REPORT_SYSTEM_PROMPT = `당신은 한국의 영어 학원(Sarah's English)에서 학부모님께 보내는 월말 리포트 작성을 돕는 보조원입니다.
+선생님이 대충 적어준 메모(축약어, 단어 나열, 문장 조각이어도 괜찮음)를 자연스럽고 따뜻한 존댓말 문장으로 다듬어, 학부모님께 그대로 전달할 수 있는 리포트 문장으로 완성합니다.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
+- 선생님이 메모에 적지 않은 사실을 새로 지어내지 마세요. 문장을 자연스럽게 다듬고 정리하는 것이 역할이지, 없는 내용을 추가하는 게 아닙니다.
+- 메모가 "(메모 없음)"으로 표시된 항목은 빈 문자열("")로 그대로 두세요. 억지로 채우지 마세요.
+- 문체는 학부모님께 보내는 공손하고 따뜻한 존댓말로 통일하세요 ("~했습니다", "~합니다" 체).
+- "nelt_comment"는 이번 달 NELT 성적과 직전 성적을 비교해서, 어떤 영역이 좋아졌고 어떤 영역을 더 챙기면 좋을지 자연스럽게 1~3문장으로 씁니다. 직전 성적 데이터가 없으면 이번 달 성적만 보고 간단히 총평하세요. 이번 달 NELT 데이터 자체가 없으면 빈 문자열로 두세요.
+- percentile(석차) 숫자는 낮을수록 더 좋은 순위입니다 (예: "상위 10%"가 "상위 50%"보다 더 우수한 성적입니다). 비교 코멘트를 쓸 때 이 방향을 헷갈리지 마세요.
+
+[JSON 스키마]
+{
+  "content": "이번 달 학습 내용 정리",
+  "good": "칭찬할 점",
+  "improve": "보완할 점",
+  "comment": "선생님 종합 코멘트",
+  "nextMonth": "다음 달 학습 방향",
+  "nelt_comment": "NELT 성적 비교 코멘트"
+}`;
+
+function formatNeltBlock(label, entry) {
+  if (!entry) return "";
+  const cats = entry.categories || {};
+  const catLines = ["vocab", "grammar", "listening", "reading"]
+    .map((k) => `- ${k}: ${(cats[k] && cats[k].level_desc) || ""} (${(cats[k] && cats[k].percentile) || ""})`)
+    .join("\n");
+  return `[${label}${entry.test_date ? " · " + entry.test_date : ""}]
+종합 레벨: ${entry.overall_level || ""} ${entry.overall_level_desc || ""} (${entry.overall_percentile || ""})
+${catLines}`;
+}
+
+function buildReportPrompt({ studentName, month, rough, nelt }) {
+  const neltBlock = nelt && nelt.current
+    ? formatNeltBlock("이번 달 NELT 성적", nelt.current) + "\n\n" + (nelt.previous ? formatNeltBlock("직전 NELT 성적", nelt.previous) : "(직전 NELT 성적 없음 — 이번 달 성적만으로 총평)")
+    : "(이번 달 NELT 성적 없음 — nelt_comment는 빈 문자열로)";
+
+  const r = rough || {};
+  return `[학생] ${studentName || ""}
+[리포트 대상 월] ${month || ""}
+
+${neltBlock}
+
+[선생님이 적은 메모 — 이걸 자연스러운 리포트 문장으로 다듬어 주세요]
+- 이번 달 학습 내용: ${r.content || "(메모 없음)"}
+- 칭찬할 점: ${r.good || "(메모 없음)"}
+- 보완할 점: ${r.improve || "(메모 없음)"}
+- 선생님 종합 코멘트: ${r.comment || "(메모 없음)"}
+- 다음 달 학습 방향: ${r.nextMonth || "(메모 없음)"}
+
+위 메모들을 각각 다듬어서 JSON 스키마 형식으로만 답하세요. "(메모 없음)"으로 표시된 항목은 빈 문자열로 반환하세요.`;
+}
+
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
@@ -221,12 +277,52 @@ exports.aiWorker = onRequest(
     }
 
     const body = req.body || {};
-    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64 } = body;
+    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, studentName, month, rough, nelt } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
+    const isReport = mode === "monthlyReport";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
+      return;
+    }
+
+    if (isReport) {
+      let reportRes;
+      try {
+        reportRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: REPORT_MODEL,
+            max_tokens: 2000,
+            system: REPORT_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildReportPrompt({ studentName, month, rough, nelt }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!reportRes.ok) {
+        const errText = await reportRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const reportData = await reportRes.json();
+      const reportText = (reportData.content || []).map((b) => b.text || "").join("");
+      let reportParsed;
+      try {
+        reportParsed = JSON.parse(stripFences(reportText));
+      } catch {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: reportText });
+        return;
+      }
+      res.status(200).json(reportParsed);
       return;
     }
 

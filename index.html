@@ -2540,6 +2540,9 @@ function MonthlyReportView({ student, data, updateData }) {
   const [improve, setImprove] = useState(saved.improve || "");
   const [comment, setComment] = useState(saved.comment || "");
   const [nextMonth, setNextMonth] = useState(saved.nextMonth || "");
+  const [neltComment, setNeltComment] = useState(saved.neltComment || "");
+  const [generating, setGenerating] = useState(false);
+  const [genErr, setGenErr] = useState("");
 
   const inMonth = (s) => s && s.startsWith(month);
   const hwRows = (data.homework || []).filter((h) => inMonth(h.dueDate));
@@ -2563,6 +2566,7 @@ function MonthlyReportView({ student, data, updateData }) {
     setAttendance(s.attendance || null);
     setContent(s.content != null ? s.content : null);
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
+    setNeltComment(s.neltComment || ""); setGenErr("");
   }, [month]);
 
   const att = attendance || {
@@ -2577,12 +2581,50 @@ function MonthlyReportView({ student, data, updateData }) {
   async function saveReport() {
     await updateData((d) => ({
       ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth } },
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment } },
     }));
   }
 
   function setRating(key, val) { setRatings((r) => ({ ...r, [key]: val })); }
   function setAtt(key, val) { setAttendance({ ...att, [key]: val }); }
+
+  function findPreviousNelt() {
+    const all = (data.neltResults || []).filter((r) => r.test_date && r.test_date < month + "-01");
+    return all.sort((a, b) => (a.test_date < b.test_date ? 1 : -1))[0] || null;
+  }
+
+  async function generateWithAI() {
+    setGenerating(true); setGenErr("");
+    try {
+      const currentNelt = neltThisMonth[neltThisMonth.length - 1] || null;
+      const res = await fetch(NELT_WORKER_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: "monthlyReport",
+          studentName: student.name,
+          month,
+          rough: { content: draftContent, good, improve, comment, nextMonth },
+          nelt: currentNelt ? { current: currentNelt, previous: findPreviousNelt() } : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setGenErr((json.error || "AI 작성에 실패했습니다.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
+      } else {
+        if (json.content != null) setContent(json.content);
+        if (json.good != null) setGood(json.good);
+        if (json.improve != null) setImprove(json.improve);
+        if (json.comment != null) setComment(json.comment);
+        if (json.nextMonth != null) setNextMonth(json.nextMonth);
+        if (json.nelt_comment != null) setNeltComment(json.nelt_comment);
+      }
+    } catch (ex) {
+      setGenErr("서버에 연결하지 못했습니다: " + String(ex).slice(0, 150));
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   function printReport() {
     const [y, m] = month.split("-");
@@ -2659,6 +2701,7 @@ function MonthlyReportView({ student, data, updateData }) {
             </div>
           `).join("")}
           ${(data.neltResults || []).length >= 2 ? `<div style="margin-top:12px;">${buildNeltLevelChartSVG(data.neltResults)}</div>` : ""}
+          ${neltComment ? `<div class="content-box" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
         </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
@@ -2754,6 +2797,10 @@ function MonthlyReportView({ student, data, updateData }) {
             <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 6px" }}>전체 누적 레벨 추이</div>
             <div dangerouslySetInnerHTML=${{ __html: buildNeltLevelChartSVG(data.neltResults) }} />
           `}
+          <div style=${{ marginTop: 14 }}>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>직전 성적 대비 코멘트 (아래 "AI로 리포트 다듬기"로 자동 생성 가능)</div>
+            <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${neltComment} onChange=${(e) => setNeltComment(e.target.value)} placeholder="직전 시험과 비교한 코멘트가 여기에 채워져요." />
+          </div>
         <//>
       `}
 
@@ -2773,6 +2820,16 @@ function MonthlyReportView({ student, data, updateData }) {
             </div>
           </div>
         `)}
+      <//>
+
+      <${Card} style=${{ marginBottom: 20, background: "#FBF6EA", border: `1px solid ${C.gold}` }}>
+        <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style=${{ flex: 1, fontSize: 12.5, color: C.slate }}>
+            아래 3~6번 칸(그리고 위 NELT 코멘트 칸)에 대충 메모하듯 적어두면, AI가 학부모님께 보낼 문장으로 다듬어 드려요. 없는 내용을 지어내진 않아요.
+          </div>
+          <${Button} variant="gold" onClick=${generateWithAI} disabled=${generating}>${generating ? "다듬는 중..." : "✨ AI로 리포트 다듬기"}<//>
+        </div>
+        ${genErr && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${genErr}</div>`}
       <//>
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>3. 이번 달 학습 내용 (학습 기록에서 자동으로 뽑아왔어요 · 수정 가능)</div>
