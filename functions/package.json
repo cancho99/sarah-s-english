@@ -1,0 +1,12 @@
+{
+  "name": "functions",
+  "description": "Sarah's English — AI worker (passage transform / question generation / NELT report parsing)",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.0.1"
+  },
+  "private": true
+}
