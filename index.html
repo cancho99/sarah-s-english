@@ -2477,8 +2477,13 @@ function ReportsSection({ roster, ensureData, dataCache, updateData }) {
   const [kind, setKind] = useState("daily");
   const [studentId, setStudentId] = useState(roster[0]?.id || "");
   const student = roster.find((r) => r.id === studentId);
+  const [loadingStudent, setLoadingStudent] = useState(true);
 
-  useEffect(() => { if (studentId) ensureData(studentId); }, [studentId]);
+  useEffect(() => {
+    if (!studentId) { setLoadingStudent(false); return; }
+    setLoadingStudent(true);
+    ensureData(studentId).finally(() => setLoadingStudent(false));
+  }, [studentId]);
 
   const navItems = [
     { key: "daily", label: "데일리 리포트", icon: "✉️" },
@@ -2495,10 +2500,10 @@ function ReportsSection({ roster, ensureData, dataCache, updateData }) {
           </select>
         <//>
       <//>
-      ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : html`
+      ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
         ${kind === "daily" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
-        ${kind === "monthly" && html`<${MonthlyReportView} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
+        ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
       `}
     </div>
   `;
