@@ -163,9 +163,22 @@ const REPORT_SYSTEM_PROMPT = `당신은 한국의 영어 학원(Sarah's English)
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
 - 선생님이 메모에 적지 않은 사실을 새로 지어내지 마세요. 문장을 자연스럽게 다듬고 정리하는 것이 역할이지, 없는 내용을 추가하는 게 아닙니다.
 - 메모가 "(메모 없음)"으로 표시된 항목은 빈 문자열("")로 그대로 두세요. 억지로 채우지 마세요.
-- 문체는 학부모님께 보내는 공손하고 따뜻한 존댓말로 통일하세요 ("~했습니다", "~합니다" 체).
-- "nelt_comment"는 이번 달 NELT 성적과 직전 성적을 비교해서, 어떤 영역이 좋아졌고 어떤 영역을 더 챙기면 좋을지 자연스럽게 1~3문장으로 씁니다. 직전 성적 데이터가 없으면 이번 달 성적만 보고 간단히 총평하세요. 이번 달 NELT 데이터 자체가 없으면 빈 문자열로 두세요.
-- percentile(석차) 숫자는 낮을수록 더 좋은 순위입니다 (예: "상위 10%"가 "상위 50%"보다 더 우수한 성적입니다). 비교 코멘트를 쓸 때 이 방향을 헷갈리지 마세요.
+- 문체는 학부모님께 보내는 공손하고 따뜻한 존댓말로 통일하세요 ("~했습니다", "~합니다" 체). 학생 이름 뒤에는 "~이는/~는"을 자연스럽게 붙여 불러주세요 (예: 이름이 "태연"이면 "태연이는", "민지"면 "민지는").
+
+- "content"(이번 달 학습 내용)는 배운 항목을 하나하나 전부 나열하지 말고, 비슷한 것끼리 묶어서 큰 흐름으로 요약하세요.
+  예: 메모에 "명사의 인칭 구분, be동사, 일반동사, 의문사, 선택의문문, 부가의문문, 명령문, 청유문, 감탄문"이 있다면
+  → "인칭 구분과 다양한 동사, 그리고 의문사·명령문 등 다양한 문장 형태에 대해 학습했습니다" 처럼 상위 개념으로 묶어서 표현하세요.
+
+- "comment"(선생님 종합 코멘트)는 아래 예시처럼 여러 문단으로, 구체적이고 진심이 담긴 톤으로 씁니다. 학생의 가장 큰 장점으로 시작해서, 최근 눈에 띄는 성장, 아쉬운 점(있다면 안심시키는 톤으로), 선생님의 지도 방식이나 노력, 마무리 격려 순서로 자연스럽게 이어가세요. 반드시 메모에 있는 내용만 바탕으로 쓰되, 이 예시의 분량과 어조를 참고하세요 (메모가 이 예시만큼 풍부하지 않으면 억지로 늘리지 말고, 메모 안에서 이 정도 톤과 정성으로만 다듬으세요):
+"""
+태연이의 가장 큰 장점은 변함없는 성실함입니다. 숙제와 복습을 꾸준히 해오고 있는 덕분에, 제가 처음 계획했던 학습 플랜대로, 오히려 그 이상으로 순조롭게 성장하고 있습니다.
+
+최근에는 문법에 대한 이해도가 눈에 띄게 높아졌고, 독해를 할 때 해석하는 속도와 글을 읽는 속도, 문제를 푸는 속도까지 전반적으로 많이 향상되었습니다. 수업 시간에도 항상 밝고 적극적으로 참여하는 모습이 너무 좋고, 무엇보다 영어에 대한 자신감이 점점 생기고 있다는 것이 느껴집니다. 영어는 자신감이 실력으로 이어지는 과목인 만큼, 지금의 흐름이 매우 긍정적입니다.
+
+현재 부족한 부분이 있다면 아직 품사를 완벽하게 구분하지 못해 해석하면서 잠시 헷갈리는 경우가 있습니다. 하지만 이 부분은 앞으로 문법에서 더 자세하게 배우게 되는 내용이기 때문에 지금 단계에서는 크게 걱정하지 않으셔도 됩니다. 차근차근 배우면서 자연스럽게 해결될 부분입니다.
+
+지금처럼만 꾸준히 해준다면 앞으로의 성장도 정말 기대됩니다. 집에서도 태연이의 성실함을 많이 칭찬해 주세요ㅎㅎ 😊
+"""
 
 [JSON 스키마]
 {
@@ -173,31 +186,13 @@ const REPORT_SYSTEM_PROMPT = `당신은 한국의 영어 학원(Sarah's English)
   "good": "칭찬할 점",
   "improve": "보완할 점",
   "comment": "선생님 종합 코멘트",
-  "nextMonth": "다음 달 학습 방향",
-  "nelt_comment": "NELT 성적 비교 코멘트"
+  "nextMonth": "다음 달 학습 방향"
 }`;
 
-function formatNeltBlock(label, entry) {
-  if (!entry) return "";
-  const cats = entry.categories || {};
-  const catLines = ["vocab", "grammar", "listening", "reading"]
-    .map((k) => `- ${k}: ${(cats[k] && cats[k].level_desc) || ""} (${(cats[k] && cats[k].percentile) || ""})`)
-    .join("\n");
-  return `[${label}${entry.test_date ? " · " + entry.test_date : ""}]
-종합 레벨: ${entry.overall_level || ""} ${entry.overall_level_desc || ""} (${entry.overall_percentile || ""})
-${catLines}`;
-}
-
-function buildReportPrompt({ studentName, month, rough, nelt }) {
-  const neltBlock = nelt && nelt.current
-    ? formatNeltBlock("이번 달 NELT 성적", nelt.current) + "\n\n" + (nelt.previous ? formatNeltBlock("직전 NELT 성적", nelt.previous) : "(직전 NELT 성적 없음 — 이번 달 성적만으로 총평)")
-    : "(이번 달 NELT 성적 없음 — nelt_comment는 빈 문자열로)";
-
+function buildReportPrompt({ studentName, month, rough }) {
   const r = rough || {};
   return `[학생] ${studentName || ""}
 [리포트 대상 월] ${month || ""}
-
-${neltBlock}
 
 [선생님이 적은 메모 — 이걸 자연스러운 리포트 문장으로 다듬어 주세요]
 - 이번 달 학습 내용: ${r.content || "(메모 없음)"}
@@ -277,7 +272,7 @@ exports.aiWorker = onRequest(
     }
 
     const body = req.body || {};
-    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, studentName, month, rough, nelt } = body;
+    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, studentName, month, rough } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
@@ -301,7 +296,7 @@ exports.aiWorker = onRequest(
             model: REPORT_MODEL,
             max_tokens: 2000,
             system: REPORT_SYSTEM_PROMPT,
-            messages: [{ role: "user", content: buildReportPrompt({ studentName, month, rough, nelt }) }],
+            messages: [{ role: "user", content: buildReportPrompt({ studentName, month, rough }) }],
           }),
         });
       } catch (e) {

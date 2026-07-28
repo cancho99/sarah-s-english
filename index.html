@@ -2530,6 +2530,42 @@ const REPORT_CATEGORIES = [
 ];
 const REPORT_RATINGS = ["매우 우수", "우수", "보통", "노력 요함"];
 
+function parsePercentileNum(str) {
+  const m = String(str || "").match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : null;
+}
+function pctDeltaLabel(prevNum, curNum) {
+  const delta = prevNum - curNum; // percentile은 낮을수록 좋은 순위
+  if (delta > 0) return `${delta % 1 === 0 ? delta : delta.toFixed(1)}%p 상승`;
+  if (delta < 0) return `${Math.abs(delta) % 1 === 0 ? Math.abs(delta) : Math.abs(delta).toFixed(1)}%p 하락`;
+  return "변동 없음";
+}
+function buildNeltComparisonText(current, previous) {
+  if (!current) return "";
+  const CATS = [["vocab", "어휘"], ["grammar", "문법"], ["listening", "듣기"], ["reading", "독해"]];
+  const lines = [];
+  const curOverall = parsePercentileNum(current.overall_percentile);
+  const prevOverall = previous ? parsePercentileNum(previous.overall_percentile) : null;
+  const overallLabel = `${current.overall_level || ""} ${current.overall_level_desc || ""}`.trim();
+  if (curOverall != null && prevOverall != null) {
+    lines.push(`종합: ${overallLabel} · 상위 ${curOverall}% (직전 상위 ${prevOverall}% 대비 ${pctDeltaLabel(prevOverall, curOverall)})`);
+  } else {
+    lines.push(`종합: ${overallLabel} · ${current.overall_percentile || "-"}`);
+  }
+  CATS.forEach(([key, label]) => {
+    const cur = (current.categories && current.categories[key]) || {};
+    const prev = (previous && previous.categories && previous.categories[key]) || null;
+    const curNum = parsePercentileNum(cur.percentile);
+    const prevNum = prev ? parsePercentileNum(prev.percentile) : null;
+    if (curNum != null && prevNum != null) {
+      lines.push(`${label}: 상위 ${curNum}% (${pctDeltaLabel(prevNum, curNum)})`);
+    } else {
+      lines.push(`${label}: ${cur.percentile || cur.level_desc || "-"}`);
+    }
+  });
+  return lines.join("\n");
+}
+
 function MonthlyReportView({ student, data, updateData }) {
   const [month, setMonth] = useState(today().slice(0, 7));
   const saved = (data.monthlyReports || {})[month] || {};
@@ -2556,8 +2592,6 @@ function MonthlyReportView({ student, data, updateData }) {
   const logRows = (data.logs || []).filter((l) => inMonth(l.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
   const scheduledCount = ((student.monthlyInstances || {})[month] || []).length;
   const attendedCount = new Set(logRows.map((l) => l.date)).size;
-  const allExams = data.regularExams || [];
-  const examRowsThisMonth = allExams.filter((x) => inMonth(x.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
   const neltThisMonth = (data.neltResults || []).filter((r) => inMonth(r.test_date));
 
   useEffect(() => {
@@ -2597,6 +2631,7 @@ function MonthlyReportView({ student, data, updateData }) {
     setGenerating(true); setGenErr("");
     try {
       const currentNelt = neltThisMonth[neltThisMonth.length - 1] || null;
+      if (currentNelt) setNeltComment(buildNeltComparisonText(currentNelt, findPreviousNelt()));
       const res = await fetch(NELT_WORKER_URL, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -2605,7 +2640,6 @@ function MonthlyReportView({ student, data, updateData }) {
           studentName: student.name,
           month,
           rough: { content: draftContent, good, improve, comment, nextMonth },
-          nelt: currentNelt ? { current: currentNelt, previous: findPreviousNelt() } : null,
         }),
       });
       const json = await res.json();
@@ -2617,7 +2651,6 @@ function MonthlyReportView({ student, data, updateData }) {
         if (json.improve != null) setImprove(json.improve);
         if (json.comment != null) setComment(json.comment);
         if (json.nextMonth != null) setNextMonth(json.nextMonth);
-        if (json.nelt_comment != null) setNeltComment(json.nelt_comment);
       }
     } catch (ex) {
       setGenErr("서버에 연결하지 못했습니다: " + String(ex).slice(0, 150));
@@ -2681,17 +2714,9 @@ function MonthlyReportView({ student, data, updateData }) {
           <table><tr><th>수업일수</th><th>출석</th><th>결석 / 보강</th><th>과제 수행률</th><th>단어 통과율</th></tr>
           <tr><td style="text-align:center;">${att.classDays || "-"}</td><td style="text-align:center;">${att.attended || "-"}</td><td style="text-align:center;">${att.absent || "-"}</td><td style="text-align:center;">${att.hwRate || "-"}</td><td style="text-align:center;">${att.vocabRate || "-"}</td></tr></table>
         </div>
-        ${examRowsThisMonth.length > 0 || allExams.filter((x) => x.scoreNum != null).length >= 2 ? `
-        <div class="sec">
-          <div class="secttl"><span class="badge">1-1</span>정기·월말 시험 결과</div>
-          ${examRowsThisMonth.length > 0 ? `<table><tr><th>날짜</th><th>시험명</th><th>과목</th><th>결과</th></tr>
-          ${examRowsThisMonth.map((x) => `<tr><td style="text-align:center;">${fmtDate(x.date)}</td><td>${x.examName}</td><td style="text-align:center;">${x.subject}</td><td style="text-align:center;">${x.score}${x.target ? " · " + x.target : ""}</td></tr>`).join("")}
-          </table>` : ""}
-          ${allExams.filter((x) => x.scoreNum != null).length >= 2 ? `<div style="margin-top:14px;">${buildScoreChartSVG(allExams)}</div>` : ""}
-        </div>` : ""}
         ${(neltThisMonth.length > 0 || (data.neltResults || []).length >= 2) ? `
         <div class="sec">
-          <div class="secttl"><span class="badge">1-2</span>NELT 성적</div>
+          <div class="secttl"><span class="badge">1-1</span>NELT 성적</div>
           ${neltThisMonth.map((r) => `
             <div style="margin-bottom:10px;font-family:'Noto Sans KR',sans-serif;">
               <div style="font-size:13px;font-weight:700;color:#1C2B4A;">${r.overall_level} ${r.overall_level_desc} · ${r.overall_percentile}</div>
@@ -2767,21 +2792,8 @@ function MonthlyReportView({ student, data, updateData }) {
         </div>
       <//>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>정기·월말 시험 결과 (이번 달) &amp; 누적 추이</div>
-      <${Card} style=${{ marginBottom: 20 }}>
-        ${examRowsThisMonth.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 10 }}>이번 달 등록된 시험 결과가 없어요. "정기시험" 탭에서 추가해 주세요.</div>` : examRowsThisMonth.map((x) => html`
-          <div key=${x.id} style=${{ fontSize: 12.5, padding: "5px 0", borderBottom: `1px dotted ${C.line}` }}>
-            <b>${fmtDate(x.date)}</b> · ${x.examName} (${x.subject}) — ${x.score}${x.target ? " · " + x.target : ""}
-          </div>
-        `)}
-        ${allExams.filter((x) => x.scoreNum != null).length >= 2 && html`
-          <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>전체 누적 점수 추이</div>
-          <div dangerouslySetInnerHTML=${{ __html: buildScoreChartSVG(allExams) }} />
-        `}
-      <//>
-
       ${(neltThisMonth.length > 0 || (data.neltResults || []).length >= 2) && html`
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>NELT 성적 (이번 달) &amp; 누적 레벨 추이</div>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>NELT 성적 (이번 달) & 누적 레벨 추이</div>
         <${Card} style=${{ marginBottom: 20 }}>
           ${neltThisMonth.map((r) => html`
             <div key=${r.id} style=${{ marginBottom: 10 }}>
@@ -2798,8 +2810,8 @@ function MonthlyReportView({ student, data, updateData }) {
             <div dangerouslySetInnerHTML=${{ __html: buildNeltLevelChartSVG(data.neltResults) }} />
           `}
           <div style=${{ marginTop: 14 }}>
-            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>직전 성적 대비 코멘트 (아래 "AI로 리포트 다듬기"로 자동 생성 가능)</div>
-            <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${neltComment} onChange=${(e) => setNeltComment(e.target.value)} placeholder="직전 시험과 비교한 코멘트가 여기에 채워져요." />
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>직전 성적 대비 항목별 변화 (아래 "AI로 리포트 다듬기"로 자동 계산 · 수정 가능)</div>
+            <textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "inherit" }} value=${neltComment} onChange=${(e) => setNeltComment(e.target.value)} placeholder="직전 시험과 비교한 항목별 변화가 여기에 자동으로 채워져요." />
           </div>
         <//>
       `}
@@ -2825,7 +2837,7 @@ function MonthlyReportView({ student, data, updateData }) {
       <${Card} style=${{ marginBottom: 20, background: "#FBF6EA", border: `1px solid ${C.gold}` }}>
         <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style=${{ flex: 1, fontSize: 12.5, color: C.slate }}>
-            아래 3~6번 칸(그리고 위 NELT 코멘트 칸)에 대충 메모하듯 적어두면, AI가 학부모님께 보낼 문장으로 다듬어 드려요. 없는 내용을 지어내진 않아요.
+            아래 3~6번 칸에 대충 메모하듯 적어두면, AI가 학부모님께 보낼 문장으로 다듬어 드려요 (없는 내용을 지어내진 않아요). 위 NELT 항목별 변화도 이 버튼으로 함께 자동 계산돼요.
           </div>
           <${Button} variant="gold" onClick=${generateWithAI} disabled=${generating}>${generating ? "다듬는 중..." : "✨ AI로 리포트 다듬기"}<//>
         </div>
@@ -2837,7 +2849,7 @@ function MonthlyReportView({ student, data, updateData }) {
         <textarea style=${{ ...inputStyle, minHeight: 140, whiteSpace: "pre-wrap" }} value=${draftContent} onChange=${(e) => setContent(e.target.value)} placeholder="이번 달 학습 기록이 여기에 자동으로 정리돼요." />
       <//>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>4. 칭찬할 점 &amp; 보완할 점</div>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>4. 칭찬할 점 & 보완할 점</div>
       <${Card} style=${{ marginBottom: 20 }}>
         <${Field} label="👍 잘하고 있어요"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${good} onChange=${(e) => setGood(e.target.value)} /><//>
         <${Field} label="✏️ 더 챙기면 좋아요"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${improve} onChange=${(e) => setImprove(e.target.value)} /><//>
