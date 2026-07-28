@@ -600,7 +600,9 @@ function TopBar({ tagline }) {
     <div>
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ background: C.ivory, padding: "22px 16px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
-        <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: 40, height: 40, borderRadius: "50%", border: `1.5px solid ${C.navy}`, objectFit: "cover", display: "block", margin: "0 auto 10px" }} />
+        <div style=${{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box" }}>
+          <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
         <div style=${{ ...serif, fontSize: 21, color: C.navy, letterSpacing: 1 }}>Sarah's English</div>
         ${tagline && html`<div style=${{ ...serif, fontStyle: "italic", fontSize: 12.5, color: C.slate, marginTop: 4 }}>${tagline}</div>`}
       </div>
@@ -652,7 +654,7 @@ function SideNav({ items, active, onChange, onLogout }) {
   return html`
     <div>
       <div className="ap-side-desktop">
-        <div className="ap-side-logo"><img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }} /></div>
+        <div className="ap-side-logo"><div style=${{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden" }}><img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></div></div>
         ${items.map((it) => html`
           <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
             <span className="ic">${it.icon}</span><span>${it.label}</span>
@@ -856,7 +858,9 @@ function HomePage({ setScreen, announcement }) {
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${C.line}`, background: C.ivory }}>
         <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: 32, height: 32, borderRadius: "50%", border: `1px solid ${C.navy}`, objectFit: "cover", display: "block" }} />
+          <div style=${{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, boxSizing: "border-box" }}>
+            <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
           <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
         </div>
         <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -1142,7 +1146,9 @@ function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: 44, height: 44, borderRadius: "50%", border: `1px solid ${C.navy}`, objectFit: "cover", display: "block", margin: "0 auto 12px" }} />
+            <div style=${{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
+              <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>선생님 로그인</div>
           </div>
           ${isNew ? html`
@@ -1178,7 +1184,9 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: 44, height: 44, borderRadius: "50%", border: `1px solid ${C.navy}`, objectFit: "cover", display: "block", margin: "0 auto 12px" }} />
+            <div style=${{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
+              <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${mode === "student" ? "학생 로그인" : "학부모 로그인"}</div>
           </div>
           ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
@@ -2726,7 +2734,19 @@ function MonthlyReportView({ student, data, updateData }) {
         .twocol .ttl{font-weight:700;margin-bottom:6px;}
         .closing{text-align:center;font-size:11.5px;color:#5B6270;margin-top:36px;font-family:'Noto Sans KR',sans-serif;}
         .ft{text-align:center;font-size:9.5px;color:#8A8370;letter-spacing:1px;margin-top:30px;font-family:'Noto Sans KR',sans-serif;}
+        .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-family:'Noto Sans KR',sans-serif;font-size:12px;z-index:100;flex-wrap:wrap;}
+        .toolbar .msg{opacity:.85;}
+        .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;font-family:'Noto Sans KR',sans-serif;flex-shrink:0;}
+        .toolbar button:hover{opacity:.9;}
+        [contenteditable]{outline:none;border-radius:2px;}
+        [contenteditable]:hover{outline:1px dashed #B8935A;outline-offset:3px;}
+        [contenteditable]:focus{outline:1.5px solid #B8935A;outline-offset:3px;}
+        @media print{ .toolbar{display:none !important;} [contenteditable]{outline:none !important;} }
       </style></head><body>
+      <div class="toolbar">
+        <span class="msg">미리보기입니다 — 텍스트 부분을 클릭하면 바로 고칠 수 있어요 (이 화면에서 고친 내용은 인쇄물에만 반영되고, 저장 데이터는 바뀌지 않아요). 확인 후 인쇄해 주세요.</span>
+        <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+      </div>
       <div class="page">
         <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
         <div class="logowrap"><img src="${LOGO_DATA_URI}" alt="Sarah's English" /></div>
@@ -2760,7 +2780,7 @@ function MonthlyReportView({ student, data, updateData }) {
             </div>
           `).join("")}
           ${(data.neltResults || []).length >= 2 ? `<div style="margin-top:12px;">${buildNeltTrendChartSVG(data.neltResults)}</div>` : ""}
-          ${neltComment ? `<div class="content-box" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
+          ${neltComment ? `<div class="content-box" contenteditable="true" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
         </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
@@ -2775,22 +2795,22 @@ function MonthlyReportView({ student, data, updateData }) {
         <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
         <div class="sec">
           <div class="secttl"><span class="badge">3</span>이번 달 학습 내용</div>
-          <div class="content-box">${(draftContent || "기록된 내용이 없습니다.").replace(/</g, "&lt;")}</div>
+          <div class="content-box" contenteditable="true">${(draftContent || "기록된 내용이 없습니다.").replace(/</g, "&lt;")}</div>
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">4</span>칭찬할 점 &amp; 보완할 점</div>
           <div class="twocol">
-            <div><div class="ttl">👍 잘하고 있어요</div>${(good || "").replace(/</g, "&lt;")}</div>
-            <div><div class="ttl">✏️ 더 챙기면 좋아요</div>${(improve || "").replace(/</g, "&lt;")}</div>
+            <div><div class="ttl">👍 잘하고 있어요</div><div contenteditable="true">${(good || "").replace(/</g, "&lt;")}</div></div>
+            <div><div class="ttl">✏️ 더 챙기면 좋아요</div><div contenteditable="true">${(improve || "").replace(/</g, "&lt;")}</div></div>
           </div>
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">5</span>선생님 종합 코멘트</div>
-          <div class="content-box">${(comment || "").replace(/</g, "&lt;")}</div>
+          <div class="content-box" contenteditable="true">${(comment || "").replace(/</g, "&lt;")}</div>
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">6</span>다음 달 학습 방향</div>
-          <div class="content-box">${(nextMonth || "").replace(/</g, "&lt;")}</div>
+          <div class="content-box" contenteditable="true">${(nextMonth || "").replace(/</g, "&lt;")}</div>
         </div>
         <div class="closing">한 달 동안 함께 애써 준 우리 학생, 그리고 믿고 맡겨 주신 학부모님께 감사드립니다.</div>
         <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 2</div>
@@ -2801,7 +2821,6 @@ function MonthlyReportView({ student, data, updateData }) {
     win.document.write(html_);
     win.document.close();
     win.focus();
-    setTimeout(() => win.print(), 400);
   }
 
   return html`
@@ -2810,7 +2829,7 @@ function MonthlyReportView({ student, data, updateData }) {
         <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style=${{ flex: 1 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
           <${Button} variant="ghost" onClick=${saveReport}>저장<//>
-          <${Button} variant="gold" onClick=${printReport}>인쇄 / PDF 저장<//>
+          <${Button} variant="gold" onClick=${printReport}>미리보기 / 인쇄<//>
         </div>
       <//>
 
