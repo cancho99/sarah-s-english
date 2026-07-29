@@ -196,7 +196,11 @@ async function enableNotifications() {
   // Relative path (not "/firebase-messaging-sw.js") — the site is hosted under a subpath
   // (github.io/sarah-s-english/), so an absolute root path would 404 there even though it
   // resolves fine when testing locally at localhost:8080/index.html.
-  const registration = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+  await navigator.serviceWorker.register("firebase-messaging-sw.js");
+  // register() resolves as soon as the worker is found/installing, not once it's actually
+  // active — calling getToken() (which subscribes to PushManager) before activation finishes
+  // throws "no active Service Worker". .ready waits for an active worker controlling this scope.
+  const registration = await navigator.serviceWorker.ready;
   const token = await window.__getFcmToken(window.__messaging, { vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: registration });
   if (!token) throw new Error("알림 토큰을 받지 못했어요.");
   return token;
