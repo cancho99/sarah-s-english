@@ -10,7 +10,12 @@
  */
 
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
+const admin = require("firebase-admin");
+
+admin.initializeApp();
+const db = admin.firestore();
 
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
@@ -540,5 +545,98 @@ exports.aiWorker = onRequest(
     }
 
     res.status(200).json(parsed);
+  }
+);
+
+// ── 푸시 알림 ──
+// 학생이 숙제 인증샷을 올리거나 공부 타이머를 시작하면 클라이언트가 이 엔드포인트를 직접
+// 호출해서 선생님 기기로 즉시 알림을 보낸다. (Firestore 문서 변경 트리거 방식도 가능하지만,
+// 이 앱은 학생/선생님이 같은 문서에 쓰기 때문에 "누가" 썼는지 문서 diff만으로는 구분할 수
+// 없다 — 그래서 이벤트가 실제로 일어난 그 순간 클라이언트가 명시적으로 호출하는 방식을 쓴다.)
+exports.notifyTeacher = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { studentName, kind } = req.body || {};
+    if (!studentName || !kind) { res.status(400).json({ error: "studentName, kind가 필요합니다." }); return; }
+
+    try {
+      const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+      const tokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
+      if (tokens.length === 0) { res.status(200).json({ sent: 0, reason: "no-teacher-tokens" }); return; }
+
+      const title = kind === "homework_upload" ? `📸 ${studentName} 학생이 숙제 인증샷을 올렸어요`
+        : kind === "study_start" ? `⏱ ${studentName} 학생이 공부를 시작했어요`
+        : "🔔 테스트 알림";
+      const body = kind === "homework_upload" ? "인증샷을 확인해 보세요."
+        : kind === "study_start" ? "공부 타이머를 시작했어요."
+        : "알림이 정상적으로 도착했어요!";
+
+      const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
+      res.status(200).json({ sent: resp.successCount, failed: resp.failureCount });
+    } catch (e) {
+      res.status(500).json({ error: "알림 전송 중 오류가 발생했습니다.", detail: String(e) });
+    }
+  }
+);
+
+// "🔔 알림 받기" 버튼을 누른 그 순간, 방금 발급받은 토큰으로 바로 테스트 알림 하나를 보낸다.
+// notifyTeacher는 항상 선생님에게만 보내므로(교사용 엔드포인트), 학생/학부모가 자기 알림
+// 설정이 실제로 되는지 스스로 확인할 방법이 따로 필요해서 만든 범용 엔드포인트 —
+// Firestore에 저장된 토큰을 조회하지 않고, 요청에 실린 토큰으로 즉시 보낸다.
+exports.sendTestNotification = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+    const { token } = req.body || {};
+    if (!token) { res.status(400).json({ error: "token이 필요합니다." }); return; }
+    try {
+      await admin.messaging().send({ token, data: { title: "🔔 테스트 알림", body: "알림이 정상적으로 도착했어요!" } });
+      res.status(200).json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "테스트 알림 전송 중 오류가 발생했습니다.", detail: String(e) });
+    }
+  }
+);
+
+// 밤 10시(한국 시간)부터 10시 30분 간격으로(10:00/10:30/11:00/11:30) 그날 마감인데 아직
+// 완료 표시가 안 된 숙제가 있는 학생을 찾아 알림을 보낸다. 학부모는 매번 알림이 가면 피로감이
+// 크므로 10시 첫 실행 때 한 번만 보내고, 학생은 숙제를 끝낼 때까지(= pending이 빌 때까지)
+// 30분마다 계속 받는다 — 완료 표시가 뜨는 순간 이 필터에서 자연히 빠지므로 별도의 "이미
+// 보냈음" 상태를 추적할 필요가 없다.
+exports.homeworkReminderCheck = onSchedule(
+  { schedule: "0,30 22,23 * * *", timeZone: "Asia/Seoul", region: "us-central1" },
+  async () => {
+    const nowSeoul = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+    const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+    const isFirstRun = nowSeoul.getHours() === 22 && nowSeoul.getMinutes() < 15; // the 22:00 slot
+    const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+    const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
+
+    for (const student of roster) {
+      try {
+        const studentSnap = await db.collection("sarahsEnglishStudents").doc(student.id).get();
+        if (!studentSnap.exists) continue;
+        const data = studentSnap.data();
+        const pending = (data.homework || []).filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done);
+        if (pending.length === 0) continue;
+
+        const tokens = [student.studentFcmToken, isFirstRun ? student.parentFcmToken : null].filter(Boolean);
+        if (tokens.length === 0) continue;
+
+        const title = `${student.name} 학생, 오늘 숙제를 아직 안 했어요`;
+        const body = pending.map((h) => h.content).join(", ").slice(0, 200);
+        await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
+      } catch (e) {
+        console.error(`homeworkReminderCheck failed for student ${student.id}`, e);
+      }
+    }
   }
 );
