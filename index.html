@@ -15,7 +15,7 @@
   /* ---- responsive admin shell: dark icon sidebar on desktop, "more" dropdown on mobile ---- */
   .ap-shell { display: flex; align-items: stretch; gap: 0; width: 100%; min-height: 100vh; }
   .ap-side-desktop { display: flex; flex-direction: column; align-items: center; width: 92px; flex-shrink: 0; background: #1C2B4A; padding: 20px 0; position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto; }
-  .ap-side-logo { width: 34px; height: 34px; border-radius: 50%; background: #B8935A; color: #1C2B4A; display: flex; align-items: center; justify-content: center; font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 14px; margin-bottom: 22px; flex-shrink: 0; padding: 2px; box-sizing: border-box; }
+  .ap-side-logo { width: 34px; height: 34px; border-radius: 9px; background: #B8935A; color: #1C2B4A; display: flex; align-items: center; justify-content: center; font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 14px; margin-bottom: 22px; flex-shrink: 0; padding: 2px; box-sizing: border-box; overflow: hidden; }
   .ap-side-item { width: 100%; padding: 12px 4px; font-size: 10.5px; color: #8A93A6; cursor: pointer; border-left: 2px solid transparent; text-align: center; line-height: 1.3; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .ap-side-item .ic { font-size: 18px; }
   .ap-side-item.active { color: #FAF7F1; font-weight: 700; border-left-color: #B8935A; background: rgba(255,255,255,0.05); }
@@ -600,7 +600,7 @@ function TopBar({ tagline }) {
     <div>
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ background: C.ivory, padding: "22px 16px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
-        <div style=${{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box" }}>
+        <div style=${{ width: 40, height: 40, borderRadius: 10, overflow: "hidden", border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box" }}>
           <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
         <div style=${{ ...serif, fontSize: 21, color: C.navy, letterSpacing: 1 }}>Sarah's English</div>
@@ -654,7 +654,7 @@ function SideNav({ items, active, onChange, onLogout }) {
   return html`
     <div>
       <div className="ap-side-desktop">
-        <div className="ap-side-logo"><div style=${{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden" }}><img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></div></div>
+        <div className="ap-side-logo"><img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: 6 }} /></div>
         ${items.map((it) => html`
           <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
             <span className="ic">${it.icon}</span><span>${it.label}</span>
@@ -858,7 +858,7 @@ function HomePage({ setScreen, announcement }) {
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${C.line}`, background: C.ivory }}>
         <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style=${{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, boxSizing: "border-box" }}>
+          <div style=${{ width: 32, height: 32, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.navy}`, boxSizing: "border-box" }}>
             <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           </div>
           <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
@@ -1146,7 +1146,7 @@ function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div style=${{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
+            <div style=${{ width: 44, height: 44, borderRadius: 11, overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
               <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>선생님 로그인</div>
@@ -1184,7 +1184,7 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div style=${{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
+            <div style=${{ width: 44, height: 44, borderRadius: 11, overflow: "hidden", border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box" }}>
               <img src=${LOGO_MARK_DATA_URI} alt="Sarah's English" style=${{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             </div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${mode === "student" ? "학생 로그인" : "학부모 로그인"}</div>
@@ -1613,7 +1613,7 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
               <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
               <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
               <${MonthlyGoalsEditor} student=${selected} data=${dataCache[selected.id] || emptyData()} updateData=${updateData} />
-              <${TeacherStudentPanel} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
+              <${TeacherStudentPanel} key=${selected.id} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
                 updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />
             </div>`
           : html`<${Empty} text="왼쪽에서 학생을 선택하면 정보가 여기에 표시돼요." />`}
@@ -2012,7 +2012,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
       ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "dailyReport" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
+      ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
       ${tab === "exam" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
@@ -2502,46 +2502,62 @@ function ReportsSection({ roster, ensureData, dataCache, updateData }) {
       <//>
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
-        ${kind === "daily" && html`<${DailyReportGenerator} student=${student} data=${data} />`}
+        ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
         ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
       `}
     </div>
   `;
 }
 
-function DailyReportGenerator({ student, data }) {
+function buildDailyReportText(student, data, date, hwFrom) {
+  const dt = new Date(date + "T00:00:00");
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const md = `${dt.getMonth() + 1}/${dt.getDate()}(${days[dt.getDay()]})`;
+
+  const logsToday = (data.logs || []).filter((l) => l.date === date);
+  const learnedBlock = logsToday.length > 0 ? logsToday.map((l) => l.content).join("\n") : "문법:\n독해:";
+
+  const vocabToday = (data.vocabLog || []).filter((v) => v.date === date);
+  const vocabBlock = vocabToday.length > 0
+    ? vocabToday.map((v) => `${v.book} ${v.range}: ${v.correct}/${v.total} (${v.score}%) - ${v.passed ? "합격" : "불합격"}`).join("\n")
+    : "기록 없음";
+
+  const yesterday = new Date(dt); yesterday.setDate(yesterday.getDate() - 1);
+  const y = yesterday.getFullYear(), m2 = String(yesterday.getMonth() + 1).padStart(2, "0"), d2 = String(yesterday.getDate()).padStart(2, "0");
+  const yesterdayStr = `${y}-${m2}-${d2}`;
+  const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
+  const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
+  const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
+  const hwBlock = hwRange.length > 0
+    ? hwRange.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
+    : "기록 없음";
+
+  return `[${student.name}] ${md} 수업 안내\n📖 오늘 배운 내용\n${learnedBlock}\n✏️ 단어시험 결과\n${vocabBlock}\n📝 숙제 확인\n${hwBlock}`;
+}
+
+function DailyReportGenerator({ student, data, updateData }) {
   const [date, setDate] = useState(today());
   const [hwFrom, setHwFrom] = useState(today());
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [text, setText] = useState("");
+  const [published, setPublished] = useState(false);
 
   useEffect(() => {
-    const dt = new Date(date + "T00:00:00");
-    const days = ["일", "월", "화", "수", "목", "금", "토"];
-    const md = `${dt.getMonth() + 1}/${dt.getDate()}(${days[dt.getDay()]})`;
+    const existing = (data.dailyReports || {})[date];
+    if (existing) {
+      setText(existing.text || "");
+      setPublished(existing.published || false);
+    } else {
+      setText(buildDailyReportText(student, data, date, hwFrom));
+      setPublished(false);
+    }
+    setCopied(false); setSaved(false);
+  }, [date, hwFrom, student.id]);
 
-    const logsToday = (data.logs || []).filter((l) => l.date === date);
-    const learnedBlock = logsToday.length > 0 ? logsToday.map((l) => l.content).join("\n") : "문법:\n독해:";
-
-    const vocabToday = (data.vocabLog || []).filter((v) => v.date === date);
-    const vocabBlock = vocabToday.length > 0
-      ? vocabToday.map((v) => `${v.book} ${v.range}: ${v.correct}/${v.total} (${v.score}%) - ${v.passed ? "합격" : "불합격"}`).join("\n")
-      : "기록 없음";
-
-    const yesterday = new Date(dt); yesterday.setDate(yesterday.getDate() - 1);
-    const y = yesterday.getFullYear(), m2 = String(yesterday.getMonth() + 1).padStart(2, "0"), d2 = String(yesterday.getDate()).padStart(2, "0");
-    const yesterdayStr = `${y}-${m2}-${d2}`;
-    const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
-    const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
-    const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
-    const hwBlock = hwRange.length > 0
-      ? hwRange.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
-      : "기록 없음";
-
-    const msg = `[${student.name}] ${md} 수업 안내\n📖 오늘 배운 내용\n${learnedBlock}\n✏️ 단어시험 결과\n${vocabBlock}\n📝 숙제 확인\n${hwBlock}`;
-    setText(msg);
-    setCopied(false);
-  }, [student.id, date, hwFrom, data]);
+  function regenerate() {
+    setText(buildDailyReportText(student, data, date, hwFrom));
+  }
 
   async function copy() {
     try {
@@ -2552,6 +2568,19 @@ function DailyReportGenerator({ student, data }) {
       setCopied(false);
     }
   }
+
+  async function saveDraft(publishOverride) {
+    const nextPublished = publishOverride != null ? publishOverride : published;
+    await updateData((d) => ({
+      ...d,
+      dailyReports: { ...(d.dailyReports || {}), [date]: { text, published: nextPublished, updatedAt: Date.now() } },
+    }));
+    setPublished(nextPublished);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+  async function publish() { await saveDraft(true); }
+  async function unpublish() { await saveDraft(false); }
 
   return html`
     <div>
@@ -2566,11 +2595,21 @@ function DailyReportGenerator({ student, data }) {
             <${MiniCalendar} selected=${hwFrom} onSelect=${setHwFrom} />
           </div>
         </div>
-        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 12 }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다.</div>
-        <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => setText(e.target.value)} />
-        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 12 }}>시작일부터 어제까지, "제출 기한"이 그 사이인 숙제만 담겨요. 오늘 수업에서 새로 내준 숙제는 다음 리포트에 들어갑니다. 이미 저장된 날짜를 다시 열면 저장해둔 내용을 그대로 보여줘요 — 자동 생성 문구로 다시 채우려면 "자동으로 다시 만들기"를 눌러주세요.</div>
+        <textarea style=${{ ...inputStyle, minHeight: 220, fontFamily: "inherit", lineHeight: 1.7, whiteSpace: "pre-wrap" }} value=${text} onChange=${(e) => { setText(e.target.value); setSaved(false); }} />
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          <${Button} variant="ghost" onClick=${regenerate}>자동으로 다시 만들기<//>
+          <${Button} variant="ghost" onClick=${() => saveDraft()}>저장 (초안)<//>
           <${Button} variant="gold" onClick=${copy}>복사하기<//>
           ${copied && html`<span style=${{ fontSize: 12, color: C.navy }}>복사됐어요 — 문자로 붙여넣으세요.</span>`}
+          ${saved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+          <span style=${{ fontSize: 12.5, fontWeight: 700, color: published ? C.navy : C.slate }}>${published ? "✅ 학부모님께 공개됨" : "🔒 초안 — 학부모님께는 아직 안 보여요"}</span>
+          <div style=${{ flex: 1 }} />
+          ${published
+            ? html`<${Button} variant="ghost" onClick=${unpublish}>비공개로 되돌리기<//>`
+            : html`<${Button} variant="gold" onClick=${publish}>✔ 작성 완료 (학부모께 공개)<//>`}
         </div>
       <//>
     </div>
@@ -2624,6 +2663,7 @@ function MonthlyReportView({ student, data, updateData }) {
   const [comment, setComment] = useState(saved.comment || "");
   const [nextMonth, setNextMonth] = useState(saved.nextMonth || "");
   const [neltComment, setNeltComment] = useState(saved.neltComment || "");
+  const [published, setPublished] = useState(saved.published || false);
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState("");
 
@@ -2647,7 +2687,7 @@ function MonthlyReportView({ student, data, updateData }) {
     setAttendance(s.attendance || null);
     setContent(s.content != null ? s.content : null);
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
-    setNeltComment(s.neltComment || ""); setGenErr("");
+    setNeltComment(s.neltComment || ""); setPublished(s.published || false); setGenErr("");
   }, [month]);
 
   const att = attendance || {
@@ -2659,12 +2699,16 @@ function MonthlyReportView({ student, data, updateData }) {
   };
   const draftContent = content != null ? content : (logRows.length === 0 ? "" : logRows.map((l) => `• ${fmtDate(l.date)}: ${l.content}`).join("\n"));
 
-  async function saveReport() {
+  async function saveReport(publishOverride) {
+    const nextPublished = publishOverride != null ? publishOverride : published;
     await updateData((d) => ({
       ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment } },
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, published: nextPublished } },
     }));
+    setPublished(nextPublished);
   }
+  async function publishReport() { await saveReport(true); }
+  async function unpublishReport() { await saveReport(false); }
 
   function setRating(key, val) { setRatings((r) => ({ ...r, [key]: val })); }
   function setAtt(key, val) { setAttendance({ ...att, [key]: val }); }
@@ -2833,8 +2877,15 @@ function MonthlyReportView({ student, data, updateData }) {
       <${Card}>
         <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style=${{ flex: 1 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-          <${Button} variant="ghost" onClick=${saveReport}>저장<//>
+          <${Button} variant="ghost" onClick=${() => saveReport()}>저장 (초안)<//>
           <${Button} variant="gold" onClick=${printReport}>미리보기 / 인쇄<//>
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+          <span style=${{ fontSize: 12.5, fontWeight: 700, color: published ? C.navy : C.slate }}>${published ? "✅ 학부모님께 공개됨" : "🔒 초안 — 학부모님께는 아직 안 보여요"}</span>
+          <div style=${{ flex: 1 }} />
+          ${published
+            ? html`<${Button} variant="ghost" onClick=${unpublishReport}>비공개로 되돌리기<//>`
+            : html`<${Button} variant="gold" onClick=${publishReport}>✔ 작성 완료 (학부모께 공개)<//>`}
         </div>
       <//>
 
@@ -3627,6 +3678,54 @@ function MockExamTaker({ test, onExit, onSubmit }) {
 }
 
 // ---------- Student dashboard ----------
+function StudyLogEntryCard({ entry, studentId, updateData }) {
+  const [editing, setEditing] = useState(false);
+  const [subject, setSubject] = useState(entry.subject || "");
+  const [minutes, setMinutes] = useState(entry.minutes || 0);
+  const [content, setContent] = useState(entry.content || "");
+
+  async function save() {
+    await updateData(studentId, (d) => ({
+      ...d,
+      studyLog: (d.studyLog || []).map((s) => (s.id === entry.id ? { ...s, subject, minutes: Number(minutes) || 0, content } : s)),
+    }));
+    setEditing(false);
+  }
+  async function remove() {
+    if (!confirm("이 기록을 삭제할까요?")) return;
+    await updateData(studentId, (d) => ({ ...d, studyLog: (d.studyLog || []).filter((s) => s.id !== entry.id) }));
+  }
+
+  if (!editing) {
+    return html`
+      <${Card} style=${{ marginBottom: 6, padding: 12 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+          <b style=${{ color: C.navy }}>${entry.subject || "공부"}</b>
+          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style=${{ color: C.gold }}>${entry.minutes}분</span>
+            <button onClick=${() => setEditing(true)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11, cursor: "pointer", padding: 0 }}>수정</button>
+            <button onClick=${remove} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11, cursor: "pointer", padding: 0 }}>삭제</button>
+          </div>
+        </div>
+        ${entry.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 3, whiteSpace: "pre-wrap" }}>${entry.content}</div>`}
+      <//>
+    `;
+  }
+  return html`
+    <${Card} style=${{ marginBottom: 6, padding: 12 }}>
+      <div style=${{ display: "flex", gap: 6, marginBottom: 6 }}>
+        <input style=${{ ...inputStyle, marginBottom: 0, flex: 1, fontSize: 12.5 }} value=${subject} onChange=${(e) => setSubject(e.target.value)} placeholder="과목" />
+        <input style=${{ ...inputStyle, marginBottom: 0, width: 70, fontSize: 12.5 }} type="number" value=${minutes} onChange=${(e) => setMinutes(e.target.value)} />
+      </div>
+      <textarea style=${{ ...inputStyle, marginBottom: 6, minHeight: 50, fontSize: 12.5 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="공부한 내용" />
+      <div style=${{ display: "flex", gap: 6 }}>
+        <${Button} variant="gold" style=${{ padding: "5px 14px", fontSize: 11.5 }} onClick=${save}>저장<//>
+        <${Button} variant="ghost" style=${{ padding: "5px 14px", fontSize: 11.5 }} onClick=${() => setEditing(false)}>취소<//>
+      </div>
+    <//>
+  `;
+}
+
 function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const [tab, setTab] = useState("logs");
   const [data, setData] = useState(null);
@@ -3772,10 +3871,10 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
         <${Card} style=${{ marginBottom: 0 }}>
           <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⏱ 공부 시간 기록</div>
           <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", margin: "4px 0" }}>${fmtElapsed(elapsedSec)}</div>
-          <div style=${{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <div style=${{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
             ${!timerRunning
-              ? html`<${Button} variant="gold" style=${{ flex: 1, padding: "7px 0", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "이어서 시작" : "시작"}<//>`
-              : html`<${Button} variant="ghost" style=${{ flex: 1, padding: "7px 0", fontSize: 12 }} onClick=${pauseTimer}>일시정지<//>`}
+              ? html`<${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "이어서 시작" : "시작"}<//>`
+              : html`<${Button} variant="ghost" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${pauseTimer}>일시정지<//>`}
           </div>
           ${elapsedSec > 0 && html`
             <input style=${{ ...inputStyle, marginBottom: 6, fontSize: 12.5 }} placeholder="과목 (예: 문법, 독해)" value=${studySubject} onChange=${(e) => setStudySubject(e.target.value)} />
@@ -3798,12 +3897,7 @@ function StudentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 
       ${todayEntries.length > 0 && html`
         <div style=${{ marginBottom: 16 }}>
-          ${todayEntries.map((e) => html`<${Card} key=${e.id} style=${{ marginBottom: 6, padding: 12 }}>
-            <div style=${{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <b style=${{ color: C.navy }}>${e.subject || "공부"}</b><span style=${{ color: C.gold }}>${e.minutes}분</span>
-            </div>
-            ${e.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 3 }}>${e.content}</div>`}
-          <//>`)}
+          ${todayEntries.map((e) => html`<${StudyLogEntryCard} key=${e.id} entry=${e} studentId=${student.id} updateData=${updateData} />`)}
         </div>
       `}
 
@@ -4177,6 +4271,49 @@ function DateView({ data, role }) {
 }
 
 // ---------- Parent dashboard ----------
+function ParentMonthlyReportCard({ month, report }) {
+  const [y, m] = month.split("-");
+  const textFields = [
+    ["이번 달 학습 내용", report.content],
+    ["칭찬할 점", report.good],
+    ["보완할 점", report.improve],
+    ["선생님 종합 코멘트", report.comment],
+    ["다음 달 학습 방향", report.nextMonth],
+  ];
+  return html`
+    <${Card} style=${{ marginBottom: 14 }}>
+      <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 10 }}>${y}년 ${Number(m)}월 월말 리포트</div>
+      ${report.attendance && html`
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px,1fr))", gap: 8, marginBottom: 12, fontSize: 12, background: C.ivory, padding: 10, borderRadius: 3 }}>
+          ${[["classDays", "수업일수"], ["attended", "출석"], ["absent", "결석/보강"], ["hwRate", "과제 수행률"], ["vocabRate", "단어 통과율"]].map(([k, label]) => html`
+            <div key=${k}><div style=${{ color: C.slate, fontSize: 10.5 }}>${label}</div><div style=${{ fontWeight: 700, color: C.ink }}>${report.attendance[k] || "-"}</div></div>
+          `)}
+        </div>
+      `}
+      ${report.ratings && Object.keys(report.ratings).length > 0 && html`
+        <div style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>영역별 성취 평가</div>
+          <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
+            ${REPORT_CATEGORIES.filter((c) => report.ratings[c.key]).map((c) => html`<span key=${c.key} style=${{ padding: "3px 8px", background: C.ivory, borderRadius: 3 }}><b>${c.label.split(" ")[0]}</b> ${report.ratings[c.key]}</span>`)}
+          </div>
+        </div>
+      `}
+      ${report.neltComment && html`
+        <div style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 4 }}>NELT 성적 비교</div>
+          <div style=${{ fontSize: 12.5, whiteSpace: "pre-wrap", color: C.ink, lineHeight: 1.6 }}>${report.neltComment}</div>
+        </div>
+      `}
+      ${textFields.map(([label, val]) => val && html`
+        <div key=${label} style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 4 }}>${label}</div>
+          <div style=${{ fontSize: 12.5, whiteSpace: "pre-wrap", color: C.ink, lineHeight: 1.6 }}>${val}</div>
+        </div>
+      `)}
+    <//>
+  `;
+}
+
 function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
   const [tab, setTab] = useState("logs");
   const [data, setData] = useState(null);
@@ -4195,12 +4332,16 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
 
   const tabs = [
     { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "reports", label: "리포트", icon: "📊" },
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "feedback", label: "선생님 피드백", icon: "💬" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
 
   if (!data) return html`<${Empty} text="불러오는 중..." />`;
+
+  const publishedMonthly = Object.entries(data.monthlyReports || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  const publishedDaily = Object.entries(data.dailyReports || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
   const sortedSchedule = [...(student.schedule || [])].sort((a, b) => DAY_NAMES.indexOf(a.day) - DAY_NAMES.indexOf(b.day));
@@ -4232,6 +4373,26 @@ function ParentDash({ student, ensureData, updateData, dataCache, onLogout }) {
       ${tab === "logs" && (data.logs.length === 0 ? html`<${Empty} text="아직 등록된 학습 기록이 없어요." />` : data.logs.map((l) => html`
         <${Card} key=${l.id}><div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(l.date)}</div><div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${l.content}</div><//>
       `))}
+
+      ${tab === "reports" && html`
+        <div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선생님이 작성을 완료한 리포트만 여기에 표시돼요.</div>
+          ${publishedMonthly.length === 0 && publishedDaily.length === 0 && html`<${Empty} text="아직 공개된 리포트가 없어요." />`}
+          ${publishedMonthly.length > 0 && html`
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, margin: "4px 0 8px" }}>월말 리포트</div>
+            ${publishedMonthly.map(([month, report]) => html`<${ParentMonthlyReportCard} key=${month} month=${month} report=${report} />`)}
+          `}
+          ${publishedDaily.length > 0 && html`
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, margin: "16px 0 8px" }}>데일리 리포트</div>
+            ${publishedDaily.map(([date, r]) => html`
+              <${Card} key=${date} style=${{ marginBottom: 10 }}>
+                <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(date)}</div>
+                <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${r.text}</div>
+              <//>
+            `)}
+          `}
+        </div>
+      `}
 
       ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
         groupByDate(data.homework || [], "dueDate").map((grp) => html`
