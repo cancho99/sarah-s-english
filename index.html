@@ -1618,9 +1618,14 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
 function ExamKeyLibrarySection({ library, saveLibrary }) {
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(null); // sets parsed from a PDF, awaiting confirmation
+  const [pdfBook, setPdfBook] = useState("");
+  const [manualBook, setManualBook] = useState("");
   const [manualName, setManualName] = useState("");
   const [manualKey, setManualKey] = useState("");
   const [manualMsg, setManualMsg] = useState("");
+  const [collapsedBooks, setCollapsedBooks] = useState({});
+
+  const existingBooks = [...new Set((library || []).map((s) => s.book).filter(Boolean))];
 
   function pdfFileToBase64(file) {
     return new Promise((resolve, reject) => {
@@ -1649,6 +1654,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!file) return;
+    if (!pdfBook.trim()) { setStatus("먼저 위에 책 이름을 입력해 주세요."); return; }
     setStatus("PDF 읽는 중...");
     setPending(null);
     try {
@@ -1667,7 +1673,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
       if (sets.length === 0) {
         setStatus("정답표 형식을 인식하지 못했어요. 'N회 시험이름' 형식 제목과 '01 ① 02 ③...' 형식의 답이 있는 PDF인지 확인해 주세요.");
       } else {
-        setPending(sets);
+        setPending(sets.map((s) => ({ ...s, book: pdfBook.trim() })));
         setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 정답을 꼭 확인하고 저장해 주세요 (AI로 읽은 경우 특히요).`);
       }
     } catch (err) {
@@ -1677,26 +1683,38 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
   async function confirmSavePending() {
     await saveLibrary([...(pending || []), ...(library || [])]);
-    setPending(null); setStatus("저장했어요.");
+    setPending(null); setStatus("저장했어요."); setPdfBook("");
   }
 
   async function addManual() {
     const key = parseAnswerKey(manualKey).map((s) => Number(s)).filter((n) => !isNaN(n));
-    if (!manualName || key.length === 0) { setManualMsg("이름과 정답을 입력해 주세요."); return; }
-    await saveLibrary([{ id: uid(), name: manualName, answers: key }, ...(library || [])]);
+    if (!manualBook.trim() || !manualName || key.length === 0) { setManualMsg("책 이름, 시험 이름, 정답을 모두 입력해 주세요."); return; }
+    await saveLibrary([{ id: uid(), book: manualBook.trim(), name: manualName, answers: key }, ...(library || [])]);
     setManualName(""); setManualKey(""); setManualMsg("");
   }
   async function removeSet(id) {
     await saveLibrary((library || []).filter((s) => s.id !== id));
+  }
+  async function removeBook(book) {
+    if (!confirm(`"${book}" 책에 등록된 정답표를 전부 삭제할까요?`)) return;
+    await saveLibrary((library || []).filter((s) => (s.book || "미분류") !== book));
+  }
+  function toggleBook(book) {
+    setCollapsedBooks((c) => ({ ...c, [book]: !c[book] }));
   }
 
   return html`
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>여기에 정답표를 미리 등록해두면, 모의고사 만들 때 매번 손으로 입력할 필요 없이 골라서 바로 채점할 수 있어요.</div>
 
+      <datalist id="examkey-book-list">
+        ${existingBooks.map((b) => html`<option key=${b} value=${b} />`)}
+      </datalist>
+
       <${Card}>
         <h3>PDF로 한 번에 등록하기</h3>
         <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, 여러 회차를 한 번에 인식해서 등록해요. 글자가 없는(그림으로 된) PDF는 자동으로 AI가 대신 읽어와요.</div>
+        <${Field} label="책 이름"><input style=${inputStyle} list="examkey-book-list" value=${pdfBook} onChange=${(e) => setPdfBook(e.target.value)} placeholder="예: 2026 마더텅 수능기출 20분 미니모의고사 고1" /><//>
         <label style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer", display: "inline-block" }}>
           PDF 선택
           <input type="file" accept="application/pdf" onChange=${handlePdf} style=${{ display: "none" }} />
@@ -1717,6 +1735,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
       <${Card}>
         <h3>직접 하나씩 등록하기</h3>
+        <${Field} label="책 이름"><input style=${inputStyle} list="examkey-book-list" value=${manualBook} onChange=${(e) => setManualBook(e.target.value)} placeholder="예: 2026 마더텅 수능기출 20분 미니모의고사 고1" /><//>
         <${Field} label="시험 이름"><input style=${inputStyle} value=${manualName} onChange=${(e) => setManualName(e.target.value)} placeholder="예: 17회 2024년 3월 학력평가" /><//>
         <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)"><textarea style=${{ ...inputStyle, minHeight: 80, fontFamily: "monospace" }} value=${manualKey} onChange=${(e) => setManualKey(e.target.value)} placeholder="예: 5,5,1,3,5,3,2,5,4,3 ..." /><//>
         ${manualMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${manualMsg}</div>`}
@@ -1725,15 +1744,35 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
       <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, margin: "18px 0 8px" }}>등록된 정답표 (${(library || []).length}개)</div>
       ${(!library || library.length === 0) && html`<${Empty} text="아직 등록된 정답표가 없어요." />`}
-      ${(library || []).map((s) => html`
-        <${Card} key=${s.id}>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${s.name}</div>
-            <button onClick=${() => removeSet(s.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>✕</button>
+      ${(() => {
+        const groups = {};
+        (library || []).forEach((s) => {
+          const book = s.book || "미분류";
+          if (!groups[book]) groups[book] = [];
+          groups[book].push(s);
+        });
+        return Object.keys(groups).sort().map((book) => html`
+          <div key=${book} style=${{ marginBottom: 14 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: C.ivory, borderRadius: 3, cursor: "pointer" }} onClick=${() => toggleBook(book)}>
+              <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${collapsedBooks[book] ? "▸" : "▾"} 📘 ${book} <span style=${{ color: C.slate, fontWeight: 400 }}>(${groups[book].length}개)</span></div>
+              <button onClick=${(e) => { e.stopPropagation(); removeBook(book); }} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11.5 }}>책 전체 삭제</button>
+            </div>
+            ${!collapsedBooks[book] && html`
+              <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 8 }}>
+                ${groups[book].map((s) => html`
+                  <${Card} key=${s.id} style=${{ marginBottom: 0, padding: 10 }}>
+                    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>${s.name}</div>
+                      <button onClick=${() => removeSet(s.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>✕</button>
+                    </div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${s.answers.length}문항</div>
+                  <//>
+                `)}
+              </div>
+            `}
           </div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${s.answers.length}문항</div>
-        <//>
-      `)}
+        `);
+      })()}
     </div>
   `;
 }
@@ -3585,7 +3624,19 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
                 <${Field} label="정답표 라이브러리에서 불러오기 (선택)">
                   <select style=${inputStyle} value=${pickId} onChange=${(e) => pickFromLibrary(e.target.value)}>
                     <option value="">직접 입력</option>
-                    ${examKeyLibrary.map((s) => html`<option key=${s.id} value=${s.id}>${s.name} (${s.answers.length}문항)</option>`)}
+                    ${(() => {
+                      const groups = {};
+                      examKeyLibrary.forEach((s) => {
+                        const book = s.book || "미분류";
+                        if (!groups[book]) groups[book] = [];
+                        groups[book].push(s);
+                      });
+                      return Object.keys(groups).sort().map((book) => html`
+                        <optgroup key=${book} label=${book}>
+                          ${groups[book].map((s) => html`<option key=${s.id} value=${s.id}>${s.name} (${s.answers.length}문항)</option>`)}
+                        </optgroup>
+                      `);
+                    })()}
                   </select>
                 <//>
                 ${pickedSet && html`
