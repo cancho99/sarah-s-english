@@ -389,8 +389,43 @@ function parseAnswerKey(text) {
 // Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
 // page in tiny multi-column print. Sending the raw PDF lets Claude's own PDF-to-image step pick
 // the resolution, which can downsample dense pages enough to cause misreads. Rendering each page
-// ourselves at high DPI and slicing it into overlapping tiles keeps every region well above the
-// point where fine print becomes unreadable, at the cost of a few more images per request.
+// ourselves at high DPI and slicing it into per-column tiles keeps every region well above the
+// point where fine print becomes unreadable.
+//
+// Tiling on a blind fixed grid (with overlap to avoid cutting through a block) was tried first
+// but proved unreliable: any row-wise split risked truncating a tall block at the tile boundary
+// (a block bigger than one cell silently lost its trailing items), and tuning overlap % just
+// traded one kind of miscount for another. Real print layouts, though, have genuine full-height
+// blank gutters between columns — detecting those via pixel ink-density (same technique used
+// earlier for the logo crop) and cutting only there means every tile contains only whole boxes,
+// so there's nothing to truncate and nothing to de-duplicate.
+async function findColumnGutters(canvas) {
+  const ctx = canvas.getContext("2d");
+  const { width, height } = canvas;
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const colInk = new Uint32Array(width);
+  for (let y = 0; y < height; y++) {
+    const rowOff = y * width * 4;
+    for (let x = 0; x < width; x++) {
+      const i = rowOff + x * 4;
+      const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      if (lum < 200) colInk[x]++;
+    }
+  }
+  const blankThreshold = height * 0.001;
+  const isBlank = [];
+  for (let x = 0; x < width; x++) isBlank.push(colInk[x] < blankThreshold);
+  const runs = [];
+  let start = null;
+  for (let x = 0; x < width; x++) {
+    if (isBlank[x] && start === null) start = x;
+    else if (!isBlank[x] && start !== null) { runs.push([start, x]); start = null; }
+  }
+  if (start !== null) runs.push([start, width]);
+  // internal gutters only — drop runs touching the page edges (those are just margins)
+  return runs.filter(([s, e]) => e - s > 5 && s > 0 && e < width).map(([s, e]) => Math.round((s + e) / 2));
+}
+
 async function renderPdfPageTiles(file) {
   if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -398,11 +433,6 @@ async function renderPdfPageTiles(file) {
   const buf = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
   const scale = 3.2;
-  const overlap = 0.06;
-  // A single-page book tends to be the densest case (whole book's answers on one sheet), so it
-  // gets a finer 3x3 grid; multi-page round-based exams are already less dense per page and only
-  // need a lighter 2x2 grid to keep the image count (and request time) reasonable.
-  const grid = pdf.numPages === 1 ? 3 : 2;
   const tiles = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -412,134 +442,20 @@ async function renderPdfPageTiles(file) {
     fullCanvas.height = Math.ceil(viewport.height);
     await page.render({ canvasContext: fullCanvas.getContext("2d"), viewport }).promise;
 
-    const tileW = fullCanvas.width / grid;
-    const tileH = fullCanvas.height / grid;
-    for (let r = 0; r < grid; r++) {
-      for (let c = 0; c < grid; c++) {
-        const x0 = Math.max(0, c * tileW - tileW * overlap);
-        const y0 = Math.max(0, r * tileH - tileH * overlap);
-        const x1 = Math.min(fullCanvas.width, (c + 1) * tileW + tileW * overlap);
-        const y1 = Math.min(fullCanvas.height, (r + 1) * tileH + tileH * overlap);
-        const w = Math.round(x1 - x0), h = Math.round(y1 - y0);
-        const tileCanvas = document.createElement("canvas");
-        tileCanvas.width = w; tileCanvas.height = h;
-        tileCanvas.getContext("2d").drawImage(fullCanvas, x0, y0, w, h, 0, 0, w, h);
-        tiles.push(tileCanvas.toDataURL("image/png").split(",")[1]);
-      }
+    const gutters = await findColumnGutters(fullCanvas);
+    const bounds = [0, ...gutters, fullCanvas.width];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      const x0 = bounds[i], x1 = bounds[i + 1];
+      const w = x1 - x0, h = fullCanvas.height;
+      const tileCanvas = document.createElement("canvas");
+      tileCanvas.width = w; tileCanvas.height = h;
+      tileCanvas.getContext("2d").drawImage(fullCanvas, x0, 0, w, h, 0, 0, w, h);
+      tiles.push(tileCanvas.toDataURL("image/png").split(",")[1]);
     }
   }
   return tiles;
 }
 
-async function extractPdfTextForKeys(file) {
-  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  }
-  const buf = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-  let allLines = [];
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const content = await page.getTextContent();
-    const viewport = page.getViewport({ scale: 1 });
-
-    // Group items into rows by Y first (rounded), keeping each item's X position.
-    const rowMap = {};
-    content.items.forEach((it) => {
-      const y = Math.round(it.transform[5]);
-      const x = it.transform[4];
-      if (!rowMap[y]) rowMap[y] = [];
-      rowMap[y].push({ x, str: it.str });
-    });
-    const ys = Object.keys(rowMap).map(Number);
-
-    // Detect column boundaries from the overall spread of X start-positions on this page —
-    // a page laid out in 2-3 columns (like these 정답표 PDFs) has big horizontal gaps between
-    // columns; a single-column page has none, and this correctly falls back to one column.
-    const allX = [];
-    ys.forEach((y) => rowMap[y].forEach((it) => allX.push(it.x)));
-    allX.sort((a, b) => a - b);
-    const gapThreshold = viewport.width * 0.06;
-    const boundaries = [];
-    for (let i = 1; i < allX.length; i++) {
-      if (allX[i] - allX[i - 1] > gapThreshold) boundaries.push((allX[i] + allX[i - 1]) / 2);
-    }
-    function colIndexOf(x) {
-      let idx = 0;
-      for (const b of boundaries) { if (x > b) idx++; }
-      return idx;
-    }
-    const numCols = boundaries.length + 1;
-
-    // Split each Y-row's items by column, then rebuild lines within each column separately.
-    const colLines = Array.from({ length: numCols }, () => []);
-    ys.forEach((y) => {
-      const byCol = Array.from({ length: numCols }, () => []);
-      rowMap[y].forEach((it) => byCol[colIndexOf(it.x)].push(it));
-      byCol.forEach((items, c) => {
-        if (items.length === 0) return;
-        items.sort((a, b) => a.x - b.x);
-        colLines[c].push({ y, text: items.map((i) => i.str).join(" ") });
-      });
-    });
-
-    // Emit column by column, left to right; each column read top-to-bottom.
-    colLines.forEach((linesInCol) => {
-      linesInCol.sort((a, b) => b.y - a.y);
-      linesInCol.forEach((l) => allLines.push(l.text));
-    });
-  }
-  return allLines.join("\n");
-}
-const CIRCLED_DIGIT = { "①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5 };
-function parseExamKeyPdfText(text) {
-  const ANSWER_RE = /(\d{1,3})\s*([①②③④⑤])/g;
-  function hasAnswerPairs(line) { return [...line.matchAll(ANSWER_RE)].length > 0; }
-  const ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ";
-  const topPattern = new RegExp(`^(\\d+[.\\s]|\\d+회|[${ROMAN}]+[.\\s])`);
-
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const sets = [];
-  let topLevelName = null;
-  let cur = null;
-
-  function flush() {
-    if (cur && cur.answers.length > 0) sets.push(cur);
-    cur = null;
-  }
-
-  lines.forEach((line) => {
-    const clean = line.split(/문제편|해설편/)[0].trim();
-    if (hasAnswerPairs(line)) {
-      if (!cur) return;
-      const pairs = [...line.matchAll(ANSWER_RE)];
-      pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
-      return;
-    }
-    if (!clean) {
-      // a page-reference line like "문제편 p.008  해설편 p.002" strips down to nothing once
-      // 문제편/해설편 is removed — it's pure noise, not a header boundary, so skip it entirely
-      // instead of letting it overwrite the real sub-header name (e.g. "2026학년도") with "".
-      return;
-    }
-    if (topPattern.test(line)) {
-      // top-level header — "N회 시험이름", "NN. 유형이름", or "Ⅰ. 유형이름" (Roman-numeral books).
-      // Checked before treating anything as a bare sub-header, since a round's own title can itself
-      // contain words like "학년도" (e.g. "02회 2026학년도 6월 모의평가") and must not be split off.
-      flush();
-      topLevelName = clean;
-      cur = { id: uid(), name: topLevelName, answers: [] }; // tentative — replaced if a sub-header follows
-    } else {
-      // any other non-answer line is treated as a sub-header nested under the current top-level
-      // (e.g. "2026학년도", "경찰대/사관학교 입학시험") — pure divider labels with no answers of their
-      // own (like "어법편"/"어휘편") are silently dropped by flush()'s answers.length check.
-      flush();
-      cur = { id: uid(), name: topLevelName ? `${topLevelName} - ${clean}` : clean, answers: [] };
-    }
-  });
-  flush();
-  return sets;
-}
 
 function groupByDate(items, dateField) {
   const map = {};
@@ -1697,34 +1613,30 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     e.target.value = "";
     if (!file) return;
     if (!pdfBook.trim()) { setStatus("먼저 위에 책 이름을 입력해 주세요."); return; }
-    setStatus("PDF 읽는 중...");
+    setStatus("AI로 PDF를 읽는 중이에요 (몇십 초 걸릴 수 있어요)...");
     setPending(null);
     try {
-      const text = await extractPdfTextForKeys(file);
-      let sets = parseExamKeyPdfText(text);
+      // Text-position-based local parsing was tried here previously, but 유형별/단원별 문제집
+      // answer sheets often use a flowing masonry layout (boxes of varying height packed side by
+      // side) rather than a clean fixed-column grid, which broke position-clustering in ways that
+      // silently produced garbled, merged block names instead of failing loudly. Always reading
+      // via AI vision on high-DPI tiles is slower per upload but reads the page the way a human
+      // would, regardless of layout complexity.
+      const aiSets = await parseExamKeyPdfWithAI(file);
+      const seenNames = new Set();
+      const sets = aiSets
+        .map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) }))
+        .filter((s) => s.name && s.answers.length > 0)
+        // overlapping high-res tiles can cause the same block to be read twice — keep the first.
+        .filter((s) => (seenNames.has(s.name) ? false : (seenNames.add(s.name), true)));
       if (sets.length === 0) {
-        setStatus("텍스트로 인식되지 않는 PDF라서, AI로 이미지를 읽는 중이에요 (몇 초 걸릴 수 있어요)...");
-        try {
-          const aiSets = await parseExamKeyPdfWithAI(file);
-          const seenNames = new Set();
-          sets = aiSets
-            .map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) }))
-            .filter((s) => s.name && s.answers.length > 0)
-            // overlapping high-res tiles can cause the same block to be read twice — keep the first.
-            .filter((s) => (seenNames.has(s.name) ? false : (seenNames.add(s.name), true)));
-        } catch (aiErr) {
-          setStatus("AI 인식도 실패했어요: " + String(aiErr.message || aiErr).slice(0, 200));
-          return;
-        }
-      }
-      if (sets.length === 0) {
-        setStatus("정답표 형식을 인식하지 못했어요. 'N회 시험이름' 형식 제목과 '01 ① 02 ③...' 형식의 답이 있는 PDF인지 확인해 주세요.");
+        setStatus("정답표 형식을 인식하지 못했어요. PDF를 확인해 주세요.");
       } else {
         setPending(sets.map((s) => ({ ...s, book: pdfBook.trim() })));
-        setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 정답을 꼭 확인하고 저장해 주세요 (AI로 읽은 경우 특히요).`);
+        setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 정답을 꼭 확인하고 저장해 주세요 (AI로 읽은 결과예요).`);
       }
     } catch (err) {
-      setStatus("PDF를 읽지 못했어요. 파일을 확인해 주세요.");
+      setStatus("AI 인식에 실패했어요: " + String(err.message || err).slice(0, 200));
     }
   }
 
@@ -1760,7 +1672,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
       <${Card}>
         <h3>PDF로 한 번에 등록하기</h3>
-        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, 여러 회차를 한 번에 인식해서 등록해요. 글자가 없는(그림으로 된) PDF는 자동으로 AI가 대신 읽어와요.</div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 또는 "N. 유형이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, AI가 여러 회차·단원을 한 번에 인식해서 등록해요 (몇십 초 걸릴 수 있어요).</div>
         <${Field} label="책 이름"><input style=${inputStyle} list="examkey-book-list" value=${pdfBook} onChange=${(e) => setPdfBook(e.target.value)} placeholder="예: 2026 마더텅 수능기출 20분 미니모의고사 고1" /><//>
         <label style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer", display: "inline-block" }}>
           PDF 선택
