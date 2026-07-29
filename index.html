@@ -1622,6 +1622,29 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
   const [manualKey, setManualKey] = useState("");
   const [manualMsg, setManualMsg] = useState("");
 
+  function pdfFileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function parseExamKeyPdfWithAI(file) {
+    const pdfBase64 = await pdfFileToBase64(file);
+    const res = await fetch(NELT_WORKER_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "examkey", pdfBase64 }),
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) {
+      throw new Error((json.error || "AI 인식에 실패했습니다.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
+    }
+    return Array.isArray(json) ? json : [];
+  }
+
   async function handlePdf(e) {
     const file = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -1630,12 +1653,22 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     setPending(null);
     try {
       const text = await extractPdfTextForKeys(file);
-      const sets = parseExamKeyPdfText(text);
+      let sets = parseExamKeyPdfText(text);
+      if (sets.length === 0) {
+        setStatus("텍스트로 인식되지 않는 PDF라서, AI로 이미지를 읽는 중이에요 (몇 초 걸릴 수 있어요)...");
+        try {
+          const aiSets = await parseExamKeyPdfWithAI(file);
+          sets = aiSets.map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) })).filter((s) => s.name && s.answers.length > 0);
+        } catch (aiErr) {
+          setStatus("AI 인식도 실패했어요: " + String(aiErr.message || aiErr).slice(0, 200));
+          return;
+        }
+      }
       if (sets.length === 0) {
         setStatus("정답표 형식을 인식하지 못했어요. 'N회 시험이름' 형식 제목과 '01 ① 02 ③...' 형식의 답이 있는 PDF인지 확인해 주세요.");
       } else {
         setPending(sets);
-        setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 아래에서 확인하고 저장해 주세요.`);
+        setStatus(`${sets.length}개 시험의 정답표를 찾았어요. 정답을 꼭 확인하고 저장해 주세요 (AI로 읽은 경우 특히요).`);
       }
     } catch (err) {
       setStatus("PDF를 읽지 못했어요. 파일을 확인해 주세요.");
@@ -1663,17 +1696,22 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
       <${Card}>
         <h3>PDF로 한 번에 등록하기</h3>
-        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, 여러 회차를 한 번에 인식해서 등록해요.</div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>마더텅/수능기출 정답표처럼 "N회 시험이름" 제목 아래 "01 ① 02 ③ ..." 형식으로 된 PDF를 올리면, 여러 회차를 한 번에 인식해서 등록해요. 글자가 없는(그림으로 된) PDF는 자동으로 AI가 대신 읽어와요.</div>
         <label style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: "pointer", display: "inline-block" }}>
           PDF 선택
           <input type="file" accept="application/pdf" onChange=${handlePdf} style=${{ display: "none" }} />
         </label>
         ${status && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>${status}</div>`}
         ${pending && html`
-          <div style=${{ marginTop: 12 }}>
-            ${pending.map((s) => html`<div key=${s.id} style=${{ fontSize: 12.5, padding: "4px 0" }}>${s.name} — ${s.answers.length}문항</div>`)}
-            <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>이대로 저장하기<//>
+          <div style=${{ marginTop: 12, maxHeight: 320, overflowY: "auto" }}>
+            ${pending.map((s) => html`
+              <div key=${s.id} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
+                <b style=${{ color: C.navy }}>${s.name}</b> — ${s.answers.length}문항
+                <div style=${{ fontSize: 11.5, color: C.slate, fontFamily: "monospace", marginTop: 2 }}>${s.answers.join(", ")}</div>
+              </div>
+            `)}
           </div>
+          <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>이대로 저장하기<//>
         `}
       <//>
 

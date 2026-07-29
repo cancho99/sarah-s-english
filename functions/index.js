@@ -204,6 +204,26 @@ function buildReportPrompt({ studentName, month, rough }) {
 위 메모들을 각각 다듬어서 JSON 스키마 형식으로만 답하세요. "(메모 없음)"으로 표시된 항목은 빈 문자열로 반환하세요.`;
 }
 
+// 정답표 PDF가 텍스트가 아니라 벡터 윤곽선(디자인 파일에서 흔함)으로만 되어 있어서
+// 로컬 텍스트 파서(extractPdfTextForKeys)가 아무것도 못 읽어낼 때 쓰는 AI 비전 파싱 폴백.
+const EXAM_KEY_MODEL = "claude-haiku-4-5-20251001";
+
+const EXAM_KEY_SYSTEM_PROMPT = `당신은 한국 영어 학원에서 쓰는 정답표(모의고사/문제집 answer key) PDF를 읽고 구조화된 데이터로 바꿔주는 보조원입니다.
+주어진 PDF는 "N회" 같은 이름으로 구분된 여러 회차(세트)의 객관식 정답표입니다. 각 회차 아래에는 문항 번호(01, 02, 03...)와 정답(①~⑤ 중 하나, 동그라미 숫자)이 순서대로 나열되어 있습니다.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마(배열) 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
+- PDF에 있는 모든 회차를 빠짐없이, PDF에 나온 순서 그대로 추출하세요.
+- 각 회차의 정답은 문항 번호 순서대로(01번부터) 배열에 담으세요. ①=1, ②=2, ③=3, ④=4, ⑤=5로 숫자만 담습니다.
+- 회차 이름은 PDF에 표시된 그대로 사용하세요 (예: "01회", "13회"). "문제편 p.2" 같은 페이지 표기는 이름에 포함하지 마세요.
+- 동그라미 숫자를 읽을 때 신중하게 하나하나 확인하세요 — 숫자를 잘못 읽으면 실제 채점이 틀리게 됩니다.
+
+[JSON 스키마]
+[
+  { "name": "01회", "answers": [5,1,2,4,3,5,2,1,3,1,1,2] },
+  { "name": "02회", "answers": [2,1,5,4,2,4,1,3,1,5,4,4] }
+]`;
+
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
@@ -276,6 +296,7 @@ exports.aiWorker = onRequest(
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
+    const isExamKey = mode === "examkey";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -318,6 +339,56 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(reportParsed);
+      return;
+    }
+
+    if (isExamKey) {
+      if (!pdfBase64) {
+        res.status(400).json({ error: "PDF 파일이 없습니다." });
+        return;
+      }
+      let ekRes;
+      try {
+        ekRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "pdfs-2024-09-25",
+          },
+          body: JSON.stringify({
+            model: EXAM_KEY_MODEL,
+            max_tokens: 4000,
+            system: EXAM_KEY_SYSTEM_PROMPT,
+            messages: [{
+              role: "user",
+              content: [
+                { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
+                { type: "text", text: "이 정답표 PDF에서 모든 회차의 정답을 위 스키마대로 추출해 JSON 배열로만 답하세요." },
+              ],
+            }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!ekRes.ok) {
+        const errText = await ekRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const ekData = await ekRes.json();
+      const ekText = (ekData.content || []).map((b) => b.text || "").join("");
+      let ekParsed;
+      try {
+        ekParsed = JSON.parse(stripFences(ekText));
+      } catch {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: ekText });
+        return;
+      }
+      res.status(200).json(ekParsed);
       return;
     }
 
