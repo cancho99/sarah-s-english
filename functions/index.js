@@ -206,23 +206,31 @@ function buildReportPrompt({ studentName, month, rough }) {
 
 // 정답표 PDF가 텍스트가 아니라 벡터 윤곽선(디자인 파일에서 흔함)으로만 되어 있어서
 // 로컬 텍스트 파서(extractPdfTextForKeys)가 아무것도 못 읽어낼 때 쓰는 AI 비전 파싱 폴백.
-const EXAM_KEY_MODEL = "claude-haiku-4-5-20251001";
+// 문항 수가 많은 정답표(예: 45문항 x 30회, 2페이지)에서 신뢰도가 중요해서 haiku가 아니라 sonnet을 쓴다.
+const EXAM_KEY_MODEL = "claude-sonnet-5";
 
 const EXAM_KEY_SYSTEM_PROMPT = `당신은 한국 영어 학원에서 쓰는 정답표(모의고사/문제집 answer key) PDF를 읽고 구조화된 데이터로 바꿔주는 보조원입니다.
-주어진 PDF는 "N회" 같은 이름으로 구분된 여러 회차(세트)의 객관식 정답표입니다. 각 회차 아래에는 문항 번호(01, 02, 03...)와 정답(①~⑤ 중 하나, 동그라미 숫자)이 순서대로 나열되어 있습니다.
+주어진 PDF는 객관식 정답표이며, 여러 개의 독립된 "블록"(세트)으로 나뉘어 있습니다. 각 블록 안에는 문항 번호(01, 02... 또는 001, 002...)와 정답(①~⑤ 중 하나, 동그라미 숫자)이 순서대로 나열되어 있습니다. 블록마다 문항 수는 제각각입니다 (12개일 수도 45개, 134개일 수도 있음).
+
+책마다 블록을 나누는 방식이 다릅니다. 아래 두 가지 패턴이 모두 나올 수 있으니, PDF를 보고 실제 구조에 맞게 판단하세요:
+1) "N회" 형태의 모의고사 회차별 정답표 (예: "01회", "13회 2023학년도 9월 모의평가", "1회 20분 미니모의고사"). 이 경우 각 회차 전체가 하나의 블록입니다.
+2) 유형별/단원별 문제집 정답표. 이런 책은 보통 계층 구조를 가집니다:
+   - 최상위: "편" 구분 (예: "어법편", "어휘편") — 이 자체는 블록이 아니라 상위 분류 라벨입니다.
+   - 그 아래: "Ⅰ. 문장의 기초", "01. 글의 목적 파악" 같은 로마숫자/아라비아숫자 대단원 — 정답 블록의 기준 단위입니다.
+   - 대단원 안에서 다시 "2026학년도", "2022~2025학년도" 같은 연도 구간, 또는 "경찰대/사관학교 입학시험" 같은 별도 보너스 문제 구간으로 한 번 더 나뉘기도 합니다. 이런 경우 연도 구간/보너스 구간 각각이 독립된 블록입니다 (문항 번호가 001부터 다시 시작함).
+   - 이때 각 블록의 name은 "편 이름(있다면) + 대단원 이름 + 하위 구분"을 조합해서 명확하게 만드세요. 예: "어법편 Ⅰ. 문장의 기초", "어법편 Ⅰ. 문장의 기초 (경찰대/사관학교 입학시험)", "01. 글의 목적 파악 (2026학년도)", "01. 글의 목적 파악 (2022~2025학년도)".
 
 [중요 규칙]
-- 반드시 아래 JSON 스키마(배열) 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
-- PDF에 있는 모든 회차를 빠짐없이, PDF에 나온 순서 그대로 추출하세요.
-- 각 회차의 정답은 문항 번호 순서대로(01번부터) 배열에 담으세요. ①=1, ②=2, ③=3, ④=4, ⑤=5로 숫자만 담습니다.
-- 회차 이름은 PDF에 표시된 그대로 사용하세요 (예: "01회", "13회"). "문제편 p.2" 같은 페이지 표기는 이름에 포함하지 마세요.
-- 동그라미 숫자를 읽을 때 신중하게 하나하나 확인하세요 — 숫자를 잘못 읽으면 실제 채점이 틀리게 됩니다.
+- 반드시 아래 JSON 스키마(배열) 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다. 들여쓰기나 불필요한 공백 없이 최대한 압축된 형태로 출력하세요 (응답 길이를 아끼기 위함입니다).
+- PDF의 모든 페이지, 모든 블록을 빠짐없이, PDF에 나온 순서 그대로 추출하세요. 페이지가 여러 장이면 마지막 페이지 마지막 블록까지 절대 빠뜨리지 마세요.
+- 각 블록의 정답은 문항 번호 순서대로(01번 또는 001번부터) 배열에 담으세요. ①=1, ②=2, ③=3, ④=4, ⑤=5로 숫자만 담습니다.
+- "문제편 p.2", "해설편 p.11" 같은 페이지 표기는 이름에 포함하지 마세요. 이런 텍스트는 블록 경계 판단에 참고만 하고 name에는 넣지 않습니다.
+- 매우 중요: 각 블록마다 마지막 문항 번호(예: 45번, 134번)와 answers 배열의 길이가 반드시 일치해야 합니다. 동그라미 숫자를 하나하나 신중하게 확인하고, 문항 번호를 놓치거나 중복 세지 않도록 표의 각 줄을 순서대로 처음부터 끝까지 훑으세요. 숫자를 잘못 읽으면 실제 학생 채점이 틀리게 되므로 정확도가 무엇보다 중요합니다.
+- 같은 책 안에서도 블록마다 문항 수가 다를 수 있으니, 앞선 블록의 문항 수를 기준으로 추측하지 말고 매 블록에 실제로 보이는 마지막 문항 번호를 그대로 따르세요.
+- 답변에 <thinking> 같은 내부 태그나 메타 설명을 절대 포함하지 마세요. 오직 JSON 배열만 출력합니다.
 
 [JSON 스키마]
-[
-  { "name": "01회", "answers": [5,1,2,4,3,5,2,1,3,1,1,2] },
-  { "name": "02회", "answers": [2,1,5,4,2,4,1,3,1,5,4,4] }
-]`;
+[{"name":"01회","answers":[5,1,2,4,3,5,2,1,3,1,1,2]},{"name":"어법편 Ⅰ. 문장의 기초","answers":[3,4,5,3,5]},{"name":"어법편 Ⅰ. 문장의 기초 (경찰대/사관학교 입학시험)","answers":[5,3,5,2,2]}]`;
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -237,8 +245,32 @@ function stripFences(text) {
   return text.replace(/```json/gi, "").replace(/```/g, "").trim();
 }
 
+// On hard extraction tasks the model sometimes narrates a self-correction ("다시 확인해보니...")
+// before settling on a final JSON array instead of outputting pure JSON as instructed. When that
+// happens, recover the LAST top-level [...] array in the text (its final answer) by scanning
+// backward from the last "]" and bracket-matching to find where that array actually starts.
+function extractLastJsonArray(text) {
+  const lastClose = text.lastIndexOf("]");
+  if (lastClose === -1) return null;
+  let depth = 0;
+  for (let i = lastClose; i >= 0; i--) {
+    if (text[i] === "]") depth++;
+    else if (text[i] === "[") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(i, lastClose + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 exports.aiWorker = onRequest(
-  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false },
+  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 300 },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
@@ -292,7 +324,7 @@ exports.aiWorker = onRequest(
     }
 
     const body = req.body || {};
-    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, studentName, month, rough } = body;
+    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
@@ -343,10 +375,22 @@ exports.aiWorker = onRequest(
     }
 
     if (isExamKey) {
-      if (!pdfBase64) {
+      if ((!images || images.length === 0) && !pdfBase64) {
         res.status(400).json({ error: "PDF 파일이 없습니다." });
         return;
       }
+      // Prefer client-rendered high-DPI tile images (see renderPdfPageTiles in index.html) — they
+      // preserve far more resolution on dense multi-column answer sheets than letting Claude's own
+      // PDF-to-image conversion pick the resolution. Raw pdfBase64 is kept as a fallback only.
+      const content = images && images.length > 0
+        ? images.map((img) => ({ type: "image", source: { type: "base64", media_type: "image/png", data: img } }))
+        : [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } }];
+      content.push({
+        type: "text",
+        text: images && images.length > 0
+          ? "이 이미지들은 같은 정답표 PDF의 페이지를 고해상도로 잘라낸 조각들입니다 (겹치는 부분이 있을 수 있음). 모든 이미지를 살펴보고, 보이는 모든 블록(회차/단원/구간)의 정답을 위 스키마대로 하나도 빠짐없이 추출해 JSON 배열로만 답하세요. 같은 블록이 겹치는 이미지 여러 장에 나타나더라도 결과에는 한 번만 포함하세요. 각 블록의 마지막 문항 번호와 answers 배열 길이가 일치하는지 스스로 다시 확인한 뒤 답하세요."
+          : "이 정답표 PDF는 여러 페이지일 수 있습니다. 모든 페이지, 모든 블록의 정답을 하나도 빠짐없이 위 스키마대로 추출해 JSON 배열로만 답하세요. 각 블록의 마지막 문항 번호와 answers 배열 길이가 일치하는지 스스로 다시 확인한 뒤 답하세요.",
+      });
       let ekRes;
       try {
         ekRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -359,15 +403,10 @@ exports.aiWorker = onRequest(
           },
           body: JSON.stringify({
             model: EXAM_KEY_MODEL,
-            max_tokens: 4000,
+            max_tokens: 16000,
+            thinking: { type: "disabled" },
             system: EXAM_KEY_SYSTEM_PROMPT,
-            messages: [{
-              role: "user",
-              content: [
-                { type: "document", source: { type: "base64", media_type: "application/pdf", data: pdfBase64 } },
-                { type: "text", text: "이 정답표 PDF에서 모든 회차의 정답을 위 스키마대로 추출해 JSON 배열로만 답하세요." },
-              ],
-            }],
+            messages: [{ role: "user", content }],
           }),
         });
       } catch (e) {
@@ -385,7 +424,18 @@ exports.aiWorker = onRequest(
       try {
         ekParsed = JSON.parse(stripFences(ekText));
       } catch {
-        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: ekText });
+        ekParsed = extractLastJsonArray(stripFences(ekText));
+      }
+      if (!Array.isArray(ekParsed)) {
+        res.status(502).json({
+          error: "AI 응답을 JSON으로 해석하지 못했습니다.",
+          raw: ekText,
+          debug: {
+            stop_reason: ekData.stop_reason,
+            usage: ekData.usage,
+            blockTypes: (ekData.content || []).map((b) => ({ type: b.type, len: (b.text || "").length })),
+          },
+        });
         return;
       }
       res.status(200).json(ekParsed);

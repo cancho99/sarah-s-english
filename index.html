@@ -386,6 +386,51 @@ function parseAnswerKey(text) {
 }
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
+// Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
+// page in tiny multi-column print. Sending the raw PDF lets Claude's own PDF-to-image step pick
+// the resolution, which can downsample dense pages enough to cause misreads. Rendering each page
+// ourselves at high DPI and slicing it into overlapping tiles keeps every region well above the
+// point where fine print becomes unreadable, at the cost of a few more images per request.
+async function renderPdfPageTiles(file) {
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const scale = 3.2;
+  const overlap = 0.06;
+  // A single-page book tends to be the densest case (whole book's answers on one sheet), so it
+  // gets a finer 3x3 grid; multi-page round-based exams are already less dense per page and only
+  // need a lighter 2x2 grid to keep the image count (and request time) reasonable.
+  const grid = pdf.numPages === 1 ? 3 : 2;
+  const tiles = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale });
+    const fullCanvas = document.createElement("canvas");
+    fullCanvas.width = Math.ceil(viewport.width);
+    fullCanvas.height = Math.ceil(viewport.height);
+    await page.render({ canvasContext: fullCanvas.getContext("2d"), viewport }).promise;
+
+    const tileW = fullCanvas.width / grid;
+    const tileH = fullCanvas.height / grid;
+    for (let r = 0; r < grid; r++) {
+      for (let c = 0; c < grid; c++) {
+        const x0 = Math.max(0, c * tileW - tileW * overlap);
+        const y0 = Math.max(0, r * tileH - tileH * overlap);
+        const x1 = Math.min(fullCanvas.width, (c + 1) * tileW + tileW * overlap);
+        const y1 = Math.min(fullCanvas.height, (r + 1) * tileH + tileH * overlap);
+        const w = Math.round(x1 - x0), h = Math.round(y1 - y0);
+        const tileCanvas = document.createElement("canvas");
+        tileCanvas.width = w; tileCanvas.height = h;
+        tileCanvas.getContext("2d").drawImage(fullCanvas, x0, y0, w, h, 0, 0, w, h);
+        tiles.push(tileCanvas.toDataURL("image/png").split(",")[1]);
+      }
+    }
+  }
+  return tiles;
+}
+
 async function extractPdfTextForKeys(file) {
   if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -469,6 +514,12 @@ function parseExamKeyPdfText(text) {
       if (!cur) return;
       const pairs = [...line.matchAll(ANSWER_RE)];
       pairs.forEach(([, , sym]) => cur.answers.push(CIRCLED_DIGIT[sym]));
+      return;
+    }
+    if (!clean) {
+      // a page-reference line like "문제편 p.008  해설편 p.002" strips down to nothing once
+      // 문제편/해설편 is removed — it's pure noise, not a header boundary, so skip it entirely
+      // instead of letting it overwrite the real sub-header name (e.g. "2026학년도") with "".
       return;
     }
     if (topPattern.test(line)) {
@@ -1627,21 +1678,12 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
 
   const existingBooks = [...new Set((library || []).map((s) => s.book).filter(Boolean))];
 
-  function pdfFileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
   async function parseExamKeyPdfWithAI(file) {
-    const pdfBase64 = await pdfFileToBase64(file);
+    const images = await renderPdfPageTiles(file);
     const res = await fetch(NELT_WORKER_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "examkey", pdfBase64 }),
+      body: JSON.stringify({ mode: "examkey", images }),
     });
     const json = await res.json();
     if (!res.ok || json.error) {
@@ -1664,7 +1706,12 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
         setStatus("텍스트로 인식되지 않는 PDF라서, AI로 이미지를 읽는 중이에요 (몇 초 걸릴 수 있어요)...");
         try {
           const aiSets = await parseExamKeyPdfWithAI(file);
-          sets = aiSets.map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) })).filter((s) => s.name && s.answers.length > 0);
+          const seenNames = new Set();
+          sets = aiSets
+            .map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) }))
+            .filter((s) => s.name && s.answers.length > 0)
+            // overlapping high-res tiles can cause the same block to be read twice — keep the first.
+            .filter((s) => (seenNames.has(s.name) ? false : (seenNames.add(s.name), true)));
         } catch (aiErr) {
           setStatus("AI 인식도 실패했어요: " + String(aiErr.message || aiErr).slice(0, 200));
           return;
