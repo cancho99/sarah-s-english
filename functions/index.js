@@ -583,6 +583,7 @@ exports.notifyTeacher = onRequest(
         student_login: `👋 ${studentName} 학생이 로그인했어요`,
         parent_login: `👪 ${studentName} 학생 학부모님이 로그인했어요`,
         consult_request: `💬 ${studentName} 학생 학부모님이 상담을 신청했어요`,
+        level_test_booking: `🗓 ${studentName} 님이 레벨테스트·상담 예약 문의를 남겼어요`,
       };
       const DEFAULT_BODIES = {
         homework_upload: "인증샷을 확인해 보세요.",
@@ -595,12 +596,50 @@ exports.notifyTeacher = onRequest(
         student_login: "학생용 화면에 접속했어요.",
         parent_login: "학부모용 화면에 접속했어요.",
         consult_request: "상담 신청 내용을 확인해 보세요.",
+        level_test_booking: "예약 문의 내용을 확인해 보세요.",
       };
       const title = TITLES[kind] || "🔔 테스트 알림";
       const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "알림이 정상적으로 도착했어요!";
 
       const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
       res.status(200).json({ sent: resp.successCount, failed: resp.failureCount });
+    } catch (e) {
+      res.status(500).json({ error: "알림 전송 중 오류가 발생했습니다.", detail: String(e) });
+    }
+  }
+);
+
+// 선생님이 숙제/모의고사/단어 재시험을 새로 등록하면 그 학생 폰으로 바로 알림을 보낸다.
+// notifyTeacher와 달리 수신 대상이 매번 다른 한 명(그 학생)이라 Firestore에서 토큰을 찾지
+// 않고, 이미 로스터를 들고 있는 교사 클라이언트가 그 학생의 studentFcmToken을 그대로 실어
+// 보낸다 — sendTestNotification과 같은 패턴.
+exports.notifyStudent = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { token, kind, detail } = req.body || {};
+    if (!token || !kind) { res.status(400).json({ error: "token, kind가 필요합니다." }); return; }
+
+    const TITLES = {
+      homework_assigned: "📝 새 숙제가 등록됐어요",
+      mock_exam_assigned: "📄 새 모의고사가 등록됐어요",
+      vocab_test_assigned: "🔤 새 단어 재시험이 등록됐어요",
+    };
+    const DEFAULT_BODIES = {
+      homework_assigned: "숙제 내용을 확인해 보세요.",
+      mock_exam_assigned: "모의고사가 등록됐어요.",
+      vocab_test_assigned: "단어 재시험이 등록됐어요.",
+    };
+    const title = TITLES[kind] || "🔔 새 알림";
+    const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "새 소식이 있어요.";
+
+    try {
+      await admin.messaging().send({ token, data: { title, body } });
+      res.status(200).json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: "알림 전송 중 오류가 발생했습니다.", detail: String(e) });
     }

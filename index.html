@@ -188,6 +188,7 @@ async function saveStudentDoc(id, data) {
 // NELT 성적표 PDF 업로드 분석용 (지문 변형 도구와 동일한 서버, Firebase Cloud Functions)
 const NELT_WORKER_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/aiWorker";
 const NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notifyTeacher";
+const NOTIFY_STUDENT_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notifyStudent";
 const TEST_NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/sendTestNotification";
 const FCM_VAPID_KEY = "BKXGKOsQBe0e0TLKdjkmtuDTR9iy9o7qSCZu1UmP8x7xvRuG7x1uRu1FgYCoF7YsGSwfIQ_dvutD39uV_nMhJG4";
 
@@ -237,6 +238,23 @@ async function notifyTeacher(studentName, kind, detail) {
     });
   } catch (e) {
     console.warn("notifyTeacher failed", e);
+  }
+}
+
+// Fires when the teacher assigns something new (homework/mock exam/vocab test) to a student —
+// unlike notifyTeacher, the recipient is a single, different student each time, so the token is
+// passed straight from the roster entry the teacher already has loaded rather than looked up
+// server-side. No-op if the student never enabled notifications (no token on file).
+async function notifyStudent(token, kind, detail) {
+  if (!token) return;
+  try {
+    await fetch(NOTIFY_STUDENT_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token, kind, detail }),
+    });
+  } catch (e) {
+    console.warn("notifyStudent failed", e);
   }
 }
 
@@ -793,6 +811,7 @@ function App() {
   async function addBooking(b) {
     const next = [{ id: uid(), status: "대기", createdAt: today(), ...b }, ...levelTestBookings];
     await saveBookingsList(next);
+    notifyTeacher(b.name, "level_test_booking", `${b.kind || "예약"} · 희망일 ${b.date}${b.time ? " " + b.time : ""}`);
   }
   async function saveAnnouncement(text) {
     const next = text ? { text, updatedAt: today() } : null;
@@ -2355,9 +2374,9 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
       ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "homework" && html`<${HomeworkEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
+      ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
       ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
@@ -3385,13 +3404,18 @@ function LogsEditor({ data, updateData }) {
   `;
 }
 
-function HomeworkEditor({ data, updateData }) {
+function HomeworkEditor({ student, data, updateData }) {
   const [assignedDate, setAssignedDate] = useState(today()); const [dueDate, setDueDate] = useState(today());
   const [content, setContent] = useState("");
   const [editId, setEditId] = useState(null);
   const [editAssigned, setEditAssigned] = useState(""); const [editDue, setEditDue] = useState(""); const [editContent, setEditContent] = useState("");
   const [lightbox, setLightbox] = useState(null);
-  async function add() { if (!content) return; await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content, done: false, photos: [] }, ...(d.homework || [])] })); setContent(""); }
+  async function add() {
+    if (!content) return;
+    await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content, done: false, photos: [] }, ...(d.homework || [])] }));
+    notifyStudent(student.studentFcmToken, "homework_assigned", content);
+    setContent("");
+  }
   async function remove(id) { await updateData((d) => ({ ...d, homework: (d.homework || []).filter((h) => h.id !== id) })); }
   function startEdit(h) { setEditId(h.id); setEditAssigned(h.assignedDate); setEditDue(h.dueDate); setEditContent(h.content); }
   async function saveEdit() {
@@ -3571,7 +3595,7 @@ function VocabRetestSchedule({ t, updateData }) {
   `;
 }
 
-function VocabEditor({ data, updateData }) {
+function VocabEditor({ student, data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [mode, setMode] = useState("mix");
   const [retestDate, setRetestDate] = useState(""); const [retestTime, setRetestTime] = useState("15:00");
@@ -3629,6 +3653,7 @@ function VocabEditor({ data, updateData }) {
     }));
     if (!title || clean.length < 2 || !retestDate || !retestTime) return;
     await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime }, ...d.vocabTests] }));
+    notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
     setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
@@ -3835,7 +3860,7 @@ function ExamEditor({ data, updateData }) {
 }
 
 // ---------- Mock exam (모의고사): answer-key only, auto-graded ----------
-function MockExamEditor({ data, updateData, examKeyLibrary }) {
+function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyText, setKeyText] = useState("");
   const [pickId, setPickId] = useState("");
@@ -3867,6 +3892,7 @@ function MockExamEditor({ data, updateData, examKeyLibrary }) {
     const key = parseAnswerKey(keyText);
     if (!title || key.length === 0) { setMsg("이름과 정답을 입력해 주세요."); return; }
     await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key }, ...(d.mockExams || [])] }));
+    notifyStudent(student.studentFcmToken, "mock_exam_assigned", title);
     setTitle(""); setKeyText(""); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
@@ -4639,6 +4665,7 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
         <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items}
+          tutoringExceptions=${student.tutoringExceptions || []}
           otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
       <//>
     </div>
