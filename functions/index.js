@@ -575,6 +575,7 @@ exports.notifyTeacher = onRequest(
       const TITLES = {
         homework_upload: `📸 ${studentName} 학생이 숙제 인증샷을 올렸어요`,
         study_start: `⏱ ${studentName} 학생이 공부를 시작했어요`,
+        study_resume: `⏱ ${studentName} 학생이 공부를 이어서 시작했어요`,
         study_pause: `⏸ ${studentName} 학생이 공부를 일시정지했어요`,
         study_log_saved: `📗 ${studentName} 학생이 공부 기록을 저장했어요`,
         homework_done: `✅ ${studentName} 학생이 숙제를 완료 표시했어요`,
@@ -586,6 +587,7 @@ exports.notifyTeacher = onRequest(
       const DEFAULT_BODIES = {
         homework_upload: "인증샷을 확인해 보세요.",
         study_start: "공부 타이머를 시작했어요.",
+        study_resume: "공부 타이머를 이어서 시작했어요.",
         study_pause: "공부 타이머를 일시정지했어요.",
         study_log_saved: "공부 기록을 저장했어요.",
         homework_done: "숙제를 완료로 표시했어요.",
@@ -627,17 +629,19 @@ exports.sendTestNotification = onRequest(
   }
 );
 
-// 밤 10시(한국 시간)부터 10시 30분 간격으로(10:00/10:30/11:00/11:30) 그날 마감인데 아직
-// 완료 표시가 안 된 숙제가 있는 학생을 찾아 알림을 보낸다. 학부모는 매번 알림이 가면 피로감이
-// 크므로 10시 첫 실행 때 한 번만 보내고, 학생은 숙제를 끝낼 때까지(= pending이 빌 때까지)
-// 30분마다 계속 받는다 — 완료 표시가 뜨는 순간 이 필터에서 자연히 빠지므로 별도의 "이미
-// 보냈음" 상태를 추적할 필요가 없다.
+// 오후 3시(한국 시간)부터 밤 11시까지 매시 정각에, 그날 마감인데 아직 완료 표시가 안 된
+// 숙제와 그날 응시일인데 아직 결과가 없는 모의고사를 찾아 알림을 보낸다 (이름은 "숙제"만
+// 언급하지만 모의고사 채점 제출 리마인더도 같은 스케줄로 함께 처리한다 — Cloud Scheduler
+// 잡을 하나 더 만드는 대신 같은 실행에 묶었다). 학부모는 매번 알림이 가면 피로감이 크므로
+// 15시 첫 실행 때 한 번만 보내고, 학생은 끝낼 때까지(= pending이 빌 때까지) 매시간 계속
+// 받는다 — 완료 표시/결과 제출이 뜨는 순간 이 필터에서 자연히 빠지므로 별도의 "이미 보냈음"
+// 상태를 추적할 필요가 없다.
 exports.homeworkReminderCheck = onSchedule(
-  { schedule: "0,30 22,23 * * *", timeZone: "Asia/Seoul", region: "us-central1" },
+  { schedule: "0 15-23 * * *", timeZone: "Asia/Seoul", region: "us-central1" },
   async () => {
     const nowSeoul = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
     const todayStr = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
-    const isFirstRun = nowSeoul.getHours() === 22 && nowSeoul.getMinutes() < 15; // the 22:00 slot
+    const isFirstRun = nowSeoul.getHours() === 15; // the 15:00 slot
     const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
     const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
     const teacherTokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
@@ -648,34 +652,111 @@ exports.homeworkReminderCheck = onSchedule(
         const studentSnap = await db.collection("sarahsEnglishStudents").doc(student.id).get();
         if (!studentSnap.exists) continue;
         const data = studentSnap.data();
-        const pending = (data.homework || []).filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done);
-        if (pending.length === 0) continue;
-        namesStillPending.push(student.name);
+        const pendingHw = (data.homework || []).filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done);
+        const submittedMockIds = new Set((data.mockExamResults || []).map((r) => r.testId));
+        const pendingMock = (data.mockExams || []).filter((t) => t.date && t.date <= todayStr && !submittedMockIds.has(t.id));
+        if (pendingHw.length === 0 && pendingMock.length === 0) continue;
+
+        const tags = [pendingHw.length > 0 && "숙제", pendingMock.length > 0 && "모의고사"].filter(Boolean);
+        namesStillPending.push(`${student.name}(${tags.join("·")})`);
 
         const tokens = [student.studentFcmToken, isFirstRun ? student.parentFcmToken : null].filter(Boolean);
         if (tokens.length === 0) continue;
 
-        const title = `${student.name} 학생, 오늘 숙제를 아직 안 했어요`;
-        const body = pending.map((h) => h.content).join(", ").slice(0, 200);
-        await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
+        if (pendingHw.length > 0) {
+          const title = `${student.name} 학생, 오늘 숙제를 아직 안 했어요`;
+          const body = pendingHw.map((h) => h.content).join(", ").slice(0, 200);
+          await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
+        }
+        if (pendingMock.length > 0) {
+          const title = `${student.name} 학생, 모의고사 답을 아직 안 올렸어요`;
+          const body = pendingMock.map((t) => t.title).join(", ").slice(0, 200);
+          await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
+        }
       } catch (e) {
         console.error(`homeworkReminderCheck failed for student ${student.id}`, e);
       }
     }
 
     // Teacher gets one aggregated push per run (not one per student) listing everyone still
-    // pending, same cadence as the student reminder (every 30 min from 22:00 to 23:30 KST).
+    // pending (with what kind — 숙제/모의고사), same cadence as the student reminder (hourly
+    // from 15:00 to 23:00 KST).
     if (namesStillPending.length > 0 && teacherTokens.length > 0) {
       try {
         await admin.messaging().sendEachForMulticast({
           tokens: teacherTokens,
           data: {
-            title: `🌙 오늘 숙제 안 한 학생 ${namesStillPending.length}명`,
+            title: `📌 아직 안 한 게 있는 학생 ${namesStillPending.length}명`,
             body: namesStillPending.join(", ").slice(0, 200),
           },
         });
       } catch (e) {
         console.error("homeworkReminderCheck teacher notify failed", e);
+      }
+    }
+  }
+);
+
+// Wall-clock KST date/time parts, computed the same hacky-but-consistent way as
+// homeworkReminderCheck above: format "now" in the Asia/Seoul zone as a string, then re-parse it
+// as if those numbers were the local time. The resulting Date's absolute instant is meaningless,
+// but reading getFullYear/getHours/etc back out gives correct KST wall-clock numbers as long as
+// every date built this way (including minutesBefore below) is read out the same way.
+function seoulNowParts() {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const pad = (n) => String(n).padStart(2, "0");
+  return {
+    dateStr: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    hm: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+  };
+}
+
+// Subtracts `mins` minutes from a "YYYY-MM-DD" + "HH:mm" pair, correctly rolling over hour/day
+// boundaries (e.g. 00:02 minus 5 min lands on the previous day at 23:57) via plain Date arithmetic.
+function minutesBefore(dateStr, timeStr, mins) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const [hh, mm] = timeStr.split(":").map(Number);
+  const dt = new Date(y, m - 1, d, hh, mm - mins);
+  const pad = (n) => String(n).padStart(2, "0");
+  return { dateStr: `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`, hm: `${pad(dt.getHours())}:${pad(dt.getMinutes())}` };
+}
+
+// Teacher records a specific date/time per vocab retest (t.retestDate/t.retestTime, set via
+// VocabRetestSchedule in index.html) — e.g. a live call scheduled with the student, not just
+// "whenever they get to it" like the always-open vocab tab normally is. Runs every minute (the
+// only way to reliably hit an exact minute-precision target) and pushes to both the student and
+// the teacher, once at 5-minutes-before and once at the exact time — each only ever matches a
+// single 1-minute window so there's no need to track "already sent" state.
+exports.vocabRetestReminderCheck = onSchedule(
+  { schedule: "* * * * *", timeZone: "Asia/Seoul", region: "us-central1" },
+  async () => {
+    const { dateStr: todayKST, hm: nowHM } = seoulNowParts();
+    const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+    const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
+    const teacherTokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
+
+    for (const student of roster) {
+      try {
+        const studentSnap = await db.collection("sarahsEnglishStudents").doc(student.id).get();
+        if (!studentSnap.exists) continue;
+        const data = studentSnap.data();
+        for (const t of (data.vocabTests || [])) {
+          if (!t.retestDate || !t.retestTime) continue;
+          const isExact = t.retestDate === todayKST && t.retestTime === nowHM;
+          const before = minutesBefore(t.retestDate, t.retestTime, 5);
+          const isFiveBefore = before.dateStr === todayKST && before.hm === nowHM;
+          if (!isExact && !isFiveBefore) continue;
+
+          const tokens = [...new Set([student.studentFcmToken, ...teacherTokens].filter(Boolean))];
+          if (tokens.length === 0) continue;
+
+          const title = isExact
+            ? `🔤 ${student.name} 학생, 지금 "${t.title}" 단어 재시험 시간이에요`
+            : `🔤 ${student.name} 학생, "${t.title}" 단어 재시험이 5분 후예요`;
+          await admin.messaging().sendEachForMulticast({ tokens, data: { title, body: `${t.retestDate} ${t.retestTime}` } });
+        }
+      } catch (e) {
+        console.error(`vocabRetestReminderCheck failed for student ${student.id}`, e);
       }
     }
   }

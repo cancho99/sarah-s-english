@@ -3540,9 +3540,41 @@ function VocabResultRow({ r, updateData }) {
   `;
 }
 
+// Lets the teacher record when a specific vocab retest is actually scheduled to happen (e.g. a
+// live call at a set time), separate from `date` (when the test was created). vocabRetestReminderCheck
+// in functions/index.js polls every minute for retestDate/retestTime and pushes to both the
+// student and the teacher 5 minutes before and again at the exact time.
+function VocabRetestSchedule({ t, updateData }) {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(t.retestDate || "");
+  const [time, setTime] = useState(t.retestTime || "15:00");
+  async function save() {
+    if (!date || !time) return; // required — every vocab test must carry a scheduled retest time
+    await updateData((d) => ({ ...d, vocabTests: d.vocabTests.map((x) => (x.id === t.id ? { ...x, retestDate: date, retestTime: time } : x)) }));
+    setEditing(false);
+  }
+  if (!editing) {
+    return html`
+      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 6 }}>
+        ${t.retestDate ? `⏰ 재시험 예정: ${fmtDate(t.retestDate)} ${t.retestTime}` : "⚠️ 재시험 예정 시간 없음 (예전에 만든 재시험)"}
+        <button onClick=${() => setEditing(true)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11, marginLeft: 8, cursor: "pointer", textDecoration: "underline" }}>${t.retestDate ? "수정" : "예정 시간 설정"}</button>
+      </div>
+    `;
+  }
+  return html`
+    <div style=${{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
+      <${DateField} value=${date} onChange=${setDate} />
+      <input style=${{ ...inputStyle, marginBottom: 0, width: 100 }} type="time" value=${time} onChange=${(e) => setTime(e.target.value)} />
+      <button disabled=${!date || !time} onClick=${save} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, fontSize: 11, padding: "4px 10px", borderRadius: 3, cursor: (!date || !time) ? "default" : "pointer", opacity: (!date || !time) ? 0.5 : 1 }}>저장</button>
+      <button onClick=${() => setEditing(false)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11, cursor: "pointer" }}>취소</button>
+    </div>
+  `;
+}
+
 function VocabEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [mode, setMode] = useState("mix");
+  const [retestDate, setRetestDate] = useState(""); const [retestTime, setRetestTime] = useState("15:00");
   const [words, setWords] = useState([{ word: "", meaning: "" }]);
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
   const [showBank, setShowBank] = useState(false); const [bankBooks, setBankBooks] = useState(null);
@@ -3595,9 +3627,9 @@ function VocabEditor({ data, updateData }) {
       word: w.word, meaning: w.meaning,
       synonyms: (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
     }));
-    if (!title || clean.length < 2) return;
-    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode }, ...d.vocabTests] }));
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setCreating(false);
+    if (!title || clean.length < 2 || !retestDate || !retestTime) return;
+    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime }, ...d.vocabTests] }));
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
 
@@ -3617,6 +3649,12 @@ function VocabEditor({ data, updateData }) {
                   fontWeight: mode === val ? 700 : 400, color: mode === val ? C.navy : C.slate,
                 }}>${label}</div>
               `)}
+            </div>
+          <//>
+          <${Field} label="재시험 예정 시간 (필수 — 5분 전·정각에 학생/선생님께 알림이 가요)">
+            <div style=${{ display: "flex", gap: 8 }}>
+              <div style=${{ flex: 1 }}><${DateField} value=${retestDate} onChange=${setRetestDate} /></div>
+              <input style=${{ ...inputStyle, width: 110 }} type="time" value=${retestTime} onChange=${(e) => setRetestTime(e.target.value)} />
             </div>
           <//>
           <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3668,7 +3706,7 @@ function VocabEditor({ data, updateData }) {
           `)}
           <${Button} variant="ghost" onClick=${addRow} style=${{ marginBottom: 12 }}>+ 단어 추가<//>
           <div style=${{ display: "flex", gap: 8 }}>
-            <${Button} variant="gold" onClick=${save}>저장<//>
+            <${Button} variant="gold" disabled=${!title || words.filter((w) => w.word && w.meaning).length < 2 || !retestDate || !retestTime} onClick=${save}>저장<//>
             <${Button} variant="ghost" onClick=${() => setCreating(false)}>취소<//>
           </div>
         <//>
@@ -3686,6 +3724,7 @@ function VocabEditor({ data, updateData }) {
               </div>
               <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
             </div>
+            <${VocabRetestSchedule} t=${t} updateData=${updateData} />
             ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
               <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
                 ${results.map((r) => html`<${VocabResultRow} key=${r.id} r=${r} updateData=${updateData} />`)}
@@ -4168,11 +4207,11 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const monthTotalMin = monthlyStudyMinutes(studyLog, todayStr.slice(0, 7));
 
   async function startTimer() {
-    const isFreshStart = elapsedSec === 0; // vs. resuming a paused session — only notify on a genuine start
+    const isFreshStart = elapsedSec === 0; // vs. resuming a paused session — different notification kind, but both notify
     const start = Date.now() - elapsedSec * 1000;
     setTimerStart(start); setTimerRunning(true);
     await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: start, running: true, frozenElapsedSec: elapsedSec, subject: studySubject, content: studyContent } }));
-    if (isFreshStart) notifyTeacher(student.name, "study_start");
+    notifyTeacher(student.name, isFreshStart ? "study_start" : "study_resume");
   }
   async function pauseTimer() {
     setTimerRunning(false);
