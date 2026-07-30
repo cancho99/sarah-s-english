@@ -471,7 +471,7 @@ function shuffle(arr) {
   }
   return a;
 }
-const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [] });
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {} });
 
 function parseAnswerKey(text) {
   return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -958,11 +958,28 @@ function PhotoLightbox({ src, onClose }) {
 }
 
 function NotifyButton({ onEnable }) {
-  // Deliberately doesn't infer "on" from Notification.permission alone on mount — browser
-  // permission can be "granted" from an earlier attempt whose getToken()/save step then failed,
-  // which would show a false "🔔 알림 켜짐" with no token ever actually saved. Only a click that
-  // completes the full chain (permission → token → save) this session sets "on".
+  // Doesn't infer "on" purely from Notification.permission on mount — permission can be
+  // "granted" from an earlier attempt whose getToken()/save step then failed, which would show
+  // a false "🔔 알림 켜짐" with no token ever saved. But showing a plain "off" button in that case
+  // isn't right either — if permission really was already granted (the normal case after a
+  // previous successful setup), the button looked reset on every page load even though
+  // notifications were still working, because nothing re-ran the token/save step. So: if
+  // permission is already granted, silently redo the enable flow on mount — requestPermission()
+  // on an already-granted permission resolves immediately without re-prompting, so this is safe
+  // to do automatically, and it also keeps the token fresh (FCM tokens can rotate over time).
   const [status, setStatus] = useState("idle");
+  useEffect(() => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    (async () => {
+      try {
+        const token = await enableNotifications();
+        await onEnable(token);
+        setStatus("on");
+      } catch {
+        // leave as idle — user can retry manually via the button
+      }
+    })();
+  }, []);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [testMsg, setTestMsg] = useState("");
@@ -1491,6 +1508,72 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   `;
 }
 
+function RevenueOverviewSection({ roster, ensureData, dataCache }) {
+  const [month, setMonth] = useState(today().slice(0, 7));
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!loaded) return html`<${Empty} text="불러오는 중..." />`;
+
+  const rows = roster
+    .map((s) => ({ student: s, rec: ((dataCache[s.id] || emptyData()).tuitionRecords || {})[month] }))
+    .filter((r) => r.rec)
+    .sort((a, b) => (b.rec.amount || 0) - (a.rec.amount || 0));
+  const total = rows.reduce((sum, r) => sum + (r.rec.amount || 0), 0);
+
+  const trendMonths = [];
+  {
+    const [y, m] = month.split("-").map(Number);
+    for (let i = 5; i >= 0; i--) {
+      const dt = new Date(y, m - 1 - i, 1);
+      trendMonths.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+    }
+  }
+  const trendTotals = trendMonths.map((mo) => roster.reduce((sum, s) => {
+    const rec = ((dataCache[s.id] || emptyData()).tuitionRecords || {})[mo];
+    return sum + (rec ? (rec.amount || 0) : 0);
+  }, 0));
+  const maxTrend = Math.max(1, ...trendTotals);
+
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
+        <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
+      <//>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료</div>
+        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : rows.map(({ student, rec }) => html`
+          <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
+            <span>${student.name}${!rec.published ? html` <span style=${{ color: C.slate, fontSize: 10.5 }}>(학부모 비공개)</span>` : ""}</span>
+            <span style=${{ fontWeight: 700, color: C.navy }}>${(rec.amount || 0).toLocaleString()}원</span>
+          </div>
+        `)}
+      <//>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>최근 6개월 매출 추이</div>
+        <div style=${{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
+          ${trendMonths.map((mo, i) => html`
+            <div key=${mo} style=${{ flex: 1, textAlign: "center" }}>
+              <div style=${{ height: `${Math.max(2, Math.round((trendTotals[i] / maxTrend) * 80))}px`, background: mo === month ? C.gold : C.line, borderRadius: "2px 2px 0 0" }}></div>
+              <div style=${{ fontSize: 9, color: C.slate, marginTop: 4 }}>${mo.slice(5)}월</div>
+            </div>
+          `)}
+        </div>
+      <//>
+    </div>
+  `;
+}
+
 function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken }) {
   const [section, setSection] = useState("mainpage");
   const [showAdd, setShowAdd] = useState(false);
@@ -1523,6 +1606,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
+    { key: "revenue", label: "매출", icon: "💰" },
   ];
 
   const activeKey = section;
@@ -1543,6 +1627,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
+  } else if (section === "revenue") {
+    body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
   } else if (section === "students") {
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
@@ -1667,6 +1753,11 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   function addSlot() { setDays([...days, { day: "월", time: "18:00" }]); }
   function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
   function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); }
+  async function removeTutoringOccurrence(dateStr) {
+    await saveRosterList(roster.map((r) => (r.id === student.id
+      ? { ...r, tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), dateStr])] }
+      : r)));
+  }
 
   function generateMonth() {
     const [y, m] = month.split("-").map(Number);
@@ -1712,7 +1803,8 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
           `}
           ${student.goal && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 8 }}><b style=${{ color: C.ink }}>목표:</b> ${student.goal}</div>`}
           <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
-          <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []} />
+          <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
+            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} />
         </div>
       ` : html`
         <div style=${{ marginTop: 10 }}>
@@ -2229,6 +2321,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
     { key: "mock", label: "모의고사", icon: "📄" },
     { key: "regularExam", label: "정기시험", icon: "🏫" },
+    { key: "tuition", label: "출결·수업료", icon: "💰" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
     { key: "storage", label: "저장 공간 관리", icon: "💾" },
   ];
@@ -2256,6 +2349,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "vocab" && html`<${VocabEditor} data=${data} updateData=${updateData} />`}
       ${tab === "mock" && html`<${MockExamEditor} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
       ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
     </div>
@@ -4020,19 +4114,42 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
   const todayStr = today();
   const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate <= todayStr);
+  // Finds the true next class by merging two sources — the recurring weekly tutoring pattern
+  // (skipping any date the teacher marked as an exception, e.g. a cancelled holiday class) and
+  // one-off makeup classes from monthlyInstances, which can land sooner than the next weekly
+  // occurrence. A plain day-of-week + offset calc (the old version) can't account for either.
   let nextClassText = "등록된 수업 스케줄이 없어요.";
-  if (student.schedule && student.schedule.length > 0) {
+  {
     const now = new Date();
-    const nowDay = now.getDay();
     const nowHM = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
-    let best = null, bestOffset = 8;
-    student.schedule.forEach((s) => {
-      const idx = DAY_NAMES.indexOf(s.day);
-      let offset = (idx - nowDay + 7) % 7;
-      if (offset === 0 && s.time < nowHM) offset = 7;
-      if (offset < bestOffset) { bestOffset = offset; best = s; }
+    const exceptions = student.tutoringExceptions || [];
+    const candidates = [];
+    (student.schedule || []).forEach((s) => {
+      for (let offset = 0; offset <= 14; offset++) {
+        const dt = new Date(now); dt.setDate(dt.getDate() + offset);
+        const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        if (DAY_NAMES[dt.getDay()] !== s.day) continue;
+        if (exceptions.includes(dateStr)) continue;
+        if (offset === 0 && s.time < nowHM) continue;
+        candidates.push({ date: dateStr, time: s.time, kind: "tutoring" });
+        break;
+      }
     });
-    if (best) nextClassText = (bestOffset === 0 ? "오늘" : bestOffset === 1 ? "내일" : best.day + "요일") + " " + best.time;
+    Object.values(student.monthlyInstances || {}).forEach((list) => {
+      (list || []).forEach((inst) => {
+        if (inst.date > todayStr || (inst.date === todayStr && inst.time >= nowHM)) {
+          candidates.push({ date: inst.date, time: inst.time, kind: "makeup" });
+        }
+      });
+    });
+    candidates.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    const best = candidates[0];
+    if (best) {
+      const dt = new Date(best.date + "T00:00:00");
+      const diffDays = Math.round((dt - new Date(todayStr + "T00:00:00")) / 86400000);
+      const label = diffDays === 0 ? "오늘" : diffDays === 1 ? "내일" : `${dt.getMonth() + 1}/${dt.getDate()} (${DAY_NAMES[dt.getDay()]})`;
+      nextClassText = `${label} ${best.time}${best.kind === "makeup" ? " (보강)" : ""}`;
+    }
   }
   const studyLog = data.studyLog || [];
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
@@ -4180,6 +4297,22 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
 
 const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
+// Tuition is billed upfront (prepaid), so the amount is however many sessions the calendar
+// says are planned for the month — the recurring pattern minus any exceptions, plus makeup
+// instances — not a count of sessions that have actually happened yet.
+function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, viewMonth) {
+  const [y, m] = viewMonth.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
+    const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+    if ((schedule || []).some((s) => s.day === dayName) && !(tutoringExceptions || []).includes(dateStr)) count++;
+  }
+  count += ((monthlyInstances || {})[viewMonth] || []).length;
+  return count;
+}
+
 // Combined monthly calendar of three schedule sources that live in different places and are
 // edited by different people:
 //  - tutoring: student.schedule — teacher-owned, day-of-week recurring pattern, so it repeats on
@@ -4188,8 +4321,18 @@ const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 //    (보강/makeup classes) that don't fit the weekly pattern; shown only on the exact date set.
 //  - other: student.otherSchedule — student-owned, day-of-week recurring "other academies", same
 //    repeat-every-week behavior as tutoring.
-function MonthlyScheduleGrid({ tutoring, monthlyInstances, other }) {
-  const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
+// tutoringExceptions/otherExceptions hold specific dates ("YYYY-MM-DD") where a recurring
+// weekly-pattern item should be skipped that one time — e.g. cancelled for a holiday — without
+// touching the pattern itself. onRemoveTutoring/onRemoveOther, when passed, add that date to the
+// relevant exceptions list; only the entry that owns a given source can remove its occurrences
+// (the teacher's view passes onRemoveTutoring, the student's view passes onRemoveOther).
+// viewMonth/onMonthChange make this a controlled component when the caller needs to know which
+// month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
+// month state) otherwise, which is all the schedule-only call sites need.
+function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, viewMonth: viewMonthProp, onMonthChange }) {
+  const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
+  const viewMonth = viewMonthProp || internalMonth;
+  const setViewMonth = onMonthChange || setInternalMonth;
   const [y, m] = viewMonth.split("-").map(Number);
   const startWeekday = new Date(y, m - 1, 1).getDay();
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -4202,10 +4345,10 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other }) {
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoring || []).filter((s) => s.day === dayName).map((s) => ({ ...s, kind: "tutoring" })),
+      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, kind: "tutoring" })),
       ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, kind: "makeup" })),
-      ...(other || []).filter((s) => s.day === dayName).map((s) => ({ ...s, kind: "other" })),
-    ].sort((a, b) => a.time.localeCompare(b.time));
+      ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, kind: "other" })),
+    ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
   }
 
   function shiftMonth(delta) {
@@ -4231,15 +4374,171 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other }) {
           return html`
             <div key=${i} style=${{ border: `1px solid ${isToday ? C.gold : C.line}`, borderRadius: 4, padding: 3, minHeight: 54 }}>
               <div style=${{ fontSize: 10, color: isToday ? C.gold : C.slate, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>${d}</div>
-              ${items.map((it, ii) => html`
-                <div key=${ii} style=${{ fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.kind === "other" ? "#EEF2F6" : "#FBF4EA", color: it.kind === "other" ? C.ink : C.gold, fontWeight: it.kind === "other" ? 500 : 700 }}>
-                  ${it.time} ${it.kind === "tutoring" ? "과외" : it.kind === "makeup" ? "보강" : (it.name || "학원")}
-                </div>
-              `)}
+              ${items.map((it, ii) => {
+                const canRemove = (it.kind === "tutoring" && onRemoveTutoring) || (it.kind === "other" && onRemoveOther);
+                return html`
+                  <div key=${ii} style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.kind === "other" ? "#EEF2F6" : "#FBF4EA", color: it.kind === "other" ? C.ink : C.gold, fontWeight: it.kind === "other" ? 500 : 700 }}>
+                    ${it.time} ${it.kind === "tutoring" ? "과외" : it.kind === "makeup" ? "보강" : (it.name || "학원")}
+                    ${canRemove && html`
+                      <span onClick=${() => (it.kind === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr)}
+                        title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>
+                    `}
+                  </div>
+                `;
+              })}
             </div>
           `;
         })}
       </div>
+    </div>
+  `;
+}
+
+function TuitionEditor({ student, data, updateData }) {
+  const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
+  const [rate, setRate] = useState(data.hourlyRate ?? "");
+  const [hours, setHours] = useState(data.sessionHours ?? "");
+  const [note, setNote] = useState("");
+  const [managementFee, setManagementFee] = useState("");
+  const [overrideAmount, setOverrideAmount] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
+
+  useEffect(() => { setRate(data.hourlyRate ?? ""); setHours(data.sessionHours ?? ""); }, [student.id]);
+  useEffect(() => {
+    const rec = (data.tuitionRecords || {})[viewMonth];
+    setNote(rec?.note || "");
+    setManagementFee(rec?.managementFee ? String(rec.managementFee) : "");
+    setOverrideAmount(rec?.overrideAmount != null ? String(rec.overrideAmount) : "");
+  }, [viewMonth, student.id]);
+
+  async function saveRate() {
+    await updateData((d) => ({ ...d, hourlyRate: Number(rate) || 0, sessionHours: Number(hours) || 0 }));
+    setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+
+  const plannedCount = countPlannedSessions(student.schedule, student.monthlyInstances, student.tutoringExceptions, viewMonth);
+  const calculated = plannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
+  const managementFeeNum = Number(managementFee) || 0;
+  const subtotal = calculated + managementFeeNum;
+  const rec = (data.tuitionRecords || {})[viewMonth];
+  const finalAmount = overrideAmount !== "" ? Number(overrideAmount) : subtotal;
+
+  async function saveRecord(publishOverride) {
+    const published = publishOverride !== undefined ? publishOverride : (rec?.published || false);
+    await updateData((d) => ({
+      ...d,
+      tuitionRecords: {
+        ...(d.tuitionRecords || {}),
+        [viewMonth]: {
+          plannedCount, hourlyRate: d.hourlyRate || 0, sessionHours: d.sessionHours || 0,
+          calculatedAmount: calculated,
+          managementFee: managementFeeNum,
+          overrideAmount: overrideAmount !== "" ? Number(overrideAmount) : null,
+          note: note.trim(),
+          amount: finalAmount,
+          published,
+          updatedAt: Date.now(),
+        },
+      },
+    }));
+    setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+
+  function printInvoice() {
+    const [y, m] = viewMonth.split("-");
+    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>수업료 명세서</title>
+      <style>
+        @page { size: A4; margin: 24mm 20mm; }
+        body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
+        .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #C7A34E;padding-bottom:12px;margin-bottom:20px;}
+        .hd .brand{font-size:16px;font-weight:700;color:#1C2B4A;}
+        .hd .tag{font-size:10px;letter-spacing:2px;color:#B8935A;font-weight:700;}
+        .logowrap{text-align:center;margin-bottom:14px;}
+        .logowrap img{height:56px;width:auto;}
+        h1{text-align:center;font-size:20px;color:#1C2B4A;margin:4px 0 24px;}
+        .metarow{display:flex;border-top:1px solid #D8D2BE;border-bottom:1px solid #D8D2BE;font-size:12.5px;}
+        .metarow div{flex:1;padding:9px 4px;}
+        .metarow .lbl{color:#8A8370;font-size:10px;display:block;margin-bottom:3px;}
+        table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:22px;}
+        th{background:#1C2B4A;color:#fff;padding:9px 8px;font-weight:600;font-size:11.5px;text-align:left;}
+        td{padding:9px 8px;border-bottom:1px solid #EDE9DD;}
+        .amtrow td{font-weight:700;font-size:15px;color:#1C2B4A;border-top:2px solid #1C2B4A;border-bottom:none;}
+        .note{margin-top:16px;font-size:12px;color:#5B6270;white-space:pre-wrap;line-height:1.7;}
+        .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:flex-end;gap:12px;font-size:12px;z-index:100;}
+        .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;}
+        @media print{ .toolbar{display:none !important;} }
+      </style></head><body>
+      <div class="toolbar"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>
+      <div class="hd"><span class="brand">Sarah's English</span><span class="tag">수업료 명세서</span></div>
+      <div class="logowrap"><img src="${LOGO_DATA_URI}" alt="Sarah's English" /></div>
+      <h1>${y}년 ${Number(m)}월 수업료 안내</h1>
+      <div class="metarow">
+        <div><span class="lbl">학생명</span>${student.name}</div>
+        <div><span class="lbl">청구 월</span>${y}년 ${Number(m)}월</div>
+        <div><span class="lbl">발행일</span>${fmtDate(today())}</div>
+      </div>
+      <table>
+        <tr><th>항목</th><th>내용</th></tr>
+        <tr><td>이번 달 예정 수업 횟수</td><td>${plannedCount}회</td></tr>
+        <tr><td>회당 수업 시간</td><td>${data.sessionHours || 0}시간</td></tr>
+        <tr><td>시간당 수업료</td><td>${(data.hourlyRate || 0).toLocaleString()}원</td></tr>
+        <tr><td>수업료 소계</td><td>${calculated.toLocaleString()}원</td></tr>
+        <tr><td>학업관리비</td><td>${managementFeeNum.toLocaleString()}원</td></tr>
+        <tr class="amtrow"><td>납부하실 금액</td><td>${finalAmount.toLocaleString()}원</td></tr>
+      </table>
+      ${note.trim() ? `<div class="note"><b>비고</b><br/>${note.trim().replace(/</g, "&lt;")}</div>` : ""}
+      </body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) { alert("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
+    win.document.write(html_);
+    win.document.close();
+    win.focus();
+  }
+
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>💰 수업료 설정</div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${Field} label="시간당 수업료 (원)"><input style=${inputStyle} type="number" value=${rate} onChange=${(e) => setRate(e.target.value)} placeholder="예: 45000" /><//></div>
+          <div style=${{ flex: 1 }}><${Field} label="회당 시간 (시간)"><input style=${inputStyle} type="number" step="0.5" value=${hours} onChange=${(e) => setHours(e.target.value)} placeholder="예: 2" /><//></div>
+        </div>
+        <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${saveRate}>저장<//>
+      <//>
+
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>이번 달 계획된 수업</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선불 청구라서 실제 출석이 아니라 이 달에 예정된 수업 횟수로 계산돼요. 특정 날짜를 빼거나 보강을 추가하려면 위쪽 "수업 스케줄"에서 조정해 주세요.</div>
+        <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${[]}
+          tutoringExceptions=${student.tutoringExceptions || []}
+          viewMonth=${viewMonth} onMonthChange=${setViewMonth} />
+      <//>
+
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${viewMonth} 수업료</div>
+        <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>
+          예정된 수업 ${plannedCount}회 × ${data.sessionHours || 0}시간 × ${(data.hourlyRate || 0).toLocaleString()}원
+          = <b style=${{ color: C.navy }}>${calculated.toLocaleString()}원</b>
+        </div>
+        <${Field} label="학업관리비 (원) — 해당 없는 학생은 비워두면 0원">
+          <input style=${inputStyle} type="number" value=${managementFee} onChange=${(e) => setManagementFee(e.target.value)} placeholder="0" />
+        <//>
+        <${Field} label="비고 (예: 7/1 결석 → 8월로 이월. 학부모에게도 보여요)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>수업료 ${calculated.toLocaleString()}원 + 학업관리비 ${managementFeeNum.toLocaleString()}원 = 소계 <b style=${{ color: C.navy }}>${subtotal.toLocaleString()}원</b></div>
+        <${Field} label="최종 금액 직접 입력 (비워두면 위 소계 사용)">
+          <input style=${inputStyle} type="number" value=${overrideAmount} onChange=${(e) => setOverrideAmount(e.target.value)} placeholder=${String(subtotal)} />
+        <//>
+        <div style=${{ ...serif, fontSize: 18, color: C.navy, margin: "10px 0" }}>최종 금액: ${finalAmount.toLocaleString()}원</div>
+        <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord()}>저장 (공개 안 함)<//>
+          ${rec?.published
+            ? html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord(false)}>학부모 공개 취소<//>`
+            : html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord(true)}>학부모에게 안내(공개)<//>`}
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${printInvoice}>🖨 명세서 인쇄/PDF<//>
+          ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
+        </div>
+        ${rec?.published && html`<div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>✓ 학부모 화면에 공개되어 있어요.</div>`}
+      <//>
     </div>
   `;
 }
@@ -4256,6 +4555,9 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   async function save() {
     await updateStudentRosterEntry(student.id, (r) => ({ ...r, otherSchedule: items }));
     setSaved(true);
+  }
+  async function removeOtherOccurrence(dateStr) {
+    await updateStudentRosterEntry(student.id, (r) => ({ ...r, otherScheduleExceptions: [...new Set([...(r.otherScheduleExceptions || []), dateStr])] }));
   }
 
   return html`
@@ -4281,7 +4583,8 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
-        <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items} />
+        <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items}
+          otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
       <//>
     </div>
   `;
@@ -4648,6 +4951,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
     { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
     { key: "monthlyReport", label: "월말 리포트", icon: "📊" },
     { key: "homework", label: "숙제", icon: "📝" },
+    { key: "tuition", label: "수업료", icon: "💰" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
 
@@ -4729,6 +5033,24 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
           </div>
         `))}
       ${lightbox && html`<${PhotoLightbox} src=${lightbox} onClose=${() => setLightbox(null)} />`}
+
+      ${tab === "tuition" && html`
+        <div>
+          ${(() => {
+            const published = Object.entries(data.tuitionRecords || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+            if (published.length === 0) return html`<${Empty} text="아직 공개된 수업료 안내가 없어요." />`;
+            return published.map(([month, rec]) => html`
+              <${Card} key=${month} style=${{ marginBottom: 10 }}>
+                <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${month}</div>
+                <div style=${{ ...serif, fontSize: 20, color: C.navy, margin: "6px 0" }}>${(rec.amount || 0).toLocaleString()}원</div>
+                <div style=${{ fontSize: 11.5, color: C.slate }}>예정 수업 ${rec.plannedCount}회 × ${rec.sessionHours}시간 × ${(rec.hourlyRate || 0).toLocaleString()}원</div>
+                ${!!rec.managementFee && html`<div style=${{ fontSize: 11.5, color: C.slate }}>학업관리비 ${rec.managementFee.toLocaleString()}원</div>`}
+                ${rec.note && html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 8, whiteSpace: "pre-wrap" }}><b>비고</b><br/>${rec.note}</div>`}
+              <//>
+            `);
+          })()}
+        </div>
+      `}
 
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
     </div>
