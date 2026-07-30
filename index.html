@@ -37,13 +37,13 @@
     .ap-shell { flex-direction: column; width: 100%; min-height: 0; }
     .ap-side-desktop { display: none; }
     .ap-side-mobile { display: block; position: relative; width: 100%; }
-    .ap-more-btn { width: 100%; box-sizing: border-box; text-align: left; padding: 10px 14px; background: #1C2B4A; border: none; border-radius: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: #FAF7F1; font-weight: 700; cursor: pointer; }
+    .ap-more-btn { width: 100%; box-sizing: border-box; text-align: left; padding: 14px 16px; background: #1C2B4A; border: none; border-radius: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; color: #FAF7F1; font-weight: 700; cursor: pointer; }
     .ap-more-btn .arrow { margin-left: auto; color: #8A93A6; font-weight: 400; }
-    .ap-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #1C2B4A; border: none; border-radius: 0; z-index: 30; box-shadow: 0 6px 16px rgba(20,22,26,0.25); max-height: 60vh; overflow-y: auto; }
-    .ap-dropdown-item { padding: 11px 16px; font-size: 13px; color: #8A93A6; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .ap-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #1C2B4A; border: none; border-radius: 0; z-index: 30; box-shadow: 0 6px 16px rgba(20,22,26,0.25); max-height: 65vh; overflow-y: auto; }
+    .ap-dropdown-item { padding: 15px 16px; font-size: 14.5px; color: #8A93A6; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.08); }
     .ap-dropdown-item:last-child { border-bottom: none; }
     .ap-dropdown-item.active { color: #FAF7F1; font-weight: 700; background: rgba(255,255,255,0.06); }
-    .ap-dropdown-logout { padding: 11px 16px; font-size: 13px; color: #8A93A6; cursor: pointer; }
+    .ap-dropdown-logout { padding: 15px 16px; font-size: 14.5px; color: #8A93A6; cursor: pointer; }
     .ap-main-header { padding: 14px 16px; }
     .ap-main-body { padding: 16px 16px 40px; }
     .ap-split { flex-direction: column; }
@@ -52,6 +52,13 @@
     .ap-split.has-selection .ap-split-left { display: none; }
     .ap-split:not(.has-selection) .ap-split-right { display: none; }
     .main-quad-grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; height: auto !important; }
+    /* Most of the teacher dashboard's text/buttons/inputs are sized with fixed inline px styles
+       (not CSS classes), so a font-size rule here can't reach them — a media-query-only zoom scales
+       the already-rendered pixels uniformly instead, enlarging everything (including inline-styled
+       children) together without needing to touch every component. Modest value to limit overflow
+       risk; anything that still overflows sideways scrolls within ap-main-body rather than breaking
+       the page width. */
+    .ap-main-header, .ap-main-body { zoom: 1.12; overflow-x: auto; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
@@ -1625,6 +1632,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   const navItems = [
     { key: "mainpage", label: "Main Page", icon: "🏠" },
     { key: "students", label: "학생 관리", icon: "🗂" },
+    { key: "schedule", label: "내 수업 스케줄", icon: "🗓" },
+    { key: "attendance", label: "출결 관리", icon: "✅" },
     { key: "bookings", label: `레벨테스트·상담 문의${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
     { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
     { key: "archive", label: "보관함", icon: "🗃" },
@@ -1654,6 +1663,10 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
     body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
+  } else if (section === "schedule") {
+    body = html`<${MasterScheduleView} roster=${roster} saveRosterList=${saveRosterList} />`;
+  } else if (section === "attendance") {
+    body = html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "students") {
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
@@ -1775,7 +1788,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
-  function addSlot() { setDays([...days, { day: "월", time: "18:00" }]); }
+  function addSlot() { setDays([...days, { day: "월", time: "18:00", endTime: "19:00" }]); }
   function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
   function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); }
   async function removeTutoringOccurrence(dateStr) {
@@ -1792,13 +1805,13 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       const dt = new Date(y, m - 1, d);
       const dayName = DAY_NAMES[dt.getDay()];
       const match = days.find((s) => s.day === dayName);
-      if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time, type: "tutoring" });
+      if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time, endTime: match.endTime, type: "tutoring" });
     }
     setMonthly(generated);
   }
   function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
   function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); }
-  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
+  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
 
   async function save() {
     await saveRosterList(roster.map((r) => (r.id === student.id
@@ -1820,11 +1833,11 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
         <div style=${{ marginTop: 10 }}>
           <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>매주 반복 패턴</div>
           <div style=${{ fontSize: 12.5, color: C.ink }}>
-            ${sorted.length === 0 ? html`<span style=${{ color: C.slate }}>등록된 수업 스케줄이 없어요.</span>` : sorted.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.day}요일 ${d.time}</span>`)}
+            ${sorted.length === 0 ? html`<span style=${{ color: C.slate }}>등록된 수업 스케줄이 없어요.</span>` : sorted.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.day}요일 ${d.time}${d.endTime ? `~${d.endTime}` : ""}</span>`)}
           </div>
           ${currentMonthly.length > 0 && html`
             <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 4px" }}>이번 달 확정 일정 (${currentMonthly.length}회)</div>
-            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time} ${d.type === "tutoring" ? "(과외)" : "(보강)"}</span>`)}</div>
+            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time}${d.endTime ? `~${d.endTime}` : ""} ${d.type === "tutoring" ? "(과외)" : "(보강)"}</span>`)}</div>
           `}
           ${student.goal && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 8 }}><b style=${{ color: C.ink }}>목표:</b> ${student.goal}</div>`}
           <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
@@ -1840,6 +1853,8 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
                 ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
               </select>
               <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateSlot(i, "time", e.target.value)} />
+              <span style=${{ color: C.slate }}>~</span>
+              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.endTime || ""} onChange=${(e) => updateSlot(i, "endTime", e.target.value)} />
               <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
           `)}
@@ -1852,6 +1867,8 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
             <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
               <${DateField} value=${d.date} onChange=${(v) => updateInstance(i, "date", v)} />
               <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateInstance(i, "time", e.target.value)} />
+              <span style=${{ color: C.slate }}>~</span>
+              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.endTime || ""} onChange=${(e) => updateInstance(i, "endTime", e.target.value)} />
               <select style=${{ ...inputStyle, marginBottom: 0, width: 76 }} value=${d.type || "makeup"} onChange=${(e) => updateInstance(i, "type", e.target.value)}>
                 <option value="tutoring">과외</option>
                 <option value="makeup">보강</option>
@@ -2336,6 +2353,258 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
           `)}
         </div>
       `)}
+    </div>
+  `;
+}
+
+const MASTER_SCHEDULE_DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+// Full 00:00~23:30 range (not just typical daytime hours) — a fixed business-hours window would
+// silently hide any class scheduled outside it instead of just showing an empty row.
+const MASTER_SCHEDULE_TIME_SLOTS = (() => {
+  const slots = [];
+  for (let h = 0; h <= 23; h++) { slots.push(`${String(h).padStart(2, "0")}:00`); slots.push(`${String(h).padStart(2, "0")}:30`); }
+  return slots;
+})();
+function scheduleTimeToMin(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+function scheduleMinToTime(min) { const h = Math.floor(min / 60) % 24; const m = min % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
+
+// Aggregates every student's weekly recurring pattern (student.schedule) into one grid so the
+// teacher can see the whole week at a glance instead of opening each student one at a time.
+// Editing here writes straight back into that student's schedule array via saveRosterList — same
+// underlying data ScheduleGoalEditor edits per-student, just a different view onto it.
+function MasterScheduleView({ roster, saveRosterList }) {
+  const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
+  const [showEmpty, setShowEmpty] = useState(false);
+  const [dragOverKey, setDragOverKey] = useState(null); // "day|time" of the cell currently under the drag
+  const [draggingKey, setDraggingKey] = useState(null); // "studentId|idx" of the chip being dragged
+
+  // Resolve every schedule entry to a concrete start/end in minutes. Entries saved before endTime
+  // existed default to a 1-hour block for display purposes only — the stored data isn't touched
+  // until the teacher actually edits that slot.
+  const allEntries = [];
+  roster.forEach((r) => {
+    (r.schedule || []).forEach((s, idx) => {
+      const startMin = scheduleTimeToMin(s.time);
+      const endMin = Math.max(startMin + 30, s.endTime ? scheduleTimeToMin(s.endTime) : startMin + 60);
+      allEntries.push({ student: r, idx, day: s.day, time: s.time, endTime: s.endTime, startMin, endMin });
+    });
+  });
+
+  // Default view only shows rows actually covered by some class's start~end span (not just start
+  // times) — scanning all 48 half-hour slots (00:00~23:30) is correct but mostly empty rows.
+  // "빈 시간대도 보기" below switches to the full 24-hour list.
+  const neededSlots = new Set();
+  allEntries.forEach((e) => { for (let t = e.startMin; t < e.endMin; t += 30) neededSlots.add(scheduleMinToTime(t)); });
+  const visibleSlots = showEmpty ? MASTER_SCHEDULE_TIME_SLOTS : MASTER_SCHEDULE_TIME_SLOTS.filter((t) => neededSlots.has(t));
+  const rowsToRender = visibleSlots.length > 0 ? visibleSlots : MASTER_SCHEDULE_TIME_SLOTS.slice(18, 30);
+  const rowIndexOf = {};
+  rowsToRender.forEach((t, i) => { rowIndexOf[t] = i; });
+  const dayColIndex = {};
+  MASTER_SCHEDULE_DAY_NAMES.forEach((d, i) => { dayColIndex[d] = i; });
+
+  // Group by (day, start time) so multiple students starting at the same slot stack inside one
+  // spanning block instead of each needing their own row-span calculation.
+  const groups = {};
+  allEntries.forEach((e) => {
+    const key = e.day + "|" + e.time;
+    (groups[key] || (groups[key] = [])).push(e);
+  });
+
+  // Desktop-only drag-to-reschedule: dragstart stows the moved entry's identity + duration in
+  // dataTransfer, drop reads it back and writes the new day/time (keeping the same duration) via
+  // the usual saveRosterList path. Native HTML5 drag-and-drop has effectively no touch support, so
+  // this is intentionally in addition to (not instead of) the click-to-edit modal, not a mobile feature.
+  function onChipDragStart(entry) {
+    return (evt) => {
+      setDraggingKey(entry.student.id + "|" + entry.idx);
+      evt.dataTransfer.effectAllowed = "move";
+      evt.dataTransfer.setData("application/json", JSON.stringify({ studentId: entry.student.id, idx: entry.idx, durationMin: entry.endMin - entry.startMin }));
+    };
+  }
+  function onChipDragEnd() { setDraggingKey(null); setDragOverKey(null); }
+  function onCellDragOver(day, time) {
+    return (evt) => { evt.preventDefault(); evt.dataTransfer.dropEffect = "move"; setDragOverKey(day + "|" + time); };
+  }
+  function onCellDrop(day, time) {
+    return async (evt) => {
+      evt.preventDefault();
+      setDragOverKey(null); setDraggingKey(null);
+      let payload;
+      try { payload = JSON.parse(evt.dataTransfer.getData("application/json")); } catch { return; }
+      if (!payload) return;
+      const { studentId, idx, durationMin } = payload;
+      const newEndTime = scheduleMinToTime(scheduleTimeToMin(time) + durationMin);
+      await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.map((s, i) => (i === idx ? { day, time, endTime: newEndTime } : s)) } : r)));
+    };
+  }
+
+  const bgCells = [];
+  bgCells.push(html`<div key="corner" style=${{ gridColumn: 1, gridRow: 1, position: "sticky", left: 0, top: 0, background: C.ivory, zIndex: 3 }}></div>`);
+  MASTER_SCHEDULE_DAY_NAMES.forEach((d, ci) => bgCells.push(html`
+    <div key=${"h-" + d} style=${{ gridColumn: ci + 2, gridRow: 1, textAlign: "center", fontSize: 12, fontWeight: 700, color: C.navy, padding: "8px 2px", borderBottom: `2px solid ${C.line}`, position: "sticky", top: 0, background: C.ivory, zIndex: 2 }}>${d}</div>
+  `));
+  rowsToRender.forEach((time, ri) => {
+    bgCells.push(html`<div key=${"t-" + time} style=${{ gridColumn: 1, gridRow: ri + 2, fontSize: 10.5, color: C.slate, padding: "8px 6px", borderTop: `1px solid ${C.line}`, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.ivory, zIndex: 2 }}>${time}</div>`);
+    MASTER_SCHEDULE_DAY_NAMES.forEach((day, ci) => {
+      const key = day + "|" + time;
+      bgCells.push(html`<div key=${"bg-" + key} onDragOver=${onCellDragOver(day, time)} onDrop=${onCellDrop(day, time)}
+        style=${{ gridColumn: ci + 2, gridRow: ri + 2, borderTop: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}`, minHeight: 36, background: dragOverKey === key ? "#FBF6EA" : undefined }}></div>`);
+    });
+  });
+
+  const blocks = Object.entries(groups).map(([key, list]) => {
+    const [day, time] = key.split("|");
+    const startRow = rowIndexOf[time];
+    if (startRow === undefined) return null;
+    const maxEndMin = Math.max(...list.map((e) => e.endMin));
+    const spanRows = Math.max(1, Math.round((maxEndMin - scheduleTimeToMin(time)) / 30));
+    return html`
+      <div key=${"blk-" + key} onDragOver=${onCellDragOver(day, time)} onDrop=${onCellDrop(day, time)}
+        style=${{ gridColumn: dayColIndex[day] + 2, gridRow: `${startRow + 2} / span ${spanRows}`, padding: 3, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden", background: dragOverKey === key ? "#FBF6EA" : undefined }}>
+        ${list.map((e) => html`
+          <div key=${e.student.id + "-" + e.idx} draggable="true" onDragStart=${onChipDragStart(e)} onDragEnd=${onChipDragEnd}
+            onClick=${() => setEditing({ studentId: e.student.id, idx: e.idx, day: e.day, time: e.time, endTime: e.endTime || "" })}
+            style=${{ fontSize: 10.5, fontWeight: 700, color: C.navy, background: "#FBF4EA", border: `1px solid ${C.gold}`, borderRadius: 3, padding: "3px 5px", cursor: "grab", lineHeight: 1.4, opacity: draggingKey === (e.student.id + "|" + e.idx) ? 0.4 : 1 }}>
+            ${e.student.name}${e.endTime ? html`<div style=${{ fontWeight: 400, color: C.slate, fontSize: 9.5 }}>${e.time}~${e.endTime}</div>` : html`<div style=${{ fontWeight: 400, color: C.danger, fontSize: 9.5 }}>종료시간 미설정</div>`}
+          </div>
+        `)}
+      </div>
+    `;
+  }).filter(Boolean);
+
+  async function saveEdit() {
+    const { studentId, idx, day, time, endTime } = editing;
+    if (!time || !endTime) return;
+    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.map((s, i) => (i === idx ? { day, time, endTime } : s)) } : r)));
+    setEditing(null);
+  }
+  async function deleteEdit() {
+    const { studentId, idx } = editing;
+    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.filter((_, i) => i !== idx) } : r)));
+    setEditing(null);
+  }
+
+  return html`
+    <div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>내 수업 스케줄</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>모든 학생의 매주 반복 수업을 시작~종료 시간 블록으로 한눈에 봐요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요). 방학·보강처럼 특정 날짜만 다른 일정은 각 학생의 "수업 스케줄"에서 조정하세요.</div>
+      <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, marginBottom: 12, cursor: "pointer" }}>
+        <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
+        빈 시간대도 보기 (00:00~23:30 전체)
+      </label>
+      <div style=${{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: `58px repeat(7, minmax(96px, 1fr))`, minWidth: 740, position: "relative" }}>
+          ${bgCells}
+          ${blocks}
+        </div>
+      </div>
+
+      ${editing && html`
+        <${Modal} onClose=${() => setEditing(null)}>
+          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 14 }}>${(roster.find((r) => r.id === editing.studentId) || {}).name} 학생 수업 시간 수정</div>
+          <${Field} label="요일">
+            <select style=${inputStyle} value=${editing.day} onChange=${(e) => setEditing({ ...editing, day: e.target.value })}>
+              ${MASTER_SCHEDULE_DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+            </select>
+          <//>
+          <${Field} label="시작 시간">
+            <input style=${inputStyle} type="time" value=${editing.time} onChange=${(e) => setEditing({ ...editing, time: e.target.value })} />
+          <//>
+          <${Field} label="종료 시간">
+            <input style=${inputStyle} type="time" value=${editing.endTime} onChange=${(e) => setEditing({ ...editing, endTime: e.target.value })} />
+          <//>
+          <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <${Button} variant="gold" disabled=${!editing.time || !editing.endTime} onClick=${saveEdit}>저장<//>
+            <${Button} variant="danger" onClick=${deleteEdit}>이 시간 삭제<//>
+            <${Button} variant="ghost" onClick=${() => setEditing(null)}>취소<//>
+          </div>
+        <//>
+      `}
+    </div>
+  `;
+}
+
+// Whether a student has a class on this exact date — weekly pattern (minus a tutoringExceptions
+// hit) OR a monthlyInstances one-off landing on that date. Mirrors the logic MonthlyScheduleGrid
+// uses per-day, collapsed to a single date for the attendance roster.
+function hasClassOn(student, dateStr) {
+  const dayName = MASTER_SCHEDULE_DAY_NAMES[new Date(dateStr + "T00:00:00").getDay()];
+  const exceptions = student.tutoringExceptions || [];
+  const patternMatch = (student.schedule || []).some((s) => s.day === dayName) && !exceptions.includes(dateStr);
+  const monthlyMatch = ((student.monthlyInstances || {})[dateStr.slice(0, 7)] || []).some((m) => m.date === dateStr);
+  return patternMatch || monthlyMatch;
+}
+
+// One page, one date, every student who's scheduled that day — 출석/결석 toggle per student.
+// Deliberately separate from tuition (which is schedule-based, not attendance-based — see
+// countPlannedSessions) so marking someone absent here never touches billing.
+function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
+  const [date, setDate] = useState(today());
+  const [loaded, setLoaded] = useState(false);
+  const [extraIds, setExtraIds] = useState([]);
+  const [addPick, setAddPick] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => { setExtraIds([]); setAddPick(""); }, [date]);
+
+  const scheduled = roster.filter((s) => hasClassOn(s, date));
+  const scheduledIds = new Set(scheduled.map((s) => s.id));
+  const extras = roster.filter((s) => extraIds.includes(s.id) && !scheduledIds.has(s.id));
+  const list = [...scheduled, ...extras];
+  const remaining = roster.filter((s) => !scheduledIds.has(s.id) && !extraIds.includes(s.id));
+
+  async function setAttendance(studentId, status) {
+    await updateData(studentId, (d) => {
+      const attendance = { ...(d.attendance || {}) };
+      if (attendance[date] === status) delete attendance[date]; else attendance[date] = status;
+      return { ...d, attendance };
+    });
+  }
+
+  return html`
+    <div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>출결 관리</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
+      <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
+        <div style=${{ width: 190 }}><${DateField} value=${date} onChange=${setDate} /></div>
+        <button onClick=${() => setDate(today())} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "9px 14px", fontSize: 12.5, color: C.navy, cursor: "pointer" }}>오늘</button>
+      </div>
+
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : list.length === 0 ? html`<${Empty} text="이 날짜에 예정된 수업이 없어요." />` : list.map((s) => {
+        const d = dataCache[s.id] || emptyData();
+        const status = (d.attendance || {})[date];
+        return html`
+          <${Card} key=${s.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5 }}>${s.name}</div>
+              <div style=${{ display: "flex", gap: 8 }}>
+                <button onClick=${() => setAttendance(s.id, "present")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "present" ? C.gold : C.line}`, background: status === "present" ? C.gold : "#fff", color: status === "present" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>출석</button>
+                <button onClick=${() => setAttendance(s.id, "absent")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "absent" ? C.danger : C.line}`, background: status === "absent" ? C.danger : "#fff", color: status === "absent" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>결석</button>
+              </div>
+            </div>
+          <//>
+        `;
+      })}
+
+      ${loaded && remaining.length > 0 && html`
+        <div style=${{ marginTop: 16, paddingTop: 14, borderTop: `1px dashed ${C.line}` }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>예정에 없는 학생 추가 (보강 등으로 이 날 온 학생)</div>
+          <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select style=${{ ...inputStyle, marginBottom: 0, width: 180 }} value=${addPick} onChange=${(e) => setAddPick(e.target.value)}>
+              <option value="">학생 선택</option>
+              ${remaining.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
+            </select>
+            <${Button} variant="ghost" onClick=${() => { if (addPick) { setExtraIds([...extraIds, addPick]); setAddPick(""); } }}>추가<//>
+          </div>
+        </div>
+      `}
     </div>
   `;
 }
@@ -4459,7 +4728,7 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
                 const canRemove = (it.source === "tutoring" && onRemoveTutoring) || (it.source === "other" && onRemoveOther);
                 return html`
                   <div key=${ii} style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700 }}>
-                    ${it.time} ${it.label}
+                    ${it.time}${it.endTime ? `~${it.endTime}` : ""} ${it.label}
                     ${canRemove && html`
                       <span onClick=${() => (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr)}
                         title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>

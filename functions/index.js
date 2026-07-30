@@ -600,6 +600,7 @@ exports.notifyTeacher = onRequest(
       };
       const title = TITLES[kind] || "🔔 테스트 알림";
       const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "알림이 정상적으로 도착했어요!";
+      console.log("notifyTeacher", JSON.stringify({ studentName, kind, detail, title, body }));
 
       const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
       res.status(200).json({ sent: resp.successCount, failed: resp.failureCount });
