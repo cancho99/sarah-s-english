@@ -224,12 +224,12 @@ if (window.__onFcmMessage && window.__messaging) {
   });
 }
 
-async function notifyTeacher(studentName, kind) {
+async function notifyTeacher(studentName, kind, detail) {
   try {
     await fetch(NOTIFY_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ studentName, kind }),
+      body: JSON.stringify({ studentName, kind, detail }),
     });
   } catch (e) {
     console.warn("notifyTeacher failed", e);
@@ -923,11 +923,13 @@ function App() {
             setSession({ role: "student", student: s }); setScreen("studentDash");
             // Fire-and-forget: recording the login time shouldn't block or fail the login itself.
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastStudentLoginAt: Date.now() } : r))).catch(() => {});
+            notifyTeacher(s.name, "student_login");
           }} />`}
         ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
             setSession({ role: "parent", student: s }); setScreen("parentDash");
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastParentLoginAt: Date.now() } : r))).catch(() => {});
+            notifyTeacher(s.name, "parent_login");
           }} />`}
       <//>`}
     </div>
@@ -4087,6 +4089,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         const save = () => updateData(student.id, (d) => ({ ...d, mockExamResults: [{ id: uid(), testId: activeMock.id, date: today(), score, total, wrong }, ...(d.mockExamResults || [])] }));
         try {
           await save();
+          notifyTeacher(student.name, "mock_exam_submit", `${score}/${total}점`);
         } catch (e) {
           console.error("결과 저장 실패", e);
           let recovered = false;
@@ -4170,6 +4173,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   async function pauseTimer() {
     setTimerRunning(false);
     await updateData(student.id, (d) => ({ ...d, activeStudySession: { startedAt: timerStart, running: false, frozenElapsedSec: elapsedSec, subject: studySubject, content: studyContent } }));
+    notifyTeacher(student.name, "study_pause");
   }
   async function saveTimerEntry() {
     const m = Math.round(elapsedSec / 60);
@@ -4179,6 +4183,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       studyLog: [{ id: uid(), date: todayStr, minutes: m, subject: studySubject, content: studyContent }, ...(d.studyLog || [])],
       activeStudySession: null,
     }));
+    notifyTeacher(student.name, "study_log_saved", `${studySubject || "공부"} ${m}분`);
     setTimerRunning(false); setElapsedSec(0); setStudySubject(""); setStudyContent(""); setResumedFromSession(false);
   }
   function fmtElapsed(sec) {
@@ -4644,10 +4649,12 @@ function HomeworkStudentCard({ h, studentId, studentName, updateData }) {
     }));
   }
   async function toggleDone() {
+    const willBeDone = !h.done;
     await updateData(studentId, (d) => ({
       ...d,
-      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: !x.done, doneAt: !x.done ? Date.now() : null } : x)),
+      homework: (d.homework || []).map((x) => (x.id === h.id ? { ...x, done: willBeDone, doneAt: willBeDone ? Date.now() : null } : x)),
     }));
+    if (willBeDone) notifyTeacher(studentName, "homework_done", h.content);
   }
 
   return html`
@@ -5092,7 +5099,7 @@ function ParentStudyTimeTab({ studyLog }) {
   `;
 }
 
-function ConsultRequestPanel({ data, updateData }) {
+function ConsultRequestPanel({ student, data, updateData }) {
   const [method, setMethod] = useState("카톡 상담");
   const [d1, setD1] = useState(""); const [t1, setT1] = useState("");
   const [d2, setD2] = useState(""); const [t2, setT2] = useState("");
@@ -5107,6 +5114,7 @@ function ConsultRequestPanel({ data, updateData }) {
       choices: [{ date: d1, time: t1 }, ...(d2 ? [{ date: d2, time: t2 }] : []), ...(d3 ? [{ date: d3, time: t3 }] : [])],
     };
     await updateData((d) => ({ ...d, consultRequests: [req, ...(d.consultRequests || [])] }));
+    notifyTeacher(student.name, "consult_request", method);
     setD1(""); setT1(""); setD2(""); setT2(""); setD3(""); setT3(""); setNote("");
     setSent(true);
     setTimeout(() => setSent(false), 3000);

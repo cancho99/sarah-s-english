@@ -561,7 +561,7 @@ exports.notifyTeacher = onRequest(
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
 
-    const { studentName, kind } = req.body || {};
+    const { studentName, kind, detail } = req.body || {};
     if (!studentName || !kind) { res.status(400).json({ error: "studentName, kind가 필요합니다." }); return; }
 
     try {
@@ -569,12 +569,33 @@ exports.notifyTeacher = onRequest(
       const tokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
       if (tokens.length === 0) { res.status(200).json({ sent: 0, reason: "no-teacher-tokens" }); return; }
 
-      const title = kind === "homework_upload" ? `📸 ${studentName} 학생이 숙제 인증샷을 올렸어요`
-        : kind === "study_start" ? `⏱ ${studentName} 학생이 공부를 시작했어요`
-        : "🔔 테스트 알림";
-      const body = kind === "homework_upload" ? "인증샷을 확인해 보세요."
-        : kind === "study_start" ? "공부 타이머를 시작했어요."
-        : "알림이 정상적으로 도착했어요!";
+      // title/body per event kind. `detail` (student-supplied, e.g. homework content, a score,
+      // a subject+minutes string) is optional extra context used as the body when present —
+      // every kind still has a sensible default body so older clients that don't send detail work fine.
+      const TITLES = {
+        homework_upload: `📸 ${studentName} 학생이 숙제 인증샷을 올렸어요`,
+        study_start: `⏱ ${studentName} 학생이 공부를 시작했어요`,
+        study_pause: `⏸ ${studentName} 학생이 공부를 일시정지했어요`,
+        study_log_saved: `📗 ${studentName} 학생이 공부 기록을 저장했어요`,
+        homework_done: `✅ ${studentName} 학생이 숙제를 완료 표시했어요`,
+        mock_exam_submit: `📄 ${studentName} 학생이 모의고사 채점을 제출했어요`,
+        student_login: `👋 ${studentName} 학생이 로그인했어요`,
+        parent_login: `👪 ${studentName} 학생 학부모님이 로그인했어요`,
+        consult_request: `💬 ${studentName} 학생 학부모님이 상담을 신청했어요`,
+      };
+      const DEFAULT_BODIES = {
+        homework_upload: "인증샷을 확인해 보세요.",
+        study_start: "공부 타이머를 시작했어요.",
+        study_pause: "공부 타이머를 일시정지했어요.",
+        study_log_saved: "공부 기록을 저장했어요.",
+        homework_done: "숙제를 완료로 표시했어요.",
+        mock_exam_submit: "모의고사 결과를 저장했어요.",
+        student_login: "학생용 화면에 접속했어요.",
+        parent_login: "학부모용 화면에 접속했어요.",
+        consult_request: "상담 신청 내용을 확인해 보세요.",
+      };
+      const title = TITLES[kind] || "🔔 테스트 알림";
+      const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "알림이 정상적으로 도착했어요!";
 
       const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
       res.status(200).json({ sent: resp.successCount, failed: resp.failureCount });
@@ -619,6 +640,8 @@ exports.homeworkReminderCheck = onSchedule(
     const isFirstRun = nowSeoul.getHours() === 22 && nowSeoul.getMinutes() < 15; // the 22:00 slot
     const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
     const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
+    const teacherTokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
+    const namesStillPending = [];
 
     for (const student of roster) {
       try {
@@ -627,6 +650,7 @@ exports.homeworkReminderCheck = onSchedule(
         const data = studentSnap.data();
         const pending = (data.homework || []).filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done);
         if (pending.length === 0) continue;
+        namesStillPending.push(student.name);
 
         const tokens = [student.studentFcmToken, isFirstRun ? student.parentFcmToken : null].filter(Boolean);
         if (tokens.length === 0) continue;
@@ -636,6 +660,22 @@ exports.homeworkReminderCheck = onSchedule(
         await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
       } catch (e) {
         console.error(`homeworkReminderCheck failed for student ${student.id}`, e);
+      }
+    }
+
+    // Teacher gets one aggregated push per run (not one per student) listing everyone still
+    // pending, same cadence as the student reminder (every 30 min from 22:00 to 23:30 KST).
+    if (namesStillPending.length > 0 && teacherTokens.length > 0) {
+      try {
+        await admin.messaging().sendEachForMulticast({
+          tokens: teacherTokens,
+          data: {
+            title: `🌙 오늘 숙제 안 한 학생 ${namesStillPending.length}명`,
+            body: namesStillPending.join(", ").slice(0, 200),
+          },
+        });
+      } catch (e) {
+        console.error("homeworkReminderCheck teacher notify failed", e);
       }
     }
   }
