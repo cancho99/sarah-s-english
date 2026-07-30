@@ -1767,13 +1767,13 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       const dt = new Date(y, m - 1, d);
       const dayName = DAY_NAMES[dt.getDay()];
       const match = days.find((s) => s.day === dayName);
-      if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time });
+      if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time, type: "tutoring" });
     }
     setMonthly(generated);
   }
   function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
   function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); }
-  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
+  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
 
   async function save() {
     await saveRosterList(roster.map((r) => (r.id === student.id
@@ -1799,7 +1799,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
           </div>
           ${currentMonthly.length > 0 && html`
             <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 4px" }}>이번 달 확정 일정 (${currentMonthly.length}회)</div>
-            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time}</span>`)}</div>
+            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time} ${d.type === "tutoring" ? "(과외)" : "(보강)"}</span>`)}</div>
           `}
           ${student.goal && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 8 }}><b style=${{ color: C.ink }}>목표:</b> ${student.goal}</div>`}
           <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
@@ -1827,6 +1827,10 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
             <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
               <${DateField} value=${d.date} onChange=${(v) => updateInstance(i, "date", v)} />
               <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateInstance(i, "time", e.target.value)} />
+              <select style=${{ ...inputStyle, marginBottom: 0, width: 76 }} value=${d.type || "makeup"} onChange=${(e) => updateInstance(i, "type", e.target.value)}>
+                <option value="tutoring">과외</option>
+                <option value="makeup">보강</option>
+              </select>
               <button onClick=${() => removeInstance(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
             </div>
           `)}
@@ -4138,7 +4142,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     Object.values(student.monthlyInstances || {}).forEach((list) => {
       (list || []).forEach((inst) => {
         if (inst.date > todayStr || (inst.date === todayStr && inst.time >= nowHM)) {
-          candidates.push({ date: inst.date, time: inst.time, kind: "makeup" });
+          candidates.push({ date: inst.date, time: inst.time, kind: inst.type === "tutoring" ? "tutoring" : "makeup" });
         }
       });
     });
@@ -4318,7 +4322,10 @@ function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, vi
 //  - tutoring: student.schedule — teacher-owned, day-of-week recurring pattern, so it repeats on
 //    every matching weekday across the whole month, week to week.
 //  - monthlyInstances: student.monthlyInstances[month] — teacher-owned, specific-date one-offs
-//    (보강/makeup classes) that don't fit the weekly pattern; shown only on the exact date set.
+//    that don't fit the weekly pattern; shown only on the exact date set. Each instance carries its
+//    own `type` ("tutoring" 과외 or "makeup" 보강, defaulting to "makeup" for legacy entries saved
+//    before this field existed) so a shifted-time regular class and an actual makeup class can be
+//    told apart in the calendar.
 //  - other: student.otherSchedule — student-owned, day-of-week recurring "other academies", same
 //    repeat-every-week behavior as tutoring.
 // tutoringExceptions/otherExceptions hold specific dates ("YYYY-MM-DD") where a recurring
@@ -4345,9 +4352,9 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, kind: "tutoring" })),
-      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, kind: "makeup" })),
-      ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, kind: "other" })),
+      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "과외" })),
+      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "과외" : "보강" })),
+      ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
   }
 
@@ -4375,12 +4382,12 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
             <div key=${i} style=${{ border: `1px solid ${isToday ? C.gold : C.line}`, borderRadius: 4, padding: 3, minHeight: 54 }}>
               <div style=${{ fontSize: 10, color: isToday ? C.gold : C.slate, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>${d}</div>
               ${items.map((it, ii) => {
-                const canRemove = (it.kind === "tutoring" && onRemoveTutoring) || (it.kind === "other" && onRemoveOther);
+                const canRemove = (it.source === "tutoring" && onRemoveTutoring) || (it.source === "other" && onRemoveOther);
                 return html`
-                  <div key=${ii} style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.kind === "other" ? "#EEF2F6" : "#FBF4EA", color: it.kind === "other" ? C.ink : C.gold, fontWeight: it.kind === "other" ? 500 : 700 }}>
-                    ${it.time} ${it.kind === "tutoring" ? "과외" : it.kind === "makeup" ? "보강" : (it.name || "학원")}
+                  <div key=${ii} style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700 }}>
+                    ${it.time} ${it.label}
                     ${canRemove && html`
-                      <span onClick=${() => (it.kind === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr)}
+                      <span onClick=${() => (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr)}
                         title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>
                     `}
                   </div>
@@ -4508,7 +4515,7 @@ function TuitionEditor({ student, data, updateData }) {
 
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>이번 달 계획된 수업</div>
-        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선불 청구라서 실제 출석이 아니라 이 달에 예정된 수업 횟수로 계산돼요. 특정 날짜를 빼거나 보강을 추가하려면 위쪽 "수업 스케줄"에서 조정해 주세요.</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선불 청구라서 실제 출석이 아니라 이 달에 예정된 수업 횟수로 계산돼요. 특정 날짜를 빼거나 과외/보강 일정을 추가하려면 위쪽 "수업 스케줄"에서 조정해 주세요.</div>
         <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${[]}
           tutoringExceptions=${student.tutoringExceptions || []}
           viewMonth=${viewMonth} onMonthChange=${setViewMonth} />
