@@ -150,7 +150,11 @@ async function loadStore(attempts = 3) {
 async function saveMeta() {
   try {
     const ref = window.__doc(window.__db, META_COLLECTION, META_DOC_ID);
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [] });
+    // merge: true — this only touches the fields listed below. Without it, this being a plain
+    // setDoc would replace the ENTIRE meta doc, silently wiping fields this function doesn't know
+    // about (e.g. teacherFcmTokens, written separately by addTeacherFcmToken's own transaction)
+    // any time a teacher saves the roster/announcement/bookings/exam key library.
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [] }, { merge: true });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
