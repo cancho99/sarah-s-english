@@ -1560,6 +1560,8 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
     .filter((r) => r.rec)
     .sort((a, b) => (b.rec.amount || 0) - (a.rec.amount || 0));
   const total = rows.reduce((sum, r) => sum + (r.rec.amount || 0), 0);
+  const unpaidRows = rows.filter((r) => !r.rec.paid);
+  const unpaidTotal = unpaidRows.reduce((sum, r) => sum + (r.rec.amount || 0), 0);
 
   const trendMonths = [];
   {
@@ -1581,13 +1583,21 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
         <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
         <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
         <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
+        ${rows.length > 0 && html`
+          <div style=${{ fontSize: 12, color: unpaidRows.length > 0 ? C.danger : "#3D6B4F", textAlign: "center", marginTop: 6, fontWeight: 700 }}>
+            ${unpaidRows.length > 0 ? `미입금 ${unpaidRows.length}명 · ${unpaidTotal.toLocaleString()}원` : "전원 입금 완료"}
+          </div>
+        `}
       <//>
       <${Card}>
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료</div>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
         ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : rows.map(({ student, rec }) => html`
-          <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
+          <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
             <span>${student.name}${!rec.published ? html` <span style=${{ color: C.slate, fontSize: 10.5 }}>(학부모 비공개)</span>` : ""}</span>
-            <span style=${{ fontWeight: 700, color: C.navy }}>${(rec.amount || 0).toLocaleString()}원</span>
+            <span style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style=${{ fontWeight: 700, color: C.navy }}>${(rec.amount || 0).toLocaleString()}원</span>
+              <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: rec.paid ? "#E9F1EA" : "#F7E9E6", color: rec.paid ? "#3D6B4F" : C.danger }}>${rec.paid ? "입금완료" : "미입금"}</span>
+            </span>
           </div>
         `)}
       <//>
@@ -4787,11 +4797,24 @@ function TuitionEditor({ student, data, updateData }) {
           note: note.trim(),
           amount: finalAmount,
           published,
+          paid: rec?.paid || false,
+          paidAt: rec?.paidAt || null,
           updatedAt: Date.now(),
         },
       },
     }));
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+
+  // Separate from saveRecord — a pure payment-received flag, so marking it doesn't require
+  // re-touching (or accidentally changing) the amount/publish state, and doesn't feed into that
+  // calculation at all (still schedule-based, same reasoning as attendance being kept out of it).
+  async function togglePaid() {
+    const next = !rec.paid;
+    await updateData((d) => ({
+      ...d,
+      tuitionRecords: { ...(d.tuitionRecords || {}), [viewMonth]: { ...(d.tuitionRecords || {})[viewMonth], paid: next, paidAt: next ? Date.now() : null } },
+    }));
   }
 
   function printInvoice() {
@@ -4888,6 +4911,16 @@ function TuitionEditor({ student, data, updateData }) {
           ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
         </div>
         ${rec?.published && html`<div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>✓ 학부모 화면에 공개되어 있어요.</div>`}
+        ${rec && html`
+          <div style=${{ marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${C.line}`, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>입금 확인</span>
+            <button onClick=${togglePaid} style=${{
+              padding: "8px 16px", borderRadius: 3, border: `1px solid ${rec.paid ? "#3D6B4F" : C.line}`,
+              background: rec.paid ? "#3D6B4F" : "#fff", color: rec.paid ? "#fff" : C.ink, fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+            }}>${rec.paid ? "✓ 입금완료" : "미입금"}</button>
+            ${rec.paid && rec.paidAt && html`<span style=${{ fontSize: 11, color: C.slate }}>${fmtDateTime(rec.paidAt)} 확인</span>`}
+          </div>
+        `}
       <//>
     </div>
   `;
