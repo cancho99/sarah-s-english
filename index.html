@@ -533,7 +533,14 @@ async function findColumnGutters(canvas) {
       if (lum < 200) colInk[x]++;
     }
   }
-  const blankThreshold = height * 0.001;
+  // A "blank" column allows a small amount of stray ink (anti-aliasing bleed from a neighboring
+  // block's border/title that doesn't perfectly line up with the block below it), not literally
+  // zero — 유형별/단원별 문제집 pages stack many blocks of slightly different widths in each
+  // print-column, so demanding a pixel-perfect blank run across the FULL page height almost never
+  // matched even though the column is clearly visually blank; findColumnGutters was silently
+  // returning zero gutters on exactly this document type, so the AI had to guess the multi-column
+  // reading order from one undivided image instead of getting pre-split, unambiguous column tiles.
+  const blankThreshold = Math.max(2, height * 0.006);
   const isBlank = [];
   for (let x = 0; x < width; x++) isBlank.push(colInk[x] < blankThreshold);
   const runs = [];
@@ -553,24 +560,40 @@ async function renderPdfPageTiles(file) {
   }
   const buf = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-  const scale = 3.2;
+  // Two passes instead of one: rendering a dense multi-column page (thousands of small text runs)
+  // straight at tileScale could take 1-2+ minutes per page or effectively hang the tab — far past
+  // what the "몇십 초" progress message implied, and easy to mistake for the tool being broken.
+  // detectScale is only used to locate column gutters cheaply; the actual images sent to the AI
+  // are still rendered at full tileScale, just one narrow column at a time (translating the canvas
+  // context so pdf.js only fills pixels inside that tile's bounds keeps each render fast even
+  // though tileScale itself didn't change).
+  const detectScale = 1.4;
+  const tileScale = 3.2;
   const tiles = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
-    const viewport = page.getViewport({ scale });
-    const fullCanvas = document.createElement("canvas");
-    fullCanvas.width = Math.ceil(viewport.width);
-    fullCanvas.height = Math.ceil(viewport.height);
-    await page.render({ canvasContext: fullCanvas.getContext("2d"), viewport }).promise;
 
-    const gutters = await findColumnGutters(fullCanvas);
-    const bounds = [0, ...gutters, fullCanvas.width];
-    for (let i = 0; i < bounds.length - 1; i++) {
-      const x0 = bounds[i], x1 = bounds[i + 1];
-      const w = x1 - x0, h = fullCanvas.height;
+    const detectViewport = page.getViewport({ scale: detectScale });
+    const detectCanvas = document.createElement("canvas");
+    detectCanvas.width = Math.ceil(detectViewport.width);
+    detectCanvas.height = Math.ceil(detectViewport.height);
+    await withTimeout(page.render({ canvasContext: detectCanvas.getContext("2d"), viewport: detectViewport }).promise, 60000, "pdf/render-detect");
+
+    const guttersLow = await findColumnGutters(detectCanvas);
+    const ratio = tileScale / detectScale;
+    const fullWidthHigh = Math.ceil(detectCanvas.width * ratio);
+    const fullHeightHigh = Math.ceil(detectCanvas.height * ratio);
+    const boundsHigh = [0, ...guttersLow.map((g) => Math.round(g * ratio)), fullWidthHigh];
+
+    const tileViewport = page.getViewport({ scale: tileScale });
+    for (let i = 0; i < boundsHigh.length - 1; i++) {
+      const x0 = boundsHigh[i], x1 = boundsHigh[i + 1];
+      const w = x1 - x0, h = fullHeightHigh;
       const tileCanvas = document.createElement("canvas");
       tileCanvas.width = w; tileCanvas.height = h;
-      tileCanvas.getContext("2d").drawImage(fullCanvas, x0, 0, w, h, 0, 0, w, h);
+      const tctx = tileCanvas.getContext("2d");
+      tctx.translate(-x0, 0);
+      await withTimeout(page.render({ canvasContext: tctx, viewport: tileViewport }).promise, 60000, "pdf/render-tile");
       tiles.push(tileCanvas.toDataURL("image/png").split(",")[1]);
     }
   }
@@ -641,7 +664,7 @@ function parseExamPaste(text) {
   }
   return out;
 }
-function normText(s) { return (s || "").replace(/\s+/g, "").toLowerCase(); }
+function normText(s) { return String(s ?? "").replace(/\s+/g, "").toLowerCase(); }
 function checkVocabAnswer(userAnswer, correctMeaning, synonyms) {
   const norm = normText(userAnswer);
   if (!norm) return false;
@@ -1951,6 +1974,8 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
   const [manualKey, setManualKey] = useState("");
   const [manualMsg, setManualMsg] = useState("");
   const [collapsedBooks, setCollapsedBooks] = useState({});
+  const [editingId, setEditingId] = useState(null); // id of a saved set currently being corrected
+  const [editDraft, setEditDraft] = useState({ name: "", key: "" });
 
   const existingBooks = [...new Set((library || []).map((s) => s.book).filter(Boolean))];
 
@@ -1973,7 +1998,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     e.target.value = "";
     if (!file) return;
     if (!pdfBook.trim()) { setStatus("먼저 위에 책 이름을 입력해 주세요."); return; }
-    setStatus("AI로 PDF를 읽는 중이에요 (몇십 초 걸릴 수 있어요)...");
+    setStatus("AI로 PDF를 읽는 중이에요. 페이지가 촘촘하거나 여러 장이면 1~2분 이상 걸릴 수 있어요 — 창을 닫지 말고 기다려 주세요...");
     setPending(null);
     try {
       // Text-position-based local parsing was tried here previously, but 유형별/단원별 문제집
@@ -2022,6 +2047,24 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     setCollapsedBooks((c) => ({ ...c, [book]: !c[book] }));
   }
 
+  // AI로 읽은 결과(또는 예전에 잘못 저장된 결과)가 틀렸을 때 PDF를 다시 올리거나 처음부터
+  // 다시 입력하지 않고, 틀린 문항 몇 개만 바로 고칠 수 있게 하는 용도.
+  function startEditSet(s) {
+    setEditingId(s.id);
+    setEditDraft({ name: s.name, key: s.answers.join(", ") });
+  }
+  async function saveEditSet(id) {
+    const key = parseAnswerKey(editDraft.key).map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!editDraft.name.trim() || key.length === 0) return;
+    await saveLibrary((library || []).map((s) => (s.id === id ? { ...s, name: editDraft.name.trim(), answers: key } : s)));
+    setEditingId(null);
+  }
+
+  function updatePendingAnswers(id, text) {
+    const key = parseAnswerKey(text).map((s) => Number(s)).filter((n) => !isNaN(n));
+    setPending((prev) => prev.map((s) => (s.id === id ? { ...s, answers: key, _raw: text } : s)));
+  }
+
   return html`
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>여기에 정답표를 미리 등록해두면, 모의고사 만들 때 매번 손으로 입력할 필요 없이 골라서 바로 채점할 수 있어요.</div>
@@ -2040,15 +2083,17 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
         </label>
         ${status && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>${status}</div>`}
         ${pending && html`
-          <div style=${{ marginTop: 12, maxHeight: 320, overflowY: "auto" }}>
+          <div style=${{ fontSize: 11.5, color: C.danger, marginTop: 10 }}>AI가 읽은 결과예요. 저장 전에 원본 PDF와 꼭 대조해서 틀린 부분이 있으면 아래에서 바로 고쳐 주세요.</div>
+          <div style=${{ marginTop: 8, maxHeight: 360, overflowY: "auto" }}>
             ${pending.map((s) => html`
-              <div key=${s.id} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
+              <div key=${s.id} style=${{ fontSize: 12.5, padding: "8px 0", borderBottom: `1px dotted ${C.line}` }}>
                 <b style=${{ color: C.navy }}>${s.name}</b> — ${s.answers.length}문항
-                <div style=${{ fontSize: 11.5, color: C.slate, fontFamily: "monospace", marginTop: 2 }}>${s.answers.join(", ")}</div>
+                <textarea style=${{ ...inputStyle, minHeight: 44, fontFamily: "monospace", fontSize: 12, marginTop: 4 }}
+                  value=${s._raw !== undefined ? s._raw : s.answers.join(", ")} onChange=${(e) => updatePendingAnswers(s.id, e.target.value)} />
               </div>
             `)}
           </div>
-          <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>이대로 저장하기<//>
+          <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>확인했어요, 저장하기<//>
         `}
       <//>
 
@@ -2080,11 +2125,23 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
               <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8, marginTop: 8 }}>
                 ${groups[book].map((s) => html`
                   <${Card} key=${s.id} style=${{ marginBottom: 0, padding: 10 }}>
-                    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>${s.name}</div>
-                      <button onClick=${() => removeSet(s.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>✕</button>
-                    </div>
-                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${s.answers.length}문항</div>
+                    ${editingId === s.id ? html`
+                      <input style=${{ ...inputStyle, fontSize: 12, marginBottom: 4 }} value=${editDraft.name} onChange=${(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
+                      <textarea style=${{ ...inputStyle, minHeight: 44, fontFamily: "monospace", fontSize: 11.5, marginBottom: 4 }} value=${editDraft.key} onChange=${(e) => setEditDraft({ ...editDraft, key: e.target.value })} />
+                      <div style=${{ display: "flex", gap: 6 }}>
+                        <button onClick=${() => saveEditSet(s.id)} style=${{ background: C.gold, border: "none", color: "#fff", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>저장</button>
+                        <button onClick=${() => setEditingId(null)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>취소</button>
+                      </div>
+                    ` : html`
+                      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>${s.name}</div>
+                        <div style=${{ display: "flex", gap: 8 }}>
+                          <button onClick=${() => startEditSet(s)} style=${{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 11.5 }}>수정</button>
+                          <button onClick=${() => removeSet(s.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>✕</button>
+                        </div>
+                      </div>
+                      <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${s.answers.length}문항</div>
+                    `}
                   <//>
                 `)}
               </div>
@@ -2368,43 +2425,68 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
 }
 
 const MASTER_SCHEDULE_DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-// Full 00:00~23:30 range (not just typical daytime hours) — a fixed business-hours window would
-// silently hide any class scheduled outside it instead of just showing an empty row.
-const MASTER_SCHEDULE_TIME_SLOTS = (() => {
-  const slots = [];
-  for (let h = 0; h <= 23; h++) { slots.push(`${String(h).padStart(2, "0")}:00`); slots.push(`${String(h).padStart(2, "0")}:30`); }
-  return slots;
-})();
 function scheduleTimeToMin(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 function scheduleMinToTime(min) { const h = Math.floor(min / 60) % 24; const m = min % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
+// Wall-clock label for a row, given as a raw (possibly >1440) minute value — minutes past midnight
+// are marked "다음날" so a class running e.g. 23:00~01:00 has somewhere distinct to render its
+// last hour, instead of colliding with the very-early-morning rows at the top of the same column.
+function scheduleSlotLabel(min) { return scheduleMinToTime(min) + (min >= 1440 ? " (다음날)" : ""); }
+// Row axis covers 00:00 through 01:00 "the next day" (raw minutes 0~1500) — not just a plain
+// 00:00~23:30 day — so classes that run past midnight (e.g. 23:00~01:00) have rows to span into
+// instead of quietly having their last hour clipped off the grid.
+const MASTER_SCHEDULE_TIME_SLOTS = (() => {
+  const slots = [];
+  for (let m = 0; m <= 25 * 60; m += 30) slots.push(m);
+  return slots;
+})();
 
 // Aggregates every student's weekly recurring pattern (student.schedule) into one grid so the
 // teacher can see the whole week at a glance instead of opening each student one at a time.
 // Editing here writes straight back into that student's schedule array via saveRosterList — same
 // underlying data ScheduleGoalEditor edits per-student, just a different view onto it.
+// "학기 중" reuses the existing student.schedule field (unchanged — still what drives
+// MonthlyScheduleGrid/tuition/next-class everywhere else in the app). "방학" is a separate,
+// parallel field (student.vacationSchedule) that only exists as a second pattern to plan and view
+// here — it's intentionally NOT wired into the calendar/tuition calculation automatically. When a
+// vacation period actually starts, the teacher still applies it the existing way (adjust the
+// "학기 중" pattern itself, or use monthlyInstances for that month) — this tab is a planning
+// surface, not a live scheduler that swaps itself in on certain dates.
+const SCHEDULE_TABS = [
+  { key: "schedule", label: "학기 중 스케줄" },
+  { key: "vacationSchedule", label: "방학 스케줄" },
+];
+
 function MasterScheduleView({ roster, saveRosterList }) {
+  const [scheduleField, setScheduleField] = useState("schedule");
   const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
   const [showEmpty, setShowEmpty] = useState(false);
   const [dragOverKey, setDragOverKey] = useState(null); // "day|time" of the cell currently under the drag
   const [draggingKey, setDraggingKey] = useState(null); // "studentId|idx" of the chip being dragged
+  const [adding, setAdding] = useState(null); // { studentId, day, time, endTime } while the add-slot form is open
 
   // Resolve every schedule entry to a concrete start/end in minutes. Entries saved before endTime
   // existed default to a 1-hour block for display purposes only — the stored data isn't touched
-  // until the teacher actually edits that slot.
+  // until the teacher actually edits that slot. endTime is just a plain HH:MM (an <input
+  // type="time"> can't express "next day"), so if it comes out <= startMin we treat that as
+  // crossing midnight (+1440) rather than a negative-length class.
   const allEntries = [];
   roster.forEach((r) => {
-    (r.schedule || []).forEach((s, idx) => {
+    (r[scheduleField] || []).forEach((s, idx) => {
       const startMin = scheduleTimeToMin(s.time);
-      const endMin = Math.max(startMin + 30, s.endTime ? scheduleTimeToMin(s.endTime) : startMin + 60);
+      let endMinRaw = s.endTime ? scheduleTimeToMin(s.endTime) : startMin + 60;
+      if (endMinRaw <= startMin) endMinRaw += 1440;
+      const endMin = Math.max(startMin + 30, endMinRaw);
       allEntries.push({ student: r, idx, day: s.day, time: s.time, endTime: s.endTime, startMin, endMin });
     });
   });
 
   // Default view only shows rows actually covered by some class's start~end span (not just start
-  // times) — scanning all 48 half-hour slots (00:00~23:30) is correct but mostly empty rows.
-  // "빈 시간대도 보기" below switches to the full 24-hour list.
+  // times) — scanning the full 00:00~"01:00 다음날" range is correct but mostly empty rows.
+  // "빈 시간대도 보기" below switches to the full list. Rows are raw minute integers (0~1500) so a
+  // class crossing midnight has real, distinct rows to span into instead of colliding with the
+  // very-early-morning rows at the top of the same day's column.
   const neededSlots = new Set();
-  allEntries.forEach((e) => { for (let t = e.startMin; t < e.endMin; t += 30) neededSlots.add(scheduleMinToTime(t)); });
+  allEntries.forEach((e) => { for (let t = e.startMin; t < e.endMin; t += 30) neededSlots.add(t); });
   const visibleSlots = showEmpty ? MASTER_SCHEDULE_TIME_SLOTS : MASTER_SCHEDULE_TIME_SLOTS.filter((t) => neededSlots.has(t));
   const rowsToRender = visibleSlots.length > 0 ? visibleSlots : MASTER_SCHEDULE_TIME_SLOTS.slice(18, 30);
   const rowIndexOf = {};
@@ -2444,7 +2526,7 @@ function MasterScheduleView({ roster, saveRosterList }) {
       if (!payload) return;
       const { studentId, idx, durationMin } = payload;
       const newEndTime = scheduleMinToTime(scheduleTimeToMin(time) + durationMin);
-      await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.map((s, i) => (i === idx ? { day, time, endTime: newEndTime } : s)) } : r)));
+      await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, [scheduleField]: r[scheduleField].map((s, i) => (i === idx ? { day, time, endTime: newEndTime } : s)) } : r)));
     };
   }
 
@@ -2453,18 +2535,19 @@ function MasterScheduleView({ roster, saveRosterList }) {
   MASTER_SCHEDULE_DAY_NAMES.forEach((d, ci) => bgCells.push(html`
     <div key=${"h-" + d} style=${{ gridColumn: ci + 2, gridRow: 1, textAlign: "center", fontSize: 12, fontWeight: 700, color: C.navy, padding: "8px 2px", borderBottom: `2px solid ${C.line}`, position: "sticky", top: 0, background: C.ivory, zIndex: 2 }}>${d}</div>
   `));
-  rowsToRender.forEach((time, ri) => {
-    bgCells.push(html`<div key=${"t-" + time} style=${{ gridColumn: 1, gridRow: ri + 2, fontSize: 10.5, color: C.slate, padding: "8px 6px", borderTop: `1px solid ${C.line}`, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.ivory, zIndex: 2 }}>${time}</div>`);
+  rowsToRender.forEach((rawMin, ri) => {
+    const timeStr = scheduleMinToTime(rawMin);
+    bgCells.push(html`<div key=${"t-" + rawMin} style=${{ gridColumn: 1, gridRow: ri + 2, fontSize: 10.5, color: C.slate, padding: "8px 6px", borderTop: `1px solid ${C.line}`, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.ivory, zIndex: 2 }}>${scheduleSlotLabel(rawMin)}</div>`);
     MASTER_SCHEDULE_DAY_NAMES.forEach((day, ci) => {
-      const key = day + "|" + time;
-      bgCells.push(html`<div key=${"bg-" + key} onDragOver=${onCellDragOver(day, time)} onDrop=${onCellDrop(day, time)}
+      const key = day + "|" + timeStr;
+      bgCells.push(html`<div key=${"bg-" + key + "-" + rawMin} onDragOver=${onCellDragOver(day, timeStr)} onDrop=${onCellDrop(day, timeStr)}
         style=${{ gridColumn: ci + 2, gridRow: ri + 2, borderTop: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}`, minHeight: 36, background: dragOverKey === key ? "#FBF6EA" : undefined }}></div>`);
     });
   });
 
   const blocks = Object.entries(groups).map(([key, list]) => {
     const [day, time] = key.split("|");
-    const startRow = rowIndexOf[time];
+    const startRow = rowIndexOf[scheduleTimeToMin(time)];
     if (startRow === undefined) return null;
     const maxEndMin = Math.max(...list.map((e) => e.endMin));
     const spanRows = Math.max(1, Math.round((maxEndMin - scheduleTimeToMin(time)) / 30));
@@ -2474,7 +2557,14 @@ function MasterScheduleView({ roster, saveRosterList }) {
         ${list.map((e) => html`
           <div key=${e.student.id + "-" + e.idx} draggable="true" onDragStart=${onChipDragStart(e)} onDragEnd=${onChipDragEnd}
             onClick=${() => setEditing({ studentId: e.student.id, idx: e.idx, day: e.day, time: e.time, endTime: e.endTime || "" })}
-            style=${{ fontSize: 10.5, fontWeight: 700, color: C.navy, background: "#FBF4EA", border: `1px solid ${C.gold}`, borderRadius: 3, padding: "3px 5px", cursor: "grab", lineHeight: 1.4, opacity: draggingKey === (e.student.id + "|" + e.idx) ? 0.4 : 1 }}>
+            style=${{
+              fontSize: 10.5, fontWeight: 700, color: C.navy, background: "#FBF4EA", border: `1px solid ${C.gold}`, borderRadius: 3,
+              padding: "3px 5px", cursor: "grab", lineHeight: 1.4, opacity: draggingKey === (e.student.id + "|" + e.idx) ? 0.4 : 1,
+              // Within a shared block (several students starting at the same time), each chip's
+              // own height is proportional to ITS OWN duration, not squashed to a uniform size —
+              // a 30-min entry and a 2-hour entry sharing a start time look visibly different sizes.
+              flexGrow: Math.max(1, e.endMin - e.startMin), flexBasis: 0, display: "flex", flexDirection: "column", justifyContent: "center",
+            }}>
             ${e.student.name}${e.endTime ? html`<div style=${{ fontWeight: 400, color: C.slate, fontSize: 9.5 }}>${e.time}~${e.endTime}</div>` : html`<div style=${{ fontWeight: 400, color: C.danger, fontSize: 9.5 }}>종료시간 미설정</div>`}
           </div>
         `)}
@@ -2485,29 +2575,83 @@ function MasterScheduleView({ roster, saveRosterList }) {
   async function saveEdit() {
     const { studentId, idx, day, time, endTime } = editing;
     if (!time || !endTime) return;
-    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.map((s, i) => (i === idx ? { day, time, endTime } : s)) } : r)));
+    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, [scheduleField]: r[scheduleField].map((s, i) => (i === idx ? { day, time, endTime } : s)) } : r)));
     setEditing(null);
   }
   async function deleteEdit() {
     const { studentId, idx } = editing;
-    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, schedule: r.schedule.filter((_, i) => i !== idx) } : r)));
+    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, [scheduleField]: r[scheduleField].filter((_, i) => i !== idx) } : r)));
     setEditing(null);
   }
+  async function saveAdd() {
+    const { studentId, day, time, endTime } = adding;
+    if (!studentId || !day || !time || !endTime) return;
+    await saveRosterList(roster.map((r) => (r.id === studentId ? { ...r, [scheduleField]: [...(r[scheduleField] || []), { day, time, endTime }] } : r)));
+    setAdding(null);
+  }
+
+  const addStudent = adding && roster.find((r) => r.id === adding.studentId);
 
   return html`
     <div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>내 수업 스케줄</div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>모든 학생의 매주 반복 수업을 시작~종료 시간 블록으로 한눈에 봐요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요). 방학·보강처럼 특정 날짜만 다른 일정은 각 학생의 "수업 스케줄"에서 조정하세요.</div>
-      <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, marginBottom: 12, cursor: "pointer" }}>
-        <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
-        빈 시간대도 보기 (00:00~23:30 전체)
-      </label>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>모든 학생의 매주 반복 수업을 시작~종료 시간 블록으로 한눈에 봐요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요).</div>
+
+      <div style=${{ display: "flex", gap: 6, marginBottom: 12 }}>
+        ${SCHEDULE_TABS.map((t) => html`
+          <button key=${t.key} onClick=${() => setScheduleField(t.key)} style=${{
+            padding: "8px 16px", borderRadius: 20, border: `1px solid ${scheduleField === t.key ? C.navy : C.line}`,
+            background: scheduleField === t.key ? C.navy : "#fff", color: scheduleField === t.key ? "#fff" : C.ink,
+            fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+          }}>${t.label}</button>
+        `)}
+      </div>
+      ${scheduleField === "vacationSchedule" && html`
+        <div style=${{ fontSize: 11.5, color: C.slate, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 4, padding: "8px 12px", marginBottom: 12 }}>
+          방학 스케줄은 별도로 보관하는 계획표예요 — 여기서 편집해도 실제 달력·수업료 계산에는 자동 반영되지 않아요. 방학이 시작되면 "학기 중 스케줄" 탭이나 각 학생의 월별 확정 일정에 실제로 옮겨 적용해 주세요.
+        </div>
+      `}
+
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
+          <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
+          빈 시간대도 보기 (00:00 ~ 다음날 01:00 전체)
+        </label>
+        <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 11.5 }} onClick=${() => setAdding({ studentId: roster[0]?.id || "", day: "월", time: "18:00", endTime: "19:00" })}>+ 새 수업 추가<//>
+      </div>
+
       <div style=${{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${C.line}`, borderRadius: 4 }}>
         <div style=${{ display: "grid", gridTemplateColumns: `58px repeat(7, minmax(96px, 1fr))`, minWidth: 740, position: "relative" }}>
           ${bgCells}
           ${blocks}
         </div>
       </div>
+
+      ${adding && html`
+        <${Modal} onClose=${() => setAdding(null)}>
+          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 14 }}>${SCHEDULE_TABS.find((t) => t.key === scheduleField).label}에 새 수업 추가</div>
+          <${Field} label="학생">
+            <select style=${inputStyle} value=${adding.studentId} onChange=${(e) => setAdding({ ...adding, studentId: e.target.value })}>
+              ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+            </select>
+          <//>
+          <${Field} label="요일">
+            <select style=${inputStyle} value=${adding.day} onChange=${(e) => setAdding({ ...adding, day: e.target.value })}>
+              ${MASTER_SCHEDULE_DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+            </select>
+          <//>
+          <${Field} label="시작 시간">
+            <input style=${inputStyle} type="time" value=${adding.time} onChange=${(e) => setAdding({ ...adding, time: e.target.value })} />
+          <//>
+          <${Field} label="종료 시간">
+            <input style=${inputStyle} type="time" value=${adding.endTime} onChange=${(e) => setAdding({ ...adding, endTime: e.target.value })} />
+          <//>
+          <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <${Button} variant="gold" disabled=${!addStudent || !adding.day || !adding.time || !adding.endTime} onClick=${saveAdd}>추가<//>
+            <${Button} variant="ghost" onClick=${() => setAdding(null)}>취소<//>
+          </div>
+        <//>
+      `}
 
       ${editing && html`
         <${Modal} onClose=${() => setEditing(null)}>
@@ -2570,18 +2714,44 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
   const list = [...scheduled, ...extras];
   const remaining = roster.filter((s) => !scheduledIds.has(s.id) && !extraIds.includes(s.id));
 
+  // attendance[date] is { status: "present"|"absent", makeupDone } rather than a bare string, so a
+  // 결석 can separately track whether the makeup class actually happened yet.
   async function setAttendance(studentId, status) {
     await updateData(studentId, (d) => {
       const attendance = { ...(d.attendance || {}) };
-      if (attendance[date] === status) delete attendance[date]; else attendance[date] = status;
+      const cur = attendance[date];
+      if (cur && cur.status === status) delete attendance[date];
+      else attendance[date] = { status, makeupDone: cur?.makeupDone || false };
       return { ...d, attendance };
     });
+  }
+  async function toggleMakeup(studentId, targetDate) {
+    const dt = targetDate || date;
+    await updateData(studentId, (d) => {
+      const attendance = { ...(d.attendance || {}) };
+      const cur = attendance[dt] || { status: "absent" };
+      attendance[dt] = { ...cur, makeupDone: !cur.makeupDone };
+      return { ...d, attendance };
+    });
+  }
+
+  // Every past-or-present absence across every loaded student that still has no makeup recorded —
+  // a running "아직 처리 안 된 결석" list, not just the one date currently selected above.
+  const outstandingMakeups = [];
+  if (loaded) {
+    roster.forEach((s) => {
+      const d = dataCache[s.id] || emptyData();
+      Object.entries(d.attendance || {}).forEach(([dt, rec]) => {
+        if (rec && rec.status === "absent" && !rec.makeupDone && dt <= date) outstandingMakeups.push({ student: s, date: dt });
+      });
+    });
+    outstandingMakeups.sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 
   return html`
     <div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>출결 관리</div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. 결석으로 표시하면 보강 여부도 따로 체크할 수 있어요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
       <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <div style=${{ width: 190 }}><${DateField} value=${date} onChange=${setDate} /></div>
         <button onClick=${() => setDate(today())} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "9px 14px", fontSize: 12.5, color: C.navy, cursor: "pointer" }}>오늘</button>
@@ -2589,14 +2759,18 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
 
       ${!loaded ? html`<${Empty} text="불러오는 중..." />` : list.length === 0 ? html`<${Empty} text="이 날짜에 예정된 수업이 없어요." />` : list.map((s) => {
         const d = dataCache[s.id] || emptyData();
-        const status = (d.attendance || {})[date];
+        const rec = (d.attendance || {})[date];
+        const status = rec?.status;
         return html`
           <${Card} key=${s.id}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5 }}>${s.name}</div>
-              <div style=${{ display: "flex", gap: 8 }}>
+              <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <button onClick=${() => setAttendance(s.id, "present")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "present" ? C.gold : C.line}`, background: status === "present" ? C.gold : "#fff", color: status === "present" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>출석</button>
                 <button onClick=${() => setAttendance(s.id, "absent")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "absent" ? C.danger : C.line}`, background: status === "absent" ? C.danger : "#fff", color: status === "absent" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>결석</button>
+                ${status === "absent" && html`
+                  <button onClick=${() => toggleMakeup(s.id)} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${rec.makeupDone ? "#3D6B4F" : C.gold}`, background: rec.makeupDone ? "#3D6B4F" : "#fff", color: rec.makeupDone ? "#fff" : C.gold, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>${rec.makeupDone ? "✓ 보강완료" : "보강 필요"}</button>
+                `}
               </div>
             </div>
           <//>
@@ -2615,6 +2789,74 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
           </div>
         </div>
       `}
+
+      ${loaded && outstandingMakeups.length > 0 && html`
+        <div style=${{ marginTop: 20, paddingTop: 16, borderTop: `2px solid ${C.line}` }}>
+          <div style=${{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠ 아직 보강 안 한 결석 (${outstandingMakeups.length}건)</div>
+          ${outstandingMakeups.map((o, i) => html`
+            <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
+              <span>${o.student.name} — ${fmtDate(o.date)} 결석</span>
+              <button onClick=${() => toggleMakeup(o.student.id, o.date)} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, borderRadius: 3, padding: "4px 10px", fontSize: 11.5, cursor: "pointer" }}>보강 완료로 표시</button>
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// Teacher's own prep notes for this student — "다음 수업 전에 Unit 6 프린트 준비해오기" style
+// reminders with a target date. Purely teacher-facing: not shown to the student/parent dashboards,
+// no notifications tied to it.
+function TodoEditor({ data, updateData }) {
+  const [date, setDate] = useState(today());
+  const [content, setContent] = useState("");
+  const [hideDone, setHideDone] = useState(true);
+
+  async function add() {
+    if (!content.trim()) return;
+    await updateData((d) => ({ ...d, todos: [{ id: uid(), date, content: content.trim(), done: false }, ...(d.todos || [])] }));
+    setContent("");
+  }
+  async function toggleDone(id) {
+    await updateData((d) => ({ ...d, todos: (d.todos || []).map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }));
+  }
+  async function remove(id) {
+    await updateData((d) => ({ ...d, todos: (d.todos || []).filter((t) => t.id !== id) }));
+  }
+
+  const todos = [...(data.todos || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const visible = hideDone ? todos.filter((t) => !t.done) : todos;
+
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>✅ 다음에 준비할 것 추가</div>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style=${{ width: 160 }}><${DateField} value=${date} onChange=${setDate} /></div>
+          <input style=${{ ...inputStyle, flex: 1, minWidth: 160, marginBottom: 0 }} value=${content} onChange=${(e) => setContent(e.target.value)}
+            onKeyDown=${(e) => e.key === "Enter" && add()} placeholder="예: Unit 6 프린트 준비, 단어 재시험 채점" />
+          <${Button} variant="gold" style=${{ padding: "9px 16px", fontSize: 12.5 }} onClick=${add}>추가<//>
+        </div>
+      <//>
+      <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, marginBottom: 10, cursor: "pointer" }}>
+        <input type="checkbox" checked=${hideDone} onChange=${(e) => setHideDone(e.target.checked)} />
+        완료된 항목 숨기기
+      </label>
+      ${visible.length === 0 ? html`<${Empty} text="할 일이 없어요." />` : visible.map((t) => html`
+        <${Card} key=${t.id} style=${{ padding: 12 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style=${{ flex: 1 }}>
+              <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700 }}>${fmtDate(t.date)}</div>
+              <div style=${{ fontSize: 13.5, marginTop: 2, textDecoration: t.done ? "line-through" : "none", color: t.done ? C.slate : C.ink, whiteSpace: "pre-wrap" }}>${t.content}</div>
+            </div>
+            <div style=${{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              <button onClick=${() => toggleDone(t.id)} style=${{ background: "none", border: `1px solid ${t.done ? C.line : C.gold}`, color: t.done ? C.slate : C.gold, borderRadius: 3, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>${t.done ? "완료 취소" : "완료"}</button>
+              <button onClick=${() => remove(t.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
+            </div>
+          </div>
+        <//>
+      `)}
     </div>
   `;
 }
@@ -2623,6 +2865,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
   const [tab, setTab] = useState("logs");
   const tabs = [
     { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "todo", label: "할 일", icon: "✅" },
     { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
     { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
     { key: "homework", label: "숙제", icon: "📝" },
@@ -2651,6 +2894,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       </div>
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
       ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
       ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
@@ -4139,6 +4383,37 @@ function ExamEditor({ data, updateData }) {
 }
 
 // ---------- Mock exam (모의고사): answer-key only, auto-graded ----------
+// Teacher-facing per-question breakdown for one mock exam submission — score alone doesn't tell
+// the teacher WHAT a student actually answered, only how many were wrong. Reads r.answers (added
+// alongside the student edit-answers feature); older results saved before that field existed just
+// show the score line with no expand affordance, same as before.
+function MockResultRow({ r, answerKey }) {
+  const [open, setOpen] = useState(false);
+  const hasAnswers = Array.isArray(r.answers) && r.answers.length === answerKey.length;
+  return html`
+    <div style=${{ marginBottom: 6 }}>
+      <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}${r.editedAt ? " (수정됨)" : ""}${r.wrong && r.wrong.length > 0 ? ` (틀린 문제: ${r.wrong.join(", ")})` : ""}</span>
+        ${hasAnswers && html`<button onClick=${() => setOpen((o) => !o)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>${open ? "답 접기" : "답 보기"}</button>`}
+      </div>
+      ${open && hasAnswers && html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, background: C.ivory, padding: 8, borderRadius: 4 }}>
+          ${answerKey.map((correct, i) => {
+            const mine = r.answers[i];
+            const isWrong = normText(mine) !== normText(String(correct));
+            return html`
+              <div key=${i} style=${{ width: 46, textAlign: "center", fontSize: 10.5, padding: "3px 2px", borderRadius: 3, background: isWrong ? "#F7E9E6" : "#E9F1EA", color: isWrong ? C.danger : "#3D6B4F" }}>
+                <div style=${{ fontWeight: 700 }}>${i + 1}</div>
+                <div>${mine || "-"}${isWrong ? html`<span style=${{ color: C.slate }}> (${correct})</span>` : ""}</div>
+              </div>
+            `;
+          })}
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyText, setKeyText] = useState("");
@@ -4271,7 +4546,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               </div>
               ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
                 <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                  ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}${r.wrong && r.wrong.length > 0 ? ` (틀린 문제: ${r.wrong.join(", ")})` : ""}</div>`)}
+                  ${results.map((r) => html`<${MockResultRow} key=${r.id} r=${r} answerKey=${t.answerKey} />`)}
                 </div>
               `}
             `}
@@ -4284,9 +4559,9 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   `;
 }
 
-function MockExamTaker({ test, onExit, onSubmit }) {
+function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
   const total = test.answerKey.length;
-  const [answers, setAnswers] = useState(Array(total).fill(""));
+  const [answers, setAnswers] = useState(initialAnswers && initialAnswers.length === total ? initialAnswers : Array(total).fill(""));
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [wrong, setWrong] = useState([]);
@@ -4311,7 +4586,7 @@ function MockExamTaker({ test, onExit, onSubmit }) {
           <div style=${{ fontSize: 34, ...serif, color: C.gold }}>${result} <span style=${{ fontSize: 18, color: C.slate }}>/ ${total}</span></div>
           ${wrong.length > 0 && html`<div style=${{ fontSize: 13, color: C.danger, marginTop: 10 }}>틀린 문제: ${wrong.join(", ")}번</div>`}
         <//>
-        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total, wrong)}>결과 저장하고 나가기<//>
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total, wrong, answers)}>결과 저장하고 나가기<//>
       </div>
     `;
   }
@@ -4319,8 +4594,9 @@ function MockExamTaker({ test, onExit, onSubmit }) {
   return html`
     <div>
       <${BackBtn} onClick=${onExit} />
-      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 2 }}>${test.title}</div>
+      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 2 }}>${test.title}${editMode && html` <span style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>(답 수정 중)</span>`}</div>
       ${test.pageRange && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>${test.pageRange}</div>`}
+      ${editMode && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>직전 제출 답이 미리 채워져 있어요. 틀리게 입력한 답만 고치고 다시 제출하면 돼요.</div>`}
       <${Card}>
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 10 }}>
           ${test.answerKey.map((_, i) => html`
@@ -4390,6 +4666,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const [data, setData] = useState(null);
   const [activeTest, setActiveTest] = useState(null);
   const [activeMock, setActiveMock] = useState(null);
+  const [editingMockResultId, setEditingMockResultId] = useState(null); // non-null when re-submitting overwrites this result instead of adding a new one
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerStart, setTimerStart] = useState(null);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -4432,19 +4709,26 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   if (!data) return html`<${Empty} text="불러오는 중..." />`;
 
   if (activeMock) {
-    return html`<${MockExamTaker} test=${activeMock} onExit=${() => setActiveMock(null)}
-      onSubmit=${async (score, total, wrong) => {
-        const save = () => updateData(student.id, (d) => ({ ...d, mockExamResults: [{ id: uid(), testId: activeMock.id, date: today(), score, total, wrong }, ...(d.mockExamResults || [])] }));
+    const editingResult = editingMockResultId ? (data.mockExamResults || []).find((r) => r.id === editingMockResultId) : null;
+    return html`<${MockExamTaker} test=${activeMock} onExit=${() => { setActiveMock(null); setEditingMockResultId(null); }}
+      editMode=${!!editingResult} initialAnswers=${editingResult?.answers}
+      onSubmit=${async (score, total, wrong, answers) => {
+        const save = () => updateData(student.id, (d) => ({
+          ...d,
+          mockExamResults: editingResult
+            ? (d.mockExamResults || []).map((r) => (r.id === editingMockResultId ? { ...r, score, total, wrong, answers, editedAt: Date.now() } : r))
+            : [{ id: uid(), testId: activeMock.id, date: today(), score, total, wrong, answers }, ...(d.mockExamResults || [])],
+        }));
         try {
           await save();
-          notifyTeacher(student.name, "mock_exam_submit", `${score}/${total}점`);
+          notifyTeacher(student.name, "mock_exam_submit", editingResult ? `${score}/${total}점 (수정)` : `${score}/${total}점`);
         } catch (e) {
           console.error("결과 저장 실패", e);
           let recovered = false;
           if (isDocSizeError(e)) recovered = await attemptAutoShrinkAndRetry(student.id, updateData, save);
           if (!recovered) alert(friendlyErrorMessage(e));
         }
-        setActiveMock(null);
+        setActiveMock(null); setEditingMockResultId(null);
       }} />`;
   }
 
@@ -4639,7 +4923,12 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
                 ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
               </div>
-              <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => setActiveMock(t)}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+              <div style=${{ display: "flex", gap: 6, flexShrink: 0 }}>
+                ${myResults.length > 0 && myResults[0].answers && html`
+                  <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "8px 12px" }} onClick=${() => { setEditingMockResultId(myResults[0].id); setActiveMock(t); }}>답 수정<//>
+                `}
+                <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => { setEditingMockResultId(null); setActiveMock(t); }}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+              </div>
             </div>
           <//>
         `;
