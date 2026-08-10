@@ -4834,8 +4834,20 @@ function StudyLogEntryCard({ entry, studentId, updateData }) {
   `;
 }
 
+// Icon-grid actions shown on the student home screen (instead of a pill-style tab bar) — clicking
+// one sets `tab` and switches to that section's full-screen view with a back button, closer to a
+// phone app's home screen than a desktop-style tab strip.
+const STUDENT_HOME_ACTIONS = [
+  { key: "homework", label: "숙제 제출", icon: "📝", bg: "#FBF4EA" },
+  { key: "vocab", label: "단어 재시험", icon: "🔤", bg: "#EAF1FB" },
+  { key: "materials", label: "자료실", icon: "📁", bg: "#F3EDF7" },
+  { key: "mock", label: "모의고사 채점", icon: "📄", bg: "#E9F1EA" },
+  { key: "schedule", label: "이번달 시간표", icon: "🗓", bg: "#FDEDE9" },
+  { key: "studyTimer", label: "공부 시간 기록", icon: "⏱", bg: "#EAF6F6" },
+];
+
 function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData, dataCache, onLogout }) {
-  const [tab, setTab] = useState("homework");
+  const [tab, setTab] = useState(null); // null = home (icon grid); otherwise one of STUDENT_HOME_ACTIONS' keys
   const [data, setData] = useState(null);
   const [activeTest, setActiveTest] = useState(null);
   const [activeMock, setActiveMock] = useState(null);
@@ -4871,14 +4883,6 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       setResumedFromSession(true);
     }
   }, [data]);
-
-  const tabs = [
-    { key: "homework", label: "숙제", icon: "📝" },
-    { key: "vocab", label: "단어 재시험", icon: "🔤" },
-    { key: "mock", label: "모의고사 채점", icon: "📄" },
-    { key: "materials", label: "자료실", icon: "📁" },
-    { key: "schedule", label: "이번달 시간표", icon: "🗓" },
-  ];
 
   if (!data) return html`<${Empty} text="불러오는 중..." />`;
 
@@ -4926,7 +4930,8 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
   const todayStr = today();
-  const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate <= todayStr);
+  const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate === todayStr);
+  const overdueHw = (data.homework || []).filter((h) => !h.done && h.dueDate < todayStr);
   // Finds the true next class by merging two sources — the recurring weekly tutoring pattern
   // (skipping any date the teacher marked as an exception, e.g. a cancelled holiday class) and
   // one-off makeup classes from monthlyInstances, which can land sooner than the next weekly
@@ -4997,26 +5002,57 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     return (h > 0 ? String(h).padStart(2, "0") + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   }
 
-  return html`
-    <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생</div>
-        <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
-          <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, studentFcmToken: token }))} />
-          <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+  const header = html`
+    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생</div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
+        <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, studentFcmToken: token }))} />
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+    </div>
+  `;
+
+  if (tab === null) {
+    return html`
+      <div>
+        ${header}
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 18 }}>
+          <${Card} style=${{ marginBottom: 0 }}>
+            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
+            ${todayHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
+          <//>
+          <${Card} style=${{ marginBottom: 0, ...(overdueHw.length > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
+            <div style=${{ fontSize: 11, color: overdueHw.length > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>⏰ 밀린 숙제</div>
+            ${overdueHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 숙제가 없어요!</div>` : overdueHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger }}>${fmtDateDay(h.dueDate)} · ${h.content}</div>`)}
+          <//>
+        </div>
+
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+          ${STUDENT_HOME_ACTIONS.map((a) => html`
+            <button key=${a.key} onClick=${() => setTab(a.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <div style=${{ width: 44, height: 44, borderRadius: "50%", background: a.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>${a.icon}</div>
+              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${a.label}</div>
+            </button>
+          `)}
+        </div>
+
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+          <${Card} style=${{ marginBottom: 0 }}>
+            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>🗓 다음 수업</div>
+            <div style=${{ fontSize: 12.5, color: C.ink }}>${nextClassText}</div>
+          <//>
         </div>
       </div>
+    `;
+  }
 
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
-        <${Card} style=${{ marginBottom: 0 }}>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
-          ${todayHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
-        <//>
-        <${Card} style=${{ marginBottom: 0 }}>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>🗓 다음 수업</div>
-          <div style=${{ fontSize: 12.5, color: C.ink }}>${nextClassText}</div>
-        <//>
-        <${Card} style=${{ marginBottom: 0 }}>
+  return html`
+    <div>
+      ${header}
+      <${BackBtn} onClick=${() => setTab(null)} />
+
+      ${tab === "studyTimer" && html`
+        <${Card}>
           <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⏱ 공부 시간 기록</div>
           <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", margin: "4px 0" }}>${fmtElapsed(elapsedSec)}</div>
           <div style=${{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
@@ -5032,25 +5068,12 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>오늘 총 ${todayTotalMin}분 기록됨 (${todayEntries.length}건)</div>`}
           <div style=${{ fontSize: 11, color: C.navy, fontWeight: 700, marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>이번 달 누적 ${fmtMinutes(monthTotalMin)}</div>
         <//>
-        <${Card} style=${{ marginBottom: 0 }}>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>✅ 이번 달 목표</div>
-          ${(() => {
-            const monthGoals = (data.monthlyGoals || []).filter((g) => g.month === todayStr.slice(0, 7));
-            const remaining = monthGoals.filter((g) => !g.done);
-            if (monthGoals.length === 0) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 목표가 없어요.</div>`;
-            if (remaining.length === 0) return html`<div style=${{ fontSize: 12.5, color: C.navy }}>이번 달 목표를 모두 달성했어요! 🎉</div>`;
-            return remaining.map((g) => html`<div key=${g.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>☐ ${g.text}</div>`);
-          })()}
-        <//>
-      </div>
-
-      ${todayEntries.length > 0 && html`
-        <div style=${{ marginBottom: 16 }}>
-          ${todayEntries.map((e) => html`<${StudyLogEntryCard} key=${e.id} entry=${e} studentId=${student.id} updateData=${updateData} />`)}
-        </div>
+        ${todayEntries.length > 0 && html`
+          <div style=${{ marginTop: 12 }}>
+            ${todayEntries.map((e) => html`<${StudyLogEntryCard} key=${e.id} entry=${e} studentId=${student.id} updateData=${updateData} />`)}
+          </div>
+        `}
       `}
-
-      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
 
       ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
         groupByDate(data.homework || [], "dueDate").map((grp) => html`
