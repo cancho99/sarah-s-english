@@ -67,7 +67,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
@@ -90,7 +90,7 @@
   window.__getDocs = getDocs;
   window.__deleteDoc = deleteDoc;
   window.__query = query;
-  window.__orderBy = orderBy;
+  window.__where = where;
   window.__serverTimestamp = serverTimestamp;
   // Messaging isn't supported in every browser/context (needs a secure origin + service worker
   // support) — fail soft so the rest of the app still works where push notifications can't.
@@ -715,12 +715,16 @@ async function fileToDataURL(file) {
 // Materials library ("자료실") — a dedicated top-level collection (one Firestore doc per file),
 // not embedded in sarahsEnglishMeta/main, because files here (PDFs/이미지 등, inline as base64)
 // would otherwise blow through that doc's 1MB shared cap after just a couple of uploads. Same
-// pattern as passageArchive in passage-transform.html.
+// pattern as passageArchive in passage-transform.html. Per-student, not shared — each doc carries a
+// studentId and every read is scoped to one student so a student/parent only ever sees their own.
 const MATERIALS_COLLECTION = "materialsLibrary";
-async function fetchMaterials() {
-  const q = window.__query(window.__collection(window.__db, MATERIALS_COLLECTION), window.__orderBy("createdAt", "desc"));
+async function fetchMaterials(studentId) {
+  // Sorted client-side (not via orderBy in the query) so this stays a single-field equality
+  // filter — combining it with orderBy on a different field would need a composite index
+  // pre-created in the Firebase console, which nothing in this repo provisions.
+  const q = window.__query(window.__collection(window.__db, MATERIALS_COLLECTION), window.__where("studentId", "==", studentId));
   const snap = await window.__getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 }
 async function addMaterial(entry) {
   await window.__addDoc(window.__collection(window.__db, MATERIALS_COLLECTION), { ...entry, createdAt: window.__serverTimestamp() });
@@ -1696,7 +1700,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
-    { key: "materials", label: "자료실", icon: "📁" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
   ];
@@ -1717,8 +1720,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
-  } else if (section === "materials") {
-    body = html`<${MaterialsLibrarySection} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
@@ -2189,17 +2190,19 @@ function WordbankSection() {
   `;
 }
 
-// ---------- 자료실: 전체 학생 공통 학습 자료 업로드/다운로드 ----------
+// ---------- 자료실: 학생별 학습 자료 업로드/다운로드 ----------
 // One doc per file in MATERIALS_COLLECTION (see fetchMaterials/addMaterial/deleteMaterial above),
-// not per-student and not embedded in the meta doc, since files here are inline base64 and would
-// blow the 1MB doc cap. Shared list used read/write by the teacher and read-only by student/parent.
+// not embedded in the meta doc or the student's own doc, since files here are inline base64 and
+// would blow the 1MB doc cap. Each doc carries a studentId and every fetch is scoped to just one
+// student — teacher uploads from inside that student's panel, student/parent only ever see their
+// own student's materials, never another student's.
 function fmtFileSize(kb) {
   if (kb >= 1024) return (kb / 1024).toFixed(1) + "MB";
   return Math.round(kb) + "KB";
 }
 const MATERIAL_MAX_FILE_BYTES = 700 * 1024; // raw size cap — base64 (~+37%) plus metadata stays safely under Firestore's 1MB per-doc limit
 
-function MaterialsLibrarySection({ readOnly }) {
+function MaterialsLibrarySection({ student, readOnly }) {
   const [items, setItems] = useState(null); // null = loading
   const [err, setErr] = useState("");
   const [title, setTitle] = useState("");
@@ -2211,12 +2214,12 @@ function MaterialsLibrarySection({ readOnly }) {
 
   async function load() {
     try {
-      setItems(await fetchMaterials());
+      setItems(await fetchMaterials(student.id));
     } catch (e) {
       setErr("자료 목록을 불러오지 못했어요: " + String(e.message || e));
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [student.id]);
 
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -2232,6 +2235,7 @@ function MaterialsLibrarySection({ readOnly }) {
     try {
       const dataUrl = await fileToDataURL(file);
       await addMaterial({
+        studentId: student.id,
         title: title.trim(), subject: subject.trim(), level: level.trim(), note: note.trim(),
         fileName: file.name, fileType: file.type || "", fileSizeKB: Math.round(file.size / 1024), dataUrl,
       });
@@ -2260,7 +2264,7 @@ function MaterialsLibrarySection({ readOnly }) {
 
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${readOnly ? "선생님이 올려주신 학습 자료예요. 눌러서 다운로드하세요." : "학생·학부모가 다운로드할 수 있는 학습 자료를 올려요 (전체 공통 자료실)."}</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${readOnly ? "선생님이 올려주신 학습 자료예요. 눌러서 다운로드하세요." : `${student.name} 학생에게만 보이는 자료예요.`}</div>
 
       ${!readOnly && html`
         <${Card} style=${{ marginBottom: 16 }}>
@@ -3039,6 +3043,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
     { key: "mock", label: "모의고사", icon: "📄" },
     { key: "regularExam", label: "정기시험", icon: "🏫" },
+    { key: "materials", label: "자료실", icon: "📁" },
     { key: "tuition", label: "출결·수업료", icon: "💰" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
     { key: "storage", label: "저장 공간 관리", icon: "💾" },
@@ -3068,6 +3073,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
       ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
       ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
@@ -5104,7 +5110,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `))}
 
-      ${tab === "materials" && html`<${MaterialsLibrarySection} readOnly=${true} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} student=${student} readOnly=${true} />`}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
     </div>
   `;
@@ -5897,7 +5903,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         </div>
       `}
 
-      ${tab === "materials" && html`<${MaterialsLibrarySection} readOnly=${true} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} student=${student} readOnly=${true} />`}
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
     </div>
   `;
