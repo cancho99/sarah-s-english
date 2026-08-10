@@ -2434,9 +2434,12 @@ function scheduleSlotLabel(min) { return scheduleMinToTime(min) + (min >= 1440 ?
 // Row axis covers 00:00 through 01:00 "the next day" (raw minutes 0~1500) — not just a plain
 // 00:00~23:30 day — so classes that run past midnight (e.g. 23:00~01:00) have rows to span into
 // instead of quietly having their last hour clipped off the grid.
+// 10-min resolution (not 30) so a class starting on a non-half-hour minute (e.g. 19:40) still lands
+// on an exact grid row — previously off-grid start times saved fine but silently failed to render
+// (no matching row → the block was dropped), which looked like "추가가 안 된다" to the teacher.
 const MASTER_SCHEDULE_TIME_SLOTS = (() => {
   const slots = [];
-  for (let m = 0; m <= 25 * 60; m += 30) slots.push(m);
+  for (let m = 0; m <= 25 * 60; m += 10) slots.push(m);
   return slots;
 })();
 
@@ -2554,20 +2557,31 @@ function MasterScheduleView({ roster, saveRosterList }) {
   `));
   rowsToRender.forEach((rawMin, ri) => {
     const timeStr = scheduleMinToTime(rawMin);
-    bgCells.push(html`<div key=${"t-" + rawMin} style=${{ gridColumn: 1, gridRow: ri + 2, fontSize: 10.5, color: C.slate, padding: "8px 6px", borderTop: `1px solid ${C.line}`, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.ivory, zIndex: 2 }}>${scheduleSlotLabel(rawMin)}</div>`);
+    const onHalfHour = rawMin % 30 === 0;
+    bgCells.push(html`<div key=${"t-" + rawMin} style=${{ gridColumn: 1, gridRow: ri + 2, fontSize: 10.5, color: C.slate, padding: "3px 6px", borderTop: `1px solid ${C.line}`, whiteSpace: "nowrap", position: "sticky", left: 0, background: C.ivory, zIndex: 2 }}>${onHalfHour ? scheduleSlotLabel(rawMin) : ""}</div>`);
     MASTER_SCHEDULE_DAY_NAMES.forEach((day, ci) => {
       const key = day + "|" + timeStr;
       bgCells.push(html`<div key=${"bg-" + key + "-" + rawMin} onDragOver=${onCellDragOver(day, timeStr)} onDrop=${onCellDrop(day, timeStr)}
-        style=${{ gridColumn: ci + 2, gridRow: ri + 2, borderTop: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}`, minHeight: 36, background: dragOverKey === key ? "#FBF6EA" : undefined }}></div>`);
+        style=${{ gridColumn: ci + 2, gridRow: ri + 2, borderTop: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}`, minHeight: 14, background: dragOverKey === key ? "#FBF6EA" : undefined }}></div>`);
     });
   });
 
+  // Blocks are keyed by each entry's exact stored time, which for legacy data (saved before this
+  // 10-min grid, or anything hand-edited) might not land on a grid row at all. Snap to the nearest
+  // rendered row at or before the start instead of dropping the block — a block MUST always render
+  // somewhere once its data exists, since a silently-missing block reads to the teacher as "the add
+  // didn't work" when it actually did save.
   const blocks = Object.entries(groups).map(([key, list]) => {
     const [day, time] = key.split("|");
-    const startRow = rowIndexOf[scheduleTimeToMin(time)];
-    if (startRow === undefined) return null;
+    const startMin = scheduleTimeToMin(time);
+    let startRow = rowIndexOf[startMin];
+    if (startRow === undefined) {
+      const priorRows = rowsToRender.filter((t) => t <= startMin);
+      if (priorRows.length === 0) return null;
+      startRow = rowIndexOf[Math.max(...priorRows)];
+    }
     const maxEndMin = Math.max(...list.map((e) => e.endMin));
-    const spanRows = Math.max(1, Math.round((maxEndMin - scheduleTimeToMin(time)) / 30));
+    const spanRows = Math.max(1, Math.round((maxEndMin - startMin) / 10));
     return html`
       <div key=${"blk-" + key} onDragOver=${onCellDragOver(day, time)} onDrop=${onCellDrop(day, time)}
         style=${{ gridColumn: dayColIndex[day] + 2, gridRow: `${startRow + 2} / span ${spanRows}`, padding: 3, display: "flex", flexDirection: "column", gap: 2, overflow: "hidden", background: dragOverKey === key ? "#FBF6EA" : undefined }}>
