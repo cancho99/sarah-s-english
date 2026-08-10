@@ -67,7 +67,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
@@ -85,6 +85,13 @@
   window.__getDoc = getDoc;
   window.__setDoc = setDoc;
   window.__runTransaction = runTransaction;
+  window.__collection = collection;
+  window.__addDoc = addDoc;
+  window.__getDocs = getDocs;
+  window.__deleteDoc = deleteDoc;
+  window.__query = query;
+  window.__orderBy = orderBy;
+  window.__serverTimestamp = serverTimestamp;
   // Messaging isn't supported in every browser/context (needs a secure origin + service worker
   // support) — fail soft so the rest of the app still works where push notifications can't.
   try {
@@ -703,6 +710,23 @@ async function fileToDataURL(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+// Materials library ("자료실") — a dedicated top-level collection (one Firestore doc per file),
+// not embedded in sarahsEnglishMeta/main, because files here (PDFs/이미지 등, inline as base64)
+// would otherwise blow through that doc's 1MB shared cap after just a couple of uploads. Same
+// pattern as passageArchive in passage-transform.html.
+const MATERIALS_COLLECTION = "materialsLibrary";
+async function fetchMaterials() {
+  const q = window.__query(window.__collection(window.__db, MATERIALS_COLLECTION), window.__orderBy("createdAt", "desc"));
+  const snap = await window.__getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+async function addMaterial(entry) {
+  await window.__addDoc(window.__collection(window.__db, MATERIALS_COLLECTION), { ...entry, createdAt: window.__serverTimestamp() });
+}
+async function deleteMaterial(id) {
+  await window.__deleteDoc(window.__doc(window.__db, MATERIALS_COLLECTION, id));
 }
 
 // ---------- Shared UI ----------
@@ -1672,6 +1696,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
+    { key: "materials", label: "자료실", icon: "📁" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
   ];
@@ -1692,6 +1717,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
+  } else if (section === "materials") {
+    body = html`<${MaterialsLibrarySection} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
@@ -2158,6 +2185,115 @@ function WordbankSection() {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>기존에 쓰시던 단어 시험지 생성 도구가 이 안에 그대로 들어와 있어요. 같은 Firebase 데이터를 쓰기 때문에 여기서 만든 시험지도 그대로 저장돼요.</div>
       <iframe src="wordtest.html" style=${{ width: "100%", height: "78vh", border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff" }} />
+    </div>
+  `;
+}
+
+// ---------- 자료실: 전체 학생 공통 학습 자료 업로드/다운로드 ----------
+// One doc per file in MATERIALS_COLLECTION (see fetchMaterials/addMaterial/deleteMaterial above),
+// not per-student and not embedded in the meta doc, since files here are inline base64 and would
+// blow the 1MB doc cap. Shared list used read/write by the teacher and read-only by student/parent.
+function fmtFileSize(kb) {
+  if (kb >= 1024) return (kb / 1024).toFixed(1) + "MB";
+  return Math.round(kb) + "KB";
+}
+const MATERIAL_MAX_FILE_BYTES = 700 * 1024; // raw size cap — base64 (~+37%) plus metadata stays safely under Firestore's 1MB per-doc limit
+
+function MaterialsLibrarySection({ readOnly }) {
+  const [items, setItems] = useState(null); // null = loading
+  const [err, setErr] = useState("");
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("");
+  const [level, setLevel] = useState("");
+  const [note, setNote] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+
+  async function load() {
+    try {
+      setItems(await fetchMaterials());
+    } catch (e) {
+      setErr("자료 목록을 불러오지 못했어요: " + String(e.message || e));
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function handleFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!title.trim()) { setUploadMsg("먼저 제목을 입력해 주세요."); return; }
+    if (file.size > MATERIAL_MAX_FILE_BYTES) {
+      setUploadMsg(`파일이 너무 커요 (${Math.round(file.size / 1024)}KB). ${Math.round(MATERIAL_MAX_FILE_BYTES / 1024)}KB 이하로 올려 주세요.`);
+      return;
+    }
+    setUploading(true);
+    setUploadMsg("업로드 중...");
+    try {
+      const dataUrl = await fileToDataURL(file);
+      await addMaterial({
+        title: title.trim(), subject: subject.trim(), level: level.trim(), note: note.trim(),
+        fileName: file.name, fileType: file.type || "", fileSizeKB: Math.round(file.size / 1024), dataUrl,
+      });
+      setTitle(""); setSubject(""); setLevel(""); setNote("");
+      setUploadMsg("업로드했어요.");
+      await load();
+    } catch (e) {
+      setUploadMsg("업로드에 실패했어요: " + String(e.message || e).slice(0, 200));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDelete(id, itemTitle) {
+    if (!confirm(`"${itemTitle}" 자료를 삭제할까요?`)) return;
+    try {
+      await deleteMaterial(id);
+      setItems((list) => (list || []).filter((m) => m.id !== id));
+    } catch (e) {
+      alert("삭제에 실패했어요: " + String(e.message || e));
+    }
+  }
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (items === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${readOnly ? "선생님이 올려주신 학습 자료예요. 눌러서 다운로드하세요." : "학생·학부모가 다운로드할 수 있는 학습 자료를 올려요 (전체 공통 자료실)."}</div>
+
+      ${!readOnly && html`
+        <${Card} style=${{ marginBottom: 16 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>새 자료 올리기</div>
+          <input style=${{ ...inputStyle, marginBottom: 8 }} placeholder="제목 (필수)" value=${title} onChange=${(e) => setTitle(e.target.value)} />
+          <div style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input style=${inputStyle} placeholder="과목 (선택, 예: 문법)" value=${subject} onChange=${(e) => setSubject(e.target.value)} />
+            <input style=${inputStyle} placeholder="레벨 (선택, 예: 중2)" value=${level} onChange=${(e) => setLevel(e.target.value)} />
+          </div>
+          <textarea style=${{ ...inputStyle, marginBottom: 8, minHeight: 50 }} placeholder="설명 (선택)" value=${note} onChange=${(e) => setNote(e.target.value)} />
+          <input type="file" onChange=${handleFile} disabled=${uploading || !title.trim()} style=${{ fontSize: 12.5 }} />
+          <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>파일당 ${Math.round(MATERIAL_MAX_FILE_BYTES / 1024)}KB까지 올릴 수 있어요.</div>
+          ${uploadMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 6 }}>${uploadMsg}</div>`}
+        <//>
+      `}
+
+      ${items.length === 0
+        ? html`<${Empty} text="아직 등록된 자료가 없어요." />`
+        : items.map((m) => html`
+          <${Card} key=${m.id} style=${{ marginBottom: 10 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+              <div style=${{ minWidth: 0, flex: 1 }}>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${m.title}</div>
+                <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>${[m.subject, m.level].filter(Boolean).join(" · ")}${(m.subject || m.level) ? " · " : ""}${fmtFileSize(m.fileSizeKB || 0)}</div>
+                ${m.note && html`<div style=${{ fontSize: 12, color: C.ink, marginTop: 4 }}>${m.note}</div>`}
+              </div>
+              <div style=${{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
+                <a href=${m.dataUrl} download=${m.fileName} style=${{ fontSize: 12, fontWeight: 700, color: C.gold, textDecoration: "none", border: `1px solid ${C.gold}`, borderRadius: 3, padding: "5px 10px" }}>다운로드</a>
+                ${!readOnly && html`<button onClick=${() => handleDelete(m.id, m.title)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11.5, cursor: "pointer", padding: 0 }}>삭제</button>`}
+              </div>
+            </div>
+          <//>
+        `)}
     </div>
   `;
 }
@@ -4734,6 +4870,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     { key: "homework", label: "숙제", icon: "📝" },
     { key: "vocab", label: "단어 재시험", icon: "🔤" },
     { key: "mock", label: "모의고사 채점", icon: "📄" },
+    { key: "materials", label: "자료실", icon: "📁" },
     { key: "schedule", label: "이번달 시간표", icon: "🗓" },
   ];
 
@@ -4967,6 +5104,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `))}
 
+      ${tab === "materials" && html`<${MaterialsLibrarySection} readOnly=${true} />`}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
     </div>
   `;
@@ -5657,6 +5795,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
     { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
     { key: "monthlyReport", label: "월말 리포트", icon: "📊" },
     { key: "homework", label: "숙제", icon: "📝" },
+    { key: "materials", label: "자료실", icon: "📁" },
     { key: "tuition", label: "수업료", icon: "💰" },
     { key: "consult", label: "상담 신청", icon: "🗓" },
   ];
@@ -5758,6 +5897,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         </div>
       `}
 
+      ${tab === "materials" && html`<${MaterialsLibrarySection} readOnly=${true} />`}
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
     </div>
   `;
