@@ -2456,6 +2456,13 @@ const SCHEDULE_TABS = [
   { key: "vacationSchedule", label: "방학 스케줄" },
 ];
 
+// Baseline visible range per tab when "빈 시간대도 보기" is off — always shown in full regardless
+// of actual bookings (widened, never narrowed, by MasterScheduleView when an entry falls outside it).
+const MASTER_SCHEDULE_BASE_RANGE = {
+  schedule: [13 * 60, 24 * 60], // 학기 중: 13:00 ~ 자정
+  vacationSchedule: [10 * 60, 24 * 60], // 방학: 10:00 ~ 자정
+};
+
 function MasterScheduleView({ roster, saveRosterList }) {
   const [scheduleField, setScheduleField] = useState("schedule");
   const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
@@ -2480,14 +2487,24 @@ function MasterScheduleView({ roster, saveRosterList }) {
     });
   });
 
-  // Default view only shows rows actually covered by some class's start~end span (not just start
-  // times) — scanning the full 00:00~"01:00 다음날" range is correct but mostly empty rows.
-  // "빈 시간대도 보기" below switches to the full list. Rows are raw minute integers (0~1500) so a
-  // class crossing midnight has real, distinct rows to span into instead of colliding with the
-  // very-early-morning rows at the top of the same day's column.
-  const neededSlots = new Set();
-  allEntries.forEach((e) => { for (let t = e.startMin; t < e.endMin; t += 30) neededSlots.add(t); });
-  const visibleSlots = showEmpty ? MASTER_SCHEDULE_TIME_SLOTS : MASTER_SCHEDULE_TIME_SLOTS.filter((t) => neededSlots.has(t));
+  // Default view always shows a fixed baseline range per tab (학기 중: 13:00~자정, 방학:
+  // 10:00~자정) regardless of whether every slot in it has a class — every 30-min row in that
+  // range is rendered even if nothing is scheduled there, so gaps between classes show up as
+  // visibly blank rows instead of disappearing. That baseline is widened (never narrowed) to also
+  // cover any actual entry that falls outside it (e.g. an early-morning or past-midnight class).
+  // "빈 시간대도 보기" below switches to the full 00:00~"01:00 다음날" day instead.
+  // Rows are raw minute integers (0~1500) so a class crossing midnight has real, distinct rows to
+  // span into instead of colliding with the very-early-morning rows at the top of the same day's column.
+  const visibleSlots = (() => {
+    if (showEmpty) return MASTER_SCHEDULE_TIME_SLOTS;
+    const [baseStart, baseEnd] = MASTER_SCHEDULE_BASE_RANGE[scheduleField];
+    let rangeStart = baseStart, rangeEnd = baseEnd;
+    if (allEntries.length > 0) {
+      rangeStart = Math.min(rangeStart, ...allEntries.map((e) => e.startMin));
+      rangeEnd = Math.max(rangeEnd, ...allEntries.map((e) => e.endMin));
+    }
+    return MASTER_SCHEDULE_TIME_SLOTS.filter((t) => t >= rangeStart && t < rangeEnd);
+  })();
   const rowsToRender = visibleSlots.length > 0 ? visibleSlots : MASTER_SCHEDULE_TIME_SLOTS.slice(18, 30);
   const rowIndexOf = {};
   rowsToRender.forEach((t, i) => { rowIndexOf[t] = i; });
