@@ -4,10 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
 <title>Sarah's English</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #FAF7F1; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
+  body { margin: 0; background: #FAF7F1; font-family: 'Jua', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
   input, textarea, select, button { font-family: inherit; }
   input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
@@ -291,7 +294,7 @@ const C = {
   ink: "#14161A", navy: "#1C2B4A", gold: "#B8935A", ivory: "#FAF7F1",
   slate: "#5B6270", line: "#DCD8CF", white: "#FFFFFF", danger: "#A6473A",
 };
-const serif = { fontFamily: "Georgia, 'Times New Roman', serif" };
+const serif = { fontFamily: "'Jua', -apple-system, sans-serif" };
 const inputStyle = {
   width: "100%", padding: "10px 12px", borderRadius: 3, border: `1px solid ${C.line}`,
   fontSize: 14, boxSizing: "border-box", color: C.ink, background: C.white,
@@ -1301,6 +1304,40 @@ function DateField({ value, onChange, placeholder, disablePast }) {
   `;
 }
 
+// Presents a 24h "HH:MM" value/onChange (the format every scheduling function in this app
+// expects) as three plain <select> dropdowns — 오전/오후, 시, 분 — instead of the native
+// <input type="time">, whose AM/PM segment is fiddly to operate (click precisely into a tiny
+// segment, then type or scroll). Minutes are 10-min increments to match MASTER_SCHEDULE_TIME_SLOTS'
+// grid resolution, since that's also what real class times land on in practice (e.g. 19:40~21:50).
+function TimeField({ value, onChange }) {
+  const [h24raw, mRaw] = (value || "09:00").split(":").map(Number);
+  const h24 = isNaN(h24raw) ? 9 : h24raw;
+  const isPM = h24 >= 12;
+  const h12 = ((h24 + 11) % 12) + 1;
+  const m = Math.round((isNaN(mRaw) ? 0 : mRaw) / 10) * 10 % 60;
+
+  function commit(nextH12, nextIsPM, nextM) {
+    let h = nextH12 % 12;
+    if (nextIsPM) h += 12;
+    onChange(`${String(h).padStart(2, "0")}:${String(nextM).padStart(2, "0")}`);
+  }
+
+  return html`
+    <div style=${{ display: "flex", gap: 6 }}>
+      <select style=${{ ...inputStyle, marginBottom: 0, width: 66 }} value=${isPM ? "PM" : "AM"} onChange=${(e) => commit(h12, e.target.value === "PM", m)}>
+        <option value="AM">오전</option>
+        <option value="PM">오후</option>
+      </select>
+      <select style=${{ ...inputStyle, marginBottom: 0, width: 62 }} value=${h12} onChange=${(e) => commit(Number(e.target.value), isPM, m)}>
+        ${Array.from({ length: 12 }, (_, i) => i + 1).map((n) => html`<option key=${n} value=${n}>${n}시</option>`)}
+      </select>
+      <select style=${{ ...inputStyle, marginBottom: 0, width: 66 }} value=${m} onChange=${(e) => commit(h12, isPM, Number(e.target.value))}>
+        ${[0, 10, 20, 30, 40, 50].map((n) => html`<option key=${n} value=${n}>${String(n).padStart(2, "0")}분</option>`)}
+      </select>
+    </div>
+  `;
+}
+
 function MonthField({ value, onChange }) {
   const [y, m] = (value || today().slice(0, 7)).split("-").map(Number);
   function shift(delta) {
@@ -1642,15 +1679,28 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
-        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : rows.map(({ student, rec }) => html`
-          <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
-            <span>${student.name}${!rec.published ? html` <span style=${{ color: C.slate, fontSize: 10.5 }}>(학부모 비공개)</span>` : ""}</span>
-            <span style=${{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style=${{ fontWeight: 700, color: C.navy }}>${(rec.amount || 0).toLocaleString()}원</span>
-              <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: rec.paid ? "#E9F1EA" : "#F7E9E6", color: rec.paid ? "#3D6B4F" : C.danger }}>${rec.paid ? "입금완료" : "미입금"}</span>
-            </span>
+        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : html`
+          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+              <thead>
+                <tr style=${{ background: C.ivory }}>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "right", color: C.navy, fontSize: 11 }}>금액</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11, width: 90 }}>입금</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(({ student, rec }) => html`
+                  <tr key=${student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${student.name}${!rec.published ? html` <span style=${{ color: C.slate, fontSize: 10.5, fontWeight: 400 }}>(비공개)</span>` : ""}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "right", whiteSpace: "nowrap" }}>${(rec.amount || 0).toLocaleString()}원</td>
+                    <td style=${{ padding: "7px 10px" }}><span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: rec.paid ? "#E9F1EA" : "#F7E9E6", color: rec.paid ? "#3D6B4F" : C.danger, whiteSpace: "nowrap" }}>${rec.paid ? "입금완료" : "미입금"}</span></td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
           </div>
-        `)}
+        `}
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>최근 6개월 매출 추이</div>
@@ -1734,7 +1784,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
       addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
   } else if (section === "hwstatus") {
-    body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
+    body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
   } else if (section === "bookings") {
     body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
@@ -1803,23 +1853,35 @@ function MonthlyGoalsEditor({ student, data, updateData }) {
 }
 
 function StudentInfoEditor({ student, saveRosterList, roster }) {
+  const [name, setName] = useState(student.name || "");
   const [school, setSchool] = useState(student.school || "");
   const [grade, setGrade] = useState(student.grade || "");
+  const [birthdate, setBirthdate] = useState(student.birthdate || "");
+  const [address, setAddress] = useState(student.address || "");
   const [saved, setSaved] = useState(false);
-  useEffect(() => { setSchool(student.school || ""); setGrade(student.grade || ""); setSaved(false); }, [student.id]);
+  useEffect(() => {
+    setName(student.name || ""); setSchool(student.school || ""); setGrade(student.grade || "");
+    setBirthdate(student.birthdate || ""); setAddress(student.address || ""); setSaved(false);
+  }, [student.id]);
 
   async function save() {
-    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, school, grade } : r)));
+    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, name, school, grade, birthdate, address } : r)));
     setSaved(true);
   }
+  function field(setter) { return (e) => { setter(e.target.value); setSaved(false); }; }
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📋 학생 기본 정보</div>
       <div style=${{ display: "flex", gap: 8 }}>
-        <div style=${{ flex: 1 }}><${Field} label="학교"><input style=${inputStyle} value=${school} onChange=${(e) => { setSchool(e.target.value); setSaved(false); }} placeholder="예: OO중학교" /><//></div>
-        <div style=${{ flex: 1 }}><${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${(e) => { setGrade(e.target.value); setSaved(false); }} placeholder="예: 중2" /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${field(setName)} /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="학년"><input style=${inputStyle} value=${grade} onChange=${field(setGrade)} placeholder="예: 중2" /><//></div>
       </div>
+      <div style=${{ display: "flex", gap: 8 }}>
+        <div style=${{ flex: 1 }}><${Field} label="학교"><input style=${inputStyle} value=${school} onChange=${field(setSchool)} placeholder="예: OO중학교" /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="생년월일"><input style=${inputStyle} type="date" value=${birthdate} onChange=${field(setBirthdate)} /><//></div>
+      </div>
+      <${Field} label="주소"><input style=${inputStyle} value=${address} onChange=${field(setAddress)} placeholder="예: 서울시 강서구 ..." /><//>
       <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
         <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${save}>저장<//>
         ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
@@ -1833,13 +1895,14 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
 }
 
 function ScheduleGoalEditor({ student, saveRosterList, roster }) {
-  const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
   const [days, setDays] = useState(student.schedule || []);
   const [goal, setGoal] = useState(student.goal || "");
   const [month, setMonth] = useState(today().slice(0, 7));
   const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   useEffect(() => {
-    setDays(student.schedule || []); setGoal(student.goal || ""); setOpen(false);
+    setDays(student.schedule || []); setGoal(student.goal || ""); setSaved(false); setShowMonthly(false);
     setMonth(today().slice(0, 7));
     setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   }, [student.id]);
@@ -1849,9 +1912,9 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
-  function addSlot() { setDays([...days, { day: "월", time: "18:00", endTime: "19:00" }]); }
-  function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
-  function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); }
+  function addSlot() { setDays([...days, { day: "월", time: "18:00", endTime: "19:00" }]); setSaved(false); }
+  function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
+  function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); setSaved(false); }
   async function removeTutoringOccurrence(dateStr) {
     await saveRosterList(roster.map((r) => (r.id === student.id
       ? { ...r, tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), dateStr])] }
@@ -1870,79 +1933,85 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     }
     setMonthly(generated);
   }
-  function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); }
-  function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); }
-  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); }
+  function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
+  function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); setSaved(false); }
+  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); setSaved(false); }
 
   async function save() {
     await saveRosterList(roster.map((r) => (r.id === student.id
       ? { ...r, schedule: days, goal, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
       : r)));
-    setOpen(false);
+    setSaved(true);
   }
-
-  const sorted = [...(student.schedule || [])].sort((a, b) => DAY_NAMES.indexOf(a.day) - DAY_NAMES.indexOf(b.day));
-  const currentMonthly = (student.monthlyInstances || {})[today().slice(0, 7)] || [];
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>🗓 수업 스케줄 · 학습 목표</div>
-        <button onClick=${() => setOpen((o) => !o)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, cursor: "pointer" }}>${open ? "닫기" : "수정"}</button>
-      </div>
-      ${!open ? html`
-        <div style=${{ marginTop: 10 }}>
-          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>매주 반복 패턴</div>
-          <div style=${{ fontSize: 12.5, color: C.ink }}>
-            ${sorted.length === 0 ? html`<span style=${{ color: C.slate }}>등록된 수업 스케줄이 없어요.</span>` : sorted.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.day}요일 ${d.time}${d.endTime ? `~${d.endTime}` : ""}</span>`)}
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄 · 학습 목표</div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, alignItems: "start" }}>
+        <div>
+          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>매주 반복 수업</div>
+          ${days.length === 0 && html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>등록된 수업이 없어요. 아래에서 추가해 주세요.</div>`}
+          ${days.map((d, i) => html`
+            <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 8 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <select style=${{ ...inputStyle, marginBottom: 0, width: 110 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
+                  ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+                </select>
+                <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
+              </div>
+              <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <${TimeField} value=${d.time} onChange=${(v) => updateSlot(i, "time", v)} />
+                <span style=${{ color: C.slate }}>~</span>
+                <${TimeField} value=${d.endTime || ""} onChange=${(v) => updateSlot(i, "endTime", v)} />
+              </div>
+            </div>
+          `)}
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 16 }} onClick=${addSlot}>+ 매주 수업 추가<//>
+
+          <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12, marginBottom: 16 }}>
+            <button onClick=${() => setShowMonthly((v) => !v)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+              ${showMonthly ? "▾" : "▸"} 특정 날짜만 다르게 (보강 등)
+            </button>
+            ${showMonthly && html`
+              <div style=${{ marginTop: 10 }}>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>위 매주 패턴을 고른 달 달력에 그대로 채운 다음, 날짜가 바뀐 날만 골라 수정하세요.</div>
+                <div style=${{ marginBottom: 8 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+                <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 10 }} onClick=${generateMonth}>이 달 일정, 매주 패턴으로 채우기<//>
+                ${monthly.map((d, i) => html`
+                  <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 8 }}>
+                    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
+                      <${DateField} value=${d.date} onChange=${(v) => updateInstance(i, "date", v)} />
+                      <select style=${{ ...inputStyle, marginBottom: 0, width: 96 }} value=${d.type || "makeup"} onChange=${(e) => updateInstance(i, "type", e.target.value)}>
+                        <option value="tutoring">영어과외</option>
+                        <option value="makeup">영어보강</option>
+                      </select>
+                      <button onClick=${() => removeInstance(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
+                    </div>
+                    <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <${TimeField} value=${d.time} onChange=${(v) => updateInstance(i, "time", v)} />
+                      <span style=${{ color: C.slate }}>~</span>
+                      <${TimeField} value=${d.endTime || ""} onChange=${(v) => updateInstance(i, "endTime", v)} />
+                    </div>
+                  </div>
+                `)}
+                <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${addInstance}>+ 날짜 하나만 따로 추가<//>
+              </div>
+            `}
           </div>
-          ${currentMonthly.length > 0 && html`
-            <div style=${{ fontSize: 11, color: C.slate, margin: "10px 0 4px" }}>이번 달 확정 일정 (${currentMonthly.length}회)</div>
-            <div style=${{ fontSize: 12.5, color: C.ink }}>${currentMonthly.map((d, i) => html`<span key=${i} style=${{ marginRight: 12 }}>${d.date.slice(5)} ${d.time}${d.endTime ? `~${d.endTime}` : ""} ${d.type === "tutoring" ? "(과외)" : "(보강)"}</span>`)}</div>
-          `}
-          ${student.goal && html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 8 }}><b style=${{ color: C.ink }}>목표:</b> ${student.goal}</div>`}
-          <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 6px" }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
+
+          <${Field} label="학습 목표 (학부모 화면에도 표시돼요)"><input style=${inputStyle} value=${goal} onChange=${(e) => { setGoal(e.target.value); setSaved(false); }} placeholder="예: 이번 학기 내신 어법 정확도 90% 이상" /><//>
+          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${save}>저장<//>
+            ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
+          </div>
+        </div>
+
+        <div>
+          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
             tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} />
         </div>
-      ` : html`
-        <div style=${{ marginTop: 10 }}>
-          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 6 }}>매주 반복 패턴</div>
-          ${days.map((d, i) => html`
-            <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-              <select style=${{ ...inputStyle, marginBottom: 0, width: 90 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
-                ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
-              </select>
-              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateSlot(i, "time", e.target.value)} />
-              <span style=${{ color: C.slate }}>~</span>
-              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.endTime || ""} onChange=${(e) => updateSlot(i, "endTime", e.target.value)} />
-              <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
-            </div>
-          `)}
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 16 }} onClick=${addSlot}>+ 수업 시간 추가<//>
-
-          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 6, borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>월별 확정 일정</div>
-          <div style=${{ marginBottom: 8 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 10 }} onClick=${generateMonth}>이 달 일정 위 패턴으로 생성<//>
-          ${monthly.map((d, i) => html`
-            <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-              <${DateField} value=${d.date} onChange=${(v) => updateInstance(i, "date", v)} />
-              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateInstance(i, "time", e.target.value)} />
-              <span style=${{ color: C.slate }}>~</span>
-              <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.endTime || ""} onChange=${(e) => updateInstance(i, "endTime", e.target.value)} />
-              <select style=${{ ...inputStyle, marginBottom: 0, width: 76 }} value=${d.type || "makeup"} onChange=${(e) => updateInstance(i, "type", e.target.value)}>
-                <option value="tutoring">과외</option>
-                <option value="makeup">보강</option>
-              </select>
-              <button onClick=${() => removeInstance(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
-            </div>
-          `)}
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 12 }} onClick=${addInstance}>+ 날짜 하나 추가<//>
-
-          <${Field} label="학습 목표 (학부모 화면에도 표시돼요)"><input style=${inputStyle} value=${goal} onChange=${(e) => setGoal(e.target.value)} placeholder="예: 이번 학기 내신 어법 정확도 90% 이상" /><//>
-          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${save}>저장<//>
-        </div>
-      `}
+      </div>
     <//>
   `;
 }
@@ -2501,9 +2570,11 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, roster, ensureD
   `;
 }
 
-function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogout }) {
+function HomeworkStatusOverview({ roster, ensureData, dataCache, updateData, onBack, onLogout }) {
   const [loaded, setLoaded] = useState(false);
   const [studentFilter, setStudentFilter] = useState("");
+  const [selected, setSelected] = useState({}); // "studentId|homeworkId" -> true
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2514,6 +2585,7 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
     return () => { cancelled = true; };
   }, []);
 
+  const todayStr = today();
   const byDate = {};
   roster.forEach((s) => {
     if (studentFilter && s.id !== studentFilter) return;
@@ -2522,12 +2594,41 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
       if (h.done) return; // only show incomplete homework
       const date = h.dueDate || h.assignedDate;
       if (!date) return;
-      if (!byDate[date]) byDate[date] = {};
-      if (!byDate[date][s.id]) byDate[date][s.id] = { student: s, items: [] };
-      byDate[date][s.id].items.push(h);
+      (byDate[date] || (byDate[date] = [])).push({ student: s, hw: h });
     });
   });
   const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+
+  function rowKey(studentId, hwId) { return studentId + "|" + hwId; }
+  function toggleRow(studentId, hwId) {
+    const k = rowKey(studentId, hwId);
+    setSelected((s) => { const n = { ...s }; if (n[k]) delete n[k]; else n[k] = true; return n; });
+  }
+  const selectedCount = Object.keys(selected).length;
+
+  // Bulk "완료 처리" — lets the teacher clear homework off this overview after checking it in
+  // person, without opening each student's own panel. Grouped by student since each write goes
+  // through that student's own document.
+  async function completeSelected() {
+    if (selectedCount === 0) return;
+    setBusy(true);
+    try {
+      const byStudent = {};
+      Object.keys(selected).forEach((k) => {
+        const [studentId, hwId] = k.split("|");
+        (byStudent[studentId] || (byStudent[studentId] = [])).push(hwId);
+      });
+      for (const [studentId, hwIds] of Object.entries(byStudent)) {
+        await updateData(studentId, (d) => ({
+          ...d,
+          homework: (d.homework || []).map((h) => (hwIds.includes(h.id) ? { ...h, done: true } : h)),
+        }));
+      }
+      setSelected({});
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return html`
     <div>
@@ -2536,30 +2637,58 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, onBack, onLogou
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
       </div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>숙제 현황 <span style=${{ fontSize: 12, color: C.slate, fontWeight: 400 }}>(미완료만 표시)</span></div>
-      <${Card}>
+
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
         <${Field} label="학생 필터">
-          <select style=${inputStyle} value=${studentFilter} onChange=${(e) => setStudentFilter(e.target.value)}>
+          <select style=${{ ...inputStyle, minWidth: 180 }} value=${studentFilter} onChange=${(e) => setStudentFilter(e.target.value)}>
             <option value="">전체 학생</option>
             ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
           </select>
         <//>
-      <//>
-      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="미완료 숙제가 없어요." />` : dates.map((date) => html`
-        <div key=${date} style=${{ marginTop: 20 }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.gold, letterSpacing: 1, marginBottom: 8, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>${fmtDate(date)}</div>
-          ${Object.values(byDate[date]).map((r) => html`
-            <${Card} key=${r.student.id}>
-              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 6 }}>${r.student.name}</div>
-              ${r.items.map((h, i) => html`
-                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0" }}>
-                  <div style=${{ fontSize: 13, whiteSpace: "pre-wrap", flex: 1 }}>${h.content}</div>
-                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger, marginLeft: 10, whiteSpace: "nowrap" }}>✗ 미완료</div>
-                </div>
-              `)}
-            <//>
-          `)}
-        </div>
-      `)}
+        <${Button} variant="gold" disabled=${selectedCount === 0 || busy} onClick=${completeSelected} style=${{ padding: "9px 16px", fontSize: 12.5, marginBottom: 12 }}>
+          ${busy ? "처리 중..." : selectedCount > 0 ? `선택한 ${selectedCount}건 완료 처리` : "완료 처리할 항목 선택"}
+        <//>
+      </div>
+
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="미완료 숙제가 없어요." />` : dates.map((date) => {
+        const rows = byDate[date];
+        const isOverdue = date < todayStr;
+        const isToday = date === todayStr;
+        return html`
+          <div key=${date} style=${{ marginTop: 20 }}>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: isOverdue ? C.danger : C.gold, letterSpacing: 1, marginBottom: 8, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}>
+              ${fmtDate(date)}${isOverdue ? " · 마감 지남" : isToday ? " · 오늘 마감" : ""}
+            </div>
+            <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+              <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
+                <thead>
+                  <tr style=${{ background: C.ivory }}>
+                    <th style=${{ padding: "8px 10px", width: 32 }}></th>
+                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>숙제 내용</th>
+                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11, width: 96 }}>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map((r) => {
+                    const k = rowKey(r.student.id, r.hw.id);
+                    return html`
+                      <tr key=${k} style=${{ borderTop: `1px solid ${C.line}`, background: selected[k] ? "#FBF6EA" : undefined }}>
+                        <td style=${{ padding: "8px 10px" }}><input type="checkbox" checked=${!!selected[k]} onChange=${() => toggleRow(r.student.id, r.hw.id)} /></td>
+                        <td style=${{ padding: "8px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
+                        <td style=${{ padding: "8px 10px", whiteSpace: "pre-wrap" }}>${r.hw.content}</td>
+                        <td style=${{ padding: "8px 10px" }}>
+                          <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: isOverdue ? "#F7E9E6" : "#FBF4EA", color: isOverdue ? C.danger : C.gold, whiteSpace: "nowrap" }}>${isOverdue ? "✗ 마감지남" : "미완료"}</span>
+                        </td>
+                      </tr>
+                    `;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      })}
     </div>
   `;
 }
@@ -2812,10 +2941,10 @@ function MasterScheduleView({ roster, saveRosterList }) {
             </select>
           <//>
           <${Field} label="시작 시간">
-            <input style=${inputStyle} type="time" value=${adding.time} onChange=${(e) => setAdding({ ...adding, time: e.target.value })} />
+            <${TimeField} value=${adding.time} onChange=${(v) => setAdding({ ...adding, time: v })} />
           <//>
           <${Field} label="종료 시간">
-            <input style=${inputStyle} type="time" value=${adding.endTime} onChange=${(e) => setAdding({ ...adding, endTime: e.target.value })} />
+            <${TimeField} value=${adding.endTime} onChange=${(v) => setAdding({ ...adding, endTime: v })} />
           <//>
           <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <${Button} variant="gold" disabled=${!addStudent || !adding.day || !adding.time || !adding.endTime} onClick=${saveAdd}>추가<//>
@@ -2833,10 +2962,10 @@ function MasterScheduleView({ roster, saveRosterList }) {
             </select>
           <//>
           <${Field} label="시작 시간">
-            <input style=${inputStyle} type="time" value=${editing.time} onChange=${(e) => setEditing({ ...editing, time: e.target.value })} />
+            <${TimeField} value=${editing.time} onChange=${(v) => setEditing({ ...editing, time: v })} />
           <//>
           <${Field} label="종료 시간">
-            <input style=${inputStyle} type="time" value=${editing.endTime} onChange=${(e) => setEditing({ ...editing, endTime: e.target.value })} />
+            <${TimeField} value=${editing.endTime} onChange=${(v) => setEditing({ ...editing, endTime: v })} />
           <//>
           <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <${Button} variant="gold" disabled=${!editing.time || !editing.endTime} onClick=${saveEdit}>저장<//>
@@ -2928,25 +3057,42 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
         <button onClick=${() => setDate(today())} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "9px 14px", fontSize: 12.5, color: C.navy, cursor: "pointer" }}>오늘</button>
       </div>
 
-      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : list.length === 0 ? html`<${Empty} text="이 날짜에 예정된 수업이 없어요." />` : list.map((s) => {
-        const d = dataCache[s.id] || emptyData();
-        const rec = (d.attendance || {})[date];
-        const status = rec?.status;
-        return html`
-          <${Card} key=${s.id}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5 }}>${s.name}</div>
-              <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <button onClick=${() => setAttendance(s.id, "present")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "present" ? C.gold : C.line}`, background: status === "present" ? C.gold : "#fff", color: status === "present" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>출석</button>
-                <button onClick=${() => setAttendance(s.id, "absent")} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${status === "absent" ? C.danger : C.line}`, background: status === "absent" ? C.danger : "#fff", color: status === "absent" ? "#fff" : C.ink, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>결석</button>
-                ${status === "absent" && html`
-                  <button onClick=${() => toggleMakeup(s.id)} style=${{ padding: "9px 18px", borderRadius: 3, border: `1px solid ${rec.makeupDone ? "#3D6B4F" : C.gold}`, background: rec.makeupDone ? "#3D6B4F" : "#fff", color: rec.makeupDone ? "#fff" : C.gold, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>${rec.makeupDone ? "✓ 보강완료" : "보강 필요"}</button>
-                `}
-              </div>
-            </div>
-          <//>
-        `;
-      })}
+      ${!loaded ? html`<${Empty} text="불러오는 중..." />` : list.length === 0 ? html`<${Empty} text="이 날짜에 예정된 수업이 없어요." />` : html`
+        <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+          <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 460 }}>
+            <thead>
+              <tr style=${{ background: C.ivory }}>
+                <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>출결</th>
+                <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>보강</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map((s) => {
+                const d = dataCache[s.id] || emptyData();
+                const rec = (d.attendance || {})[date];
+                const status = rec?.status;
+                return html`
+                  <tr key=${s.id} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "8px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${s.name}</td>
+                    <td style=${{ padding: "8px 10px" }}>
+                      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick=${() => setAttendance(s.id, "present")} style=${{ padding: "6px 14px", borderRadius: 3, border: `1px solid ${status === "present" ? C.gold : C.line}`, background: status === "present" ? C.gold : "#fff", color: status === "present" ? "#fff" : C.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>출석</button>
+                        <button onClick=${() => setAttendance(s.id, "absent")} style=${{ padding: "6px 14px", borderRadius: 3, border: `1px solid ${status === "absent" ? C.danger : C.line}`, background: status === "absent" ? C.danger : "#fff", color: status === "absent" ? "#fff" : C.ink, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>결석</button>
+                      </div>
+                    </td>
+                    <td style=${{ padding: "8px 10px" }}>
+                      ${status === "absent"
+                        ? html`<button onClick=${() => toggleMakeup(s.id)} style=${{ padding: "6px 14px", borderRadius: 3, border: `1px solid ${rec.makeupDone ? "#3D6B4F" : C.gold}`, background: rec.makeupDone ? "#3D6B4F" : "#fff", color: rec.makeupDone ? "#fff" : C.gold, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>${rec.makeupDone ? "✓ 보강완료" : "보강 필요"}</button>`
+                        : html`<span style=${{ color: C.slate, fontSize: 12 }}>—</span>`}
+                    </td>
+                  </tr>
+                `;
+              })}
+            </tbody>
+          </table>
+        </div>
+      `}
 
       ${loaded && remaining.length > 0 && html`
         <div style=${{ marginTop: 16, paddingTop: 14, borderTop: `1px dashed ${C.line}` }}>
@@ -2964,12 +3110,26 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
       ${loaded && outstandingMakeups.length > 0 && html`
         <div style=${{ marginTop: 20, paddingTop: 16, borderTop: `2px solid ${C.line}` }}>
           <div style=${{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠ 아직 보강 안 한 결석 (${outstandingMakeups.length}건)</div>
-          ${outstandingMakeups.map((o, i) => html`
-            <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
-              <span>${o.student.name} — ${fmtDate(o.date)} 결석</span>
-              <button onClick=${() => toggleMakeup(o.student.id, o.date)} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, borderRadius: 3, padding: "4px 10px", fontSize: 11.5, cursor: "pointer" }}>보강 완료로 표시</button>
-            </div>
-          `)}
+          <div style=${{ overflowX: "auto", border: `1px solid #E9C7C0`, borderRadius: 4 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+              <thead>
+                <tr style=${{ background: "#F7E9E6" }}>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.danger, fontSize: 11 }}>학생</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.danger, fontSize: 11 }}>결석일</th>
+                  <th style=${{ padding: "7px 10px", width: 140 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${outstandingMakeups.map((o, i) => html`
+                  <tr key=${i} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${o.student.name}</td>
+                    <td style=${{ padding: "7px 10px", whiteSpace: "nowrap" }}>${fmtDate(o.date)}</td>
+                    <td style=${{ padding: "7px 10px" }}><button onClick=${() => toggleMakeup(o.student.id, o.date)} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, borderRadius: 3, padding: "5px 10px", fontSize: 11.5, cursor: "pointer" }}>보강 완료로 표시</button></td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
         </div>
       `}
     </div>
@@ -3032,22 +3192,27 @@ function TodoEditor({ data, updateData }) {
   `;
 }
 
+// Icon-grid menu (same pattern as STUDENT_HOME_ACTIONS on the student home screen) instead of a
+// pill-style tab strip — 12 tabs in a row was cramped and hard to scan; a 3-column button grid
+// reads more like a menu than a strip of small text labels.
+const TEACHER_STUDENT_TABS = [
+  { key: "logs", label: "학습 기록", icon: "📘", bg: "#FBF4EA" },
+  { key: "todo", label: "할 일", icon: "✅", bg: "#E9F1EA" },
+  { key: "vocabLog", label: "단어시험 기록", icon: "✏️", bg: "#EAF1FB" },
+  { key: "dailyReport", label: "데일리 리포트", icon: "📰", bg: "#F3EDF7" },
+  { key: "homework", label: "숙제", icon: "📝", bg: "#FDEDE9" },
+  { key: "vocab", label: "단어 재시험", icon: "🔤", bg: "#EAF6F6" },
+  { key: "mock", label: "모의고사", icon: "📄", bg: "#FBF4EA" },
+  { key: "regularExam", label: "정기시험", icon: "🏫", bg: "#E9F1EA" },
+  { key: "materials", label: "자료실", icon: "📁", bg: "#EAF1FB" },
+  { key: "tuition", label: "출결·수업료", icon: "💰", bg: "#F3EDF7" },
+  { key: "consult", label: "상담 신청", icon: "🗓", bg: "#FDEDE9" },
+  { key: "storage", label: "저장 공간 관리", icon: "💾", bg: "#EAF6F6" },
+];
+
 function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent, examKeyLibrary }) {
-  const [tab, setTab] = useState("logs");
-  const tabs = [
-    { key: "logs", label: "학습 기록", icon: "📘" },
-    { key: "todo", label: "할 일", icon: "✅" },
-    { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
-    { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
-    { key: "homework", label: "숙제", icon: "📝" },
-    { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
-    { key: "mock", label: "모의고사", icon: "📄" },
-    { key: "regularExam", label: "정기시험", icon: "🏫" },
-    { key: "materials", label: "자료실", icon: "📁" },
-    { key: "tuition", label: "출결·수업료", icon: "💰" },
-    { key: "consult", label: "상담 신청", icon: "🗓" },
-    { key: "storage", label: "저장 공간 관리", icon: "💾" },
-  ];
+  const [tab, setTab] = useState(null); // null = menu grid; otherwise one of TEACHER_STUDENT_TABS' keys
+  useEffect(() => { setTab(null); }, [student.id]);
   function handleDelete() {
     if (confirm(`${student.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) onDeleteStudent();
   }
@@ -3064,19 +3229,33 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         </div>
         <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
       </div>
-      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
-      ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
-      ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
-      ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
-      ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
+
+      ${tab === null ? html`
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 14 }}>
+          ${TEACHER_STUDENT_TABS.map((t) => html`
+            <button key=${t.key} onClick=${() => setTab(t.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <div style=${{ width: 42, height: 42, borderRadius: "50%", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>${t.icon}</div>
+              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${t.label}</div>
+            </button>
+          `)}
+        </div>
+      ` : html`
+        <div style=${{ marginTop: 10 }}>
+          <button onClick=${() => setTab(null)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: 0 }}>‹ 메뉴로</button>
+          ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+          ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
+          ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
+          ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+          ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
+          ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
+          ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
+          ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+          ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
+          ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+          ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
+          ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
+        </div>
+      `}
     </div>
   `;
 }
@@ -4284,7 +4463,7 @@ function VocabRetestSchedule({ t, updateData }) {
   return html`
     <div style=${{ display: "flex", gap: 6, alignItems: "center", marginTop: 6, flexWrap: "wrap" }}>
       <${DateField} value=${date} onChange=${setDate} />
-      <input style=${{ ...inputStyle, marginBottom: 0, width: 100 }} type="time" value=${time} onChange=${(e) => setTime(e.target.value)} />
+      <${TimeField} value=${time} onChange=${setTime} />
       <button disabled=${!date || !time} onClick=${save} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, fontSize: 11, padding: "4px 10px", borderRadius: 3, cursor: (!date || !time) ? "default" : "pointer", opacity: (!date || !time) ? 0.5 : 1 }}>저장</button>
       <button onClick=${() => setEditing(false)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11, cursor: "pointer" }}>취소</button>
     </div>
@@ -4375,7 +4554,7 @@ function VocabEditor({ student, data, updateData }) {
           <${Field} label="재시험 예정 시간 (필수 — 5분 전·정각에 학생/선생님께 알림이 가요)">
             <div style=${{ display: "flex", gap: 8 }}>
               <div style=${{ flex: 1 }}><${DateField} value=${retestDate} onChange=${setRetestDate} /></div>
-              <input style=${{ ...inputStyle, width: 110 }} type="time" value=${retestTime} onChange=${(e) => setRetestTime(e.target.value)} />
+              <${TimeField} value=${retestTime} onChange=${setRetestTime} />
             </div>
           <//>
           <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -5027,6 +5206,11 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           <//>
         </div>
 
+        <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
+          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClassText}</div>
+        </div>
+
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
           ${STUDENT_HOME_ACTIONS.map((a) => html`
             <button key=${a.key} onClick=${() => setTab(a.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -5034,13 +5218,6 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
               <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${a.label}</div>
             </button>
           `)}
-        </div>
-
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-          <${Card} style=${{ marginBottom: 0 }}>
-            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>🗓 다음 수업</div>
-            <div style=${{ fontSize: 12.5, color: C.ink }}>${nextClassText}</div>
-          <//>
         </div>
       </div>
     `;
@@ -5192,8 +5369,8 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "과외" })),
-      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "과외" : "보강" })),
+      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
+      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강" })),
       ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
   }
@@ -5413,12 +5590,14 @@ function TuitionEditor({ student, data, updateData }) {
   `;
 }
 
+const OTHER_SCHEDULE_PRESETS = ["수학학원", "국어학원", "과학학원"];
+
 function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   const [items, setItems] = useState(student.otherSchedule || []);
   const [saved, setSaved] = useState(false);
   useEffect(() => { setItems(student.otherSchedule || []); setSaved(false); }, [student.id]);
 
-  function addSlot() { setItems([...items, { day: "월", time: "18:00", name: "" }]); setSaved(false); }
+  function addSlot() { setItems([...items, { day: "월", time: "18:00", name: "수학학원" }]); setSaved(false); }
   function updateSlot(i, field, val) { setItems(items.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
   function removeSlot(i) { setItems(items.filter((_, idx) => idx !== i)); setSaved(false); }
 
@@ -5434,17 +5613,28 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
     <div>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 4 }}>🗓 다른 학원 시간표 입력</div>
-        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>영어 과외 수업 말고, 다니고 있는 다른 학원·과외 시간을 입력해 주세요 (한 달에 한 번 정도, 바뀔 때마다 업데이트해 주면 돼요). 선생님도 이 내용을 볼 수 있어요.</div>
-        ${items.map((d, i) => html`
-          <div key=${i} style=${{ display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }}>
-            <select style=${{ ...inputStyle, marginBottom: 0, width: 90 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
-              ${WEEKDAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
-            </select>
-            <input style=${{ ...inputStyle, marginBottom: 0 }} type="time" value=${d.time} onChange=${(e) => updateSlot(i, "time", e.target.value)} />
-            <input style=${{ ...inputStyle, marginBottom: 0 }} value=${d.name} onChange=${(e) => updateSlot(i, "name", e.target.value)} placeholder="학원/과목 이름 (예: 수학학원)" />
-            <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
-          </div>
-        `)}
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>영어 과외 수업 말고, 매주 다니고 있는 다른 학원·과외 시간을 입력해 주세요 (바뀔 때마다 업데이트해 주면 돼요). 선생님도 이 내용을 볼 수 있어요.</div>
+        ${items.map((d, i) => {
+          const isPreset = OTHER_SCHEDULE_PRESETS.includes(d.name);
+          return html`
+            <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 8 }}>
+              <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <select style=${{ ...inputStyle, marginBottom: 0, width: 90 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
+                  ${WEEKDAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+                </select>
+                <select style=${{ ...inputStyle, marginBottom: 0, width: 110 }} value=${isPreset ? d.name : "기타"} onChange=${(e) => updateSlot(i, "name", e.target.value === "기타" ? "" : e.target.value)}>
+                  ${OTHER_SCHEDULE_PRESETS.map((n) => html`<option key=${n} value=${n}>${n}</option>`)}
+                  <option value="기타">기타</option>
+                </select>
+                ${!isPreset && html`<input style=${{ ...inputStyle, marginBottom: 0, flex: 1, minWidth: 100 }} value=${d.name} onChange=${(e) => updateSlot(i, "name", e.target.value)} placeholder="학원/과목 이름 입력" />`}
+                <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
+              </div>
+              <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <${TimeField} value=${d.time} onChange=${(v) => updateSlot(i, "time", v)} />
+              </div>
+            </div>
+          `;
+        })}
         <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginTop: 4 }} onClick=${addSlot}>+ 시간 추가<//>
         <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
           <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${save}>저장<//>
