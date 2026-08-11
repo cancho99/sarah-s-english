@@ -3193,26 +3193,22 @@ function TodoEditor({ data, updateData }) {
 }
 
 // Icon-grid menu (same pattern as STUDENT_HOME_ACTIONS on the student home screen) instead of a
-// pill-style tab strip — 12 tabs in a row was cramped and hard to scan; a 3-column button grid
-// reads more like a menu than a strip of small text labels.
-const TEACHER_STUDENT_TABS = [
-  { key: "logs", label: "학습 기록", icon: "📘", bg: "#FBF4EA" },
-  { key: "todo", label: "할 일", icon: "✅", bg: "#E9F1EA" },
-  { key: "vocabLog", label: "단어시험 기록", icon: "✏️", bg: "#EAF1FB" },
-  { key: "dailyReport", label: "데일리 리포트", icon: "📰", bg: "#F3EDF7" },
-  { key: "homework", label: "숙제", icon: "📝", bg: "#FDEDE9" },
-  { key: "vocab", label: "단어 재시험", icon: "🔤", bg: "#EAF6F6" },
-  { key: "mock", label: "모의고사", icon: "📄", bg: "#FBF4EA" },
-  { key: "regularExam", label: "정기시험", icon: "🏫", bg: "#E9F1EA" },
-  { key: "materials", label: "자료실", icon: "📁", bg: "#EAF1FB" },
-  { key: "tuition", label: "출결·수업료", icon: "💰", bg: "#F3EDF7" },
-  { key: "consult", label: "상담 신청", icon: "🗓", bg: "#FDEDE9" },
-  { key: "storage", label: "저장 공간 관리", icon: "💾", bg: "#EAF6F6" },
-];
-
 function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent, examKeyLibrary }) {
-  const [tab, setTab] = useState(null); // null = menu grid; otherwise one of TEACHER_STUDENT_TABS' keys
-  useEffect(() => { setTab(null); }, [student.id]);
+  const [tab, setTab] = useState("logs");
+  const tabs = [
+    { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "todo", label: "할 일", icon: "✅" },
+    { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
+    { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
+    { key: "homework", label: "숙제", icon: "📝" },
+    { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
+    { key: "mock", label: "모의고사", icon: "📄" },
+    { key: "regularExam", label: "정기시험", icon: "🏫" },
+    { key: "materials", label: "자료실", icon: "📁" },
+    { key: "tuition", label: "출결·수업료", icon: "💰" },
+    { key: "consult", label: "상담 신청", icon: "🗓" },
+    { key: "storage", label: "저장 공간 관리", icon: "💾" },
+  ];
   function handleDelete() {
     if (confirm(`${student.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) onDeleteStudent();
   }
@@ -3229,33 +3225,19 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
         </div>
         <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
       </div>
-
-      ${tab === null ? html`
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 14 }}>
-          ${TEACHER_STUDENT_TABS.map((t) => html`
-            <button key=${t.key} onClick=${() => setTab(t.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <div style=${{ width: 42, height: 42, borderRadius: "50%", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 19 }}>${t.icon}</div>
-              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${t.label}</div>
-            </button>
-          `)}
-        </div>
-      ` : html`
-        <div style=${{ marginTop: 10 }}>
-          <button onClick=${() => setTab(null)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: 0 }}>‹ 메뉴로</button>
-          ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
-          ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
-          ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
-          ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-          ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
-          ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
-          ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
-          ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
-          ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
-          ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-          ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
-          ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
-        </div>
-      `}
+      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+      ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
+      ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
+      ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+      ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
+      ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
     </div>
   `;
 }
