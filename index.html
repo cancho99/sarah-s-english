@@ -511,7 +511,7 @@ function homeworkStats(homework) {
   return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
 }
 // Same rule VocabLogEditor already uses for manually-recorded in-person tests (range.includes
-// "누적")), applied to online 단어 재시험 tests too via their title: 누적(cumulative-range) tests
+// "누적")), applied to online 단어 시험 tests too via their title: 누적(cumulative-range) tests
 // pass at 90%+, everything else (new-range tests) passes at 80%+.
 function vocabPassThreshold(label) { return (label || "").includes("누적") ? 90 : 80; }
 // Finds the true next class by merging two sources — the recurring weekly tutoring pattern
@@ -589,10 +589,6 @@ function shuffle(arr) {
   return a;
 }
 const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {} });
-
-function parseAnswerKey(text) {
-  return text.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
-}
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
 // Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
@@ -1619,7 +1615,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
-      if (h.dueDate && h.dueDate <= todayStr && !h.done) todayHomework.push({ student: s, hw: h });
+      if (h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired) todayHomework.push({ student: s, hw: h });
     });
   });
   todayHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
@@ -1913,42 +1909,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 }
 
 // ---------- 학생 관리: 왼쪽 학생 목록 / 오른쪽 선택한 학생 정보 (2단 레이아웃) ----------
-function MonthlyGoalsEditor({ student, data, updateData }) {
-  const [newGoal, setNewGoal] = useState("");
-  const month = today().slice(0, 7);
-  const goals = (data.monthlyGoals || []).filter((g) => g.month === month);
-
-  async function addGoal() {
-    if (!newGoal.trim()) return;
-    await updateData(student.id, (d) => ({ ...d, monthlyGoals: [...(d.monthlyGoals || []), { id: uid(), month, text: newGoal.trim(), done: false }] }));
-    setNewGoal("");
-  }
-  async function toggleGoal(id) {
-    await updateData(student.id, (d) => ({ ...d, monthlyGoals: (d.monthlyGoals || []).map((g) => (g.id === id ? { ...g, done: !g.done } : g)) }));
-  }
-  async function removeGoal(id) {
-    await updateData(student.id, (d) => ({ ...d, monthlyGoals: (d.monthlyGoals || []).filter((g) => g.id !== id) }));
-  }
-
-  return html`
-    <${Card} style=${{ marginBottom: 16 }}>
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>✅ 이번 달 성취 목표 (${month.replace("-", "년 ")}월)</div>
-      ${goals.length === 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>등록된 목표가 없어요.</div>`}
-      ${goals.map((g) => html`
-        <div key=${g.id} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
-          <input type="checkbox" checked=${g.done} onChange=${() => toggleGoal(g.id)} style=${{ width: 16, height: 16, cursor: "pointer" }} />
-          <span style=${{ fontSize: 13, flex: 1, textDecoration: g.done ? "line-through" : "none", color: g.done ? C.slate : C.ink }}>${g.text}</span>
-          <button onClick=${() => removeGoal(g.id)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>×</button>
-        </div>
-      `)}
-      <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
-        <input style=${{ ...inputStyle, marginBottom: 0 }} placeholder="예: 어법 오답노트 3회 복습" value=${newGoal} onChange=${(e) => setNewGoal(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") addGoal(); }} />
-        <${Button} variant="gold" style=${{ padding: "8px 14px", fontSize: 12.5 }} onClick=${addGoal}>추가<//>
-      </div>
-    <//>
-  `;
-}
-
 function StudentInfoEditor({ student, saveRosterList, roster }) {
   const [name, setName] = useState(student.name || "");
   const [school, setSchool] = useState(student.school || "");
@@ -2174,7 +2134,6 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
           ? html`<div>
               <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
               <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
-              <${MonthlyGoalsEditor} student=${selected} data=${dataCache[selected.id] || emptyData()} updateData=${updateData} />
               <${TeacherStudentPanel} key=${selected.id} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
                 updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />
             </div>`
@@ -2191,11 +2150,45 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
   const [pdfBook, setPdfBook] = useState("");
   const [manualBook, setManualBook] = useState("");
   const [manualName, setManualName] = useState("");
-  const [manualKey, setManualKey] = useState("");
+  const [manualAnswers, setManualAnswers] = useState([]);
   const [manualMsg, setManualMsg] = useState("");
   const [collapsedBooks, setCollapsedBooks] = useState({});
   const [editingId, setEditingId] = useState(null); // id of a saved set currently being corrected
-  const [editDraft, setEditDraft] = useState({ name: "", key: "" });
+  const [editDraft, setEditDraft] = useState({ name: "", answers: [] });
+
+  function resizeAnswers(setter) {
+    return (n) => {
+      const count = Math.max(0, Math.min(200, Number(n) || 0));
+      setter((prev) => {
+        const next = prev.slice(0, count);
+        while (next.length < count) next.push("");
+        return next;
+      });
+    };
+  }
+  const setManualCount = resizeAnswers(setManualAnswers);
+  function setManualAt(i, val) { setManualAnswers((prev) => prev.map((v, idx) => (idx === i ? val : v))); }
+  function setEditCount(n) {
+    const count = Math.max(0, Math.min(200, Number(n) || 0));
+    setEditDraft((d) => {
+      const next = d.answers.slice(0, count);
+      while (next.length < count) next.push("");
+      return { ...d, answers: next };
+    });
+  }
+  function setEditAt(i, val) { setEditDraft((d) => ({ ...d, answers: d.answers.map((v, idx) => (idx === i ? val : v)) })); }
+  function updatePendingCount(id, n) {
+    const count = Math.max(0, Math.min(200, Number(n) || 0));
+    setPending((prev) => prev.map((s) => {
+      if (s.id !== id) return s;
+      const next = s.answers.slice(0, count);
+      while (next.length < count) next.push("");
+      return { ...s, answers: next };
+    }));
+  }
+  function updatePendingAt(id, i, val) {
+    setPending((prev) => prev.map((s) => (s.id === id ? { ...s, answers: s.answers.map((v, idx) => (idx === i ? val : v)) } : s)));
+  }
 
   const existingBooks = [...new Set((library || []).map((s) => s.book).filter(Boolean))];
 
@@ -2230,7 +2223,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
       const aiSets = await parseExamKeyPdfWithAI(file);
       const seenNames = new Set();
       const sets = aiSets
-        .map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map(Number) }))
+        .map((s) => ({ id: uid(), name: s.name, answers: (s.answers || []).map((a) => String(a)) }))
         .filter((s) => s.name && s.answers.length > 0)
         // overlapping high-res tiles can cause the same block to be read twice — keep the first.
         .filter((s) => (seenNames.has(s.name) ? false : (seenNames.add(s.name), true)));
@@ -2245,16 +2238,35 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
     }
   }
 
+  // Guards against a double-click on "저장" firing two saveLibrary calls back to back — without
+  // this, the second call can still be holding the pre-save `library`/`pending` closure (same
+  // ids), so both writes land with identical ids. That's what was causing the reported "one entry
+  // deletes several at once": removeSet's `s.id !== id` filter drops every entry sharing that id.
+  const [saving, setSaving] = useState(false);
+
   async function confirmSavePending() {
-    await saveLibrary([...(pending || []), ...(library || [])]);
-    setPending(null); setStatus("저장했어요."); setPdfBook("");
+    if (saving) return;
+    setSaving(true);
+    try {
+      const cleaned = (pending || []).map((s) => ({ ...s, answers: s.answers.map((a) => Number(a)).filter((n) => !isNaN(n)) }));
+      await saveLibrary([...cleaned, ...(library || [])]);
+      setPending(null); setStatus("저장했어요."); setPdfBook("");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function addManual() {
-    const key = parseAnswerKey(manualKey).map((s) => Number(s)).filter((n) => !isNaN(n));
-    if (!manualBook.trim() || !manualName || key.length === 0) { setManualMsg("책 이름, 시험 이름, 정답을 모두 입력해 주세요."); return; }
-    await saveLibrary([{ id: uid(), book: manualBook.trim(), name: manualName, answers: key }, ...(library || [])]);
-    setManualName(""); setManualKey(""); setManualMsg("");
+    if (saving) return;
+    const key = manualAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!manualBook.trim() || !manualName || key.length === 0 || key.length !== manualAnswers.length) { setManualMsg("책 이름, 시험 이름, 모든 문항의 정답을 입력해 주세요."); return; }
+    setSaving(true);
+    try {
+      await saveLibrary([{ id: uid(), book: manualBook.trim(), name: manualName, answers: key }, ...(library || [])]);
+      setManualName(""); setManualAnswers([]); setManualMsg("");
+    } finally {
+      setSaving(false);
+    }
   }
   async function removeSet(id) {
     await saveLibrary((library || []).filter((s) => s.id !== id));
@@ -2262,6 +2274,25 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
   async function removeBook(book) {
     if (!confirm(`"${book}" 책에 등록된 정답표를 전부 삭제할까요?`)) return;
     await saveLibrary((library || []).filter((s) => (s.book || "미분류") !== book));
+  }
+  // Cleans up both symptoms the teacher hit: entries that share an id (from the double-save race
+  // above) and entries that are simply exact duplicates (same book/name/answers, e.g. from
+  // re-uploading the same PDF) — keeps one copy of each.
+  async function dedupeLibrary() {
+    const seenIds = new Set();
+    const seenContent = new Set();
+    let removed = 0;
+    const cleaned = (library || []).filter((s) => {
+      const contentKey = `${s.book || ""}|${s.name || ""}|${(s.answers || []).join(",")}`;
+      if (seenIds.has(s.id) || seenContent.has(contentKey)) { removed++; return false; }
+      seenIds.add(s.id);
+      seenContent.add(contentKey);
+      return true;
+    });
+    if (removed === 0) { setStatus("중복된 정답표가 없어요."); return; }
+    if (!confirm(`중복된 정답표 ${removed}개를 정리할까요? (내용이 완전히 같은 항목은 하나만 남겨요)`)) return;
+    await saveLibrary(cleaned);
+    setStatus(`중복 ${removed}개를 정리했어요.`);
   }
   function toggleBook(book) {
     setCollapsedBooks((c) => ({ ...c, [book]: !c[book] }));
@@ -2271,18 +2302,13 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
   // 다시 입력하지 않고, 틀린 문항 몇 개만 바로 고칠 수 있게 하는 용도.
   function startEditSet(s) {
     setEditingId(s.id);
-    setEditDraft({ name: s.name, key: s.answers.join(", ") });
+    setEditDraft({ name: s.name, answers: s.answers.map(String) });
   }
   async function saveEditSet(id) {
-    const key = parseAnswerKey(editDraft.key).map((s) => Number(s)).filter((n) => !isNaN(n));
-    if (!editDraft.name.trim() || key.length === 0) return;
+    const key = editDraft.answers.map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!editDraft.name.trim() || key.length === 0 || key.length !== editDraft.answers.length) return;
     await saveLibrary((library || []).map((s) => (s.id === id ? { ...s, name: editDraft.name.trim(), answers: key } : s)));
     setEditingId(null);
-  }
-
-  function updatePendingAnswers(id, text) {
-    const key = parseAnswerKey(text).map((s) => Number(s)).filter((n) => !isNaN(n));
-    setPending((prev) => prev.map((s) => (s.id === id ? { ...s, answers: key, _raw: text } : s)));
   }
 
   return html`
@@ -2304,16 +2330,15 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
         ${status && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>${status}</div>`}
         ${pending && html`
           <div style=${{ fontSize: 11.5, color: C.danger, marginTop: 10 }}>AI가 읽은 결과예요. 저장 전에 원본 PDF와 꼭 대조해서 틀린 부분이 있으면 아래에서 바로 고쳐 주세요.</div>
-          <div style=${{ marginTop: 8, maxHeight: 360, overflowY: "auto" }}>
+          <div style=${{ marginTop: 8, maxHeight: 420, overflowY: "auto" }}>
             ${pending.map((s) => html`
               <div key=${s.id} style=${{ fontSize: 12.5, padding: "8px 0", borderBottom: `1px dotted ${C.line}` }}>
-                <b style=${{ color: C.navy }}>${s.name}</b> — ${s.answers.length}문항
-                <textarea style=${{ ...inputStyle, minHeight: 44, fontFamily: "monospace", fontSize: 12, marginTop: 4 }}
-                  value=${s._raw !== undefined ? s._raw : s.answers.join(", ")} onChange=${(e) => updatePendingAnswers(s.id, e.target.value)} />
+                <b style=${{ color: C.navy }}>${s.name}</b>
+                <${AnswerKeyBoxes} answers=${s.answers} onChangeCount=${(n) => updatePendingCount(s.id, n)} onChangeAt=${(i, v) => updatePendingAt(s.id, i, v)} />
               </div>
             `)}
           </div>
-          <${Button} variant="gold" style=${{ marginTop: 10 }} onClick=${confirmSavePending}>확인했어요, 저장하기<//>
+          <${Button} variant="gold" disabled=${saving} style=${{ marginTop: 10 }} onClick=${confirmSavePending}>${saving ? "저장 중..." : "확인했어요, 저장하기"}<//>
         `}
       <//>
 
@@ -2321,12 +2346,15 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
         <h3>직접 하나씩 등록하기</h3>
         <${Field} label="책 이름"><input style=${inputStyle} list="examkey-book-list" value=${manualBook} onChange=${(e) => setManualBook(e.target.value)} placeholder="예: 2026 마더텅 수능기출 20분 미니모의고사 고1" /><//>
         <${Field} label="시험 이름"><input style=${inputStyle} value=${manualName} onChange=${(e) => setManualName(e.target.value)} placeholder="예: 17회 2024년 3월 학력평가" /><//>
-        <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)"><textarea style=${{ ...inputStyle, minHeight: 80, fontFamily: "monospace" }} value=${manualKey} onChange=${(e) => setManualKey(e.target.value)} placeholder="예: 5,5,1,3,5,3,2,5,4,3 ..." /><//>
+        <${AnswerKeyBoxes} answers=${manualAnswers} onChangeCount=${setManualCount} onChangeAt=${setManualAt} />
         ${manualMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${manualMsg}</div>`}
-        <${Button} variant="gold" onClick=${addManual}>등록<//>
+        <${Button} variant="gold" disabled=${saving} onClick=${addManual}>${saving ? "저장 중..." : "등록"}<//>
       <//>
 
-      <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, margin: "18px 0 8px" }}>등록된 정답표 (${(library || []).length}개)</div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 8px" }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700 }}>등록된 정답표 (${(library || []).length}개)</div>
+        <button onClick=${dedupeLibrary} style=${{ background: "none", border: `1px solid ${C.line}`, color: C.slate, borderRadius: 3, padding: "5px 10px", fontSize: 11, cursor: "pointer" }}>중복 정리</button>
+      </div>
       ${(!library || library.length === 0) && html`<${Empty} text="아직 등록된 정답표가 없어요." />`}
       ${(() => {
         const groups = {};
@@ -2347,7 +2375,7 @@ function ExamKeyLibrarySection({ library, saveLibrary }) {
                   <${Card} key=${s.id} style=${{ marginBottom: 0, padding: 10 }}>
                     ${editingId === s.id ? html`
                       <input style=${{ ...inputStyle, fontSize: 12, marginBottom: 4 }} value=${editDraft.name} onChange=${(e) => setEditDraft({ ...editDraft, name: e.target.value })} />
-                      <textarea style=${{ ...inputStyle, minHeight: 44, fontFamily: "monospace", fontSize: 11.5, marginBottom: 4 }} value=${editDraft.key} onChange=${(e) => setEditDraft({ ...editDraft, key: e.target.value })} />
+                      <${AnswerKeyBoxes} answers=${editDraft.answers} onChangeCount=${setEditCount} onChangeAt=${setEditAt} />
                       <div style=${{ display: "flex", gap: 6 }}>
                         <button onClick=${() => saveEditSet(s.id)} style=${{ background: C.gold, border: "none", color: "#fff", borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>저장</button>
                         <button onClick=${() => setEditingId(null)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>취소</button>
@@ -2716,7 +2744,7 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, updateData, onB
     if (studentFilter && s.id !== studentFilter) return;
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
-      if (h.done) return; // only show incomplete homework
+      if (h.done || h.expired) return; // only show incomplete, non-expired homework
       const date = h.dueDate || h.assignedDate;
       if (!date) return;
       (byDate[date] || (byDate[date] = [])).push({ student: s, hw: h });
@@ -2755,6 +2783,30 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, updateData, onB
     }
   }
 
+  // Bulk "기간만료 처리" — closes out stale homework (done:false stays, so 숙제 진행율 still
+  // counts it against the student) without falsely marking it complete, and gets it off every
+  // active nagging list (this one included, since the filter above skips expired items).
+  async function expireSelected() {
+    if (selectedCount === 0) return;
+    setBusy(true);
+    try {
+      const byStudent = {};
+      Object.keys(selected).forEach((k) => {
+        const [studentId, hwId] = k.split("|");
+        (byStudent[studentId] || (byStudent[studentId] = [])).push(hwId);
+      });
+      for (const [studentId, hwIds] of Object.entries(byStudent)) {
+        await updateData(studentId, (d) => ({
+          ...d,
+          homework: (d.homework || []).map((h) => (hwIds.includes(h.id) ? { ...h, expired: true } : h)),
+        }));
+      }
+      setSelected({});
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return html`
     <div>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -2770,9 +2822,14 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, updateData, onB
             ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
           </select>
         <//>
-        <${Button} variant="gold" disabled=${selectedCount === 0 || busy} onClick=${completeSelected} style=${{ padding: "9px 16px", fontSize: 12.5, marginBottom: 12 }}>
-          ${busy ? "처리 중..." : selectedCount > 0 ? `선택한 ${selectedCount}건 완료 처리` : "완료 처리할 항목 선택"}
-        <//>
+        <div style=${{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <${Button} variant="gold" disabled=${selectedCount === 0 || busy} onClick=${completeSelected} style=${{ padding: "9px 16px", fontSize: 12.5 }}>
+            ${busy ? "처리 중..." : selectedCount > 0 ? `선택한 ${selectedCount}건 완료 처리` : "완료 처리할 항목 선택"}
+          <//>
+          <${Button} variant="danger" disabled=${selectedCount === 0 || busy} onClick=${expireSelected} style=${{ padding: "9px 16px", fontSize: 12.5 }}>
+            기간만료 처리
+          <//>
+        </div>
       </div>
 
       ${!loaded ? html`<${Empty} text="불러오는 중..." />` : dates.length === 0 ? html`<${Empty} text="미완료 숙제가 없어요." />` : dates.map((date) => {
@@ -3291,7 +3348,7 @@ function TodoEditor({ data, updateData }) {
         <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <div style=${{ width: 160 }}><${DateField} value=${date} onChange=${setDate} /></div>
           <input style=${{ ...inputStyle, flex: 1, minWidth: 160, marginBottom: 0 }} value=${content} onChange=${(e) => setContent(e.target.value)}
-            onKeyDown=${(e) => e.key === "Enter" && add()} placeholder="예: Unit 6 프린트 준비, 단어 재시험 채점" />
+            onKeyDown=${(e) => e.key === "Enter" && add()} placeholder="예: Unit 6 프린트 준비, 단어 시험 채점" />
           <${Button} variant="gold" style=${{ padding: "9px 16px", fontSize: 12.5 }} onClick=${add}>추가<//>
         </div>
       <//>
@@ -3327,7 +3384,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
     { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
     { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
     { key: "homework", label: "숙제", icon: "📝" },
-    { key: "vocab", label: "단어 재시험(퀴즈)", icon: "🔤" },
+    { key: "vocab", label: "단어 시험(퀴즈)", icon: "🔤" },
     { key: "mock", label: "모의고사", icon: "📄" },
     { key: "regularExam", label: "정기시험", icon: "🏫" },
     { key: "materials", label: "자료실", icon: "📁" },
@@ -3391,9 +3448,9 @@ function StorageCleanupPanel({ data, updateData }) {
     setMsg("사진을 모두 삭제했어요.");
   }
   async function clearVocabResults() {
-    if (!confirm("단어 재시험(퀴즈) 응시 기록을 전부 삭제할까요? 퀴즈 자체(문제)는 남고, 학생이 응시했던 결과 기록만 지워져요.")) return;
+    if (!confirm("단어 시험(퀴즈) 응시 기록을 전부 삭제할까요? 퀴즈 자체(문제)는 남고, 학생이 응시했던 결과 기록만 지워져요.")) return;
     await updateData((d) => ({ ...d, vocabResults: [] }));
-    setMsg("단어 재시험 응시 기록을 정리했어요.");
+    setMsg("단어 시험 응시 기록을 정리했어요.");
   }
   async function clearExamResults() {
     if (!confirm("추가 시험 응시 기록을 전부 삭제할까요? 시험 자체(문제)는 남고, 응시 결과 기록만 지워져요.")) return;
@@ -3418,10 +3475,10 @@ function StorageCleanupPanel({ data, updateData }) {
       <//>
 
       <${Card}>
-        <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어재시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건</div>
+        <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건</div>
         <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
           <${Button} variant="ghost" onClick=${clearAllPhotos}>숙제 사진 전체 삭제 (내용은 유지)<//>
-          <${Button} variant="ghost" onClick=${clearVocabResults}>단어 재시험 응시 기록 정리<//>
+          <${Button} variant="ghost" onClick=${clearVocabResults}>단어 시험 응시 기록 정리<//>
           <${Button} variant="ghost" onClick=${clearExamResults}>추가 시험 응시 기록 정리<//>
           <${Button} variant="danger" onClick=${resetEverything}>이 학생 전체 데이터 초기화<//>
         </div>
@@ -3877,7 +3934,7 @@ function buildDailyReportText(student, data, date, hwFrom) {
   const yesterdayStr = `${y}-${m2}-${d2}`;
   const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
   const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
-  const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
+  const hwRange = (data.homework || []).filter((h) => !h.expired && inRange(h.dueDate));
   const hwDone = hwRange.filter((h) => h.done);
   const hwUndone = hwRange.filter((h) => !h.done);
   const hwBlock = hwRange.length === 0 ? "기록 없음" : [
@@ -4341,23 +4398,8 @@ function LogsEditor({ data, updateData }) {
     await updateData((d) => ({ ...d, logs: d.logs.map((l) => (l.id === editId ? { ...l, date: editDate, content: editContent } : l)) }));
     setEditId(null);
   }
-  const studyLog = data.studyLog || [];
   return html`
     <div>
-      ${studyLog.length > 0 && html`
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>⏱ 학생이 직접 기록한 공부 시간</div>
-        <${Card} style=${{ marginBottom: 20 }}>
-          ${studyLog.map((s) => html`
-            <div key=${s.id || s.date + s.minutes} style=${{ padding: "7px 0", borderBottom: `1px dotted ${C.line}` }}>
-              <div style=${{ display: "flex", justifyContent: "space-between", fontSize: 12.5 }}>
-                <span><b style=${{ color: C.gold }}>${fmtDate(s.date)}</b> ${s.subject ? `· ${s.subject}` : ""}</span>
-                <span style=${{ color: C.navy, fontWeight: 700 }}>${s.minutes}분</span>
-              </div>
-              ${s.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 3 }}>${s.content}</div>`}
-            </div>
-          `)}
-        <//>
-      `}
       <${Card}>
         <div className="ap-split">
           <div className="ap-split-left">
@@ -4420,6 +4462,16 @@ function HomeworkEditor({ student, data, updateData }) {
       homework: (d.homework || []).map((h) => (h.id === id ? { ...h, done: !h.done, doneAt: !h.done ? Date.now() : null } : h)),
     }));
   }
+  // 기간만료 — for homework that's past the point of being realistically doable (e.g. the student
+  // moved on weeks ago). Distinct from "완료": it stays done:false so 숙제 진행율 still correctly
+  // counts it as not completed, but it drops out of the "오늘 해야 할 일"/"밀린 숙제" nagging
+  // lists everywhere (student/parent home, 숙제 현황) instead of cluttering them forever.
+  async function toggleExpired(id) {
+    await updateData((d) => ({
+      ...d,
+      homework: (d.homework || []).map((h) => (h.id === id ? { ...h, expired: !h.expired } : h)),
+    }));
+  }
   async function removeHomeworkPhoto(hwId, idx) {
     await updateData((d) => ({
       ...d,
@@ -4428,7 +4480,7 @@ function HomeworkEditor({ student, data, updateData }) {
   }
   const list = data.homework || [];
   const todayStr = today();
-  const dueToday = list.filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done);
+  const dueToday = list.filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired);
   return html`
     <div>
       ${dueToday.length > 0 && html`
@@ -4492,11 +4544,14 @@ function HomeworkEditor({ student, data, updateData }) {
                   </div>
                 `}
                 ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
-                <div onClick=${() => toggleDone(h.id)} style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: h.done ? C.gold : C.slate }}>
-                  ${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""} (누르면 미완료로)` : "완료로 표시하기"}
-                </div>
+                ${h.expired
+                  ? html`<div style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, fontWeight: 700, color: C.danger }}>⏳ 기간만료 (미완료로 집계)</div>`
+                  : html`<div onClick=${() => toggleDone(h.id)} style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: h.done ? C.gold : C.slate }}>
+                      ${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""} (누르면 미완료로)` : "완료로 표시하기"}
+                    </div>`}
               </div>
               <div style=${{ display: "flex", gap: 10 }}>
+                ${!h.done && html`<button onClick=${() => toggleExpired(h.id)} style=${{ background: "none", border: "none", color: h.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${h.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
                 <button onClick=${() => startEdit(h)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
                 <button onClick=${() => remove(h.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
               </div>
@@ -4674,10 +4729,10 @@ function VocabEditor({ student, data, updateData }) {
   return html`
     <div>
       ${!creating ? html`
-        <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 재시험 만들기<//>
+        <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
       ` : html`
         <${Card}>
-          <${Field} label="재시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 재시험" /><//>
+          <${Field} label="시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 시험" /><//>
           <${Field} label="출제 방식">
             <div style=${{ display: "flex", gap: 8 }}>
               ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
@@ -4749,8 +4804,8 @@ function VocabEditor({ student, data, updateData }) {
           </div>
         <//>
       `}
-      <${SectionLabel} n=${2} label="등록된 재시험" />
-      ${data.vocabTests.length === 0 && html`<${Empty} text="아직 만든 재시험이 없어요." />`}
+      <${SectionLabel} n=${2} label="등록된 단어 시험" />
+      ${data.vocabTests.length === 0 && html`<${Empty} text="아직 만든 단어 시험이 없어요." />`}
       ${data.vocabTests.map((t) => {
         const results = data.vocabResults.filter((r) => r.testId === t.id);
         return html`
@@ -4904,25 +4959,65 @@ function MockResultRow({ r, answerKey }) {
   `;
 }
 
+// Same numbered-box-per-question layout MockExamTaker gives students, instead of one flat
+// comma-separated string — the teacher kept losing track of which number was which question's
+// answer in a long "2,3,1,4,5,2,1,3,4,5" blob. Answers are held as an array (one string per
+// question) so the box grid can render directly off it.
+function AnswerKeyBoxes({ answers, onChangeCount, onChangeAt }) {
+  return html`
+    <div>
+      <${Field} label="문항 수">
+        <input style=${{ ...inputStyle, width: 100 }} type="number" min="0" max="200" value=${answers.length} onChange=${(e) => onChangeCount(e.target.value)} />
+      <//>
+      ${answers.length > 0 && html`
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>문항 번호 아래에 정답 번호를 입력하세요.</div>
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          ${answers.map((v, i) => html`
+            <div key=${i} style=${{ width: 62 }}>
+              <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 3, textAlign: "center" }}>${i + 1}</div>
+              <input style=${{ ...inputStyle, marginBottom: 0, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" value=${v} onChange=${(e) => onChangeAt(i, e.target.value.replace(/[^0-9]/g, ""))} />
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyText, setKeyText] = useState("");
+  const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyAnswers, setKeyAnswers] = useState([]);
   const [pickId, setPickId] = useState("");
   const [msg, setMsg] = useState("");
   const [editId, setEditId] = useState(null);
-  const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyText, setEditKeyText] = useState("");
+  const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyAnswers, setEditKeyAnswers] = useState([]);
   const [editMsg, setEditMsg] = useState("");
 
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
   const pickedSet = (examKeyLibrary || []).find((x) => x.id === pickId);
 
+  function resizeAnswers(setter) {
+    return (n) => {
+      const count = Math.max(0, Math.min(200, Number(n) || 0));
+      setter((prev) => {
+        const next = prev.slice(0, count);
+        while (next.length < count) next.push("");
+        return next;
+      });
+    };
+  }
+  const setKeyCount = resizeAnswers(setKeyAnswers);
+  const setEditKeyCount = resizeAnswers(setEditKeyAnswers);
+  function setKeyAt(i, val) { setKeyAnswers((prev) => prev.map((v, idx) => (idx === i ? val : v))); }
+  function setEditKeyAt(i, val) { setEditKeyAnswers((prev) => prev.map((v, idx) => (idx === i ? val : v))); }
+
   function pickFromLibrary(id) {
     setPickId(id);
     const s = (examKeyLibrary || []).find((x) => x.id === id);
     if (s) {
       setRangeFrom("1"); setRangeTo(String(s.answers.length));
-      setKeyText(s.answers.join(", "));
+      setKeyAnswers(s.answers.map(String));
       setTitle((t) => t || s.name);
     }
   }
@@ -4930,22 +5025,22 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
     if (!pickedSet) return;
     const from = Math.max(1, Number(rangeFrom) || 1);
     const to = Math.min(pickedSet.answers.length, Number(rangeTo) || pickedSet.answers.length);
-    setKeyText(pickedSet.answers.slice(from - 1, to).join(", "));
+    setKeyAnswers(pickedSet.answers.slice(from - 1, to).map(String));
   }
   async function save() {
-    const key = parseAnswerKey(keyText);
-    if (!title || key.length === 0) { setMsg("이름과 정답을 입력해 주세요."); return; }
+    const key = keyAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!title || key.length === 0 || key.length !== keyAnswers.length) { setMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
     await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key }, ...(d.mockExams || [])] }));
     notifyStudent(student.studentFcmToken, "mock_exam_assigned", title);
-    setTitle(""); setKeyText(""); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
+    setTitle(""); setKeyAnswers([]); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
   function startEdit(t) {
-    setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyText((t.answerKey || []).join(", ")); setEditMsg("");
+    setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyAnswers((t.answerKey || []).map(String)); setEditMsg("");
   }
   async function saveEdit() {
-    const key = parseAnswerKey(editKeyText);
-    if (!editTitle || key.length === 0) { setEditMsg("이름과 정답을 입력해 주세요."); return; }
+    const key = editKeyAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
+    if (!editTitle || key.length === 0 || key.length !== editKeyAnswers.length) { setEditMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
     await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key } : t)) }));
     setEditId(null);
   }
@@ -4992,9 +5087,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               `}
               <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
               <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${pageRange} onChange=${(e) => setPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
-              <${Field} label="정답 (순서대로, 쉼표나 띄어쓰기로 구분)">
-                <textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${keyText} onChange=${(e) => setKeyText(e.target.value)} placeholder=${"예: 2,3,1,4,5,2,1,3,4,5 ...\n(1번부터 순서대로 정답 번호)"} />
-              <//>
+              <${AnswerKeyBoxes} answers=${keyAnswers} onChangeCount=${setKeyCount} onChangeAt=${setKeyAt} />
               ${msg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${msg}</div>`}
               <div style=${{ display: "flex", gap: 8 }}>
                 <${Button} variant="gold" onClick=${save}>저장<//>
@@ -5017,7 +5110,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               <${Field} label="모의고사 이름"><input style=${inputStyle} value=${editTitle} onChange=${(e) => setEditTitle(e.target.value)} /><//>
               <${Field} label="날짜"><${DateField} value=${editDate} onChange=${setEditDate} /><//>
               <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${editPageRange} onChange=${(e) => setEditPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
-              <${Field} label="정답 (순서대로)"><textarea style=${{ ...inputStyle, minHeight: 90, fontFamily: "monospace" }} value=${editKeyText} onChange=${(e) => setEditKeyText(e.target.value)} /><//>
+              <${AnswerKeyBoxes} answers=${editKeyAnswers} onChangeCount=${setEditKeyCount} onChangeAt=${setEditKeyAt} />
               ${editMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${editMsg}</div>`}
               <div style=${{ display: "flex", gap: 8 }}>
                 <${Button} variant="gold" onClick=${saveEdit}>저장<//>
@@ -5156,7 +5249,7 @@ function StudyLogEntryCard({ entry, studentId, updateData }) {
 // phone app's home screen than a desktop-style tab strip.
 const STUDENT_HOME_ACTIONS = [
   { key: "homework", label: "숙제 제출", icon: "📝", bg: "#FBF4EA" },
-  { key: "vocab", label: "단어 재시험", icon: "🔤", bg: "#EAF1FB" },
+  { key: "vocab", label: "단어 시험", icon: "🔤", bg: "#EAF1FB" },
   { key: "materials", label: "자료실", icon: "📁", bg: "#F3EDF7" },
   { key: "mock", label: "모의고사 채점", icon: "📄", bg: "#E9F1EA" },
   { key: "schedule", label: "이번달 시간표", icon: "🗓", bg: "#FDEDE9" },
@@ -5246,8 +5339,8 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   }
 
   const todayStr = today();
-  const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate === todayStr);
-  const overdueHw = (data.homework || []).filter((h) => !h.done && h.dueDate < todayStr);
+  const todayHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate === todayStr);
+  const overdueHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate < todayStr);
   const nextClass = nextClassText(student, todayStr);
   const studyLog = data.studyLog || [];
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
@@ -5363,7 +5456,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           </div>
         `))}
 
-      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 재시험이 없어요." />` : data.vocabTests.map((t) => {
+      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 시험이 없어요." />` : data.vocabTests.map((t) => {
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
         const latest = myResults[0];
         const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
@@ -5834,16 +5927,20 @@ function HomeworkStudentCard({ h, studentId, studentName, updateData }) {
           `)}
         </div>
       `}
-      <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
-        <label htmlFor=${busy ? undefined : inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: busy ? C.slate : C.navy, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }}>
-          ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
-        </label>
-        <input id=${inputId} type="file" accept="image/*" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
+      ${h.expired ? html`
+        <div style=${{ marginTop: 10, fontSize: 12.5, color: C.danger, fontWeight: 700 }}>⏳ 기간이 만료된 숙제예요. 선생님께 문의해 주세요.</div>
+      ` : html`
+        <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
+          <label htmlFor=${busy ? undefined : inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: busy ? C.slate : C.navy, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }}>
+            ${busy ? "업로드 중..." : photos.length > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
+          </label>
+          <input id=${inputId} type="file" accept="image/*" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
 
-        <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
-          ${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : "완료로 표시하기"}
+          <div onClick=${toggleDone} style=${{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>
+            ${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : "완료로 표시하기"}
+          </div>
         </div>
-      </div>
+      `}
       ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
       ${lightbox && html`<${PhotoLightbox} src=${lightbox} onClose=${() => setLightbox(null)} />`}
     <//>
@@ -6023,7 +6120,7 @@ function DateView({ data, role }) {
   const homework = (data.homework || []).filter((h) => h.assignedDate === selDate);
   const vocabResults = (data.vocabResults || [])
     .filter((r) => r.date === selDate)
-    .map((r) => ({ ...r, title: ((data.vocabTests || []).find((t) => t.id === r.testId) || {}).title || "단어 재시험" }));
+    .map((r) => ({ ...r, title: ((data.vocabTests || []).find((t) => t.id === r.testId) || {}).title || "단어 시험" }));
   const examResults = (data.examResults || [])
     .filter((r) => r.date === selDate)
     .map((r) => ({ ...r, title: ((data.examTests || []).find((t) => t.id === r.testId) || {}).title || "추가 시험" }));
@@ -6048,12 +6145,12 @@ function DateView({ data, role }) {
         ${homework.map((h) => html`
           <${Card} key=${h.id}>
             <div style=${{ fontSize: 13.5, whiteSpace: "pre-wrap" }}>${h.content}</div>
-            <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.gold : C.slate }}>${h.done ? "✓ 완료함" : "미완료"}</div>
+            <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.gold : h.expired ? C.danger : C.slate }}>${h.done ? "✓ 완료함" : h.expired ? "⏳ 기간만료" : "미완료"}</div>
           <//>
         `)}
       `}
       ${vocabResults.length > 0 && html`
-        <${SectionLabel} n=${3} label="단어 재시험 결과" />
+        <${SectionLabel} n=${3} label="단어 시험 결과" />
         ${vocabResults.map((r) => html`<${Card} key=${r.id}><div style=${{ fontSize: 13.5 }}>${r.title} — <b>${r.score}</b> / ${r.total}</div><//>`)}
       `}
       ${examResults.length > 0 && html`
@@ -6140,8 +6237,8 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
   const publishedDaily = Object.entries(data.dailyReports || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
   const todayStr = today();
-  const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate === todayStr);
-  const overdueHw = (data.homework || []).filter((h) => !h.done && h.dueDate < todayStr);
+  const todayHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate === todayStr);
+  const overdueHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate < todayStr);
   const nextClass = nextClassText(student, todayStr);
 
   const header = html`
@@ -6233,7 +6330,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
                   </div>
                 `}
                 ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
-                <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : C.slate, fontWeight: 600 }}>${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : "아직 미완료"}</div>
+                <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : h.expired ? C.danger : C.slate, fontWeight: 600 }}>${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : h.expired ? "⏳ 기간만료" : "아직 미완료"}</div>
               <//>
             `)}
           </div>
