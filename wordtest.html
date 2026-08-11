@@ -809,6 +809,16 @@ function generateSheet(book){
   let words = [];
   days.forEach(d => { words = words.concat(book.days['day' + d] || []); });
 
+  // A word can appear under more than one Day (review days re-including earlier words, entry
+  // mistakes) — dedupe by the English word so a printed sheet never asks the same word twice.
+  const seenWords = new Set();
+  words = words.filter(w => {
+    const key = (w.en || '').trim().toLowerCase();
+    if (!key || seenWords.has(key)) return false;
+    seenWords.add(key);
+    return true;
+  });
+
   if(words.length === 0){
     output.innerHTML = '<p class="no-data-msg">선택한 Day에 저장된 단어가 없습니다. 먼저 ① 단어 입력 탭에서 단어를 저장해 주세요.</p>';
     return;

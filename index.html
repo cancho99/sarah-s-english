@@ -502,6 +502,84 @@ function fmtMinutes(min) {
 function monthlyStudyMinutes(studyLog, month) {
   return (studyLog || []).filter((s) => (s.date || "").slice(0, 7) === month).reduce((sum, s) => sum + (s.minutes || 0), 0);
 }
+// Overall (not date-scoped) homework completion — used to show one 숙제 진행율 number to student,
+// parent, and teacher alike instead of each screen computing/labeling it slightly differently.
+function homeworkStats(homework) {
+  const list = homework || [];
+  const total = list.length;
+  const done = list.filter((h) => h.done).length;
+  return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+}
+// Same rule VocabLogEditor already uses for manually-recorded in-person tests (range.includes
+// "누적")), applied to online 단어 재시험 tests too via their title: 누적(cumulative-range) tests
+// pass at 90%+, everything else (new-range tests) passes at 80%+.
+function vocabPassThreshold(label) { return (label || "").includes("누적") ? 90 : 80; }
+// Finds the true next class by merging two sources — the recurring weekly tutoring pattern
+// (skipping any date the teacher marked as an exception, e.g. a cancelled holiday class) and
+// one-off makeup classes from monthlyInstances, which can land sooner than the next weekly
+// occurrence. Shared by StudentDash/ParentDash so both show the exact same "다음 수업" text.
+function nextClassText(student, todayStr) {
+  const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+  const now = new Date();
+  const nowHM = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+  const exceptions = student.tutoringExceptions || [];
+  const candidates = [];
+  (student.schedule || []).forEach((s) => {
+    for (let offset = 0; offset <= 14; offset++) {
+      const dt = new Date(now); dt.setDate(dt.getDate() + offset);
+      const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      if (DAY_NAMES[dt.getDay()] !== s.day) continue;
+      if (exceptions.includes(dateStr)) continue;
+      if (offset === 0 && s.time < nowHM) continue;
+      candidates.push({ date: dateStr, time: s.time, kind: "tutoring" });
+      break;
+    }
+  });
+  Object.values(student.monthlyInstances || {}).forEach((list) => {
+    (list || []).forEach((inst) => {
+      if (inst.date > todayStr || (inst.date === todayStr && inst.time >= nowHM)) {
+        candidates.push({ date: inst.date, time: inst.time, kind: inst.type === "tutoring" ? "tutoring" : "makeup" });
+      }
+    });
+  });
+  candidates.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const best = candidates[0];
+  if (!best) return "등록된 수업 스케줄이 없어요.";
+  const dt = new Date(best.date + "T00:00:00");
+  const diffDays = Math.round((dt - new Date(todayStr + "T00:00:00")) / 86400000);
+  const label = diffDays === 0 ? "오늘" : diffDays === 1 ? "내일" : `${dt.getMonth() + 1}/${dt.getDate()} (${DAY_NAMES[dt.getDay()]})`;
+  return `${label} ${best.time}${best.kind === "makeup" ? " (보강)" : ""}`;
+}
+// Shown on student home, parent home, and the teacher's per-student "학습 현황" tab — one place
+// defining what "숙제 진행율" means so the number is identical everywhere it appears.
+function HomeworkProgressCard({ data, big }) {
+  const { total, done, pct } = homeworkStats(data.homework);
+  return html`
+    <${Card} style=${{ marginBottom: 0 }}>
+      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>📈 숙제 진행율</div>
+      ${total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 숙제가 없어요.</div>` : html`
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style=${{ ...serif, fontSize: big ? 34 : 22, color: C.navy, fontWeight: 700 }}>${pct}%</div>
+          <div style=${{ fontSize: 12, color: C.slate }}>${done} / ${total} 완료</div>
+        </div>
+        <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
+          <div style=${{ height: "100%", width: pct + "%", background: C.gold }} />
+        </div>
+      `}
+    <//>
+  `;
+}
+// Paired with HomeworkProgressCard on parent home (and reused wherever a quick cumulative-time
+// readout is useful) — same big-number-in-a-box treatment, all-time total (not month-scoped).
+function StudyTimeStatCard({ studyLog }) {
+  const totalMin = (studyLog || []).reduce((sum, s) => sum + (s.minutes || 0), 0);
+  return html`
+    <${Card} style=${{ marginBottom: 0 }}>
+      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>⏱ 누적 공부 시간</div>
+      <div style=${{ ...serif, fontSize: 22, color: C.navy, fontWeight: 700 }}>${fmtMinutes(totalMin)}</div>
+    <//>
+  `;
+}
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -734,6 +812,22 @@ async function addMaterial(entry) {
 }
 async function deleteMaterial(id) {
   await window.__deleteDoc(window.__doc(window.__db, MATERIALS_COLLECTION, id));
+}
+
+// 공유 자료실 — a second, separate collection (not a null/blank studentId on the same collection)
+// for materials visible to every student at once, alongside each student's private 개인 자료실
+// above. Kept as its own collection so a plain getDocs (no where clause) can list everything
+// without having to special-case a sentinel studentId value.
+const SHARED_MATERIALS_COLLECTION = "sharedMaterialsLibrary";
+async function fetchSharedMaterials() {
+  const snap = await window.__getDocs(window.__collection(window.__db, SHARED_MATERIALS_COLLECTION));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+}
+async function addSharedMaterial(entry) {
+  await window.__addDoc(window.__collection(window.__db, SHARED_MATERIALS_COLLECTION), { ...entry, createdAt: window.__serverTimestamp() });
+}
+async function deleteSharedMaterial(id) {
+  await window.__deleteDoc(window.__doc(window.__db, SHARED_MATERIALS_COLLECTION, id));
 }
 
 // ---------- Shared UI ----------
@@ -1750,6 +1844,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
+    { key: "sharedMaterials", label: "공유 자료실", icon: "📁" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
   ];
@@ -1770,6 +1865,8 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
+  } else if (section === "sharedMaterials") {
+    body = html`<${MaterialsLibrarySection} shared=${true} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
@@ -1895,14 +1992,18 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
 }
 
 function ScheduleGoalEditor({ student, saveRosterList, roster }) {
-  const [saved, setSaved] = useState(false);
   const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
-  const [days, setDays] = useState(student.schedule || []);
-  const [goal, setGoal] = useState(student.goal || "");
+  // Left column is add/edit-one-at-a-time — registered slots are NOT listed here (that would just
+  // duplicate what the calendar on the right already shows). Clicking a class on the calendar loads
+  // it into this form via onSelectTutoring instead of a separate editable list.
+  const [form, setForm] = useState({ day: "월", time: "18:00", endTime: "19:00" });
+  const [editingIndex, setEditingIndex] = useState(null); // index into student.schedule, or null while adding a new one
+  const [busy, setBusy] = useState(false);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
+  const [monthlySaved, setMonthlySaved] = useState(false);
   useEffect(() => {
-    setDays(student.schedule || []); setGoal(student.goal || ""); setSaved(false); setShowMonthly(false);
+    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false);
     setMonth(today().slice(0, 7));
     setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   }, [student.id]);
@@ -1912,9 +2013,36 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
 
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
-  function addSlot() { setDays([...days, { day: "월", time: "18:00", endTime: "19:00" }]); setSaved(false); }
-  function updateSlot(i, field, val) { setDays(days.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
-  function removeSlot(i) { setDays(days.filter((_, idx) => idx !== i)); setSaved(false); }
+  function selectForEdit(idx) {
+    const s = (student.schedule || [])[idx];
+    if (!s) return;
+    setForm({ day: s.day, time: s.time, endTime: s.endTime || "" });
+    setEditingIndex(idx);
+  }
+  function resetForm() { setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); }
+  async function submitForm() {
+    setBusy(true);
+    try {
+      const next = [...(student.schedule || [])];
+      if (editingIndex != null) next[editingIndex] = { ...form };
+      else next.push({ ...form });
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next } : r)));
+      resetForm();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function deleteEditing() {
+    if (editingIndex == null) return;
+    setBusy(true);
+    try {
+      const next = (student.schedule || []).filter((_, i) => i !== editingIndex);
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next } : r)));
+      resetForm();
+    } finally {
+      setBusy(false);
+    }
+  }
   async function removeTutoringOccurrence(dateStr) {
     await saveRosterList(roster.map((r) => (r.id === student.id
       ? { ...r, tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), dateStr])] }
@@ -1928,47 +2056,44 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     for (let d = 1; d <= daysInMonth; d++) {
       const dt = new Date(y, m - 1, d);
       const dayName = DAY_NAMES[dt.getDay()];
-      const match = days.find((s) => s.day === dayName);
+      const match = (student.schedule || []).find((s) => s.day === dayName);
       if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time, endTime: match.endTime, type: "tutoring" });
     }
     setMonthly(generated);
+    setMonthlySaved(false);
   }
-  function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
-  function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); setSaved(false); }
-  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); setSaved(false); }
-
-  async function save() {
+  function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setMonthlySaved(false); }
+  function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); setMonthlySaved(false); }
+  function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); setMonthlySaved(false); }
+  async function saveMonthly() {
     await saveRosterList(roster.map((r) => (r.id === student.id
-      ? { ...r, schedule: days, goal, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
+      ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
       : r)));
-    setSaved(true);
+    setMonthlySaved(true);
   }
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄 · 학습 목표</div>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, alignItems: "start" }}>
         <div>
-          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>매주 반복 수업</div>
-          ${days.length === 0 && html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>등록된 수업이 없어요. 아래에서 추가해 주세요.</div>`}
-          ${days.map((d, i) => html`
-            <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 8 }}>
-              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <select style=${{ ...inputStyle, marginBottom: 0, width: 110 }} value=${d.day} onChange=${(e) => updateSlot(i, "day", e.target.value)}>
-                  ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
-                </select>
-                <button onClick=${() => removeSlot(i)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
-              </div>
-              <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <${TimeField} value=${d.time} onChange=${(v) => updateSlot(i, "time", v)} />
-                <span style=${{ color: C.slate }}>~</span>
-                <${TimeField} value=${d.endTime || ""} onChange=${(v) => updateSlot(i, "endTime", v)} />
-              </div>
-            </div>
-          `)}
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 16 }} onClick=${addSlot}>+ 매주 수업 추가<//>
+          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 4 }}>${editingIndex != null ? "수업 시간 수정" : "매주 반복 수업 등록"}</div>
+          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>등록한 수업은 오른쪽 달력에 표시돼요. 달력에서 수업을 누르면 여기서 바로 수정·삭제할 수 있어요.</div>
+          <select style=${{ ...inputStyle, marginBottom: 8, width: 110 }} value=${form.day} onChange=${(e) => setForm({ ...form, day: e.target.value })}>
+            ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+          </select>
+          <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            <${TimeField} value=${form.time} onChange=${(v) => setForm({ ...form, time: v })} />
+            <span style=${{ color: C.slate }}>~</span>
+            <${TimeField} value=${form.endTime} onChange=${(v) => setForm({ ...form, endTime: v })} />
+          </div>
+          <div style=${{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <${Button} variant="gold" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${submitForm}>${editingIndex != null ? "저장" : "+ 추가"}<//>
+            ${editingIndex != null && html`<${Button} variant="danger" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${deleteEditing}>삭제<//>`}
+            ${editingIndex != null && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${resetForm}>취소<//>`}
+          </div>
 
-          <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12, marginBottom: 16 }}>
+          <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>
             <button onClick=${() => setShowMonthly((v) => !v)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
               ${showMonthly ? "▾" : "▸"} 특정 날짜만 다르게 (보강 등)
             </button>
@@ -1994,22 +2119,20 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
                     </div>
                   </div>
                 `)}
-                <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${addInstance}>+ 날짜 하나만 따로 추가<//>
+                <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${addInstance}>+ 날짜 하나만 따로 추가<//>
+                  <${Button} variant="gold" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${saveMonthly}>저장<//>
+                  ${monthlySaved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
+                </div>
               </div>
             `}
-          </div>
-
-          <${Field} label="학습 목표 (학부모 화면에도 표시돼요)"><input style=${inputStyle} value=${goal} onChange=${(e) => { setGoal(e.target.value); setSaved(false); }} placeholder="예: 이번 학기 내신 어법 정확도 90% 이상" /><//>
-          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${save}>저장<//>
-            ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
           </div>
         </div>
 
         <div>
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
-            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} />
+            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectTutoring=${selectForEdit} />
         </div>
       </div>
     <//>
@@ -2271,7 +2394,7 @@ function fmtFileSize(kb) {
 }
 const MATERIAL_MAX_FILE_BYTES = 700 * 1024; // raw size cap — base64 (~+37%) plus metadata stays safely under Firestore's 1MB per-doc limit
 
-function MaterialsLibrarySection({ student, readOnly }) {
+function MaterialsLibrarySection({ student, readOnly, shared }) {
   const [items, setItems] = useState(null); // null = loading
   const [err, setErr] = useState("");
   const [title, setTitle] = useState("");
@@ -2283,12 +2406,12 @@ function MaterialsLibrarySection({ student, readOnly }) {
 
   async function load() {
     try {
-      setItems(await fetchMaterials(student.id));
+      setItems(shared ? await fetchSharedMaterials() : await fetchMaterials(student.id));
     } catch (e) {
       setErr("자료 목록을 불러오지 못했어요: " + String(e.message || e));
     }
   }
-  useEffect(() => { load(); }, [student.id]);
+  useEffect(() => { load(); }, [shared, student?.id]);
 
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -2303,11 +2426,12 @@ function MaterialsLibrarySection({ student, readOnly }) {
     setUploadMsg("업로드 중...");
     try {
       const dataUrl = await fileToDataURL(file);
-      await addMaterial({
-        studentId: student.id,
+      const entry = {
         title: title.trim(), subject: subject.trim(), level: level.trim(), note: note.trim(),
         fileName: file.name, fileType: file.type || "", fileSizeKB: Math.round(file.size / 1024), dataUrl,
-      });
+      };
+      if (shared) await addSharedMaterial(entry);
+      else await addMaterial({ ...entry, studentId: student.id });
       setTitle(""); setSubject(""); setLevel(""); setNote("");
       setUploadMsg("업로드했어요.");
       await load();
@@ -2321,7 +2445,8 @@ function MaterialsLibrarySection({ student, readOnly }) {
   async function handleDelete(id, itemTitle) {
     if (!confirm(`"${itemTitle}" 자료를 삭제할까요?`)) return;
     try {
-      await deleteMaterial(id);
+      if (shared) await deleteSharedMaterial(id);
+      else await deleteMaterial(id);
       setItems((list) => (list || []).filter((m) => m.id !== id));
     } catch (e) {
       alert("삭제에 실패했어요: " + String(e.message || e));
@@ -2333,7 +2458,7 @@ function MaterialsLibrarySection({ student, readOnly }) {
 
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${readOnly ? "선생님이 올려주신 학습 자료예요. 눌러서 다운로드하세요." : `${student.name} 학생에게만 보이는 자료예요.`}</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${shared ? "전체 학생에게 공개되는 공유 자료예요." : readOnly ? "선생님이 올려주신 나만의 학습 자료예요." : `${student.name} 학생에게만 보이는 자료예요.`}</div>
 
       ${!readOnly && html`
         <${Card} style=${{ marginBottom: 16 }}>
@@ -3197,6 +3322,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
   const [tab, setTab] = useState("logs");
   const tabs = [
     { key: "logs", label: "학습 기록", icon: "📘" },
+    { key: "progress", label: "학습 현황", icon: "📊" },
     { key: "todo", label: "할 일", icon: "✅" },
     { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
     { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
@@ -3227,6 +3353,12 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       </div>
       <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
       ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
+      ${tab === "progress" && html`
+        <div>
+          <div style=${{ marginBottom: 10 }}><${HomeworkProgressCard} data=${data} /></div>
+          <${ParentStudyTimeTab} studyLog=${data.studyLog || []} />
+        </div>
+      `}
       ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
       ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
       ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
@@ -3746,9 +3878,12 @@ function buildDailyReportText(student, data, date, hwFrom) {
   const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
   const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
   const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
-  const hwBlock = hwRange.length > 0
-    ? hwRange.map((h) => `${h.content} → ${h.done ? "완료" : "미완료"}`).join("\n")
-    : "기록 없음";
+  const hwDone = hwRange.filter((h) => h.done);
+  const hwUndone = hwRange.filter((h) => !h.done);
+  const hwBlock = hwRange.length === 0 ? "기록 없음" : [
+    hwDone.length > 0 ? `✅ 완료\n${hwDone.map((h) => `- ${h.content}`).join("\n")}` : "",
+    hwUndone.length > 0 ? `❌ 미완료\n${hwUndone.map((h) => `- ${h.content}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
 
   return `[${student.name}] ${md} 수업 안내\n📖 오늘 배운 내용\n${learnedBlock}\n✏️ 단어시험 결과\n${vocabBlock}\n📝 숙제 확인\n${hwBlock}`;
 }
@@ -4376,10 +4511,10 @@ function HomeworkEditor({ student, data, updateData }) {
   `;
 }
 
-function VocabResultRow({ r, updateData }) {
+function VocabResultRow({ r, title, updateData }) {
   const [open, setOpen] = useState(false);
   const pct = Math.round((r.score / r.total) * 100);
-  const ok = pct >= 90;
+  const ok = pct >= vocabPassThreshold(title);
   const hasBreakdown = Array.isArray(r.breakdown) && r.breakdown.length > 0;
 
   async function markCorrect(idx) {
@@ -4493,21 +4628,42 @@ function VocabEditor({ student, data, updateData }) {
       picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
     }
     if (picked.length === 0) { setBankMsg("해당 범위에 저장된 단어가 없어요."); return; }
+    // A wide Day range can pull in the same word twice if it appears in more than one Day's list
+    // (review days re-including earlier words, a word entered under two Days by mistake, etc.) —
+    // dedupe by the word itself so the same question never shows up twice in one retest.
+    const seen = new Set();
+    const deduped = picked.filter((w) => {
+      const key = (w.word || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const dupCount = picked.length - deduped.length;
+    picked = deduped;
     const n = Number(bankCount);
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
-    setBankMsg(`${picked.length}개 단어를 불러왔어요. 아래에서 확인 후 저장하세요.`);
+    setBankMsg(`${picked.length}개 단어를 불러왔어요${dupCount > 0 ? ` (중복 ${dupCount}개 제외)` : ""}. 아래에서 확인 후 저장하세요.`);
     setShowBank(false);
   }
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
   function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
   async function save() {
-    const clean = words.filter((w) => w.word && w.meaning).map((w) => ({
+    const raw = words.filter((w) => w.word && w.meaning).map((w) => ({
       word: w.word, meaning: w.meaning,
       synonyms: (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
     }));
+    // Final safety net regardless of how the words got here (bank import, paste, or typed in by
+    // hand) — a saved test should never ask the same word twice.
+    const seenWords = new Set();
+    const clean = raw.filter((w) => {
+      const key = w.word.trim().toLowerCase();
+      if (seenWords.has(key)) return false;
+      seenWords.add(key);
+      return true;
+    });
     if (!title || clean.length < 2 || !retestDate || !retestTime) return;
     await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime }, ...d.vocabTests] }));
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
@@ -4609,7 +4765,7 @@ function VocabEditor({ student, data, updateData }) {
             <${VocabRetestSchedule} t=${t} updateData=${updateData} />
             ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
               <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                ${results.map((r) => html`<${VocabResultRow} key=${r.id} r=${r} updateData=${updateData} />`)}
+                ${results.map((r) => html`<${VocabResultRow} key=${r.id} r=${r} title=${t.title} updateData=${updateData} />`)}
               </div>
             `}
           <//>
@@ -5089,47 +5245,10 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       }} />`;
   }
 
-  const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
   const todayStr = today();
   const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate === todayStr);
   const overdueHw = (data.homework || []).filter((h) => !h.done && h.dueDate < todayStr);
-  // Finds the true next class by merging two sources — the recurring weekly tutoring pattern
-  // (skipping any date the teacher marked as an exception, e.g. a cancelled holiday class) and
-  // one-off makeup classes from monthlyInstances, which can land sooner than the next weekly
-  // occurrence. A plain day-of-week + offset calc (the old version) can't account for either.
-  let nextClassText = "등록된 수업 스케줄이 없어요.";
-  {
-    const now = new Date();
-    const nowHM = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
-    const exceptions = student.tutoringExceptions || [];
-    const candidates = [];
-    (student.schedule || []).forEach((s) => {
-      for (let offset = 0; offset <= 14; offset++) {
-        const dt = new Date(now); dt.setDate(dt.getDate() + offset);
-        const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-        if (DAY_NAMES[dt.getDay()] !== s.day) continue;
-        if (exceptions.includes(dateStr)) continue;
-        if (offset === 0 && s.time < nowHM) continue;
-        candidates.push({ date: dateStr, time: s.time, kind: "tutoring" });
-        break;
-      }
-    });
-    Object.values(student.monthlyInstances || {}).forEach((list) => {
-      (list || []).forEach((inst) => {
-        if (inst.date > todayStr || (inst.date === todayStr && inst.time >= nowHM)) {
-          candidates.push({ date: inst.date, time: inst.time, kind: inst.type === "tutoring" ? "tutoring" : "makeup" });
-        }
-      });
-    });
-    candidates.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-    const best = candidates[0];
-    if (best) {
-      const dt = new Date(best.date + "T00:00:00");
-      const diffDays = Math.round((dt - new Date(todayStr + "T00:00:00")) / 86400000);
-      const label = diffDays === 0 ? "오늘" : diffDays === 1 ? "내일" : `${dt.getMonth() + 1}/${dt.getDate()} (${DAY_NAMES[dt.getDay()]})`;
-      nextClassText = `${label} ${best.time}${best.kind === "makeup" ? " (보강)" : ""}`;
-    }
-  }
+  const nextClass = nextClassText(student, todayStr);
   const studyLog = data.studyLog || [];
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
   const todayTotalMin = todayEntries.reduce((sum, s) => sum + (s.minutes || 0), 0);
@@ -5177,7 +5296,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     return html`
       <div>
         ${header}
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 18 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
           <${Card} style=${{ marginBottom: 0 }}>
             <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
             ${todayHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
@@ -5188,9 +5307,11 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           <//>
         </div>
 
+        <div style=${{ marginBottom: 18 }}><${HomeworkProgressCard} data=${data} big=${true} /></div>
+
         <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
-          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClassText}</div>
+          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
         </div>
 
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
@@ -5246,7 +5367,8 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
         const latest = myResults[0];
         const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
-        const needsRetest = latest && latestPct < 90;
+        const threshold = vocabPassThreshold(t.title);
+        const needsRetest = latest && latestPct < threshold;
         return html`
           <${Card} key=${t.id} style=${needsRetest ? { borderLeft: `3px solid ${C.danger}` } : {}}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -5256,7 +5378,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                 ${latest && html`
                   <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
                     <span style=${{ fontSize: 12 }}>최근 결과: ${latest.score} / ${latest.total} (${latestPct}%)</span>
-                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: needsRetest ? "#F7E9E6" : "#E9F1EA", color: needsRetest ? C.danger : "#3D6B4F" }}>${needsRetest ? "재시험 필요 (90% 미만)" : "합격"}</span>
+                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: needsRetest ? "#F7E9E6" : "#E9F1EA", color: needsRetest ? C.danger : "#3D6B4F" }}>${needsRetest ? `재시험 필요 (${threshold}% 미만)` : "합격"}</span>
                   </div>
                 `}
               </div>
@@ -5292,7 +5414,14 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `))}
 
-      ${tab === "materials" && html`<${MaterialsLibrarySection} student=${student} readOnly=${true} />`}
+      ${tab === "materials" && html`
+        <div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📁 개인 자료실</div>
+          <${MaterialsLibrarySection} student=${student} readOnly=${true} />
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "20px 0 8px" }}>🌐 공유 자료실</div>
+          <${MaterialsLibrarySection} shared=${true} readOnly=${true} />
+        </div>
+      `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
     </div>
   `;
@@ -5335,7 +5464,7 @@ function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, vi
 // viewMonth/onMonthChange make this a controlled component when the caller needs to know which
 // month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
 // month state) otherwise, which is all the schedule-only call sites need.
-function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, viewMonth: viewMonthProp, onMonthChange }) {
+function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectTutoring, viewMonth: viewMonthProp, onMonthChange }) {
   const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
   const viewMonth = viewMonthProp || internalMonth;
   const setViewMonth = onMonthChange || setInternalMonth;
@@ -5351,7 +5480,7 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoring || []).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
+      ...(tutoring || []).map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
       ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강" })),
       ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
@@ -5382,11 +5511,14 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
               <div style=${{ fontSize: 10, color: isToday ? C.gold : C.slate, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>${d}</div>
               ${items.map((it, ii) => {
                 const canRemove = (it.source === "tutoring" && onRemoveTutoring) || (it.source === "other" && onRemoveOther);
+                const canSelect = it.source === "tutoring" && onSelectTutoring;
                 return html`
-                  <div key=${ii} style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700 }}>
+                  <div key=${ii} onClick=${canSelect ? () => onSelectTutoring(it._idx) : undefined}
+                    title=${canSelect ? "눌러서 이 수업 시간 수정" : undefined}
+                    style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700, cursor: canSelect ? "pointer" : undefined }}>
                     ${it.time}${it.endTime ? `~${it.endTime}` : ""} ${it.label}
                     ${canRemove && html`
-                      <span onClick=${() => (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr)}
+                      <span onClick=${(e) => { if (canSelect) e.stopPropagation(); (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr); }}
                         title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>
                     `}
                   </div>
@@ -5984,57 +6116,85 @@ function ParentMonthlyReportCard({ month, report }) {
   `;
 }
 
+// Icon-grid home menu for the parent dashboard — same pattern as STUDENT_HOME_ACTIONS, so a parent
+// logging in sees the same kind of app-like home screen as their kid instead of a desktop tab strip.
+const PARENT_HOME_ACTIONS = [
+  { key: "studyTime", label: "누적 공부 시간", icon: "⏱", bg: "#EAF6F6" },
+  { key: "dailyReport", label: "데일리 리포트", icon: "📰", bg: "#F3EDF7" },
+  { key: "monthlyReport", label: "월말 리포트", icon: "📊", bg: "#FBF4EA" },
+  { key: "homework", label: "숙제", icon: "📝", bg: "#FDEDE9" },
+  { key: "tuition", label: "수업료", icon: "💰", bg: "#E9F1EA" },
+  { key: "consult", label: "상담 신청", icon: "🗓", bg: "#FDEDE9" },
+];
+
 function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData, dataCache, onLogout }) {
-  const [tab, setTab] = useState("studyTime");
+  const [tab, setTab] = useState(null); // null = home (icon grid); otherwise one of PARENT_HOME_ACTIONS' keys
   const [data, setData] = useState(null);
   const [lightbox, setLightbox] = useState(null);
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
-
-  const tabs = [
-    { key: "studyTime", label: "누적 공부 시간", icon: "⏱" },
-    { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
-    { key: "monthlyReport", label: "월말 리포트", icon: "📊" },
-    { key: "homework", label: "숙제", icon: "📝" },
-    { key: "materials", label: "자료실", icon: "📁" },
-    { key: "tuition", label: "수업료", icon: "💰" },
-    { key: "consult", label: "상담 신청", icon: "🗓" },
-  ];
 
   if (!data) return html`<${Empty} text="불러오는 중..." />`;
 
   const publishedMonthly = Object.entries(data.monthlyReports || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
   const publishedDaily = Object.entries(data.dailyReports || {}).filter(([, r]) => r && r.published).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
-  const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-  const sortedSchedule = [...(student.schedule || [])].sort((a, b) => DAY_NAMES.indexOf(a.day) - DAY_NAMES.indexOf(b.day));
+  const todayStr = today();
+  const todayHw = (data.homework || []).filter((h) => !h.done && h.dueDate === todayStr);
+  const overdueHw = (data.homework || []).filter((h) => !h.done && h.dueDate < todayStr);
+  const nextClass = nextClassText(student, todayStr);
+
+  const header = html`
+    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생 학부모님</div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
+        <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, parentFcmToken: token }))} />
+        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      </div>
+    </div>
+  `;
+
+  if (tab === null) {
+    return html`
+      <div>
+        ${header}
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
+          <${Card} style=${{ marginBottom: 0 }}>
+            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
+            ${todayHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
+          <//>
+          <${Card} style=${{ marginBottom: 0, ...(overdueHw.length > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
+            <div style=${{ fontSize: 11, color: overdueHw.length > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>⏰ 밀린 숙제</div>
+            ${overdueHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 숙제가 없어요!</div>` : overdueHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger }}>${fmtDateDay(h.dueDate)} · ${h.content}</div>`)}
+          <//>
+        </div>
+
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
+          <${HomeworkProgressCard} data=${data} />
+          <${StudyTimeStatCard} studyLog=${data.studyLog || []} />
+        </div>
+
+        <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+          <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
+          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
+        </div>
+
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
+          ${PARENT_HOME_ACTIONS.map((a) => html`
+            <button key=${a.key} onClick=${() => setTab(a.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <div style=${{ width: 44, height: 44, borderRadius: "50%", background: a.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>${a.icon}</div>
+              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${a.label}</div>
+            </button>
+          `)}
+        </div>
+      </div>
+    `;
+  }
 
   return html`
     <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생 학부모님</div>
-        <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
-          <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, parentFcmToken: token }))} />
-          <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
-        </div>
-      </div>
-
-      <${Card} style=${{ marginBottom: 16 }}>
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: 20 }}>
-          <div style=${{ flex: 1, minWidth: 160 }}>
-            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>🗓 수업 스케줄</div>
-            ${sortedSchedule.length === 0
-              ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 스케줄이 없어요.</div>`
-              : sortedSchedule.map((d, i) => html`<div key=${i} style=${{ fontSize: 12.5, padding: "2px 0" }}>${d.day}요일 ${d.time}</div>`)}
-          </div>
-          <div style=${{ flex: 1.4, minWidth: 200 }}>
-            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>🎯 학습 목표</div>
-            <div style=${{ fontSize: 12.5, color: C.ink, lineHeight: 1.6 }}>${student.goal || "아직 등록된 목표가 없어요."}</div>
-          </div>
-        </div>
-      <//>
-
-      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
+      ${header}
+      <${BackBtn} onClick=${() => setTab(null)} />
 
       ${tab === "studyTime" && html`<${ParentStudyTimeTab} studyLog=${data.studyLog || []} />`}
 
@@ -6098,7 +6258,6 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         </div>
       `}
 
-      ${tab === "materials" && html`<${MaterialsLibrarySection} student=${student} readOnly=${true} />`}
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
     </div>
   `;
