@@ -1971,18 +1971,28 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
   const [birthdate, setBirthdate] = useState(student.birthdate || "");
   const [address, setAddress] = useState(student.address || "");
   const [driveFolderLink, setDriveFolderLink] = useState(student.driveFolderLink || "");
+  const [studentCode, setStudentCode] = useState(student.studentCode || "");
+  const [parentCode, setParentCode] = useState(student.parentCode || "");
   const [saved, setSaved] = useState(false);
+  const [codeErr, setCodeErr] = useState("");
   const [inviteMsg, setInviteMsg] = useState("");
   useEffect(() => {
     setName(student.name || ""); setSchool(student.school || ""); setGrade(student.grade || "");
-    setBirthdate(student.birthdate || ""); setAddress(student.address || ""); setDriveFolderLink(student.driveFolderLink || ""); setSaved(false); setInviteMsg("");
+    setBirthdate(student.birthdate || ""); setAddress(student.address || ""); setDriveFolderLink(student.driveFolderLink || "");
+    setStudentCode(student.studentCode || ""); setParentCode(student.parentCode || "");
+    setSaved(false); setCodeErr(""); setInviteMsg("");
   }, [student.id]);
 
   async function save() {
-    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, name, school, grade, birthdate, address, driveFolderLink: driveFolderLink.trim() } : r)));
+    const sc = studentCode.trim(), pc = parentCode.trim();
+    if (!sc || !pc) { setCodeErr("학생 코드와 학부모 코드를 모두 입력해 주세요."); return; }
+    const dupe = roster.some((r) => r.id !== student.id && (r.studentCode === sc || r.parentCode === sc || r.studentCode === pc || r.parentCode === pc));
+    if (dupe) { setCodeErr("이미 다른 학생이 쓰고 있는 코드예요. 다른 코드를 입력해 주세요."); return; }
+    setCodeErr("");
+    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, name, school, grade, birthdate, address, driveFolderLink: driveFolderLink.trim(), studentCode: sc, parentCode: pc } : r)));
     setSaved(true);
   }
-  function field(setter) { return (e) => { setter(e.target.value); setSaved(false); }; }
+  function field(setter) { return (e) => { setter(e.target.value); setSaved(false); setCodeErr(""); }; }
 
   async function copyInvite(kind) {
     const text = kind === "student"
@@ -2009,6 +2019,12 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
       </div>
       <${Field} label="주소"><input style=${inputStyle} value=${address} onChange=${field(setAddress)} placeholder="예: 서울시 강서구 ..." /><//>
       <${Field} label="개인 자료실용 구글 드라이브 폴더 링크"><input style=${inputStyle} value=${driveFolderLink} onChange=${field(setDriveFolderLink)} placeholder="https://drive.google.com/drive/folders/..." /><//>
+      <div style=${{ display: "flex", gap: 8 }}>
+        <div style=${{ flex: 1 }}><${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${studentCode} onChange=${field(setStudentCode)} /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${parentCode} onChange=${field(setParentCode)} /><//></div>
+      </div>
+      ${codeErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${codeErr}</div>`}
+      <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 10 }}>코드를 바꾸면 기존 코드로는 더 이상 로그인이 안 돼요. 바뀐 코드를 학생·학부모님께 다시 알려주세요 (아래 "초대 문구 복사" 이용).</div>
       <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
         <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${save}>저장<//>
         ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
