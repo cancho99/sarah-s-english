@@ -5160,6 +5160,11 @@ function VocabEditor({ student, data, updateData }) {
     setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
+  // Mirrors homework's 기간만료 — for a 단어 시험 whose 재시험 예정일이 지났고 더 볼 일이 없는 경우.
+  // Drops it out of the student/parent home "밀린" nagging list without deleting the test itself.
+  async function toggleExpired(id) {
+    await updateData((d) => ({ ...d, vocabTests: d.vocabTests.map((t) => (t.id === id ? { ...t, expired: !t.expired } : t)) }));
+  }
 
   return html`
     <div>
@@ -5241,8 +5246,19 @@ function VocabEditor({ student, data, updateData }) {
       `}
       <${SectionLabel} n=${2} label="등록된 단어 시험" />
       ${data.vocabTests.length === 0 && html`<${Empty} text="아직 만든 단어 시험이 없어요." />`}
-      ${data.vocabTests.map((t) => {
+      ${groupByDate(data.vocabTests, "retestDate").map((grp) => {
+        const gIsOverdue = grp.date && grp.date < today(), gIsToday = grp.date === today();
+        return html`
+        <div key=${grp.date || "_none"}>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: gIsOverdue ? C.danger : gIsToday ? C.gold : C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${gIsOverdue ? C.danger : gIsToday ? C.gold : C.line}`, paddingBottom: 4 }}>
+            ${grp.date ? `단어 시험 ${fmtDateDay(grp.date)}${gIsOverdue ? " · 마감 지남" : gIsToday ? " · 오늘 마감" : ""}` : "예정일 미정"}
+          </div>
+          ${grp.items.map((t) => {
         const results = data.vocabResults.filter((r) => r.testId === t.id);
+        const latest = results[0];
+        const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
+        const notPassed = !latest || latestPct < vocabPassThreshold(t.title);
+        const notSubmittedPastDeadline = notPassed && !t.expired && gIsOverdue;
         return html`
           <${Card} key=${t.id}>
             <div style=${{ display: "flex", justifyContent: "space-between" }}>
@@ -5250,17 +5266,22 @@ function VocabEditor({ student, data, updateData }) {
                 <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 단어 ${t.words.length}개</div>
               </div>
-              <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+              <div style=${{ display: "flex", gap: 10 }}>
+                ${notPassed && html`<button onClick=${() => toggleExpired(t.id)} style=${{ background: "none", border: "none", color: t.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${t.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
+                <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+              </div>
             </div>
             <${VocabRetestSchedule} t=${t} updateData=${updateData} />
-            ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
+            ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: notSubmittedPastDeadline ? C.danger : t.expired ? C.gold : C.slate, fontWeight: notSubmittedPastDeadline ? 700 : 400, marginTop: 8 }}>${t.expired ? "⏳ 기간만료 (밀린 목록에서 빠짐)" : notSubmittedPastDeadline ? "✗ 마감이 지났는데 아직 응시하지 않았어요." : "아직 응시하지 않았어요."}</div>` : html`
               <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
                 ${results.map((r) => html`<${VocabResultRow} key=${r.id} r=${r} title=${t.title} updateData=${updateData} />`)}
               </div>
             `}
           <//>
         `;
-      })}
+          })}
+        </div>
+      `;})}
     </div>
   `;
 }
@@ -5470,6 +5491,12 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
     setTitle(""); setKeyAnswers([]); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
+  // Mirrors homework's 기간만료 — for a mock exam whose deadline has passed and isn't realistically
+  // getting submitted anymore. Drops it out of the student/parent home "밀린" nagging list without
+  // deleting the exam itself.
+  async function toggleExpired(id) {
+    await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).map((t) => (t.id === id ? { ...t, expired: !t.expired } : t)) }));
+  }
   function startEdit(t) {
     setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyAnswers((t.answerKey || []).map(String)); setEditMsg("");
   }
@@ -5541,7 +5568,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: gIsOverdue ? C.danger : gIsToday ? C.gold : C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${gIsOverdue ? C.danger : gIsToday ? C.gold : C.line}`, paddingBottom: 4 }}>답안 제출 마감 ${fmtDateDay(grp.date)}${gIsOverdue ? " · 마감 지남" : gIsToday ? " · 오늘 마감" : ""}</div>
           ${grp.items.map((t) => {
         const results = (data.mockExamResults || []).filter((r) => r.testId === t.id);
-        const notSubmittedPastDeadline = results.length === 0 && t.date < today();
+        const notSubmittedPastDeadline = results.length === 0 && !t.expired && t.date < today();
         return html`
           <${Card} key=${t.id}>
             ${editId === t.id ? html`
@@ -5561,11 +5588,12 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
                   <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
                 </div>
                 <div style=${{ display: "flex", gap: 10 }}>
+                  ${results.length === 0 && html`<button onClick=${() => toggleExpired(t.id)} style=${{ background: "none", border: "none", color: t.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${t.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
                   <button onClick=${() => startEdit(t)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
                   <button onClick=${() => removeExam(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
                 </div>
               </div>
-              ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: notSubmittedPastDeadline ? C.danger : C.slate, fontWeight: notSubmittedPastDeadline ? 700 : 400, marginTop: 8 }}>${notSubmittedPastDeadline ? "✗ 마감이 지났는데 아직 응시하지 않았어요." : "아직 응시하지 않았어요."}</div>` : html`
+              ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: notSubmittedPastDeadline ? C.danger : t.expired ? C.gold : C.slate, fontWeight: notSubmittedPastDeadline ? 700 : 400, marginTop: 8 }}>${t.expired ? "⏳ 기간만료 (밀린 목록에서 빠짐)" : notSubmittedPastDeadline ? "✗ 마감이 지났는데 아직 응시하지 않았어요." : "아직 응시하지 않았어요."}</div>` : html`
                 <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
                   ${results.map((r) => html`<${MockResultRow} key=${r.id} r=${r} answerKey=${t.answerKey} />`)}
                 </div>
@@ -5779,9 +5807,19 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const todayStr = today();
   const todayHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate === todayStr);
   const overdueHw = (data.homework || []).filter((h) => !h.done && !h.expired && h.dueDate < todayStr);
-  const unsubmittedMock = (data.mockExams || []).filter((t) => !(data.mockExamResults || []).some((r) => r.testId === t.id));
+  const unsubmittedMock = (data.mockExams || []).filter((t) => !t.expired && !(data.mockExamResults || []).some((r) => r.testId === t.id));
   const todayMock = unsubmittedMock.filter((t) => t.date === todayStr);
   const overdueMock = unsubmittedMock.filter((t) => t.date < todayStr);
+  const notPassedVocab = (data.vocabTests || []).filter((t) => {
+    if (t.expired) return false;
+    const results = (data.vocabResults || []).filter((r) => r.testId === t.id);
+    const latest = results[0];
+    if (!latest) return true;
+    const pct = Math.round((latest.score / latest.total) * 100);
+    return pct < vocabPassThreshold(t.title);
+  });
+  const todayVocab = notPassedVocab.filter((t) => t.retestDate === todayStr);
+  const overdueVocab = notPassedVocab.filter((t) => t.retestDate && t.retestDate < todayStr);
   const nextClass = nextClassText(student, todayStr);
   const studyLog = data.studyLog || [];
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
@@ -5833,16 +5871,18 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
           <${Card} style=${{ marginBottom: 0 }}>
             <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
-            ${(todayHw.length === 0 && todayMock.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : html`
+            ${(todayHw.length === 0 && todayMock.length === 0 && todayVocab.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : html`
               ${todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
               ${todayMock.map((t) => html`<div key=${"m" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>📄 오늘 마감 · ${t.title} 답안 제출</div>`)}
+              ${todayVocab.map((t) => html`<div key=${"v" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>🔤 오늘 마감 · ${t.title} 단어 시험</div>`)}
             `}
           <//>
-          <${Card} style=${{ marginBottom: 0, ...((overdueHw.length + overdueMock.length) > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
-            <div style=${{ fontSize: 11, color: (overdueHw.length + overdueMock.length) > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>⏰ 밀린 숙제 / 모의고사</div>
-            ${(overdueHw.length === 0 && overdueMock.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 게 없어요!</div>` : html`
+          <${Card} style=${{ marginBottom: 0, ...((overdueHw.length + overdueMock.length + overdueVocab.length) > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
+            <div style=${{ fontSize: 11, color: (overdueHw.length + overdueMock.length + overdueVocab.length) > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>⏰ 밀린 숙제 / 시험</div>
+            ${(overdueHw.length === 0 && overdueMock.length === 0 && overdueVocab.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 게 없어요!</div>` : html`
               ${overdueHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger }}>${fmtDateDay(h.dueDate)} · ${h.content}</div>`)}
               ${overdueMock.map((t) => html`<div key=${"m" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger, fontWeight: 700 }}>📄 ${fmtDateDay(t.date)} 마감 · ${t.title} 답안 제출</div>`)}
+              ${overdueVocab.map((t) => html`<div key=${"v" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger, fontWeight: 700 }}>🔤 ${fmtDateDay(t.retestDate)} 마감 · ${t.title} 단어 시험</div>`)}
             `}
           <//>
         </div>
@@ -5903,17 +5943,35 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           </div>
         `))}
 
-      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 시험이 없어요." />` : data.vocabTests.map((t) => {
+      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 시험이 없어요." />` : groupByDate(data.vocabTests, "retestDate").map((grp) => {
+        const gIsOverdue = grp.date && grp.date < todayStr, gIsToday = grp.date === todayStr;
+        return html`
+        <div key=${grp.date || "_none"}>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: gIsOverdue ? C.danger : gIsToday ? C.gold : C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${gIsOverdue ? C.danger : gIsToday ? C.gold : C.line}`, paddingBottom: 4 }}>
+            ${grp.date ? `단어 시험 ${fmtDateDay(grp.date)}${grp.date < todayStr ? " · 마감 지남" : grp.date === todayStr ? " · 오늘 마감" : ""}` : "예정일 미정"}
+          </div>
+          ${grp.items.map((t) => {
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
         const latest = myResults[0];
         const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
         const threshold = vocabPassThreshold(t.title);
         const needsRetest = latest && latestPct < threshold;
+        const notDoneYet = !latest || needsRetest;
+        const isOverdue = notDoneYet && !t.expired && gIsOverdue;
+        const isToday = notDoneYet && !t.expired && gIsToday;
         return html`
-          <${Card} key=${t.id} style=${needsRetest ? { borderLeft: `3px solid ${C.danger}` } : {}}>
+          <${Card} key=${t.id} style=${isOverdue ? { borderLeft: `3px solid ${C.danger}` } : isToday ? { borderLeft: `3px solid ${C.gold}` } : needsRetest && !t.expired ? { borderLeft: `3px solid ${C.danger}` } : {}}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                  ${(isOverdue || isToday) && html`
+                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: isOverdue ? "#F7E9E6" : "#FBF4EA", color: isOverdue ? C.danger : C.gold, whiteSpace: "nowrap" }}>${isOverdue ? "✗ 마감지남" : "오늘 마감"}</span>
+                  `}
+                  ${t.expired && notDoneYet && html`
+                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FBF4EA", color: C.gold, whiteSpace: "nowrap" }}>⏳ 기간만료</span>
+                  `}
+                </div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>단어 ${t.words.length}개</div>
                 ${latest && html`
                   <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
@@ -5926,7 +5984,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
             </div>
           <//>
         `;
-      }))}
+          })}
+        </div>
+      `;}))}
 
       ${tab === "mock" && ((data.mockExams || []).length === 0 ? html`<${Empty} text="등록된 모의고사가 없어요." />` : groupByDate(data.mockExams || [], "date").map((grp) => {
         const gIsOverdue = grp.date < todayStr, gIsToday = grp.date === todayStr;
@@ -5936,8 +5996,8 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           ${grp.items.map((t) => {
         const myResults = (data.mockExamResults || []).filter((r) => r.testId === t.id);
         const submitted = myResults.length > 0;
-        const isOverdue = !submitted && t.date < todayStr;
-        const isToday = !submitted && t.date === todayStr;
+        const isOverdue = !submitted && !t.expired && t.date < todayStr;
+        const isToday = !submitted && !t.expired && t.date === todayStr;
         return html`
           <${Card} key=${t.id} style=${isOverdue ? { borderLeft: `3px solid ${C.danger}` } : isToday ? { borderLeft: `3px solid ${C.gold}` } : {}}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -5946,6 +6006,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                   <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
                   ${!submitted && (isOverdue || isToday) && html`
                     <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: isOverdue ? "#F7E9E6" : "#FBF4EA", color: isOverdue ? C.danger : C.gold, whiteSpace: "nowrap" }}>${isOverdue ? "✗ 마감지남" : "오늘 마감"}</span>
+                  `}
+                  ${!submitted && t.expired && html`
+                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FBF4EA", color: C.gold, whiteSpace: "nowrap" }}>⏳ 기간만료</span>
                   `}
                 </div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
