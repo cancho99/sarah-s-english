@@ -153,6 +153,7 @@ async function loadStore(attempts = 3) {
         levelTestBookings: Array.isArray(rec.levelTestBookings) ? rec.levelTestBookings : [],
         announcement: rec.announcement || null,
         examKeyLibrary: Array.isArray(rec.examKeyLibrary) ? rec.examKeyLibrary : [],
+        sharedDriveFolderLink: rec.sharedDriveFolderLink || "",
         studentData: {}, // fetched per-student on demand via ensureData()
       };
       return store;
@@ -171,7 +172,7 @@ async function saveMeta() {
     // setDoc would replace the ENTIRE meta doc, silently wiping fields this function doesn't know
     // about (e.g. teacherFcmTokens, written separately by addTeacherFcmToken's own transaction)
     // any time a teacher saves the roster/announcement/bookings/exam key library.
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [] }, { merge: true });
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [], sharedDriveFolderLink: store.sharedDriveFolderLink || "" }, { merge: true });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
@@ -208,6 +209,12 @@ const NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notif
 const NOTIFY_STUDENT_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notifyStudent";
 const TEST_NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/sendTestNotification";
 const FCM_VAPID_KEY = "BKXGKOsQBe0e0TLKdjkmtuDTR9iy9o7qSCZu1UmP8x7xvRuG7x1uRu1FgYCoF7YsGSwfIQ_dvutD39uV_nMhJG4";
+// 자료실의 구글 드라이브 폴더 파일 목록을 읽기 전용으로 보여주기 위한 Drive API v3 키.
+// Google Cloud Console에서 프로젝트 생성 → "Google Drive API" 활성화 → API 키 발급 → 이 사이트
+// 도메인으로 HTTP 리퍼러 제한을 걸어서 여기 채워 넣으면 된다. 비어 있는 동안은 자료실이 "아직
+// 연동 전" 안내만 보여주고 조용히 넘어간다 (에러로 취급하지 않음).
+const GOOGLE_DRIVE_API_KEY = "AIzaSyCQd0-EIR3EdmnAafyKSM0zLXX39TlkC6g";
+const SITE_URL = "https://cancho99.github.io/sarah-s-english/";
 
 async function enableNotifications() {
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !window.__messaging) {
@@ -928,6 +935,7 @@ function App() {
   const [levelTestBookings, setLevelTestBookings] = useState([]);
   const [announcement, setAnnouncement] = useState(null);
   const [examKeyLibrary, setExamKeyLibrary] = useState([]);
+  const [sharedDriveFolderLink, setSharedDriveFolderLink] = useState("");
   const [session, setSession] = useState(null);
   const [dataCache, setDataCache] = useState({});
   const [selectedStudentId, setSelectedStudentId] = useState(null);
@@ -947,6 +955,7 @@ function App() {
         setLevelTestBookings(s.levelTestBookings || []);
         setAnnouncement(s.announcement || null);
         setExamKeyLibrary(s.examKeyLibrary || []);
+        setSharedDriveFolderLink(s.sharedDriveFolderLink || "");
       } catch (e) {
         if (!cancelled) setLoadError(true);
       }
@@ -973,6 +982,11 @@ function App() {
   async function saveExamKeyLibrary(list) {
     setExamKeyLibrary(list);
     if (store) store.examKeyLibrary = list;
+    await saveMeta();
+  }
+  async function saveSharedDriveFolderLink(link) {
+    setSharedDriveFolderLink(link);
+    if (store) store.sharedDriveFolderLink = link;
     await saveMeta();
   }
 
@@ -1070,7 +1084,9 @@ function App() {
       levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary}
-      addTeacherFcmToken=${addTeacherFcmToken} />`;
+      addTeacherFcmToken=${addTeacherFcmToken}
+      teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal}
+      sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   }
 
   const MODAL_SCREENS = ["levelTest", "teacherLogin", "studentLogin", "parentLogin"];
@@ -1082,7 +1098,8 @@ function App() {
       <div style=${{ maxWidth: isWide ? 1080 : 480, margin: "0 auto", padding: (screen === "home" || isModal) ? "0 0 60px" : "18px 16px 60px" }}>
         ${(screen === "home" || isModal) && html`<${HomePage} setScreen=${setScreen} announcement=${announcement} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${roster.find((r) => r.id === session.student.id) || session.student}
-          updateStudentRosterEntry=${updateStudentRosterEntry} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
+          updateStudentRosterEntry=${updateStudentRosterEntry} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
+          sharedDriveFolderLink=${sharedDriveFolderLink} />`}
         ${screen === "parentDash" && html`<${ParentDash} student=${roster.find((r) => r.id === session.student.id) || session.student}
           updateStudentRosterEntry=${updateStudentRosterEntry} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout} />`}
       </div>
@@ -1807,7 +1824,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   `;
 }
 
-function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken }) {
+function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const [section, setSection] = useState("mainpage");
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
@@ -1843,6 +1860,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     { key: "sharedMaterials", label: "공유 자료실", icon: "📁" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
+    { key: "settings", label: "설정", icon: "⚙️" },
   ];
 
   const activeKey = section;
@@ -1862,11 +1880,13 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "sharedMaterials") {
-    body = html`<${MaterialsLibrarySection} shared=${true} />`;
+    body = html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
     body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
+  } else if (section === "settings") {
+    body = html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`;
   } else if (section === "schedule") {
     body = html`<${MasterScheduleView} roster=${roster} saveRosterList=${saveRosterList} />`;
   } else if (section === "attendance") {
@@ -1908,6 +1928,41 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   `;
 }
 
+function TeacherSettingsSection({ teacherAuth, saveTeacherAuthGlobal }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [err, setErr] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setErr(""); setSaved(false);
+    if (!teacherAuth || current !== teacherAuth.passcode) { setErr("현재 비밀번호가 맞지 않아요."); return; }
+    if (!next) { setErr("새 비밀번호를 입력해 주세요."); return; }
+    if (next !== confirm) { setErr("새 비밀번호가 서로 달라요."); return; }
+    setBusy(true);
+    try {
+      await saveTeacherAuthGlobal({ ...teacherAuth, passcode: next });
+      setCurrent(""); setNext(""); setConfirm(""); setSaved(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return html`
+    <${Card} style=${{ maxWidth: 360 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🔒 비밀번호 변경</div>
+      <${Field} label="현재 비밀번호"><input style=${inputStyle} type="password" value=${current} onChange=${(e) => { setCurrent(e.target.value); setErr(""); setSaved(false); }} /><//>
+      <${Field} label="새 비밀번호"><input style=${inputStyle} type="password" value=${next} onChange=${(e) => { setNext(e.target.value); setErr(""); setSaved(false); }} /><//>
+      <${Field} label="새 비밀번호 확인"><input style=${inputStyle} type="password" value=${confirm} onChange=${(e) => { setConfirm(e.target.value); setErr(""); setSaved(false); }} onKeyDown=${(e) => e.key === "Enter" && submit()} /><//>
+      ${err && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${err}</div>`}
+      ${saved && html`<div style=${{ color: C.navy, fontSize: 12, marginBottom: 8 }}>비밀번호가 바뀌었어요.</div>`}
+      <${Button} variant="gold" disabled=${busy} onClick=${submit}>변경<//>
+    <//>
+  `;
+}
+
 // ---------- 학생 관리: 왼쪽 학생 목록 / 오른쪽 선택한 학생 정보 (2단 레이아웃) ----------
 function StudentInfoEditor({ student, saveRosterList, roster }) {
   const [name, setName] = useState(student.name || "");
@@ -1915,17 +1970,31 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
   const [grade, setGrade] = useState(student.grade || "");
   const [birthdate, setBirthdate] = useState(student.birthdate || "");
   const [address, setAddress] = useState(student.address || "");
+  const [driveFolderLink, setDriveFolderLink] = useState(student.driveFolderLink || "");
   const [saved, setSaved] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState("");
   useEffect(() => {
     setName(student.name || ""); setSchool(student.school || ""); setGrade(student.grade || "");
-    setBirthdate(student.birthdate || ""); setAddress(student.address || ""); setSaved(false);
+    setBirthdate(student.birthdate || ""); setAddress(student.address || ""); setDriveFolderLink(student.driveFolderLink || ""); setSaved(false); setInviteMsg("");
   }, [student.id]);
 
   async function save() {
-    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, name, school, grade, birthdate, address } : r)));
+    await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, name, school, grade, birthdate, address, driveFolderLink: driveFolderLink.trim() } : r)));
     setSaved(true);
   }
   function field(setter) { return (e) => { setter(e.target.value); setSaved(false); }; }
+
+  async function copyInvite(kind) {
+    const text = kind === "student"
+      ? `[Sarah's English] ${student.name} 학생 포털 안내\n👉 ${SITE_URL}\n"학생 로그인" 선택 후 아래 코드를 입력해 주세요.\n학생 코드: ${student.studentCode}`
+      : `[Sarah's English] ${student.name} 학생 학부모님 포털 안내\n👉 ${SITE_URL}\n"학부모 로그인" 선택 후 아래 코드를 입력해 주세요.\n학부모 코드: ${student.parentCode}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setInviteMsg(kind === "student" ? "학생용 문구를 복사했어요." : "학부모용 문구를 복사했어요.");
+    } catch (e) {
+      setInviteMsg("복사에 실패했어요. 직접 선택해서 복사해 주세요.");
+    }
+  }
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
@@ -1939,6 +2008,7 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
         <div style=${{ flex: 1 }}><${Field} label="생년월일"><input style=${inputStyle} type="date" value=${birthdate} onChange=${field(setBirthdate)} /><//></div>
       </div>
       <${Field} label="주소"><input style=${inputStyle} value=${address} onChange=${field(setAddress)} placeholder="예: 서울시 강서구 ..." /><//>
+      <${Field} label="개인 자료실용 구글 드라이브 폴더 링크"><input style=${inputStyle} value=${driveFolderLink} onChange=${field(setDriveFolderLink)} placeholder="https://drive.google.com/drive/folders/..." /><//>
       <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
         <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${save}>저장<//>
         ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
@@ -1946,6 +2016,14 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
       <div style=${{ display: "flex", gap: 16, marginTop: 10, fontSize: 11, color: C.slate }}>
         <div>학생 마지막 로그인: ${student.lastStudentLoginAt ? fmtDateTime(student.lastStudentLoginAt) : "기록 없음"}</div>
         <div>학부모 마지막 로그인: ${student.lastParentLoginAt ? fmtDateTime(student.lastParentLoginAt) : "기록 없음"}</div>
+      </div>
+      <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+        <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>사이트 링크 + 로그인 코드가 채워진 안내 문구를 복사해서 카톡/문자로 붙여넣으세요.</div>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => copyInvite("student")}>학생용 초대 문구 복사<//>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => copyInvite("parent")}>학부모용 초대 문구 복사<//>
+          ${inviteMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${inviteMsg}</span>`}
+        </div>
       </div>
     <//>
   `;
@@ -1955,19 +2033,27 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
   // Left column is add/edit-one-at-a-time — registered slots are NOT listed here (that would just
   // duplicate what the calendar on the right already shows). Clicking a class on the calendar loads
-  // it into this form via onSelectTutoring instead of a separate editable list.
+  // it into this form via onSelectItem instead of a separate editable list.
   const [form, setForm] = useState({ day: "월", time: "18:00", endTime: "19:00" });
   const [editingIndex, setEditingIndex] = useState(null); // index into student.schedule, or null while adding a new one
+  // Set when a calendar chip (tutoring occurrence or one-off instance) is clicked — lets the
+  // teacher retime/move just that one date without touching the recurring weekly pattern.
+  const [instanceEdit, setInstanceEdit] = useState(null);
   const [busy, setBusy] = useState(false);
   const [month, setMonth] = useState(today().slice(0, 7));
   const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   const [monthlySaved, setMonthlySaved] = useState(false);
   useEffect(() => {
-    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false);
+    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false); setInstanceEdit(null);
     setMonth(today().slice(0, 7));
     setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   }, [student.id]);
+  // Skipped once right after copyMonthlyToNextMonth switches `month` — that function already
+  // seeds `monthly` with the copied draft, and this effect would otherwise immediately stomp it
+  // with the (unrelated, possibly empty) saved data for the new month.
+  const skipMonthResetRef = useRef(false);
   useEffect(() => {
+    if (skipMonthResetRef.current) { skipMonthResetRef.current = false; return; }
     setMonthly((student.monthlyInstances || {})[month] || []);
   }, [month]);
 
@@ -1978,8 +2064,108 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     if (!s) return;
     setForm({ day: s.day, time: s.time, endTime: s.endTime || "" });
     setEditingIndex(idx);
+    setInstanceEdit(null);
   }
   function resetForm() { setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); }
+
+  // Clicking a calendar chip opens the single-date editor instead of the recurring form.
+  function selectInstance(item) {
+    setInstanceEdit({
+      source: item.source, origDate: item.dateStr, date: item.dateStr,
+      time: item.time, endTime: item.endTime || "", type: item.type, _idx: item._idx, _midx: item._midx,
+    });
+    setEditingIndex(null);
+  }
+
+  // Shared by both the drag-and-drop calendar move and the single-date form's save button —
+  // a "tutoring" occurrence is skipped at its original date (via tutoringExceptions) and
+  // re-created as a one-off monthlyInstances entry at the new date; a "monthly" instance is
+  // just updated/moved in place within its (possibly different) month's array.
+  async function applyInstanceChange(item, { date, time, endTime }) {
+    setBusy(true);
+    try {
+      const monthKeyNew = date.slice(0, 7);
+      if (item.source === "tutoring") {
+        const nextInstances = [...((student.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type: "tutoring" }];
+        await saveRosterList(roster.map((r) => (r.id === student.id
+          ? {
+              ...r,
+              tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), item.dateStr])],
+              monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: nextInstances },
+            }
+          : r)));
+      } else if (item.source === "monthly") {
+        const monthKeyOrig = item.dateStr.slice(0, 7);
+        if (monthKeyOrig === monthKeyNew) {
+          const arr = (student.monthlyInstances || {})[monthKeyOrig] || [];
+          const nextArr = arr.map((inst, i) => (i === item._midx ? { ...inst, date, time, endTime } : inst));
+          await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextArr } } : r)));
+        } else {
+          const origArr = (student.monthlyInstances || {})[monthKeyOrig] || [];
+          const movedInst = origArr[item._midx] || {};
+          const nextOrigArr = origArr.filter((_, i) => i !== item._midx);
+          const nextNewArr = [...((student.monthlyInstances || {})[monthKeyNew] || []), { ...movedInst, date, time, endTime }];
+          await saveRosterList(roster.map((r) => (r.id === student.id
+            ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextOrigArr, [monthKeyNew]: nextNewArr } }
+            : r)));
+        }
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Unlike applyInstanceChange (which skips/moves the original), this leaves the source
+  // occurrence untouched and just adds a new one-off instance at the target date — for
+  // "also add a makeup on this other date" without losing the original class.
+  async function addInstanceCopy(item, { date, time, endTime }) {
+    setBusy(true);
+    try {
+      const monthKeyNew = date.slice(0, 7);
+      const type = item.source === "tutoring" ? "tutoring" : (item.type || "makeup");
+      const nextInstances = [...((student.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type }];
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: nextInstances } } : r)));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function moveOccurrence(item, toDateStr, opts) {
+    if (item.dateStr === toDateStr) return;
+    if (opts && opts.copy) await addInstanceCopy(item, { date: toDateStr, time: item.time, endTime: item.endTime });
+    else await applyInstanceChange(item, { date: toDateStr, time: item.time, endTime: item.endTime });
+  }
+  async function saveInstanceEdit() {
+    if (!instanceEdit) return;
+    await applyInstanceChange(
+      { source: instanceEdit.source, dateStr: instanceEdit.origDate, _midx: instanceEdit._midx },
+      { date: instanceEdit.date, time: instanceEdit.time, endTime: instanceEdit.endTime }
+    );
+    setInstanceEdit(null);
+  }
+  async function copyInstanceEdit() {
+    if (!instanceEdit) return;
+    await addInstanceCopy(
+      { source: instanceEdit.source, dateStr: instanceEdit.origDate, type: instanceEdit.type },
+      { date: instanceEdit.date, time: instanceEdit.time, endTime: instanceEdit.endTime }
+    );
+    setInstanceEdit(null);
+  }
+  async function deleteInstanceEdit() {
+    if (!instanceEdit) return;
+    setBusy(true);
+    try {
+      if (instanceEdit.source === "tutoring") {
+        await removeTutoringOccurrence(instanceEdit.origDate);
+      } else {
+        const monthKey = instanceEdit.origDate.slice(0, 7);
+        const arr = (student.monthlyInstances || {})[monthKey] || [];
+        const nextArr = arr.filter((_, i) => i !== instanceEdit._midx);
+        await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKey]: nextArr } } : r)));
+      }
+      setInstanceEdit(null);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submitForm() {
     setBusy(true);
     try {
@@ -2025,6 +2211,22 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   function updateInstance(i, field, val) { setMonthly(monthly.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setMonthlySaved(false); }
   function removeInstance(i) { setMonthly(monthly.filter((_, idx) => idx !== i)); setMonthlySaved(false); }
   function addInstance() { setMonthly([...monthly, { date: month + "-01", time: "18:00", endTime: "19:00", type: "makeup" }].sort((a, b) => (a.date < b.date ? -1 : 1))); setMonthlySaved(false); }
+  // Carries this month's one-off entries over to next month (same day-of-month, clamped for
+  // shorter months) so the teacher can review/adjust before saving instead of re-entering them.
+  function copyMonthlyToNextMonth() {
+    const [y, m] = month.split("-").map(Number);
+    const nextDt = new Date(y, m, 1);
+    const nextMonthKey = `${nextDt.getFullYear()}-${String(nextDt.getMonth() + 1).padStart(2, "0")}`;
+    const daysInNextMonth = new Date(nextDt.getFullYear(), nextDt.getMonth() + 1, 0).getDate();
+    const copied = monthly.map((inst) => {
+      const day = Math.min(Number(inst.date.slice(8, 10)), daysInNextMonth);
+      return { ...inst, date: `${nextMonthKey}-${String(day).padStart(2, "0")}` };
+    });
+    skipMonthResetRef.current = true;
+    setMonth(nextMonthKey);
+    setMonthly([...((student.monthlyInstances || {})[nextMonthKey] || []), ...copied].sort((a, b) => (a.date < b.date ? -1 : 1)));
+    setMonthlySaved(false);
+  }
   async function saveMonthly() {
     await saveRosterList(roster.map((r) => (r.id === student.id
       ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
@@ -2037,21 +2239,46 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, alignItems: "start" }}>
         <div>
-          <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 4 }}>${editingIndex != null ? "수업 시간 수정" : "매주 반복 수업 등록"}</div>
-          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>등록한 수업은 오른쪽 달력에 표시돼요. 달력에서 수업을 누르면 여기서 바로 수정·삭제할 수 있어요.</div>
-          <select style=${{ ...inputStyle, marginBottom: 8, width: 110 }} value=${form.day} onChange=${(e) => setForm({ ...form, day: e.target.value })}>
-            ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
-          </select>
-          <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-            <${TimeField} value=${form.time} onChange=${(v) => setForm({ ...form, time: v })} />
-            <span style=${{ color: C.slate }}>~</span>
-            <${TimeField} value=${form.endTime} onChange=${(v) => setForm({ ...form, endTime: v })} />
-          </div>
-          <div style=${{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <${Button} variant="gold" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${submitForm}>${editingIndex != null ? "저장" : "+ 추가"}<//>
-            ${editingIndex != null && html`<${Button} variant="danger" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${deleteEditing}>삭제<//>`}
-            ${editingIndex != null && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${resetForm}>취소<//>`}
-          </div>
+          ${instanceEdit ? html`
+            <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 4 }}>이 날짜만 시간 수정</div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>날짜를 바꾸면 그 수업만 다른 날로 옮겨져요. 오른쪽 달력에서 칸으로 직접 드래그해서 옮기거나(Alt+드래그는 복사) 아래 버튼으로 옮기고/복사할 수 있어요.</div>
+            <div style=${{ marginBottom: 8 }}><${DateField} value=${instanceEdit.date} onChange=${(v) => setInstanceEdit({ ...instanceEdit, date: v })} /></div>
+            <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+              <${TimeField} value=${instanceEdit.time} onChange=${(v) => setInstanceEdit({ ...instanceEdit, time: v })} />
+              <span style=${{ color: C.slate }}>~</span>
+              <${TimeField} value=${instanceEdit.endTime} onChange=${(v) => setInstanceEdit({ ...instanceEdit, endTime: v })} />
+            </div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+              <${Button} variant="gold" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveInstanceEdit}>이 날짜로 이동 저장<//>
+              <${Button} variant="ghost" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${copyInstanceEdit}>위 날짜에 복사<//>
+            </div>
+            <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 10 }}>"이동"은 원래 날짜에서 없어지고, "복사"는 원래 수업은 그대로 두고 위 날짜에 같은 수업을 하나 더 추가해요.</div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+              <${Button} variant="danger" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${deleteInstanceEdit}>이 날짜만 삭제<//>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setInstanceEdit(null)}>취소<//>
+            </div>
+            ${instanceEdit.source === "tutoring" && html`
+              <button onClick=${() => selectForEdit(instanceEdit._idx)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 16 }}>
+                이 요일 수업 시간을 통째로 수정하려면 여기
+              </button>
+            `}
+          ` : html`
+            <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 4 }}>${editingIndex != null ? "수업 시간 수정" : "매주 반복 수업 등록"}</div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>등록한 수업은 오른쪽 달력에 표시돼요. 달력에서 칸을 누르면 그 날짜 시간만 바로 고치거나, 드래그해서 다른 날로 옮길 수 있어요 (Alt+드래그는 복사).</div>
+            <select style=${{ ...inputStyle, marginBottom: 8, width: 110 }} value=${form.day} onChange=${(e) => setForm({ ...form, day: e.target.value })}>
+              ${DAY_NAMES.map((n) => html`<option key=${n} value=${n}>${n}요일</option>`)}
+            </select>
+            <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+              <${TimeField} value=${form.time} onChange=${(v) => setForm({ ...form, time: v })} />
+              <span style=${{ color: C.slate }}>~</span>
+              <${TimeField} value=${form.endTime} onChange=${(v) => setForm({ ...form, endTime: v })} />
+            </div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <${Button} variant="gold" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${submitForm}>${editingIndex != null ? "저장" : "+ 추가"}<//>
+              ${editingIndex != null && html`<${Button} variant="danger" disabled=${busy} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${deleteEditing}>삭제<//>`}
+              ${editingIndex != null && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${resetForm}>취소<//>`}
+            </div>
+          `}
 
           <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>
             <button onClick=${() => setShowMonthly((v) => !v)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
@@ -2061,7 +2288,10 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               <div style=${{ marginTop: 10 }}>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>위 매주 패턴을 고른 달 달력에 그대로 채운 다음, 날짜가 바뀐 날만 골라 수정하세요.</div>
                 <div style=${{ marginBottom: 8 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-                <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5, marginBottom: 10 }} onClick=${generateMonth}>이 달 일정, 매주 패턴으로 채우기<//>
+                <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${generateMonth}>이 달 일정, 매주 패턴으로 채우기<//>
+                  ${monthly.length > 0 && html`<${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${copyMonthlyToNextMonth}>이 달 목록, 다음 달로 복사<//>`}
+                </div>
                 ${monthly.map((d, i) => html`
                   <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 8 }}>
                     <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
@@ -2092,7 +2322,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
         <div>
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
-            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectTutoring=${selectForEdit} />
+            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
         </div>
       </div>
     <//>
@@ -2422,7 +2652,78 @@ function fmtFileSize(kb) {
 }
 const MATERIAL_MAX_FILE_BYTES = 700 * 1024; // raw size cap — base64 (~+37%) plus metadata stays safely under Firestore's 1MB per-doc limit
 
-function MaterialsLibrarySection({ student, readOnly, shared }) {
+// Accepts a full "https://drive.google.com/drive/folders/<id>..." link (any account/locale
+// variant) or a bare folder ID pasted directly, and returns just the ID Drive API v3 needs.
+function extractDriveFolderId(link) {
+  if (!link) return "";
+  const trimmed = link.trim();
+  const m = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(trimmed)) return trimmed;
+  return "";
+}
+function driveFileIcon(mimeType) {
+  if (!mimeType) return "📄";
+  if (mimeType.includes("folder")) return "📁";
+  if (mimeType.includes("pdf")) return "📕";
+  if (mimeType.includes("image")) return "🖼";
+  if (mimeType.includes("audio")) return "🎵";
+  if (mimeType.includes("video")) return "🎬";
+  if (mimeType.includes("spreadsheet")) return "📊";
+  if (mimeType.includes("presentation")) return "📑";
+  if (mimeType.includes("document")) return "📝";
+  return "📄";
+}
+
+// Read-only file listing for a Drive folder via the public Drive API v3 (API key, no OAuth) —
+// so it only works for folders shared as "anyone with the link can view". Uploading/deleting
+// files happens in the Google Drive app itself, not here; GOOGLE_DRIVE_API_KEY is left blank
+// until that's set up, so this quietly shows a "not connected yet" message instead of erroring.
+function DriveFolderFiles({ folderLink }) {
+  const folderId = extractDriveFolderId(folderLink);
+  const [files, setFiles] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    setFiles(null); setErr("");
+    if (!folderId || !GOOGLE_DRIVE_API_KEY) { setFiles([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+        const fields = encodeURIComponent("files(id,name,mimeType,webViewLink)");
+        const url = `https://www.googleapis.com/drive/v3/files?q=${q}&key=${GOOGLE_DRIVE_API_KEY}&fields=${fields}&orderBy=name`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error((json.error && json.error.message) || "구글 드라이브에서 파일 목록을 가져오지 못했어요.");
+        setFiles(json.files || []);
+      } catch (e) {
+        if (!cancelled) setErr(String(e.message || e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [folderId]);
+
+  if (!folderId) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 연결된 구글 드라이브 폴더가 없어요.</div>`;
+  if (!GOOGLE_DRIVE_API_KEY) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>구글 드라이브 연동 준비 중이에요. 연동되면 여기에 폴더 파일 목록이 바로 보여요.</div>`;
+  if (err) return html`<div style=${{ fontSize: 12.5, color: C.danger }}>${err}</div>`;
+  if (files === null) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>`;
+  if (files.length === 0) return html`<div style=${{ fontSize: 12.5, color: C.slate }}>이 폴더에는 아직 파일이 없어요.</div>`;
+  return html`
+    <div>
+      ${files.map((f) => html`
+        <a key=${f.id} href=${f.webViewLink} target="_blank" rel="noopener noreferrer"
+          style=${{ display: "flex", alignItems: "center", gap: 8, padding: "8px 6px", borderBottom: `1px solid ${C.line}`, textDecoration: "none", color: C.ink, fontSize: 13 }}>
+          <span>${driveFileIcon(f.mimeType)}</span>
+          <span style=${{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${f.name}</span>
+        </a>
+      `)}
+    </div>
+  `;
+}
+
+function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, onSaveDriveFolderLink }) {
   const [items, setItems] = useState(null); // null = loading
   const [err, setErr] = useState("");
   const [title, setTitle] = useState("");
@@ -2431,6 +2732,15 @@ function MaterialsLibrarySection({ student, readOnly, shared }) {
   const [note, setNote] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState("");
+  const [linkDraft, setLinkDraft] = useState(driveFolderLink || "");
+  const [linkSaved, setLinkSaved] = useState(false);
+  useEffect(() => { setLinkDraft(driveFolderLink || ""); setLinkSaved(false); }, [driveFolderLink]);
+
+  async function saveDriveLink() {
+    if (!onSaveDriveFolderLink) return;
+    await onSaveDriveFolderLink(linkDraft.trim());
+    setLinkSaved(true);
+  }
 
   async function load() {
     try {
@@ -2488,9 +2798,21 @@ function MaterialsLibrarySection({ student, readOnly, shared }) {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${shared ? "전체 학생에게 공개되는 공유 자료예요." : readOnly ? "선생님이 올려주신 나만의 학습 자료예요." : `${student.name} 학생에게만 보이는 자료예요.`}</div>
 
+      <${Card} style=${{ marginBottom: 16 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>📂 구글 드라이브 자료</div>
+        ${onSaveDriveFolderLink && html`
+          <div style=${{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <input style=${{ ...inputStyle, marginBottom: 0, flex: 1, minWidth: 200 }} placeholder="구글 드라이브 폴더 링크 붙여넣기" value=${linkDraft} onChange=${(e) => { setLinkDraft(e.target.value); setLinkSaved(false); }} />
+            <${Button} variant="ghost" style=${{ padding: "8px 14px", fontSize: 12 }} onClick=${saveDriveLink}>연결<//>
+          </div>
+          ${linkSaved && html`<div style=${{ fontSize: 11.5, color: C.navy, marginBottom: 8 }}>연결됐어요.</div>`}
+        `}
+        <${DriveFolderFiles} folderLink=${driveFolderLink} />
+      <//>
+
       ${!readOnly && html`
         <${Card} style=${{ marginBottom: 16 }}>
-          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>새 자료 올리기</div>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>직접 업로드한 자료 (구버전)</div>
           <input style=${{ ...inputStyle, marginBottom: 8 }} placeholder="제목 (필수)" value=${title} onChange=${(e) => setTitle(e.target.value)} />
           <div style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
             <input style=${inputStyle} placeholder="과목 (선택, 예: 문법)" value=${subject} onChange=${(e) => setSubject(e.target.value)} />
@@ -3423,7 +3745,7 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`}
       ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
       ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
@@ -5259,7 +5581,7 @@ const STUDENT_HOME_ACTIONS = [
   { key: "studyTimer", label: "공부 시간 기록", icon: "⏱", bg: "#EAF6F6" },
 ];
 
-function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData, dataCache, onLogout }) {
+function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData, dataCache, onLogout, sharedDriveFolderLink }) {
   const [tab, setTab] = useState(null); // null = home (icon grid); otherwise one of STUDENT_HOME_ACTIONS' keys
   const [data, setData] = useState(null);
   const [activeTest, setActiveTest] = useState(null);
@@ -5532,9 +5854,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       ${tab === "materials" && html`
         <div>
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📁 개인 자료실</div>
-          <${MaterialsLibrarySection} student=${student} readOnly=${true} />
+          <${MaterialsLibrarySection} student=${student} readOnly=${true} driveFolderLink=${student.driveFolderLink} />
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "20px 0 8px" }}>🌐 공유 자료실</div>
-          <${MaterialsLibrarySection} shared=${true} readOnly=${true} />
+          <${MaterialsLibrarySection} shared=${true} readOnly=${true} driveFolderLink=${sharedDriveFolderLink} />
         </div>
       `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
@@ -5579,10 +5901,11 @@ function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, vi
 // viewMonth/onMonthChange make this a controlled component when the caller needs to know which
 // month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
 // month state) otherwise, which is all the schedule-only call sites need.
-function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectTutoring, viewMonth: viewMonthProp, onMonthChange }) {
+function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange }) {
   const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
   const viewMonth = viewMonthProp || internalMonth;
   const setViewMonth = onMonthChange || setInternalMonth;
+  const [dragOverDay, setDragOverDay] = useState(null);
   const [y, m] = viewMonth.split("-").map(Number);
   const startWeekday = new Date(y, m - 1, 1).getDay();
   const daysInMonth = new Date(y, m, 0).getDate();
@@ -5596,7 +5919,7 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
       ...(tutoring || []).map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
-      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강" })),
+      ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강", _midx: monthly.indexOf(s) })),
       ...(other || []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
   }
@@ -5621,16 +5944,37 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
           if (d === null) return html`<div key=${i}></div>`;
           const items = itemsForDay(d);
           const isToday = `${viewMonth}-${String(d).padStart(2, "0")}` === today();
+          const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
+          const isDragOver = dragOverDay === dateStr;
           return html`
-            <div key=${i} style=${{ border: `1px solid ${isToday ? C.gold : C.line}`, borderRadius: 4, padding: 3, minHeight: 54 }}>
+            <div key=${i}
+              onDragOver=${onMoveOccurrence ? (e) => { e.preventDefault(); if (dragOverDay !== dateStr) setDragOverDay(dateStr); } : undefined}
+              onDragLeave=${onMoveOccurrence ? () => setDragOverDay((cur) => (cur === dateStr ? null : cur)) : undefined}
+              onDrop=${onMoveOccurrence ? (e) => {
+                e.preventDefault();
+                setDragOverDay(null);
+                const raw = e.dataTransfer.getData("text/plain");
+                if (!raw) return;
+                try {
+                  const item = JSON.parse(raw);
+                  if (item.dateStr !== dateStr) onMoveOccurrence(item, dateStr, { copy: e.altKey });
+                } catch (err) {}
+              } : undefined}
+              style=${{ border: `1px solid ${isDragOver ? C.gold : isToday ? C.gold : C.line}`, borderRadius: 4, padding: 3, minHeight: 54, background: isDragOver ? "#FBF4EA" : undefined }}>
               <div style=${{ fontSize: 10, color: isToday ? C.gold : C.slate, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>${d}</div>
               ${items.map((it, ii) => {
                 const canRemove = (it.source === "tutoring" && onRemoveTutoring) || (it.source === "other" && onRemoveOther);
-                const canSelect = it.source === "tutoring" && onSelectTutoring;
+                const canSelect = (it.source === "tutoring" || it.source === "monthly") && onSelectItem;
+                const canDrag = (it.source === "tutoring" || it.source === "monthly") && onMoveOccurrence;
                 return html`
-                  <div key=${ii} onClick=${canSelect ? () => onSelectTutoring(it._idx) : undefined}
-                    title=${canSelect ? "눌러서 이 수업 시간 수정" : undefined}
-                    style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700, cursor: canSelect ? "pointer" : undefined }}>
+                  <div key=${ii} onClick=${canSelect ? () => onSelectItem(it) : undefined}
+                    draggable=${canDrag ? true : undefined}
+                    onDragStart=${canDrag ? (e) => {
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", JSON.stringify({ source: it.source, dateStr: it.dateStr, time: it.time, endTime: it.endTime || "", type: it.type, _idx: it._idx, _midx: it._midx }));
+                    } : undefined}
+                    title=${canSelect ? "눌러서 이 날짜 시간 수정 · 드래그해서 다른 날로 이동 (Alt 누른 채 드래그하면 복사)" : undefined}
+                    style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700, cursor: canSelect ? (canDrag ? "grab" : "pointer") : undefined }}>
                     ${it.time}${it.endTime ? `~${it.endTime}` : ""} ${it.label}
                     ${canRemove && html`
                       <span onClick=${(e) => { if (canSelect) e.stopPropagation(); (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr); }}
