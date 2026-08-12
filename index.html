@@ -5968,9 +5968,6 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                   ${(isOverdue || isToday) && html`
                     <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: isOverdue ? "#F7E9E6" : "#FBF4EA", color: isOverdue ? C.danger : C.gold, whiteSpace: "nowrap" }}>${isOverdue ? "✗ 마감지남" : "오늘 마감"}</span>
                   `}
-                  ${t.expired && notDoneYet && html`
-                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FBF4EA", color: C.gold, whiteSpace: "nowrap" }}>⏳ 기간만료</span>
-                  `}
                 </div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>단어 ${t.words.length}개</div>
                 ${latest && html`
@@ -5980,7 +5977,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                   </div>
                 `}
               </div>
-              <${Button} variant=${needsRetest ? "danger" : (myResults.length ? "ghost" : "gold")} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${needsRetest ? "재응시하기" : (myResults.length ? "다시 풀기" : "응시하기")}<//>
+              ${t.expired
+                ? html`<div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>⏳ 기간만료</div>`
+                : html`<${Button} variant=${needsRetest ? "danger" : (myResults.length ? "ghost" : "gold")} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${needsRetest ? "재응시하기" : (myResults.length ? "다시 풀기" : "응시하기")}<//>`}
             </div>
           <//>
         `;
@@ -6007,18 +6006,19 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                   ${!submitted && (isOverdue || isToday) && html`
                     <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: isOverdue ? "#F7E9E6" : "#FBF4EA", color: isOverdue ? C.danger : C.gold, whiteSpace: "nowrap" }}>${isOverdue ? "✗ 마감지남" : "오늘 마감"}</span>
                   `}
-                  ${!submitted && t.expired && html`
-                    <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#FBF4EA", color: C.gold, whiteSpace: "nowrap" }}>⏳ 기간만료</span>
-                  `}
                 </div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문항 ${t.answerKey.length}개${t.pageRange ? ` · ${t.pageRange}` : ""}</div>
                 ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
               </div>
-              <div style=${{ display: "flex", gap: 6, flexShrink: 0 }}>
-                ${myResults.length > 0 && myResults[0].answers && html`
-                  <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "8px 12px" }} onClick=${() => { setEditingMockResultId(myResults[0].id); setActiveMock(t); }}>답 수정<//>
+              <div style=${{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
+                ${t.expired ? html`
+                  <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>⏳ 기간만료</div>
+                ` : html`
+                  ${myResults.length > 0 && myResults[0].answers && html`
+                    <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "8px 12px" }} onClick=${() => { setEditingMockResultId(myResults[0].id); setActiveMock(t); }}>답 수정<//>
+                  `}
+                  <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => { setEditingMockResultId(null); setActiveMock(t); }}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
                 `}
-                <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => { setEditingMockResultId(null); setActiveMock(t); }}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
               </div>
             </div>
           <//>
