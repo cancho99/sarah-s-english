@@ -509,10 +509,12 @@ function fmtMinutes(min) {
 function monthlyStudyMinutes(studyLog, month) {
   return (studyLog || []).filter((s) => (s.date || "").slice(0, 7) === month).reduce((sum, s) => sum + (s.minutes || 0), 0);
 }
-// Overall (not date-scoped) homework completion — used to show one 숙제 진행율 number to student,
-// parent, and teacher alike instead of each screen computing/labeling it slightly differently.
-function homeworkStats(homework) {
-  const list = homework || [];
+// 숙제 진행율 — deliberately MONTH-scoped (defaults to the current month), not all-time. That
+// makes it immune to pruneOldMonths clearing out prior months' homework: a past month's items
+// were never counted in "this month"'s rate to begin with, so deleting them changes nothing here.
+function homeworkStats(data, month) {
+  const targetMonth = month || today().slice(0, 7);
+  const list = ((data && data.homework) || []).filter((h) => (h.dueDate || "").slice(0, 7) === targetMonth);
   const total = list.length;
   const done = list.filter((h) => h.done).length;
   return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
@@ -521,6 +523,66 @@ function homeworkStats(homework) {
 // "누적")), applied to online 단어 시험 tests too via their title: 누적(cumulative-range) tests
 // pass at 90%+, everything else (new-range tests) passes at 80%+.
 function vocabPassThreshold(label) { return (label || "").includes("누적") ? 90 : 80; }
+// 단어 합격율 — same month-scoping as homeworkStats, one row per online 단어 시험 attempt
+// (vocabResults), graded against that test's own pass threshold via vocabPassThreshold.
+function vocabPassStats(data, month) {
+  const targetMonth = month || today().slice(0, 7);
+  const titleById = {};
+  ((data && data.vocabTests) || []).forEach((t) => { titleById[t.id] = t.title; });
+  const results = ((data && data.vocabResults) || []).filter((r) => (r.date || "").slice(0, 7) === targetMonth);
+  const total = results.length;
+  const passed = results.filter((r) => {
+    const pct = r.total > 0 ? (r.score / r.total) * 100 : 0;
+    return pct >= vocabPassThreshold(titleById[r.testId] || "");
+  }).length;
+  return { total, passed, pct: total > 0 ? Math.round((passed / total) * 100) : 0 };
+}
+// Manually triggered from StorageCleanupPanel (교사가 그 달 리포트를 다 쓴 뒤 직접 눌러서 실행 —
+// 자동으로는 절대 안 지워짐, 월말 리포트가 그 달 data.homework를 직접 읽기 때문에 리포트 작성 전에
+// 데이터가 사라지면 안 됨). Clears 숙제/모의고사/단어시험과 그 온라인 응시 기록을 지난달 이전 것만
+// 지워서(이번 달·미래 날짜는 그대로 둠) Firestore 1MB 문서 상한에 안 걸리게 한다. 완료율/합격율은
+// homeworkStats/vocabPassStats가 "이번 달"만 보므로 지난달 데이터를 지워도 안 흔들리고, studyLog는
+// 아예 건드리지 않아서 총 공부시간도 그대로 유지된다. 지워지는 달의 숫자는 monthlyStats에 스냅샷으로
+// 남겨서, 나중에 그 달 기록을 다시 들여다볼 일이 있어도 완전히 사라지지는 않게 해둔다.
+function pruneOldMonths(d, currentMonth) {
+  const monthOf = (dateStr) => (dateStr || "").slice(0, 7);
+  const isOld = (dateStr) => dateStr && monthOf(dateStr) < currentMonth;
+  const keep = (dateStr) => !isOld(dateStr);
+
+  const homework = d.homework || [];
+  const droppedHomework = homework.filter((h) => isOld(h.dueDate));
+  const vocabTests = d.vocabTests || [];
+  const titleById = {};
+  vocabTests.forEach((t) => { titleById[t.id] = t.title; });
+  const droppedVocabResults = (d.vocabResults || []).filter((r) => isOld(r.date));
+
+  const monthlyStats = { ...(d.monthlyStats || {}) };
+  function bump(month, field, delta) {
+    monthlyStats[month] = { hwTotal: 0, hwDone: 0, vocabTotal: 0, vocabPassed: 0, ...monthlyStats[month] };
+    monthlyStats[month][field] += delta;
+  }
+  droppedHomework.forEach((h) => {
+    const month = monthOf(h.dueDate);
+    bump(month, "hwTotal", 1);
+    if (h.done) bump(month, "hwDone", 1);
+  });
+  droppedVocabResults.forEach((r) => {
+    const month = monthOf(r.date);
+    bump(month, "vocabTotal", 1);
+    const pct = r.total > 0 ? (r.score / r.total) * 100 : 0;
+    if (pct >= vocabPassThreshold(titleById[r.testId] || "")) bump(month, "vocabPassed", 1);
+  });
+
+  return {
+    ...d,
+    homework: homework.filter((h) => keep(h.dueDate)),
+    mockExams: (d.mockExams || []).filter((t) => keep(t.date)),
+    mockExamResults: (d.mockExamResults || []).filter((r) => keep(r.date)),
+    vocabTests: vocabTests.filter((t) => keep(t.date)),
+    vocabResults: (d.vocabResults || []).filter((r) => keep(r.date)),
+    monthlyStats,
+  };
+}
 // Finds the true next class by merging two sources — the recurring weekly tutoring pattern
 // (skipping any date the teacher marked as an exception, e.g. a cancelled holiday class) and
 // one-off makeup classes from monthlyInstances, which can land sooner than the next weekly
@@ -560,14 +622,33 @@ function nextClassText(student, todayStr) {
 // Shown on student home, parent home, and the teacher's per-student "학습 현황" tab — one place
 // defining what "숙제 진행율" means so the number is identical everywhere it appears.
 function HomeworkProgressCard({ data, big }) {
-  const { total, done, pct } = homeworkStats(data.homework);
+  const { total, done, pct } = homeworkStats(data);
   return html`
     <${Card} style=${{ marginBottom: 0 }}>
-      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>📈 숙제 진행율</div>
+      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>📈 이번 달 숙제 진행율</div>
       ${total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 숙제가 없어요.</div>` : html`
         <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style=${{ ...serif, fontSize: big ? 34 : 22, color: C.navy, fontWeight: 700 }}>${pct}%</div>
           <div style=${{ fontSize: 12, color: C.slate }}>${done} / ${total} 완료</div>
+        </div>
+        <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
+          <div style=${{ height: "100%", width: pct + "%", background: C.gold }} />
+        </div>
+      `}
+    <//>
+  `;
+}
+// Same treatment as HomeworkProgressCard, for online 단어 시험 (vocabTests/vocabResults) instead
+// of homework — also month-scoped so it's unaffected by pruneOldMonths clearing prior months out.
+function VocabPassRateCard({ data, big }) {
+  const { total, passed, pct } = vocabPassStats(data);
+  return html`
+    <${Card} style=${{ marginBottom: 0 }}>
+      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>🔤 이번 달 단어시험 합격율</div>
+      ${total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>이번 달 응시한 단어 시험이 없어요.</div>` : html`
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style=${{ ...serif, fontSize: big ? 34 : 22, color: C.navy, fontWeight: 700 }}>${pct}%</div>
+          <div style=${{ fontSize: 12, color: C.slate }}>${passed} / ${total} 합격</div>
         </div>
         <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
           <div style=${{ height: "100%", width: pct + "%", background: C.gold }} />
@@ -3750,7 +3831,10 @@ function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout
       ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
       ${tab === "progress" && html`
         <div>
-          <div style=${{ marginBottom: 10 }}><${HomeworkProgressCard} data=${data} /></div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
+            <${HomeworkProgressCard} data=${data} />
+            <${VocabPassRateCard} data=${data} />
+          </div>
           <${ParentStudyTimeTab} studyLog=${data.studyLog || []} />
         </div>
       `}
@@ -3779,7 +3863,19 @@ function StorageCleanupPanel({ data, updateData }) {
   const vocabResultCount = (data.vocabResults || []).length;
   const examResultCount = (data.examResults || []).length;
   const logCount = (data.logs || []).length;
+  const currentMonth = today().slice(0, 7);
+  const isOld = (dateStr) => dateStr && dateStr.slice(0, 7) < currentMonth;
+  const oldCount = (data.homework || []).filter((h) => isOld(h.dueDate)).length
+    + (data.mockExams || []).filter((t) => isOld(t.date)).length
+    + (data.mockExamResults || []).filter((r) => isOld(r.date)).length
+    + (data.vocabTests || []).filter((t) => isOld(t.date)).length
+    + (data.vocabResults || []).filter((r) => isOld(r.date)).length;
 
+  async function clearOldMonths() {
+    if (!confirm(`지난달 이전 숙제·모의고사·단어시험(응시 기록 포함)을 전부 정리할까요? 이번 달·앞으로의 일정은 그대로 남고, 숙제 진행율·단어시험 합격율·총 공부시간은 항상 "이번 달" 기준이라 영향 없어요. 이번 달 월말 리포트를 아직 안 쓰셨다면, 먼저 쓰고 나서 정리하는 걸 추천드려요.`)) return;
+    await updateData((d) => pruneOldMonths(d, currentMonth));
+    setMsg("지난달 이전 기록을 정리했어요.");
+  }
   async function clearAllPhotos() {
     if (!confirm("이 학생의 모든 숙제 사진을 삭제할까요? 숙제 내용과 완료 표시는 그대로 남아요.")) return;
     await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: [] })) }));
@@ -3813,8 +3909,9 @@ function StorageCleanupPanel({ data, updateData }) {
       <//>
 
       <${Card}>
-        <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건</div>
+        <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건 · 지난달 이전 숙제/모의고사/단어시험 ${oldCount}건</div>
         <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <${Button} variant="ghost" onClick=${clearOldMonths}>지난달 이전 숙제·모의고사·단어시험 정리 (${oldCount}건)<//>
           <${Button} variant="ghost" onClick=${clearAllPhotos}>숙제 사진 전체 삭제 (내용은 유지)<//>
           <${Button} variant="ghost" onClick=${clearVocabResults}>단어 시험 응시 기록 정리<//>
           <${Button} variant="ghost" onClick=${clearExamResults}>추가 시험 응시 기록 정리<//>
