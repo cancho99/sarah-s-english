@@ -36,6 +36,12 @@
   .ap-roster-item .code { font-size: 11px; color: #5B6270; margin-top: 3px; }
   .ap-roster-item.active { border-color: #B8935A; background: #FBF6EA; }
   .ap-split-right { flex: 1; min-width: 0; border-left: 1px solid #DCD8CF; padding-left: 20px; }
+  /* Same two-column layout as .ap-split, for editors that just want a form laid out beside a
+     calendar/picker (not StudentsSection's list-or-detail master-detail view) — kept as a separate
+     class so they never pick up .ap-split's has-selection hide rule below and lose their form. */
+  .ap-split-form { display: flex; align-items: flex-start; gap: 20px; }
+  .ap-split-form-left { width: 260px; flex-shrink: 0; }
+  .ap-split-form-right { flex: 1; min-width: 0; border-left: 1px solid #DCD8CF; padding-left: 20px; }
   @media (max-width: 760px) {
     .ap-shell { flex-direction: column; width: 100%; min-height: 0; }
     .ap-side-desktop { display: none; }
@@ -54,6 +60,9 @@
     .ap-split-right { border-left: none; padding-left: 0; border-top: 1px solid #DCD8CF; padding-top: 16px; margin-top: 4px; }
     .ap-split.has-selection .ap-split-left { display: none; }
     .ap-split:not(.has-selection) .ap-split-right { display: none; }
+    .ap-split-form { flex-direction: column; }
+    .ap-split-form-left { width: 100%; }
+    .ap-split-form-right { border-left: none; padding-left: 0; border-top: 1px solid #DCD8CF; padding-top: 16px; margin-top: 4px; }
     .main-quad-grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; height: auto !important; }
     /* Most of the teacher dashboard's text/buttons/inputs are sized with fixed inline px styles
        (not CSS classes), so a font-size rule here can't reach them — a media-query-only zoom scales
@@ -3258,11 +3267,11 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, roster, ensureD
             resultDraft=${resultDrafts[item.id]} onDraftChange=${(v) => setResultDrafts((prev) => ({ ...prev, [item.id]: v }))} />
         `)}
       ` : html`
-        <div className="ap-split">
-          <div className="ap-split-left">
+        <div className="ap-split-form">
+          <div className="ap-split-form-left">
             <${BookingsCalendar} items=${allItems} selected=${selectedDate} onSelect=${setSelectedDate} />
           </div>
-          <div className="ap-split-right">
+          <div className="ap-split-form-right">
             <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>${fmtDateDay(selectedDate)} · ${dayList.length}건</div>
             ${dayList.length === 0 && html`<${Empty} text="이 날짜엔 예약이 없어요. 달력에서 점(●)이 있는 날짜를 눌러 보세요." />`}
             ${dayList.map((item) => html`
@@ -4147,12 +4156,12 @@ function VocabLogEditor({ data, updateData }) {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90%(오답 10% 이내), 아니면 80%(오답 20% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
       <${Card}>
-        <div className="ap-split">
-          <div className="ap-split-left">
+        <div className="ap-split-form">
+          <div className="ap-split-form-left">
             <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>날짜</div>
             <${MiniCalendar} selected=${date} onSelect=${setDate} />
           </div>
-          <div className="ap-split-right">
+          <div className="ap-split-form-right">
             <${Field} label="교재">
               <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
                 ${BOOK_LIST.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
@@ -4440,12 +4449,12 @@ function RegularExamEditor({ data, updateData }) {
         <//>
       `}
       <${Card}>
-        <div className="ap-split">
-          <div className="ap-split-left">
+        <div className="ap-split-form">
+          <div className="ap-split-form-left">
             <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>날짜</div>
             <${MiniCalendar} selected=${date} onSelect=${setDate} />
           </div>
-          <div className="ap-split-right">
+          <div className="ap-split-form-right">
             <${Field} label="시험명"><input style=${inputStyle} value=${examName} onChange=${(e) => setExamName(e.target.value)} placeholder="예: 1학기 기말고사, 7월 NELT 월말시험" /><//>
             <${Field} label="과목"><input style=${inputStyle} value=${subject} onChange=${(e) => setSubject(e.target.value)} /><//>
             <${Field} label="점수 / 등급"><input style=${inputStyle} value=${score} onChange=${(e) => setScore(e.target.value)} placeholder="예: 92점 / 1등급" /><//>
@@ -4996,12 +5005,12 @@ function LogsEditor({ data, updateData }) {
   return html`
     <div>
       <${Card}>
-        <div className="ap-split">
-          <div className="ap-split-left">
+        <div className="ap-split-form">
+          <div className="ap-split-form-left">
             <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>날짜</div>
             <${MiniCalendar} selected=${date} onSelect=${setDate} />
           </div>
-          <div className="ap-split-right">
+          <div className="ap-split-form-right">
             <${Field} label="오늘 배운 내용"><textarea style=${{ ...inputStyle, minHeight: 80 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: Unit 5 관계대명사 who/which 개념 설명, 워크북 12-14p 풀이" /><//>
             <${Button} variant="gold" onClick=${add}>기록 추가<//>
           </div>
@@ -5674,12 +5683,12 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
         <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 모의고사 만들기<//>
       ` : html`
         <${Card}>
-          <div className="ap-split">
-            <div className="ap-split-left">
+          <div className="ap-split-form">
+            <div className="ap-split-form-left">
               <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>답안 제출 마감일</div>
               <${MiniCalendar} selected=${date} onSelect=${setDate} />
             </div>
-            <div className="ap-split-right">
+            <div className="ap-split-form-right">
               ${(examKeyLibrary || []).length > 0 && html`
                 <${Field} label="정답표 라이브러리에서 불러오기 (선택)">
                   <select style=${inputStyle} value=${pickId} onChange=${(e) => pickFromLibrary(e.target.value)}>
