@@ -62,6 +62,17 @@
        risk; anything that still overflows sideways scrolls within ap-main-body rather than breaking
        the page width. */
     .ap-main-header, .ap-main-body { zoom: 1.12; overflow-x: auto; }
+    /* Mobile-only icon-grid launcher (teacher home, student roster, student sub-menu) — a fixed
+       column count that always wraps, so this never needs horizontal scrolling regardless of how
+       many tiles are shown. */
+    .ap-icon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; }
+    .ap-icon-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px 6px; cursor: pointer; min-width: 0; }
+    .ap-icon-tile .ic { font-size: 26px; }
+    .ap-icon-tile .lb { font-size: 12px; font-weight: 700; color: #1C2B4A; text-align: center; line-height: 1.3; word-break: keep-all; }
+    .ap-icon-tile:active { background: #FBF6EA; border-color: #B8935A; }
+    .ap-mobile-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; background: #1C2B4A; color: #FAF7F1; }
+    .ap-mobile-topbar .title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ap-mobile-topbar button { background: none; border: none; color: #FAF7F1; font-size: 13px; cursor: pointer; flex-shrink: 0; }
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
@@ -965,6 +976,31 @@ function Tabs({ tabs, active, onChange }) {
   `;
 }
 
+// Matches the .ap-* mobile breakpoint in <style> — components branch on this instead of relying on
+// CSS alone when the mobile layout needs a genuinely different tree (icon-grid launcher, agenda
+// list) rather than a restyle of the same markup.
+const MOBILE_BREAKPOINT = 760;
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
+  useEffect(() => {
+    function onResize() { setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return isMobile;
+}
+function IconGrid({ items }) {
+  return html`
+    <div className="ap-icon-grid">
+      ${items.map((it) => html`
+        <div key=${it.key} className="ap-icon-tile" onClick=${it.onClick}>
+          <span className="ic">${it.icon}</span><span className="lb">${it.label}</span>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
 // Responsive admin shell: dark icon sidebar on desktop, horizontal dropdown on mobile (see .ap-* CSS)
 function SideNav({ items, active, onChange, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -1817,6 +1853,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
 }
 
 function RevenueOverviewSection({ roster, ensureData, dataCache }) {
+  const isMobile = useIsMobile();
   const [month, setMonth] = useState(today().slice(0, 7));
   const [loaded, setLoaded] = useState(false);
 
@@ -1867,7 +1904,19 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
-        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : html`
+        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : isMobile ? html`
+          <div>
+            ${rows.map(({ student, rec }) => html`
+              <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "9px 0", borderTop: `1px solid ${C.line}` }}>
+                <div style=${{ minWidth: 0 }}>
+                  <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>${student.name}${!rec.published ? html` <span style=${{ color: C.slate, fontSize: 10.5, fontWeight: 400 }}>(비공개)</span>` : ""}</div>
+                  <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>${(rec.amount || 0).toLocaleString()}원</div>
+                </div>
+                <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: rec.paid ? "#E9F1EA" : "#F7E9E6", color: rec.paid ? "#3D6B4F" : C.danger, whiteSpace: "nowrap", flexShrink: 0 }}>${rec.paid ? "입금완료" : "미입금"}</span>
+              </div>
+            `)}
+          </div>
+        ` : html`
           <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
             <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
               <thead>
@@ -1905,7 +1954,11 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   `;
 }
 
+// On mobile the full sidebar (13 items) is cut down to the 3 things a teacher needs on the go —
+// everything else (passage tool, wordbank, reports, settings, ...) stays desktop-only.
+const MOBILE_TEACHER_SECTIONS = ["students", "schedule", "revenue"];
 function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
+  const isMobile = useIsMobile();
   const [section, setSection] = useState("mainpage");
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
@@ -1976,7 +2029,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
-      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
+      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} isMobile=${isMobile} />`;
   } else if (section === "hwstatus") {
     body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
   } else if (section === "bookings") {
@@ -1989,6 +2042,27 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); }} />`;
+  }
+
+  if (isMobile) {
+    const mobileNavItems = navItems.filter((n) => MOBILE_TEACHER_SECTIONS.includes(n.key));
+    const atHome = !MOBILE_TEACHER_SECTIONS.includes(section);
+    return html`
+      <div style=${{ minHeight: "100vh", background: C.ivory }}>
+        <div className="ap-mobile-topbar">
+          <div className="title">
+            ${!atHome && html`<button onClick=${() => handleNavChange("mainpage")}>‹ 홈</button>`}
+            <span>${atHome ? "Sarah's English" : (navItems.find((n) => n.key === activeKey) || {}).label || ""}</span>
+          </div>
+          <button onClick=${onLogout}>로그아웃</button>
+        </div>
+        <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
+          ${atHome
+            ? html`<${IconGrid} items=${mobileNavItems.map((n) => ({ ...n, onClick: () => handleNavChange(n.key) }))} />`
+            : body}
+        </div>
+      </div>
+    `;
   }
 
   return html`
@@ -2426,9 +2500,70 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   `;
 }
 
-function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, examKeyLibrary, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+// The teacher's full per-student panel (13 tabs incl. info/schedule editing) is desktop-only — on a
+// phone it's cut down to just the 4 things a teacher actually needs on the go: 숙제/단어시험(퀴즈)/
+// 모의고사/저장공간관리. Everything else (name/code editing, schedule/goals, logs, materials, tuition...)
+// stays reachable from a desktop browser.
+const MOBILE_STUDENT_TABS = [
+  { key: "homework", label: "숙제", icon: "📝" },
+  { key: "vocab", label: "단어시험", icon: "🔤" },
+  { key: "mock", label: "모의고사", icon: "📄" },
+  { key: "storage", label: "저장공간관리", icon: "💾" },
+];
+function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, examKeyLibrary, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, isMobile }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
+  const [mobileTab, setMobileTab] = useState(null);
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
+  useEffect(() => { setMobileTab(null); }, [selectedStudentId]);
+
+  if (isMobile) {
+    const data = dataCache[(selected || {}).id] || emptyData();
+    const boundUpdateData = selected ? (updater) => updateData(selected.id, updater) : null;
+    if (selected && mobileTab) {
+      const activeTab = MOBILE_STUDENT_TABS.find((t) => t.key === mobileTab);
+      return html`
+        <div>
+          <${BackBtn} onClick=${() => setMobileTab(null)} />
+          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} · ${activeTab.icon} ${activeTab.label}</div>
+          ${mobileTab === "homework" && html`<${HomeworkEditor} student=${selected} data=${data} updateData=${boundUpdateData} />`}
+          ${mobileTab === "vocab" && html`<${VocabEditor} student=${selected} data=${data} updateData=${boundUpdateData} />`}
+          ${mobileTab === "mock" && html`<${MockExamEditor} student=${selected} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary} />`}
+          ${mobileTab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${boundUpdateData} />`}
+        </div>
+      `;
+    }
+    if (selected) {
+      return html`
+        <div>
+          <${BackBtn} onClick=${() => setSelectedStudentId(null)} />
+          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생</div>
+          <${IconGrid} items=${MOBILE_STUDENT_TABS.map((t) => ({ ...t, onClick: () => setMobileTab(t.key) }))} />
+        </div>
+      `;
+    }
+    return html`
+      <div>
+        <div className="ap-split-left-title">학생 목록</div>
+        ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
+          <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
+        `}
+        ${!showAdd ? html`
+          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 14 }}>+ 학생 추가<//>
+        ` : html`
+          <${Card} style=${{ marginTop: 14 }}>
+            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="gold" onClick=${addStudent}>저장<//>
+              <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+            </div>
+          <//>
+        `}
+      </div>
+    `;
+  }
 
   return html`
     <div className=${"ap-split" + (selected ? " has-selection" : "")}>
@@ -3337,6 +3472,7 @@ const MASTER_SCHEDULE_BASE_RANGE = {
 };
 
 function MasterScheduleView({ roster, saveRosterList }) {
+  const isMobile = useIsMobile();
   const [scheduleField, setScheduleField] = useState("schedule");
   const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
   const [showEmpty, setShowEmpty] = useState(false);
@@ -3514,19 +3650,43 @@ function MasterScheduleView({ roster, saveRosterList }) {
       `}
 
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
-          <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
-          빈 시간대도 보기 (00:00 ~ 다음날 01:00 전체)
-        </label>
+        ${!isMobile && html`
+          <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
+            <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
+            빈 시간대도 보기 (00:00 ~ 다음날 01:00 전체)
+          </label>
+        `}
         <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 11.5 }} onClick=${() => setAdding({ studentId: roster[0]?.id || "", day: "월", time: "18:00", endTime: "19:00" })}>+ 새 수업 추가<//>
       </div>
 
-      <div style=${{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-        <div style=${{ display: "grid", gridTemplateColumns: `58px repeat(7, minmax(96px, 1fr))`, minWidth: 740, position: "relative" }}>
-          ${bgCells}
-          ${blocks}
+      ${isMobile ? html`
+        <div>
+          ${MASTER_SCHEDULE_DAY_NAMES.map((day) => {
+            const dayEntries = allEntries.filter((e) => e.day === day).sort((a, b) => a.startMin - b.startMin);
+            if (dayEntries.length === 0) return null;
+            return html`
+              <div key=${day} style=${{ marginBottom: 14 }}>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>${day}요일</div>
+                ${dayEntries.map((e) => html`
+                  <div key=${e.student.id + "-" + e.idx} onClick=${() => setEditing({ studentId: e.student.id, idx: e.idx, day: e.day, time: e.time, endTime: e.endTime || "" })}
+                    style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "9px 10px", marginBottom: 6, background: "#FBF4EA", border: `1px solid ${C.gold}`, borderRadius: 4, cursor: "pointer" }}>
+                    <span style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>${e.student.name}</span>
+                    <span style=${{ fontSize: 12, color: e.endTime ? C.slate : C.danger }}>${e.endTime ? `${e.time}~${e.endTime}` : `${e.time} · 종료시간 미설정`}</span>
+                  </div>
+                `)}
+              </div>
+            `;
+          })}
+          ${allEntries.length === 0 && html`<${Empty} text="등록된 수업이 없어요." />`}
         </div>
-      </div>
+      ` : html`
+        <div style=${{ overflow: "auto", maxHeight: "70vh", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+          <div style=${{ display: "grid", gridTemplateColumns: `58px repeat(7, minmax(96px, 1fr))`, minWidth: 740, position: "relative" }}>
+            ${bgCells}
+            ${blocks}
+          </div>
+        </div>
+      `}
 
       ${adding && html`
         <${Modal} onClose=${() => setAdding(null)}>
