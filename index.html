@@ -1424,11 +1424,21 @@ function NotifyButton({ onEnable }) {
 }
 
 function HomePage({ setScreen, announcement }) {
+  const isMobile = useIsMobile();
+  const [loginMenuOpen, setLoginMenuOpen] = useState(false);
+  const loginMenuRef = useRef(null);
+  useEffect(() => {
+    if (!loginMenuOpen) return;
+    function onDocClick(e) { if (loginMenuRef.current && !loginMenuRef.current.contains(e.target)) setLoginMenuOpen(false); }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [loginMenuOpen]);
   const values = [
     { n: "01", title: "1:1 맞춤 수업", body: "학생 한 명 한 명의 속도와 약점에 맞춰 커리큘럼을 그때그때 조정합니다. 정해진 진도표가 학생을 따라가는 게 아니라, 학생에 맞춰 진도표를 짭니다." },
     { n: "02", title: "체계적인 기록 관리", body: "매 수업의 학습 내용, 단어시험 합격률, 숙제 완료율, 정기시험 성적까지 — 학원 못지않게 꼼꼼히 기록하고 추적합니다." },
     { n: "03", title: "정기 학습 리포트", body: "매달 학부모님께 숙제·단어시험·정기시험 결과를 한 장으로 정리한 리포트를 전달해 드립니다. 아이의 학습 상황을 언제든 투명하게 확인하실 수 있어요." },
   ];
+  const loginMenuItemStyle = { display: "block", width: "100%", textAlign: "left", padding: "10px 14px", fontSize: 12.5, background: "none", border: "none", borderBottom: `1px solid ${C.line}`, color: C.ink, cursor: "pointer", fontFamily: "inherit" };
   return html`
     <div>
       <div style=${{ background: C.ink, height: 6 }} />
@@ -1437,12 +1447,26 @@ function HomePage({ setScreen, announcement }) {
           <div role="img" aria-label="Sarah's English" style=${{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.navy}`, boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
           <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
         </div>
-        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
-          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
-          <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
-          <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
-        </div>
+        ${isMobile ? html`
+          <div ref=${loginMenuRef} style=${{ position: "relative", display: "flex", gap: 6, alignItems: "center" }}>
+            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
+            <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setLoginMenuOpen((v) => !v)}>로그인 ${loginMenuOpen ? "▴" : "▾"}<//>
+            ${loginMenuOpen && html`
+              <div style=${{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: "0 6px 16px rgba(20,22,26,0.15)", overflow: "hidden", minWidth: 132, zIndex: 5 }}>
+                <button onClick=${() => { setLoginMenuOpen(false); setScreen("teacherLogin"); }} style=${loginMenuItemStyle}>선생님 로그인</button>
+                <button onClick=${() => { setLoginMenuOpen(false); setScreen("studentLogin"); }} style=${loginMenuItemStyle}>학생 로그인</button>
+                <button onClick=${() => { setLoginMenuOpen(false); setScreen("parentLogin"); }} style=${{ ...loginMenuItemStyle, borderBottom: "none" }}>학부모 로그인</button>
+              </div>
+            `}
+          </div>
+        ` : html`
+          <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
+            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
+            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
+            <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
+          </div>
+        `}
       </div>
 
       ${announcement && announcement.text && html`
@@ -5308,7 +5332,7 @@ function HomeworkEditor({ student, data, updateData }) {
   return html`
     <div>
       ${dueToday.length > 0 && html`
-        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📌 오늘(${fmtDate(todayStr)}) 기준 확인이 필요한 숙제 (기한 지났는데 미완료인 것 포함)</div>
+        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📌 오늘(${fmtDate(todayStr)}) 기준 확인이 필요한 숙제</div>
         <${Card} style=${{ borderLeft: `3px solid ${C.gold}`, marginBottom: 18 }}>
           ${dueToday.map((h) => html`
             <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
@@ -6735,7 +6759,7 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   const [saved, setSaved] = useState(false);
   useEffect(() => { setItems(student.otherSchedule || []); setSaved(false); }, [student.id]);
 
-  function addSlot() { setItems([...items, { day: "월", time: "18:00", name: "수학학원" }]); setSaved(false); }
+  function addSlot() { setItems([...items, { day: "월", time: "18:00", endTime: "19:00", name: "수학학원" }]); setSaved(false); }
   function updateSlot(i, field, val) { setItems(items.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
   function removeSlot(i) { setItems(items.filter((_, idx) => idx !== i)); setSaved(false); }
 
@@ -6769,6 +6793,8 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
               </div>
               <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <${TimeField} value=${d.time} onChange=${(v) => updateSlot(i, "time", v)} />
+                <span style=${{ color: C.slate }}>~</span>
+                <${TimeField} value=${d.endTime || ""} onChange=${(v) => updateSlot(i, "endTime", v)} />
               </div>
             </div>
           `;
