@@ -507,7 +507,12 @@ function isKnownSynonym(a, b) {
   if (!na || !nb) return false;
   return (SYNONYM_LOOKUP[na] && SYNONYM_LOOKUP[na].has(nb)) || (SYNONYM_LOOKUP[nb] && SYNONYM_LOOKUP[nb].has(na));
 }
-const today = () => new Date().toISOString().slice(0, 10);
+// toISOString()은 UTC 기준이라 한국(UTC+9) 자정~오전 9시 사이엔 하루 전 날짜를 돌려주는
+// 버그가 있었다 — 로컬(기기) 시간대의 연/월/일을 직접 읽어서 그 문제를 피한다.
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 function fmtDate(d) {
   try {
     const dt = new Date(d + "T00:00:00");
