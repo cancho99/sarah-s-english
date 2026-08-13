@@ -945,6 +945,27 @@ async function deleteSharedMaterial(id) {
   await window.__deleteDoc(window.__doc(window.__db, SHARED_MATERIALS_COLLECTION, id));
 }
 
+// 자료실 다운로드 기록 — 자료 문서 자체에 배열로 누적하면(특히 공유 자료실처럼 여러 학생이 반복
+// 다운로드하는 파일) base64 파일이 이미 1MB 캡에 가까운 문서가 계속 커져서 위험하므로, 다운로드
+// 1건당 문서 1개인 별도 컬렉션으로 분리. 학생/학부모는 이 로그를 못 보고 선생님 화면에서만 집계해서 보여줌.
+const MATERIAL_DOWNLOAD_LOG_COLLECTION = "materialDownloadLog";
+async function logMaterialDownload({ materialId, materialTitle, shared, studentId, studentName }) {
+  await window.__addDoc(window.__collection(window.__db, MATERIAL_DOWNLOAD_LOG_COLLECTION), {
+    materialId, materialTitle: materialTitle || "", shared: !!shared, studentId: studentId || "", studentName: studentName || "",
+    downloadedAt: window.__serverTimestamp(),
+  });
+}
+async function fetchMaterialDownloadLog(materialIds) {
+  if (!materialIds || materialIds.length === 0) return [];
+  // Firestore "in" queries cap at 30 values — chunk in case a library ever grows past that.
+  const chunks = [];
+  for (let i = 0; i < materialIds.length; i += 30) chunks.push(materialIds.slice(i, i + 30));
+  const snaps = await Promise.all(chunks.map((chunk) =>
+    window.__getDocs(window.__query(window.__collection(window.__db, MATERIAL_DOWNLOAD_LOG_COLLECTION), window.__where("materialId", "in", chunk)))
+  ));
+  return snaps.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+}
+
 // ---------- Shared UI ----------
 function TopBar({ tagline }) {
   return html`
@@ -3096,7 +3117,19 @@ function DriveFolderFiles({ folderLink }) {
   `;
 }
 
-function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, onSaveDriveFolderLink }) {
+// 같은 학생이 같은 파일을 여러 번 눌러도 다운로드 기록이 계속 늘어나기만 하면 목록이 지저분해지니,
+// 학생별로 가장 최근 다운로드 1건만 남겨서 "누가 (언제) 받아갔는지"만 보여준다.
+function summarizeDownloadLog(logs) {
+  const byStudent = new Map();
+  for (const l of logs) {
+    const key = l.studentId || l.studentName;
+    const prev = byStudent.get(key);
+    if (!prev || (l.downloadedAt?.seconds || 0) > (prev.downloadedAt?.seconds || 0)) byStudent.set(key, l);
+  }
+  return [...byStudent.values()].sort((a, b) => (b.downloadedAt?.seconds || 0) - (a.downloadedAt?.seconds || 0));
+}
+
+function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, onSaveDriveFolderLink, viewerStudent }) {
   const [items, setItems] = useState(null); // null = loading
   const [err, setErr] = useState("");
   const [title, setTitle] = useState("");
@@ -3107,6 +3140,7 @@ function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, o
   const [uploadMsg, setUploadMsg] = useState("");
   const [linkDraft, setLinkDraft] = useState(driveFolderLink || "");
   const [linkSaved, setLinkSaved] = useState(false);
+  const [downloadLog, setDownloadLog] = useState([]); // 선생님 화면(!readOnly)에서만 채워서 보여줌
   useEffect(() => { setLinkDraft(driveFolderLink || ""); setLinkSaved(false); }, [driveFolderLink]);
 
   async function saveDriveLink() {
@@ -3117,12 +3151,23 @@ function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, o
 
   async function load() {
     try {
-      setItems(shared ? await fetchSharedMaterials() : await fetchMaterials(student.id));
+      const list = shared ? await fetchSharedMaterials() : await fetchMaterials(student.id);
+      setItems(list);
+      if (!readOnly && list.length > 0) {
+        fetchMaterialDownloadLog(list.map((m) => m.id)).then(setDownloadLog).catch(() => {});
+      } else {
+        setDownloadLog([]);
+      }
     } catch (e) {
       setErr("자료 목록을 불러오지 못했어요: " + String(e.message || e));
     }
   }
-  useEffect(() => { load(); }, [shared, student?.id]);
+  useEffect(() => { load(); }, [shared, student?.id, readOnly]);
+
+  function handleDownloadClick(m) {
+    if (!viewerStudent) return; // 선생님 본인이 확인차 누른 다운로드는 기록하지 않음
+    logMaterialDownload({ materialId: m.id, materialTitle: m.title, shared: !!shared, studentId: viewerStudent.id, studentName: viewerStudent.name }).catch(() => {});
+  }
 
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
@@ -3207,9 +3252,19 @@ function MaterialsLibrarySection({ student, readOnly, shared, driveFolderLink, o
                 <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${m.title}</div>
                 <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>${[m.subject, m.level].filter(Boolean).join(" · ")}${(m.subject || m.level) ? " · " : ""}${fmtFileSize(m.fileSizeKB || 0)}</div>
                 ${m.note && html`<div style=${{ fontSize: 12, color: C.ink, marginTop: 4 }}>${m.note}</div>`}
+                ${!readOnly && (() => {
+                  const downloaded = summarizeDownloadLog(downloadLog.filter((l) => l.materialId === m.id));
+                  return html`
+                    <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${C.line}` }}>
+                      ${downloaded.length === 0
+                        ? "아직 다운로드한 학생이 없어요."
+                        : "다운로드: " + downloaded.map((l) => `${l.studentName || "이름 없음"} (${fmtDateTime((l.downloadedAt?.seconds || 0) * 1000)})`).join(", ")}
+                    </div>
+                  `;
+                })()}
               </div>
               <div style=${{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
-                <a href=${m.dataUrl} download=${m.fileName} style=${{ fontSize: 12, fontWeight: 700, color: C.gold, textDecoration: "none", border: `1px solid ${C.gold}`, borderRadius: 3, padding: "5px 10px" }}>다운로드</a>
+                <a href=${m.dataUrl} download=${m.fileName} onClick=${() => handleDownloadClick(m)} style=${{ fontSize: 12, fontWeight: 700, color: C.gold, textDecoration: "none", border: `1px solid ${C.gold}`, borderRadius: 3, padding: "5px 10px" }}>다운로드</a>
                 ${!readOnly && html`<button onClick=${() => handleDelete(m.id, m.title)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11.5, cursor: "pointer", padding: 0 }}>삭제</button>`}
               </div>
             </div>
@@ -6364,9 +6419,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       ${tab === "materials" && html`
         <div>
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📁 개인 자료실</div>
-          <${MaterialsLibrarySection} student=${student} readOnly=${true} driveFolderLink=${student.driveFolderLink} />
+          <${MaterialsLibrarySection} student=${student} readOnly=${true} driveFolderLink=${student.driveFolderLink} viewerStudent=${student} />
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "20px 0 8px" }}>🌐 공유 자료실</div>
-          <${MaterialsLibrarySection} shared=${true} readOnly=${true} driveFolderLink=${sharedDriveFolderLink} />
+          <${MaterialsLibrarySection} shared=${true} readOnly=${true} driveFolderLink=${sharedDriveFolderLink} viewerStudent=${student} />
         </div>
       `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
