@@ -5293,6 +5293,7 @@ function HomeworkEditor({ student, data, updateData }) {
   const [editId, setEditId] = useState(null);
   const [editAssigned, setEditAssigned] = useState(""); const [editDue, setEditDue] = useState(""); const [editContent, setEditContent] = useState("");
   const [lightbox, setLightbox] = useState(null);
+  const [lastClassPick, setLastClassPick] = useState("");
   async function add() {
     if (!content) return;
     await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content, done: false, photos: [] }, ...(d.homework || [])] }));
@@ -5329,23 +5330,32 @@ function HomeworkEditor({ student, data, updateData }) {
   }
   const list = data.homework || [];
   const todayStr = today();
-  const dueToday = list.filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired);
+  // 오늘 수업에서 채점·확인할 대상 — 완료 표시 여부와 무관하게(완료 표시돼 있어도 교사가 직접
+  // 봐야 함) 선택한 날짜 이후 내준 것 전부를 보여준다. 기한이 언제인지는 상관없음. "저번 수업"을
+  // 스케줄로 자동 추정하지 않고 교사가 직접 날짜를 고르게 함 — 자동 추정이 실제 수업 이력과
+  // 어긋나는 경우가 있어서.
+  const sinceLastClass = lastClassPick ? list.filter((h) => h.assignedDate && h.assignedDate >= lastClassPick && !h.expired) : [];
   return html`
     <div>
-      ${dueToday.length > 0 && html`
-        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📌 오늘(${fmtDate(todayStr)}) 기준 확인이 필요한 숙제</div>
-        <${Card} style=${{ borderLeft: `3px solid ${C.gold}`, marginBottom: 18 }}>
-          ${dueToday.map((h) => html`
+      <${Card} style=${{ marginBottom: 18 }}>
+        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📌 저번 수업 이후 내준 숙제</div>
+        <div style=${{ maxWidth: 200, marginBottom: sinceLastClass.length > 0 ? 12 : 0 }}>
+          <${Field} label="저번 수업 날짜"><${DateField} value=${lastClassPick} onChange=${setLastClassPick} placeholder="날짜 선택" /><//>
+        </div>
+        ${!lastClassPick
+          ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>저번 수업 날짜를 고르면 그 이후 내준 숙제가 여기 떠요.</div>`
+          : sinceLastClass.length === 0
+          ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>고른 날짜 이후로 내준 숙제가 없어요.</div>`
+          : sinceLastClass.map((h) => html`
             <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
               <div style=${{ flex: 1 }}>
-                <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(h.dueDate)}</div>
+                <div style=${{ fontSize: 10.5, color: C.slate }}>내준 날 ${fmtDate(h.assignedDate)} · 기한 ${fmtDate(h.dueDate)}</div>
                 <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
               </div>
               <div onClick=${() => toggleDone(h.id)} style=${{ marginLeft: 10, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
             </div>
           `)}
-        <//>
-      `}
+      <//>
       <${Card}>
         <div style=${{ display: "flex", gap: 12, marginBottom: 14 }}>
           <div style=${{ flex: 1 }}>
