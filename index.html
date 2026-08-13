@@ -71,18 +71,19 @@
        risk; anything that still overflows sideways scrolls within ap-main-body rather than breaking
        the page width. */
     .ap-main-header, .ap-main-body { zoom: 1.12; overflow-x: auto; }
-    /* Mobile-only icon-grid launcher (teacher home, student roster, student sub-menu) — a fixed
-       column count that always wraps, so this never needs horizontal scrolling regardless of how
-       many tiles are shown. */
-    .ap-icon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; }
-    .ap-icon-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px 6px; cursor: pointer; min-width: 0; }
-    .ap-icon-tile .ic { font-size: 26px; }
-    .ap-icon-tile .lb { font-size: 12px; font-weight: 700; color: #1C2B4A; text-align: center; line-height: 1.3; word-break: keep-all; }
-    .ap-icon-tile:active { background: #FBF6EA; border-color: #B8935A; }
     .ap-mobile-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; background: #1C2B4A; color: #FAF7F1; }
     .ap-mobile-topbar .title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ap-mobile-topbar button { background: none; border: none; color: #FAF7F1; font-size: 13px; cursor: pointer; flex-shrink: 0; }
   }
+  /* Icon-grid launcher — used for the category-first drill-down (학생 정보/학생 관리, on both
+     desktop and mobile) as well as the mobile home screen. auto-fill/minmax means it always wraps
+     to however many columns fit (3ish on a phone, more on a wide desktop pane) instead of a column
+     count baked in for one screen size, so it never needs horizontal scrolling either way. */
+  .ap-icon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; width: 100%; }
+  .ap-icon-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px 6px; cursor: pointer; min-width: 0; }
+  .ap-icon-tile .ic { font-size: 26px; }
+  .ap-icon-tile .lb { font-size: 12px; font-weight: 700; color: #1C2B4A; text-align: center; line-height: 1.3; word-break: keep-all; }
+  .ap-icon-tile:hover, .ap-icon-tile:active { background: #FBF6EA; border-color: #B8935A; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
@@ -1965,7 +1966,9 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
 
 // On mobile the full sidebar (13 items) is cut down to the 3 things a teacher needs on the go —
 // everything else (passage tool, wordbank, reports, settings, ...) stays desktop-only.
-const MOBILE_TEACHER_SECTIONS = ["students", "schedule", "revenue"];
+// "studentInfo" only exists on mobile (a phone-only split of what desktop shows all together inside
+// 학생 관리) — it has no entry in navItems, so it's added separately when building the mobile home grid.
+const MOBILE_TEACHER_SECTIONS = ["studentInfo", "students", "schedule", "revenue"];
 function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   const [section, setSection] = useState("mainpage");
@@ -1992,6 +1995,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
 
   const navItems = [
     { key: "mainpage", label: "Main Page", icon: "🏠" },
+    { key: "studentInfo", label: "학생 정보", icon: "🧑‍🎓" },
     { key: "students", label: "학생 관리", icon: "🗂" },
     { key: "schedule", label: "내 수업 스케줄", icon: "🗓" },
     { key: "attendance", label: "출결 관리", icon: "✅" },
@@ -2036,9 +2040,11 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "students") {
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
-      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${onLogout} examKeyLibrary=${examKeyLibrary}
+      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary} />`;
+  } else if (section === "studentInfo") {
+    body = html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
-      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} isMobile=${isMobile} />`;
+      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
   } else if (section === "hwstatus") {
     body = html`<${HomeworkStatusOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
   } else if (section === "bookings") {
@@ -2061,7 +2067,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
         <div className="ap-mobile-topbar">
           <div className="title">
             ${!atHome && html`<button onClick=${() => handleNavChange("mainpage")}>‹ 홈</button>`}
-            <span>${atHome ? "Sarah's English" : (navItems.find((n) => n.key === activeKey) || {}).label || ""}</span>
+            <span>${atHome ? "Sarah's English" : (mobileNavItems.find((n) => n.key === activeKey) || {}).label || ""}</span>
           </div>
           <button onClick=${onLogout}>로그아웃</button>
         </div>
@@ -2509,107 +2515,95 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   `;
 }
 
-// The teacher's full per-student panel (13 tabs incl. info/schedule editing) is desktop-only — on a
-// phone it's cut down to just the 4 things a teacher actually needs on the go: 숙제/단어시험(퀴즈)/
-// 모의고사/저장공간관리. Everything else (name/code editing, schedule/goals, logs, materials, tuition...)
-// stays reachable from a desktop browser.
-const MOBILE_STUDENT_TABS = [
-  { key: "homework", label: "숙제", icon: "📝" },
-  { key: "vocab", label: "단어시험", icon: "🔤" },
-  { key: "mock", label: "모의고사", icon: "📄" },
-  { key: "storage", label: "저장공간관리", icon: "💾" },
-];
-function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, examKeyLibrary, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, isMobile }) {
+// 학생 정보: personal info + schedule/goals editing, student-first (there's only ever one thing
+// to do per student here, unlike 학생 관리's category-first flow) — also owns add/delete-student.
+function StudentInfoSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
-  const [mobileTab, setMobileTab] = useState(null);
-  useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
-  useEffect(() => { setMobileTab(null); }, [selectedStudentId]);
-
-  if (isMobile) {
-    const data = dataCache[(selected || {}).id] || emptyData();
-    const boundUpdateData = selected ? (updater) => updateData(selected.id, updater) : null;
-    if (selected && mobileTab) {
-      const activeTab = MOBILE_STUDENT_TABS.find((t) => t.key === mobileTab);
-      return html`
-        <div>
-          <${BackBtn} onClick=${() => setMobileTab(null)} />
-          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} · ${activeTab.icon} ${activeTab.label}</div>
-          ${mobileTab === "homework" && html`<${HomeworkEditor} student=${selected} data=${data} updateData=${boundUpdateData} />`}
-          ${mobileTab === "vocab" && html`<${VocabEditor} student=${selected} data=${data} updateData=${boundUpdateData} />`}
-          ${mobileTab === "mock" && html`<${MockExamEditor} student=${selected} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary} />`}
-          ${mobileTab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${boundUpdateData} />`}
-        </div>
-      `;
+  function handleDelete() {
+    if (confirm(`${selected.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) {
+      removeStudent(selected.id);
+      setSelectedStudentId(null);
     }
-    if (selected) {
-      return html`
-        <div>
-          <${BackBtn} onClick=${() => setSelectedStudentId(null)} />
-          <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생</div>
-          <${IconGrid} items=${MOBILE_STUDENT_TABS.map((t) => ({ ...t, onClick: () => setMobileTab(t.key) }))} />
-        </div>
-      `;
-    }
+  }
+  if (selected) {
     return html`
       <div>
-        <div className="ap-split-left-title">학생 목록</div>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <${BackBtn} onClick=${() => setSelectedStudentId(null)} />
+          <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
+        </div>
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생 정보</div>
+        <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
+        <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
+      </div>
+    `;
+  }
+  return html`
+    <div>
+      <div className="ap-split-left-title">학생 목록</div>
+      ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
+        <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
+      `}
+      ${!showAdd ? html`
+        <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 14 }}>+ 학생 추가<//>
+      ` : html`
+        <${Card} style=${{ marginTop: 14 }}>
+          <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+          <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+          <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+          ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+          <div style=${{ display: "flex", gap: 8 }}>
+            <${Button} variant="gold" onClick=${addStudent}>저장<//>
+            <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+          </div>
+        <//>
+      `}
+    </div>
+  `;
+}
+// Category-first on both desktop and mobile: pick what you're doing (숙제 채점하려면 "숙제" 먼저),
+// then who — matches how a teacher actually works through a stack of one thing for every student,
+// rather than opening one student and clicking through all 13 tabs for them alone.
+// Mobile-only category order (teacher's requested order for the phone icon grid) — desktop keeps
+// STUDENT_PANEL_TABS's own order untouched, since both screens share that one array for everything
+// else (which component renders, the icon/label text).
+const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "tuition", "consult", "storage"];
+function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary }) {
+  const isMobile = useIsMobile();
+  const selected = roster.find((r) => r.id === selectedStudentId);
+  const [category, setCategory] = useState(null);
+  useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
+  const categoryList = isMobile ? MOBILE_STUDENT_CATEGORY_ORDER.map((k) => STUDENT_PANEL_TABS.find((t) => t.key === k)) : STUDENT_PANEL_TABS;
+
+  const data = dataCache[(selected || {}).id] || emptyData();
+  const boundUpdateData = selected ? (updater) => updateData(selected.id, updater) : null;
+
+  if (category && selected) {
+    const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setSelectedStudentId(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} · ${cat.icon} ${cat.label}</div>
+        <${StudentTabBody} tab=${category} student=${selected} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary} />
+      </div>
+    `;
+  }
+  if (category) {
+    const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setCategory(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${cat.icon} ${cat.label}</div>
         ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
           <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
-        `}
-        ${!showAdd ? html`
-          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 14 }}>+ 학생 추가<//>
-        ` : html`
-          <${Card} style=${{ marginTop: 14 }}>
-            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
-            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
-            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
-            <div style=${{ display: "flex", gap: 8 }}>
-              <${Button} variant="gold" onClick=${addStudent}>저장<//>
-              <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
-            </div>
-          <//>
         `}
       </div>
     `;
   }
-
   return html`
-    <div className=${"ap-split" + (selected ? " has-selection" : "")}>
-      <div className="ap-split-left">
-        <div className="ap-split-left-title">학생 목록</div>
-        ${roster.map((r) => html`
-          <div key=${r.id} className=${"ap-roster-item" + (selectedStudentId === r.id ? " active" : "")} onClick=${() => setSelectedStudentId(r.id)}>
-            <div className="name">${r.name}</div>
-            <div className="code">학생코드 ${r.studentCode} · 학부모코드 ${r.parentCode}</div>
-          </div>
-        `)}
-        ${roster.length === 0 && html`<${Empty} text="학생을 추가해 주세요." />`}
-        ${!showAdd ? html`
-          <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 8 }}>+ 학생 추가<//>
-        ` : html`
-          <${Card} style=${{ marginTop: 8 }}>
-            <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-            <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
-            <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
-            ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
-            <div style=${{ display: "flex", gap: 8 }}>
-              <${Button} variant="gold" onClick=${addStudent}>저장<//>
-              <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
-            </div>
-          <//>
-        `}
-      </div>
-      <div className="ap-split-right">
-        ${selected
-          ? html`<div>
-              <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
-              <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
-              <${TeacherStudentPanel} key=${selected.id} student=${selected} data=${dataCache[selected.id] || emptyData()} onBackToList=${() => setSelectedStudentId(null)}
-                updateData=${(updater) => updateData(selected.id, updater)} onLogout=${onLogout} onDeleteStudent=${() => removeStudent(selected.id)} examKeyLibrary=${examKeyLibrary} />
-            </div>`
-          : html`<${Empty} text="왼쪽에서 학생을 선택하면 정보가 여기에 표시돼요." />`}
-      </div>
+    <div>
+      <div className="ap-split-left-title">학생 관리</div>
+      <${IconGrid} items=${categoryList.map((t) => ({ ...t, onClick: () => setCategory(t.key) }))} />
     </div>
   `;
 }
@@ -3962,66 +3956,48 @@ function TodoEditor({ data, updateData }) {
   `;
 }
 
-// Icon-grid menu (same pattern as STUDENT_HOME_ACTIONS on the student home screen) instead of a
-function TeacherStudentPanel({ student, data, onBackToList, updateData, onLogout, onDeleteStudent, examKeyLibrary }) {
-  const [tab, setTab] = useState("logs");
-  const tabs = [
-    { key: "logs", label: "학습 기록", icon: "📘" },
-    { key: "progress", label: "학습 현황", icon: "📊" },
-    { key: "todo", label: "할 일", icon: "✅" },
-    { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
-    { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
-    { key: "homework", label: "숙제", icon: "📝" },
-    { key: "vocab", label: "단어 시험(퀴즈)", icon: "🔤" },
-    { key: "mock", label: "모의고사", icon: "📄" },
-    { key: "regularExam", label: "정기시험", icon: "🏫" },
-    { key: "materials", label: "자료실", icon: "📁" },
-    { key: "tuition", label: "출결·수업료", icon: "💰" },
-    { key: "consult", label: "상담 신청", icon: "🗓" },
-    { key: "storage", label: "저장 공간 관리", icon: "💾" },
-  ];
-  function handleDelete() {
-    if (confirm(`${student.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) onDeleteStudent();
-  }
-  return html`
+// Shared by the desktop tab strip (TeacherStudentPanel) and the mobile category-first flow
+// (StudentsSection) — one source of truth for which component renders which per-student tab, so the
+// two navigation styles can never drift into showing different things for the same key.
+const STUDENT_PANEL_TABS = [
+  { key: "logs", label: "학습 기록", icon: "📘" },
+  { key: "progress", label: "학습 현황", icon: "📊" },
+  { key: "todo", label: "할 일", icon: "✅" },
+  { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
+  { key: "dailyReport", label: "데일리 리포트", icon: "📰" },
+  { key: "homework", label: "숙제", icon: "📝" },
+  { key: "vocab", label: "단어 시험(퀴즈)", icon: "🔤" },
+  { key: "mock", label: "모의고사", icon: "📄" },
+  { key: "regularExam", label: "정기시험", icon: "🏫" },
+  { key: "materials", label: "자료실", icon: "📁" },
+  { key: "tuition", label: "출결·수업료", icon: "💰" },
+  { key: "consult", label: "상담 신청", icon: "🗓" },
+  { key: "storage", label: "저장 공간 관리", icon: "💾" },
+];
+function StudentTabBody({ tab, student, data, updateData, examKeyLibrary }) {
+  if (tab === "logs") return html`<${LogsEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "progress") return html`
     <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <${BackBtn} onClick=${onBackToList} />
-        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
+        <${HomeworkProgressCard} data=${data} />
+        <${VocabPassRateCard} data=${data} />
       </div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 2 }}>${student.name} 학생</div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>학생코드 ${student.studentCode} · 학부모코드 ${student.parentCode}</div>
-        </div>
-        <button onClick=${handleDelete} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "5px 10px", borderRadius: 3, cursor: "pointer" }}>학생 삭제</button>
-      </div>
-      <${Tabs} tabs=${tabs} active=${tab} onChange=${setTab} />
-      ${tab === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "progress" && html`
-        <div>
-          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
-            <${HomeworkProgressCard} data=${data} />
-            <${VocabPassRateCard} data=${data} />
-          </div>
-          <${ParentStudyTimeTab} studyLog=${data.studyLog || []} />
-        </div>
-      `}
-      ${tab === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "vocabLog" && html`<${VocabLogEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "dailyReport" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "homework" && html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "vocab" && html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
-      ${tab === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
-      ${tab === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`}
-      ${tab === "tuition" && html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
-      ${tab === "consult" && html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`}
-      ${tab === "storage" && html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`}
+      <${ParentStudyTimeTab} studyLog=${data.studyLog || []} />
     </div>
   `;
+  if (tab === "todo") return html`<${TodoEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "vocabLog") return html`<${VocabLogEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "dailyReport") return html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`;
+  if (tab === "homework") return html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`;
+  if (tab === "vocab") return html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`;
+  if (tab === "mock") return html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`;
+  if (tab === "regularExam") return html`<${RegularExamEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "materials") return html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`;
+  if (tab === "tuition") return html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`;
+  if (tab === "consult") return html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`;
+  if (tab === "storage") return html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`;
+  return null;
 }
-
 function StorageCleanupPanel({ data, updateData }) {
   const [msg, setMsg] = useState("");
   const sizeBytes = new Blob([JSON.stringify(data)]).size;
