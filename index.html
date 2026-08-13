@@ -2490,7 +2490,14 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       const isDupe = editingIndex == null && next.some((s) => s.day === form.day && s.time === form.time && (s.endTime || "") === (form.endTime || ""));
       if (editingIndex != null) next[editingIndex] = { ...form };
       else if (!isDupe) next.push({ ...form });
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7) } : r)));
+      // "이 날짜만 삭제"는 그 날짜 한 번만 빼는 일회성 조치여야 하는데, tutoringExceptions가
+      // 그냥 날짜 목록이다 보니 나중에 같은 요일로 다시 등록해도 그 날짜가 영구히 막혀 있는
+      // 것처럼 동작하는 문제가 있었다. 지금 등록/수정하는 요일에 한해 — 오늘 이후 날짜만 —
+      // 예전 제외 기록을 지워서, 새로 등록한 스케줄이 바로 반영되게 한다 (다른 요일이나
+      // 이미 지난 날짜의 제외 기록은 그대로 둠).
+      const todayStr = today();
+      const clearedExceptions = (student.tutoringExceptions || []).filter((d) => d < todayStr || DAY_NAMES[new Date(d + "T00:00:00").getDay()] !== form.day);
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7), tutoringExceptions: clearedExceptions } : r)));
       resetForm();
     } finally {
       setBusy(false);
@@ -6824,7 +6831,17 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   function removeSlot(i) { setItems(items.filter((_, idx) => idx !== i)); setSaved(false); }
 
   async function save() {
-    await updateStudentRosterEntry(student.id, (r) => ({ ...r, otherSchedule: items, otherScheduleMonth: today().slice(0, 7) }));
+    // "이 날짜만 삭제"는 일회성이어야 하는데 otherScheduleExceptions가 그냥 날짜 목록이라,
+    // 나중에 같은 요일로 다시 등록해도 예전 제외 기록이 계속 막아버리는 문제가 있었다.
+    // 지금 저장하는 목록에 들어있는 요일에 한해 — 오늘 이후 날짜만 — 예전 제외 기록을 지운다.
+    const todayStr = today();
+    const activeDays = new Set(items.map((it) => it.day));
+    await updateStudentRosterEntry(student.id, (r) => ({
+      ...r,
+      otherSchedule: items,
+      otherScheduleMonth: todayStr.slice(0, 7),
+      otherScheduleExceptions: (r.otherScheduleExceptions || []).filter((d) => d < todayStr || !activeDays.has(WEEKDAY_NAMES[new Date(d + "T00:00:00").getDay()])),
+    }));
     setSaved(true);
   }
   async function removeOtherOccurrence(dateStr) {
