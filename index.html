@@ -2634,6 +2634,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
 
         <div>
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
+          <${SchoolEndTimesRow} schoolEndTimes=${student.schoolEndTimes} />
           <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
             tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
         </div>
@@ -6754,10 +6755,28 @@ function TuitionEditor({ student, data, updateData }) {
 
 const OTHER_SCHEDULE_PRESETS = ["수학학원", "국어학원", "과학학원"];
 
+// 요일별 하교 시간을 학생이 입력한 값이 있으면(하나라도) 그 요일만 골라 "월 15:30" 식으로
+// 짧게 보여주는 읽기 전용 요약 — 선생님 쪽 월간 시간표 위에도 그대로 재사용.
+function SchoolEndTimesRow({ schoolEndTimes }) {
+  const entries = WEEKDAY_NAMES.filter((d) => schoolEndTimes && schoolEndTimes[d]);
+  if (entries.length === 0) return null;
+  return html`
+    <div style=${{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10, padding: "8px 10px", background: C.ivory, borderRadius: 4, fontSize: 11.5 }}>
+      <span style=${{ color: C.slate, fontWeight: 700 }}>🏫 하교 시간</span>
+      ${entries.map((d) => html`<span key=${d} style=${{ color: C.ink }}><b style=${{ color: C.navy }}>${d}</b> ${schoolEndTimes[d]}</span>`)}
+    </div>
+  `;
+}
+
 function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   const [items, setItems] = useState(student.otherSchedule || []);
   const [saved, setSaved] = useState(false);
-  useEffect(() => { setItems(student.otherSchedule || []); setSaved(false); }, [student.id]);
+  const [schoolEndTimes, setSchoolEndTimes] = useState(student.schoolEndTimes || {});
+  const [schoolSaved, setSchoolSaved] = useState(false);
+  useEffect(() => {
+    setItems(student.otherSchedule || []); setSaved(false);
+    setSchoolEndTimes(student.schoolEndTimes || {}); setSchoolSaved(false);
+  }, [student.id]);
 
   function addSlot() { setItems([...items, { day: "월", time: "18:00", endTime: "19:00", name: "수학학원" }]); setSaved(false); }
   function updateSlot(i, field, val) { setItems(items.map((d, idx) => (idx === i ? { ...d, [field]: val } : d))); setSaved(false); }
@@ -6771,8 +6790,37 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
     await updateStudentRosterEntry(student.id, (r) => ({ ...r, otherScheduleExceptions: [...new Set([...(r.otherScheduleExceptions || []), dateStr])] }));
   }
 
+  function setSchoolEndTime(day, val) { setSchoolEndTimes((s) => ({ ...s, [day]: val })); setSchoolSaved(false); }
+  async function saveSchoolEndTimes() {
+    await updateStudentRosterEntry(student.id, (r) => ({ ...r, schoolEndTimes }));
+    setSchoolSaved(true);
+  }
+
   return html`
     <div>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 4 }}>🏫 학교 하교 시간 입력</div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>요일마다 학교가 끝나는 시간을 입력해 주세요. 학교가 없는 날(주말 등)은 비워두면 돼요. 선생님도 이 내용을 볼 수 있어요.</div>
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 12 }}>
+          ${WEEKDAY_NAMES.map((day) => html`
+            <div key=${day} style=${{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate }}>${day}요일</div>
+              ${schoolEndTimes[day] ? html`
+                <div style=${{ display: "flex", alignItems: "center", gap: 2 }}>
+                  <${TimeField} value=${schoolEndTimes[day]} onChange=${(v) => setSchoolEndTime(day, v)} />
+                  <button onClick=${() => setSchoolEndTime(day, "")} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 15, padding: "0 4px" }}>×</button>
+                </div>
+              ` : html`
+                <${Button} variant="ghost" style=${{ padding: "5px 10px", fontSize: 11 }} onClick=${() => setSchoolEndTime(day, "15:00")}>+ 입력<//>
+              `}
+            </div>
+          `)}
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveSchoolEndTimes}>저장<//>
+          ${schoolSaved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
+        </div>
+      <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 4 }}>🗓 다른 학원 시간표 입력</div>
         <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>영어 과외 수업 말고, 매주 다니고 있는 다른 학원·과외 시간을 입력해 주세요 (바뀔 때마다 업데이트해 주면 돼요). 선생님도 이 내용을 볼 수 있어요.</div>
@@ -6807,6 +6855,7 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
+        <${SchoolEndTimesRow} schoolEndTimes=${schoolEndTimes} />
         <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items}
           tutoringExceptions=${student.tutoringExceptions || []}
           otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
