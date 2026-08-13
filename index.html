@@ -24,6 +24,16 @@
   .ap-side-item.active { color: #FAF7F1; font-weight: 700; border-left-color: #B8935A; background: rgba(255,255,255,0.05); }
   .ap-side-item:hover { color: #FAF7F1; }
   .ap-side-logout { margin-top: auto; background: none; border: none; color: #8A93A6; font-size: 10.5px; cursor: pointer; padding: 10px 4px; }
+  /* Desktop-only hover flyout — a sidebar item can carry a submenu (e.g. 학생 관리's per-student
+     categories) that appears next to the icon on hover, letting a teacher jump straight to a
+     category's screen instead of clicking in twice. */
+  .ap-side-item-wrap { position: relative; width: 100%; }
+  /* position:fixed (not absolute) — .ap-side-desktop sets overflow-y:auto, and per spec that
+     silently forces overflow-x:auto too, which would clip an absolutely-positioned flyout. Fixed
+     positioning escapes that; top/left are set inline in JS from the hovered item's own rect. */
+  .ap-side-flyout { position: fixed; min-width: 190px; max-height: 90vh; overflow-y: auto; background: #fff; border: 1px solid #DCD8CF; border-radius: 6px; box-shadow: 0 8px 24px rgba(20,22,26,0.2); padding: 6px; z-index: 60; }
+  .ap-side-flyout-item { padding: 9px 12px; font-size: 12.5px; color: #1C2B4A; cursor: pointer; border-radius: 4px; white-space: nowrap; text-align: left; }
+  .ap-side-flyout-item:hover { background: #FBF6EA; }
   .ap-side-mobile { display: none; }
   .ap-main { flex: 1; min-width: 0; width: 100%; }
   .ap-main-header { padding: 16px 24px; border-bottom: 1px solid #DCD8CF; background: #fff; display: flex; align-items: baseline; gap: 10px; }
@@ -1014,18 +1024,63 @@ function IconGrid({ items }) {
 // Responsive admin shell: dark icon sidebar on desktop, horizontal dropdown on mobile (see .ap-* CSS)
 function SideNav({ items, active, onChange, onLogout }) {
   const [open, setOpen] = useState(false);
+  // Two hover levels — 학생 관리's flyout lists categories, and each category's own flyout lists
+  // student names, so a teacher can go sidebar → category → student in one continuous hover instead
+  // of three separate clicks. Coordinates are measured from each hovered element's own DOM rect;
+  // see the .ap-side-flyout CSS comment for why position:fixed is needed over :hover+absolute.
+  const [hover, setHover] = useState(null); // { key, top }
+  const [subHover, setSubHover] = useState(null); // { key, top, left }
+  // Moving the mouse from a trigger into its flyout (or from a flyout item into its sub-flyout)
+  // briefly crosses a gap between the two boxes — a plain onMouseLeave would close the menu mid-
+  // crossing. Delaying the actual close, and cancelling it if a related element is entered first,
+  // is the standard fix for nested hover menus.
+  const hideTimer = useRef(null);
+  function cancelHide() { if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; } }
+  function scheduleHide(fn) { cancelHide(); hideTimer.current = setTimeout(fn, 250); }
+  // Picking anything (at any level) navigates away, but the mouse itself doesn't move — without
+  // this, hover/subHover would stay set and the flyout would keep rendering on top of whatever page
+  // just loaded until the cursor happens to drift off on its own.
+  function closeAll() { cancelHide(); setHover(null); setSubHover(null); }
   const activeItem = items.find((it) => it.key === active) || items[0];
+  const hoverItem = hover && items.find((it) => it.key === hover.key);
+  const subHoverItem = hoverItem && subHover && hoverItem.flyout.find((f) => f.key === subHover.key);
   return html`
     <div>
       <div className="ap-side-desktop">
         <div className="ap-side-logo" role="img" aria-label="Sarah's English" style=${{ backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
         ${items.map((it) => html`
-          <div key=${it.key} className=${"ap-side-item" + (active === it.key ? " active" : "")} onClick=${() => onChange(it.key)}>
-            <span className="ic">${it.icon}</span><span>${it.label}</span>
+          <div key=${it.key} className="ap-side-item-wrap"
+            onMouseEnter=${it.flyout ? (e) => { cancelHide(); setHover({ key: it.key, top: e.currentTarget.getBoundingClientRect().top }); } : undefined}
+            onMouseLeave=${it.flyout ? () => scheduleHide(() => { setHover(null); setSubHover(null); }) : undefined}>
+            <div className=${"ap-side-item" + (active === it.key ? " active" : "")}
+              style=${(it.flyout && !it.clickable) ? { cursor: "default" } : undefined}
+              onClick=${(it.flyout && !it.clickable) ? undefined : () => { closeAll(); onChange(it.key); }}>
+              <span className="ic">${it.icon}</span><span>${it.label}${it.flyout ? " ▸" : ""}</span>
+            </div>
           </div>
         `)}
         ${onLogout && html`<button className="ap-side-logout" onClick=${onLogout}>로그아웃</button>`}
       </div>
+      ${hoverItem && html`
+        <div className="ap-side-flyout" style=${{ left: 92, top: hover.top }}
+          onMouseEnter=${cancelHide} onMouseLeave=${() => scheduleHide(() => { setHover(null); setSubHover(null); })}>
+          ${hoverItem.flyout.map((f) => html`
+            <div key=${f.key} className="ap-side-flyout-item"
+              onMouseEnter=${f.flyout
+                ? (e) => { cancelHide(); setSubHover({ key: f.key, top: e.currentTarget.getBoundingClientRect().top, left: e.currentTarget.getBoundingClientRect().right }); }
+                : () => { cancelHide(); setSubHover(null); }}
+              onClick=${f.flyout ? undefined : () => { closeAll(); f.onClick(); }}>
+              ${f.icon} ${f.label}${f.flyout ? " ▸" : ""}
+            </div>
+          `)}
+        </div>
+      `}
+      ${subHoverItem && html`
+        <div className="ap-side-flyout" style=${{ left: subHover.left, top: subHover.top }}
+          onMouseEnter=${cancelHide} onMouseLeave=${() => scheduleHide(() => setSubHover(null))}>
+          ${subHoverItem.flyout.map((s) => html`<div key=${s.key} className="ap-side-flyout-item" onClick=${() => { closeAll(); s.onClick(); }}>${s.icon} ${s.label}</div>`)}
+        </div>
+      `}
       <div className="ap-side-mobile">
         <button className="ap-more-btn" onClick=${() => setOpen((o) => !o)}>
           <span>⋯</span><span>${activeItem.icon} ${activeItem.label}</span><span className="arrow">${open ? "▲" : "▾"}</span>
@@ -1972,6 +2027,10 @@ const MOBILE_TEACHER_SECTIONS = ["studentInfo", "students", "schedule", "revenue
 function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   const [section, setSection] = useState("mainpage");
+  // Lifted out of StudentsSection so the desktop sidebar's hover flyout (below) can jump straight
+  // into a category, skipping the 학생 관리 icon-grid landing screen — mobile still sets this the
+  // same way, just by tapping a tile inside StudentsSection instead.
+  const [studentCategory, setStudentCategory] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
@@ -1993,18 +2052,42 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     if (selectedStudentId === id) setSelectedStudentId(null);
   }
 
+  // Desktop-only hover shortcuts. 학생 정보's flyout is one level (student names). 학생 관리's is
+  // two: each category has its own nested flyout of student names, so hovering sidebar → category →
+  // name jumps straight to that student's screen for that category in one continuous hover — no
+  // click-through landing pages in between. 출결 관리 (global, no per-student meaning) stays a plain
+  // directly-clickable entry, folded in here instead of keeping its own sidebar icon.
+  const studentNameFlyout = (onPick) => roster.map((r) => ({ key: r.id, label: r.name, icon: "🧑‍🎓", onClick: () => onPick(r.id) }));
+  const studentInfoFlyout = studentNameFlyout((id) => { setSection("studentInfo"); setSelectedStudentId(id); });
+  const studentCategoryFlyout = [
+    ...STUDENT_PANEL_TABS.map((c) => {
+      const names = studentNameFlyout((id) => { setSection("students"); setStudentCategory(c.key); setSelectedStudentId(id); });
+      // 자료실's names all lead to that student's personal folder — 공유 자료실 has no student of
+      // its own, so it rides along as one extra, always-first entry in the same sub-flyout instead
+      // of needing a whole separate branch to reach it.
+      const flyout = c.key === "materials"
+        ? [{ key: "shared", label: "공유 자료실", icon: "📁", onClick: () => { setSection("students"); setSelectedStudentId(null); setStudentCategory("materialsShared"); } }, ...names]
+        : names;
+      return { key: c.key, label: c.label, icon: c.icon, flyout };
+    }),
+    {
+      key: "attendance", label: "출결 관리", icon: "✅",
+      onClick: () => { setSection("students"); setSelectedStudentId(null); setStudentCategory("attendance"); },
+    },
+  ];
+
   const navItems = [
     { key: "mainpage", label: "Main Page", icon: "🏠" },
-    { key: "studentInfo", label: "학생 정보", icon: "🧑‍🎓" },
-    { key: "students", label: "학생 관리", icon: "🗂" },
+    // clickable: true — unlike 학생 관리, this one keeps its own landing page (roster + "+ 학생
+    // 추가"/삭제), so the icon itself still navigates there; the flyout is just a shortcut on top.
+    { key: "studentInfo", label: "학생 정보", icon: "🧑‍🎓", flyout: studentInfoFlyout, clickable: true },
+    { key: "students", label: "학생 관리", icon: "🗂", flyout: studentCategoryFlyout },
     { key: "schedule", label: "내 수업 스케줄", icon: "🗓" },
-    { key: "attendance", label: "출결 관리", icon: "✅" },
     { key: "bookings", label: `레벨테스트·상담 문의${pendingCount > 0 ? ` (${pendingCount})` : ""}`, icon: "🗓" },
     { key: "passage", label: "지문 변형·문제 생성", icon: "📄" },
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
-    { key: "sharedMaterials", label: "공유 자료실", icon: "📁" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
     { key: "settings", label: "설정", icon: "⚙️" },
@@ -2015,6 +2098,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   function handleNavChange(key) {
     setSection(key);
     setSelectedStudentId(null);
+    setStudentCategory(null);
   }
 
   let body;
@@ -2026,8 +2110,6 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
-  } else if (section === "sharedMaterials") {
-    body = html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
@@ -2036,11 +2118,11 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`;
   } else if (section === "schedule") {
     body = html`<${MasterScheduleView} roster=${roster} saveRosterList=${saveRosterList} />`;
-  } else if (section === "attendance") {
-    body = html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "students") {
     body = html`<${StudentsSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
-      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary} />`;
+      ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
+      category=${studentCategory} setCategory=${setStudentCategory}
+      sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "studentInfo") {
     body = html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
@@ -2056,7 +2138,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
-      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); }} />`;
+      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory(null); }} />`;
   }
 
   if (isMobile) {
@@ -2568,16 +2650,49 @@ function StudentInfoSection({ roster, saveRosterList, selectedStudentId, setSele
 // STUDENT_PANEL_TABS's own order untouched, since both screens share that one array for everything
 // else (which component renders, the icon/label text).
 const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "tuition", "consult", "storage"];
-function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary }) {
+// Desktop-only extra category, folded into 학생 관리 instead of keeping its own sidebar icon —
+// global (not per-student), so it renders straight away with no student-list step.
+const DESKTOP_ONLY_CATEGORIES = [{ key: "attendance", label: "출결 관리", icon: "✅" }];
+function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary, category, setCategory, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   const selected = roster.find((r) => r.id === selectedStudentId);
-  const [category, setCategory] = useState(null);
+  // "개인 자료실 / 공유 자료실" choice for the 자료실 category — desktop-only (mobile keeps 자료실
+  // as a straight-to-student-list category, matching its existing order/behavior untouched).
+  const [materialsMode, setMaterialsMode] = useState(null);
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
-  const categoryList = isMobile ? MOBILE_STUDENT_CATEGORY_ORDER.map((k) => STUDENT_PANEL_TABS.find((t) => t.key === k)) : STUDENT_PANEL_TABS;
+  useEffect(() => { setMaterialsMode(null); }, [category]);
+  const categoryList = isMobile
+    ? MOBILE_STUDENT_CATEGORY_ORDER.map((k) => STUDENT_PANEL_TABS.find((t) => t.key === k))
+    : [...STUDENT_PANEL_TABS, ...DESKTOP_ONLY_CATEGORIES];
 
   const data = dataCache[(selected || {}).id] || emptyData();
   const boundUpdateData = selected ? (updater) => updateData(selected.id, updater) : null;
 
+  // 출결 관리: global, no per-student drill-down at all.
+  if (category === "attendance" && !isMobile) {
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setCategory(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>✅ 출결 관리</div>
+        <${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />
+      </div>
+    `;
+  }
+  // 공유 자료실 reached directly from the sidebar flyout (its own pseudo-category, distinct from
+  // "materials" — that one still goes through the personal/shared choice screen below when entered
+  // by clicking through instead of hovering).
+  if (category === "materialsShared" && !isMobile) {
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setCategory(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>📁 공유 자료실</div>
+        <${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />
+      </div>
+    `;
+  }
+  // A category+student pair can arrive already fully chosen (the sidebar flyout jumps straight
+  // here) — that takes priority over 자료실's personal/shared choice screen below, since which one
+  // was meant is already implied (공유 자료실 has no per-student flyout entries at all).
   if (category && selected) {
     const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
     return html`
@@ -2588,11 +2703,34 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
       </div>
     `;
   }
+  // 자료실: desktop gets a 개인/공유 choice first; 공유 자료실 is global like 출결 above.
+  if (category === "materials" && !isMobile && !materialsMode) {
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setCategory(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>📁 자료실</div>
+        <${IconGrid} items=${[
+          { key: "personal", icon: "🧑‍🎓", label: "개인 자료실", onClick: () => setMaterialsMode("personal") },
+          { key: "shared", icon: "📁", label: "공유 자료실", onClick: () => setMaterialsMode("shared") },
+        ]} />
+      </div>
+    `;
+  }
+  if (category === "materials" && !isMobile && materialsMode === "shared") {
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setMaterialsMode(null)} />
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>📁 공유 자료실</div>
+        <${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />
+      </div>
+    `;
+  }
+
   if (category) {
     const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
     return html`
       <div>
-        <${BackBtn} onClick=${() => setCategory(null)} />
+        <${BackBtn} onClick=${() => (category === "materials" && !isMobile ? setMaterialsMode(null) : setCategory(null))} />
         <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${cat.icon} ${cat.label}</div>
         ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
           <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
