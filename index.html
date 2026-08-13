@@ -4555,16 +4555,19 @@ const EXAM_TYPE_DETAIL = {
   "기출고사": { label: "세부 이름", placeholder: "예: 2024 수능기출" },
   "기타": { label: "시험명", placeholder: "예: NELT 월말시험" },
 };
-// 그래프는 종류별로 따로 봐야 의미가 있어서(내신·모의고사·교재성취평가·기출고사 각각 척도/주기가 다름) 묶어서 하나로 그리지 않음
+// 교재성취평가는 영역(문법/어휘/독해)마다 척도가 달라서 시험 종류와 별개로 하나 더 선택받음
+const MATERIAL_CATEGORIES = ["문법", "어휘", "독해"];
+// 그래프는 종류(+교재성취평가는 영역까지)별로 따로 봐야 의미가 있어서 묶어서 하나로 그리지 않음
 const EXAM_CHART_GROUPS = [
-  { title: "📈 중간·기말고사(내신) 점수 추이", types: ["중간고사", "기말고사"] },
-  { title: "📈 모의고사 점수 추이", types: ["모의고사"] },
-  { title: "📈 교재성취평가 점수 추이", types: ["교재성취평가"] },
-  { title: "📈 기출고사 점수 추이", types: ["기출고사"] },
+  { title: "📈 중간·기말고사(내신) 점수 추이", filter: (x) => x.examType === "중간고사" || x.examType === "기말고사" },
+  { title: "📈 모의고사 점수 추이", filter: (x) => x.examType === "모의고사" },
+  ...MATERIAL_CATEGORIES.map((cat) => ({ title: `📈 교재성취평가 · ${cat} 점수 추이`, filter: (x) => x.examType === "교재성취평가" && x.materialCategory === cat })),
+  { title: "📈 기출고사 점수 추이", filter: (x) => x.examType === "기출고사" },
 ];
 function RegularExamEditor({ data, updateData }) {
   const [date, setDate] = useState(today());
   const [examType, setExamType] = useState(EXAM_TYPES[0]);
+  const [materialCategory, setMaterialCategory] = useState(MATERIAL_CATEGORIES[0]);
   const [examDetail, setExamDetail] = useState("");
   const [subject, setSubject] = useState("영어");
   const [score, setScore] = useState("");
@@ -4575,7 +4578,9 @@ function RegularExamEditor({ data, updateData }) {
   async function add() {
     const detail = examDetail.trim();
     if (!date || !detail) return;
-    await updateData((d) => ({ ...d, regularExams: [{ id: uid(), date, examType, examDetail: detail, subject, score, scoreNum: scoreNum === "" ? null : Number(scoreNum), target, note }, ...(d.regularExams || [])] }));
+    const record = { id: uid(), date, examType, examDetail: detail, subject, score, scoreNum: scoreNum === "" ? null : Number(scoreNum), target, note };
+    if (examType === "교재성취평가") record.materialCategory = materialCategory;
+    await updateData((d) => ({ ...d, regularExams: [record, ...(d.regularExams || [])] }));
     setExamDetail(""); setScore(""); setScoreNum(""); setTarget(""); setNote("");
   }
   async function remove(id) { await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).filter((x) => x.id !== id) })); }
@@ -4587,7 +4592,7 @@ function RegularExamEditor({ data, updateData }) {
       <${NeltUploadSection} data=${data} updateData=${updateData} />
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학교 내신, 모의고사, NELT 같은 월말 시험 등 정기적으로 치르는 시험 결과를 기록하세요.</div>
       ${EXAM_CHART_GROUPS.map((g) => {
-        const rows = list.filter((x) => g.types.includes(x.examType));
+        const rows = list.filter(g.filter);
         if (rows.filter((x) => x.scoreNum != null).length < 2) return null;
         return html`
           <div key=${g.title} style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>${g.title}</div>
@@ -4608,6 +4613,13 @@ function RegularExamEditor({ data, updateData }) {
                 ${EXAM_TYPES.map((t) => html`<option key=${t} value=${t}>${t}</option>`)}
               </select>
             <//>
+            ${examType === "교재성취평가" && html`
+              <${Field} label="영역">
+                <select style=${inputStyle} value=${materialCategory} onChange=${(e) => setMaterialCategory(e.target.value)}>
+                  ${MATERIAL_CATEGORIES.map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
+                </select>
+              <//>
+            `}
             <${Field} label=${detailMeta.label}><input style=${inputStyle} value=${examDetail} onChange=${(e) => setExamDetail(e.target.value)} placeholder=${detailMeta.placeholder} /><//>
             <${Field} label="과목"><input style=${inputStyle} value=${subject} onChange=${(e) => setSubject(e.target.value)} /><//>
             <${Field} label="점수 / 등급"><input style=${inputStyle} value=${score} onChange=${(e) => setScore(e.target.value)} placeholder="예: 92점 / 1등급" /><//>
@@ -4623,7 +4635,7 @@ function RegularExamEditor({ data, updateData }) {
         <${Card} key=${x.id}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(x.date)} · ${[x.examType, x.examDetail || x.examName].filter(Boolean).join(" · ")} (${x.subject})</div>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(x.date)} · ${[x.examType, x.materialCategory, x.examDetail || x.examName].filter(Boolean).join(" · ")} (${x.subject})</div>
               <div style=${{ fontSize: 13, marginTop: 4 }}>${x.score} ${x.target ? "· " + x.target : ""}</div>
               ${x.note && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>${x.note}</div>`}
             </div>
