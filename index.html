@@ -629,7 +629,6 @@ function nextClassText(student, todayStr) {
       const dt = new Date(now); dt.setDate(dt.getDate() + offset);
       const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
       if (DAY_NAMES[dt.getDay()] !== s.day) continue;
-      if (dateStr.slice(0, 7) !== student.scheduleMonth) continue; // 이번 달치로 등록된 패턴이 아니면 다음 수업 후보에서 제외
       if (exceptions.includes(dateStr)) continue;
       if (offset === 0 && s.time < nowHM) continue;
       candidates.push({ date: dateStr, time: s.time, kind: "tutoring" });
@@ -2345,6 +2344,7 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
 
 function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
+  const [showExceptions, setShowExceptions] = useState(false); // list of dates removed via "이 날짜만 삭제" — tucked away since it's only needed to undo a mistaken removal
   // Left column is add/edit-one-at-a-time — registered slots are NOT listed here (that would just
   // duplicate what the calendar on the right already shows). Clicking a class on the calendar loads
   // it into this form via onSelectItem instead of a separate editable list.
@@ -2359,7 +2359,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   const [monthlySaved, setMonthlySaved] = useState(false);
   useEffect(() => {
-    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false); setInstanceEdit(null);
+    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false); setShowExceptions(false); setInstanceEdit(null);
     setJustSubmitted(false);
     setMonth(today().slice(0, 7));
     setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
@@ -2492,14 +2492,9 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
       const isDupe = editingIndex == null && next.some((s) => s.day === form.day && s.time === form.time && (s.endTime || "") === (form.endTime || ""));
       if (editingIndex != null) next[editingIndex] = { ...form };
       else if (!isDupe) next.push({ ...form });
-      // "이 날짜만 삭제"는 그 날짜 한 번만 빼는 일회성 조치여야 하는데, tutoringExceptions가
-      // 그냥 날짜 목록이다 보니 나중에 같은 요일로 다시 등록해도 그 날짜가 영구히 막혀 있는
-      // 것처럼 동작하는 문제가 있었다. 지금 등록/수정하는 요일에 한해 — 오늘 이후 날짜만 —
-      // 예전 제외 기록을 지워서, 새로 등록한 스케줄이 바로 반영되게 한다 (다른 요일이나
-      // 이미 지난 날짜의 제외 기록은 그대로 둠).
-      const todayStr = today();
-      const clearedExceptions = (student.tutoringExceptions || []).filter((d) => d < todayStr || DAY_NAMES[new Date(d + "T00:00:00").getDay()] !== form.day);
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7), tutoringExceptions: clearedExceptions } : r)));
+      // tutoringExceptions는 절대 여기서 건드리지 않는다 — "이 날짜만 삭제"로 뺀 특정 날짜는
+      // 같은 요일 패턴을 다시 등록해도 되살아나면 안 된다 (한 번 지운 건 계속 지워진 채로).
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next } : r)));
       // 저장 후 폼을 기본값(월요일 18~19시)으로 조용히 되돌리면, 방금 등록한 내용이 안 보여서
       // "저장이 안 됐나?" 싶어 같은 요일을 다시 누르다가 실수로 다른 요일/시간이 잘못 추가되는
       // 일이 반복됐다. 폼 값은 그대로 두고 "등록됐어요" 확인 메시지만 잠깐 보여준다.
@@ -2515,7 +2510,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     setBusy(true);
     try {
       const next = (student.schedule || []).filter((_, i) => i !== editingIndex);
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7) } : r)));
+      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next } : r)));
       resetForm();
     } finally {
       setBusy(false);
@@ -2524,6 +2519,11 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   async function removeTutoringOccurrence(dateStr) {
     await saveRosterList(roster.map((r) => (r.id === student.id
       ? { ...r, tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), dateStr])] }
+      : r)));
+  }
+  async function restoreTutoringOccurrence(dateStr) {
+    await saveRosterList(roster.map((r) => (r.id === student.id
+      ? { ...r, tutoringExceptions: (r.tutoringExceptions || []).filter((d) => d !== dateStr) }
       : r)));
   }
 
@@ -2569,11 +2569,6 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄</div>
-      ${student.scheduleMonth !== today().slice(0, 7) && html`
-        <div style=${{ fontSize: 11.5, color: C.gold, background: "#FBF4EA", borderRadius: 4, padding: "8px 10px", marginBottom: 12 }}>
-          ⚠ 매주 반복 수업 패턴은 ${student.scheduleMonth ? `${student.scheduleMonth}에` : "등록된 적이"} 등록돼 있어요. 이번 달(${today().slice(0, 7)}) 수업을 캘린더/수업료에 반영하려면 아래에서 다시 저장해 주세요.
-        </div>
-      `}
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, alignItems: "start" }}>
         <div>
           ${instanceEdit ? html`
@@ -2656,13 +2651,32 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               </div>
             `}
           </div>
+
+          <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12, marginTop: 12 }}>
+            <button onClick=${() => setShowExceptions((v) => !v)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+              ${showExceptions ? "▾" : "▸"} 이 날짜만 삭제로 제외한 날짜 ${(student.tutoringExceptions || []).length > 0 ? `(${(student.tutoringExceptions || []).length})` : ""}
+            </button>
+            ${showExceptions && html`
+              <div style=${{ marginTop: 10 }}>
+                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>매주 패턴을 다시 등록해도 아래 날짜들은 자동으로 살아나지 않아요. 실수로 뺐다면 복원을 눌러 주세요.</div>
+                ${(student.tutoringExceptions || []).length === 0 ? html`
+                  <div style=${{ fontSize: 11.5, color: C.slate }}>제외한 날짜가 없어요.</div>
+                ` : [...(student.tutoringExceptions || [])].sort().map((d) => html`
+                  <div key=${d} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px", marginBottom: 6 }}>
+                    <span style=${{ fontSize: 12 }}>${d}</span>
+                    <button onClick=${() => restoreTutoringOccurrence(d)} style=${{ background: "none", border: "none", color: C.gold, fontWeight: 700, fontSize: 11.5, cursor: "pointer", padding: 0 }}>복원</button>
+                  </div>
+                `)}
+              </div>
+            `}
+          </div>
         </div>
 
         <div>
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${SchoolEndTimesRow} schoolEndTimes=${student.schoolEndTimes} />
           <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
-            tutoringMonth=${student.scheduleMonth} otherMonth=${student.otherScheduleMonth}
+            otherMonth=${student.otherScheduleMonth}
             tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
         </div>
       </div>
@@ -3994,8 +4008,7 @@ function MasterScheduleView({ roster, saveRosterList }) {
 function hasClassOn(student, dateStr) {
   const dayName = MASTER_SCHEDULE_DAY_NAMES[new Date(dateStr + "T00:00:00").getDay()];
   const exceptions = student.tutoringExceptions || [];
-  const patternMatch = dateStr.slice(0, 7) === student.scheduleMonth
-    && (student.schedule || []).some((s) => s.day === dayName) && !exceptions.includes(dateStr);
+  const patternMatch = (student.schedule || []).some((s) => s.day === dayName) && !exceptions.includes(dateStr);
   const monthlyMatch = ((student.monthlyInstances || {})[dateStr.slice(0, 7)] || []).some((m) => m.date === dateStr);
   return patternMatch || monthlyMatch;
 }
@@ -6501,16 +6514,14 @@ const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 // that have actually happened yet. 보강("makeup") instances are excluded: a makeup class fills
 // in for one that was already billed (or excepted out) elsewhere, so counting it too would
 // double-bill it.
-function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, viewMonth, scheduleMonth) {
+function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, viewMonth) {
   const [y, m] = viewMonth.split("-").map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
   let count = 0;
-  if (viewMonth === scheduleMonth) {
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
-      const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
-      if ((schedule || []).some((s) => s.day === dayName) && !(tutoringExceptions || []).includes(dateStr)) count++;
-    }
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
+    const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+    if ((schedule || []).some((s) => s.day === dayName) && !(tutoringExceptions || []).includes(dateStr)) count++;
   }
   count += ((monthlyInstances || {})[viewMonth] || []).filter((inst) => inst.type === "tutoring").length;
   return count;
@@ -6535,7 +6546,7 @@ function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, vi
 // viewMonth/onMonthChange make this a controlled component when the caller needs to know which
 // month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
 // month state) otherwise, which is all the schedule-only call sites need.
-function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, tutoringMonth, otherMonth }) {
+function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, otherMonth }) {
   const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
   const viewMonth = viewMonthProp || internalMonth;
   const setViewMonth = onMonthChange || setInternalMonth;
@@ -6548,18 +6559,19 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  // tutoring/other are recurring weekly patterns that are only "registered" for one month at a
-  // time (student.scheduleMonth / student.otherScheduleMonth) — so they only render on the grid
-  // while the currently-viewed month matches the month they were last (re-)registered for.
-  // monthlyInstances is unaffected since each entry already carries its own concrete date.
-  const tutoringActive = !tutoringMonth || viewMonth === tutoringMonth;
+  // other (student-entered "다른 학원") is a recurring weekly pattern that's only "registered"
+  // for one month at a time (student.otherScheduleMonth) — so it only renders on the grid while
+  // the currently-viewed month matches the month it was last (re-)registered for. tutoring
+  // (student.schedule, teacher-owned) has no such gating — once registered it repeats every week
+  // indefinitely until edited. monthlyInstances is unaffected since each entry already carries
+  // its own concrete date.
   const otherActive = !otherMonth || viewMonth === otherMonth;
 
   function itemsForDay(d) {
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoringActive ? (tutoring || []) : []).map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
+      ...(tutoring || []).map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
       ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강", _midx: monthly.indexOf(s) })),
       ...(otherActive ? (other || []) : []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
@@ -6654,7 +6666,7 @@ function TuitionEditor({ student, data, updateData }) {
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
   }
 
-  const plannedCount = countPlannedSessions(student.schedule, student.monthlyInstances, student.tutoringExceptions, viewMonth, student.scheduleMonth);
+  const plannedCount = countPlannedSessions(student.schedule, student.monthlyInstances, student.tutoringExceptions, viewMonth);
   const calculated = plannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
   const managementFeeNum = Number(managementFee) || 0;
   const subtotal = calculated + managementFeeNum;
@@ -6760,13 +6772,7 @@ function TuitionEditor({ student, data, updateData }) {
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>이번 달 계획된 수업</div>
         <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선불 청구라서 실제 출석이 아니라 이 달에 예정된 수업 횟수로 계산돼요. 특정 날짜를 빼거나 과외/보강 일정을 추가하려면 위쪽 "수업 스케줄"에서 조정해 주세요.</div>
-        ${viewMonth !== student.scheduleMonth && html`
-          <div style=${{ fontSize: 11.5, color: C.danger, background: "#F7E9E6", borderRadius: 4, padding: "8px 10px", marginBottom: 10 }}>
-            ⚠ ${viewMonth}에는 매주 반복 수업 패턴이 등록돼 있지 않아서(${student.scheduleMonth ? `${student.scheduleMonth}에 등록됨` : "등록된 적 없음"}), 아래 수업 횟수에 반영되지 않았어요. 보강/추가 일정으로 넣은 건만 잡혀요.
-          </div>
-        `}
         <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${[]}
-          tutoringMonth=${student.scheduleMonth}
           tutoringExceptions=${student.tutoringExceptions || []}
           viewMonth=${viewMonth} onMonthChange=${setViewMonth} />
       <//>
@@ -6929,7 +6935,7 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
         <${SchoolEndTimesRow} schoolEndTimes=${schoolEndTimes} />
         <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items}
-          tutoringMonth=${student.scheduleMonth} otherMonth=${student.otherScheduleMonth}
+          otherMonth=${student.otherScheduleMonth}
           tutoringExceptions=${student.tutoringExceptions || []}
           otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
       <//>
