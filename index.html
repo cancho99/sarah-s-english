@@ -1862,13 +1862,30 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   const pendingBookings = (levelTestBookings || []).filter((b) => b.status !== "완료");
   const todayStr = today();
   const todayHomework = [];
+  const todayVocab = []; // 재시험 날짜가 오늘이거나 지났는데 아직(그 시험을) 통과 못한 것 — StudentDash의 notPassedVocab/todayVocab/overdueVocab과 같은 기준
+  const todayMock = []; // 응시 날짜가 오늘이거나 지났는데 아직 결과(응시) 기록이 없는 모의고사 — StudentDash의 unsubmittedMock/todayMock/overdueMock과 같은 기준
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
       if (h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired) todayHomework.push({ student: s, hw: h });
     });
+    (d.vocabTests || []).forEach((t) => {
+      if (t.expired || !t.retestDate || t.retestDate > todayStr) return;
+      const results = (d.vocabResults || []).filter((r) => r.testId === t.id);
+      const latest = results[0];
+      const pct = latest ? Math.round((latest.score / latest.total) * 100) : -1;
+      if (pct < vocabPassThreshold(t.title)) todayVocab.push({ student: s, test: t });
+    });
+    (d.mockExams || []).forEach((t) => {
+      if (t.expired || !t.date || t.date > todayStr) return;
+      const hasResult = (d.mockExamResults || []).some((r) => r.testId === t.id);
+      if (!hasResult) todayMock.push({ student: s, test: t });
+    });
   });
   todayHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
+  todayVocab.sort((a, b) => a.test.retestDate.localeCompare(b.test.retestDate));
+  todayMock.sort((a, b) => a.test.date.localeCompare(b.test.date));
+  const todayCheckCount = todayHomework.length + todayVocab.length + todayMock.length;
 
   const LIMIT_KB = 1000;
   const sizeInfo = roster.map((s) => {
@@ -1924,18 +1941,47 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
           <//>
         </div>
         <div style=${{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 숙제 ${todayHomework.length > 0 ? `(${todayHomework.length}건)` : ""}</div>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 것 ${todayCheckCount > 0 ? `(${todayCheckCount}건)` : ""}</div>
           <${Card} style=${{ marginBottom: 0, flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한이 오늘이거나 지났는데 아직 완료 표시 안 된 숙제를 학생 전체 기준으로 모았어요.</div>
-            ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayHomework.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 숙제가 없어요.</div>` : todayHomework.map(({ student, hw }, i) => html`
-              <div key=${i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-                <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
-                <div style=${{ display: "flex", justifyContent: "space-between" }}>
-                  <span><b>${student.name}</b> — ${hw.content}</span>
-                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
-                </div>
-              </div>
-            `)}
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한/예정일이 오늘이거나 지났는데 아직 처리 안 된 숙제·단어시험·모의고사를 학생 전체 기준으로 모았어요.</div>
+            ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayCheckCount === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 게 없어요.</div>` : html`
+              ${todayHomework.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 6 }}>숙제</div>
+                ${todayHomework.map(({ student, hw }, i) => html`
+                  <div key=${"hw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                    <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
+                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                      <span><b>${student.name}</b> — ${hw.content}</span>
+                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
+                    </div>
+                  </div>
+                `)}
+              `}
+              ${todayVocab.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>단어시험</div>
+                ${todayVocab.map(({ student, test }, i) => html`
+                  <div key=${"vc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                    <div style=${{ fontSize: 10.5, color: C.slate }}>재시험 예정일 ${fmtDate(test.retestDate)}</div>
+                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                      <span><b>${student.name}</b> — ${test.title}</span>
+                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미통과</span>
+                    </div>
+                  </div>
+                `)}
+              `}
+              ${todayMock.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>모의고사</div>
+                ${todayMock.map(({ student, test }, i) => html`
+                  <div key=${"mk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                    <div style=${{ fontSize: 10.5, color: C.slate }}>응시일 ${fmtDate(test.date)}</div>
+                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                      <span><b>${student.name}</b> — ${test.title}</span>
+                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미응시</span>
+                    </div>
+                  </div>
+                `)}
+              `}
+            `}
             <div onClick=${onGoHwStatus} style=${{ fontSize: 11.5, color: C.gold, marginTop: 8, cursor: "pointer" }}>전체 숙제 현황 보기 →</div>
           <//>
         </div>
