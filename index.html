@@ -2150,23 +2150,16 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
   }
 
   // Desktop-only hover shortcuts. 학생 정보's flyout is one level (student names). 학생 관리's is
-  // two: each category has its own nested flyout of student names, so hovering sidebar → category →
-  // name jumps straight to that student's screen for that category in one continuous hover — no
-  // click-through landing pages in between. 출결 관리 (global, no per-student meaning) stays a plain
-  // directly-clickable entry, folded in here instead of keeping its own sidebar icon.
+  // also one level now — just the category list — since its landing page for a chosen category
+  // already shows every student's data at once (see AllStudentsCategoryView), so a second hover
+  // level drilling into one student's name would just be a redundant shortcut to the same place.
   const studentNameFlyout = (onPick) => roster.map((r) => ({ key: r.id, label: r.name, icon: "🧑‍🎓", onClick: () => onPick(r.id) }));
   const studentInfoFlyout = studentNameFlyout((id) => { setSection("studentInfo"); setSelectedStudentId(id); });
   const studentCategoryFlyout = [
-    ...STUDENT_PANEL_TABS.map((c) => {
-      const names = studentNameFlyout((id) => { setSection("students"); setStudentCategory(c.key); setSelectedStudentId(id); });
-      // 자료실's names all lead to that student's personal folder — 공유 자료실 has no student of
-      // its own, so it rides along as one extra, always-first entry in the same sub-flyout instead
-      // of needing a whole separate branch to reach it.
-      const flyout = c.key === "materials"
-        ? [{ key: "shared", label: "공유 자료실", icon: "📁", onClick: () => { setSection("students"); setSelectedStudentId(null); setStudentCategory("materialsShared"); } }, ...names]
-        : names;
-      return { key: c.key, label: c.label, icon: c.icon, flyout };
-    }),
+    ...STUDENT_PANEL_TABS.map((c) => ({
+      key: c.key, label: c.label, icon: c.icon,
+      onClick: () => { setSection("students"); setSelectedStudentId(null); setStudentCategory(c.key); },
+    })),
     {
       key: "attendance", label: "출결 관리", icon: "✅",
       onClick: () => { setSection("students"); setSelectedStudentId(null); setStudentCategory("attendance"); },
@@ -2873,21 +2866,67 @@ function StudentsSection({ roster, saveRosterList, selectedStudentId, setSelecte
   }
 
   if (category) {
-    const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
     return html`
-      <div>
-        <${BackBtn} onClick=${() => (category === "materials" && !isMobile ? setMaterialsMode(null) : setCategory(null))} />
-        <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${cat.icon} ${cat.label}</div>
-        ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
-          <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
-        `}
-      </div>
+      <${AllStudentsCategoryView} category=${category} roster=${roster} ensureData=${ensureData} updateData=${updateData}
+        dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
+        onBack=${() => (category === "materials" && !isMobile ? setMaterialsMode(null) : setCategory(null))} />
     `;
   }
   return html`
     <div>
       <div className="ap-split-left-title">학생 관리</div>
       <${IconGrid} items=${categoryList.map((t) => ({ ...t, onClick: () => setCategory(t.key) }))} />
+    </div>
+  `;
+}
+
+// 카테고리 하나를 고르면 학생을 한 명씩 더 클릭해 들어가지 않고, 전체 학생을 아코디언으로 쭉
+// 펼쳐 한 화면에서 관리할 수 있게 하는 뷰. 기본은 전부 접힌 상태(이름만 나열)로 시작해 무거운
+// 에디터(사진 업로드 등)를 한꺼번에 렌더링하지 않고, 펼친 학생만 그 자리에서 데이터를 불러온다.
+function AllStudentsCategoryView({ category, roster, ensureData, updateData, dataCache, examKeyLibrary, onBack }) {
+  const cat = STUDENT_PANEL_TABS.find((t) => t.key === category);
+  const [openIds, setOpenIds] = useState(() => new Set());
+  function toggle(id) {
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else { next.add(id); ensureData(id); }
+      return next;
+    });
+  }
+  function expandAll() {
+    roster.forEach((r) => ensureData(r.id));
+    setOpenIds(new Set(roster.map((r) => r.id)));
+  }
+  const allOpen = roster.length > 0 && roster.every((r) => openIds.has(r.id));
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style=${{ ...serif, fontSize: 17, color: C.navy }}>${cat.icon} ${cat.label}</div>
+        ${roster.length > 0 && html`
+          <button onClick=${() => (allOpen ? setOpenIds(new Set()) : expandAll())}
+            style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: C.slate, cursor: "pointer" }}>
+            ${allOpen ? "전체 접기" : "전체 펼치기"}
+          </button>
+        `}
+      </div>
+      ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : roster.map((r) => {
+        const open = openIds.has(r.id);
+        const data = dataCache[r.id] || emptyData();
+        return html`
+          <${Card} key=${r.id} style=${{ marginBottom: 10 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => toggle(r.id)}>
+              <div style=${{ fontWeight: 700, color: C.navy }}>🧑‍🎓 ${r.name}</div>
+              <div style=${{ color: C.gold, fontSize: 13 }}>${open ? "▾" : "▸"}</div>
+            </div>
+            ${open && html`
+              <div style=${{ marginTop: 12 }}>
+                <${StudentTabBody} tab=${category} student=${r} data=${data} updateData=${(updater) => updateData(r.id, updater)} examKeyLibrary=${examKeyLibrary} />
+              </div>
+            `}
+          <//>
+        `;
+      })}
     </div>
   `;
 }
