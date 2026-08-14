@@ -6561,7 +6561,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
               </div>
               ${t.expired
                 ? html`<div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>⏳ 기간만료</div>`
-                : html`<${Button} variant=${needsRetest ? "danger" : (myResults.length ? "ghost" : "gold")} onClick=${() => setActiveTest({ type: "vocab", test: t })}>${needsRetest ? "재응시하기" : (myResults.length ? "다시 풀기" : "응시하기")}<//>`}
+                : myResults.length
+                  ? null
+                  : html`<${Button} variant="gold" onClick=${() => setActiveTest({ type: "vocab", test: t })}>응시하기<//>`}
             </div>
           <//>
         `;
