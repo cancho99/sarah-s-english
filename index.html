@@ -4117,6 +4117,7 @@ function hasClassOn(student, dateStr) {
 // countPlannedSessions) so marking someone absent here never touches billing.
 function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
   const [date, setDate] = useState(today());
+  const [month, setMonth] = useState(today().slice(0, 7));
   const [loaded, setLoaded] = useState(false);
   const [extraIds, setExtraIds] = useState([]);
   const [addPick, setAddPick] = useState("");
@@ -4171,9 +4172,60 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
     outstandingMakeups.sort((a, b) => (a.date < b.date ? -1 : 1));
   }
 
+  // 학생별 이 달 출결·보강 요약 — roster 전체를 항상 나열(그 달에 기록이 하나도 없어도 0으로 표시),
+  // 날짜별 마킹 화면과 별개로 한눈에 훑어볼 수 있는 목록.
+  const monthRows = loaded ? roster.map((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const records = Object.entries(d.attendance || {}).filter(([dt]) => dt.slice(0, 7) === month);
+    const present = records.filter(([, rec]) => rec.status === "present").length;
+    const absent = records.filter(([, rec]) => rec.status === "absent");
+    const makeupDone = absent.filter(([, rec]) => rec.makeupDone).length;
+    const makeupNeeded = absent.length - makeupDone;
+    // 수업료 계산과 같은 기준(countPlannedSessions) — 주간 반복 패턴(scheduleMonth 일치 시) + 이 달
+    // monthlyInstances 중 과외(tutoring)만. 보강(makeup) 인스턴스는 정규 등록 수업일이 아니라서 제외.
+    const totalDays = countPlannedSessions(s.schedule, s.monthlyInstances, s.tutoringExceptions, month, s.scheduleMonth);
+    return { student: s, totalDays, present, absentCount: absent.length, makeupDone, makeupNeeded };
+  }) : [];
+
   return html`
     <div>
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>출결 관리</div>
+
+      <${Card} style=${{ marginBottom: 20 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>📅 이 달 출결·보강 현황</div>
+          <div style=${{ width: 140 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        </div>
+        ${!loaded ? html`<${Empty} text="불러오는 중..." />` : roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
+          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 500 }}>
+              <thead>
+                <tr style=${{ background: C.ivory }}>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>총 수업일</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>출석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>결석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강완료</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강필요</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${monthRows.map((r) => html`
+                  <tr key=${r.student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.totalDays}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.present}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.absentCount}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.makeupDone}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center", color: r.makeupNeeded > 0 ? C.danger : C.ink, fontWeight: r.makeupNeeded > 0 ? 700 : 400 }}>${r.makeupNeeded}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        `}
+      <//>
+
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. 결석으로 표시하면 보강 여부도 따로 체크할 수 있어요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
       <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <div style=${{ width: 190 }}><${DateField} value=${date} onChange=${setDate} /></div>
