@@ -763,7 +763,7 @@ function shuffle(arr) {
   }
   return a;
 }
-const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {} });
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {}, notes: [] });
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
 // Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
@@ -2885,7 +2885,7 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
 // Mobile-only category order (teacher's requested order for the phone icon grid) — desktop keeps
 // STUDENT_PANEL_TABS's own order untouched, since both screens share that one array for everything
 // else (which component renders, the icon/label text).
-const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "consult", "storage"];
+const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "notes", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "consult", "storage"];
 // Desktop-only extra category, folded into 학생 관리 instead of keeping its own sidebar icon —
 // global (not per-student), so it renders straight away with no student-list step.
 const DESKTOP_ONLY_CATEGORIES = [{ key: "attendance", label: "출결 관리", icon: "✅" }];
@@ -4470,6 +4470,7 @@ function TodoEditor({ data, updateData }) {
 // two navigation styles can never drift into showing different things for the same key.
 const STUDENT_PANEL_TABS = [
   { key: "logs", label: "학습 기록", icon: "📘" },
+  { key: "notes", label: "메모", icon: "🗒" },
   { key: "progress", label: "학습 현황", icon: "📊" },
   { key: "todo", label: "할 일", icon: "✅" },
   { key: "vocabLog", label: "단어시험 기록", icon: "✏️" },
@@ -4484,6 +4485,7 @@ const STUDENT_PANEL_TABS = [
 ];
 function StudentTabBody({ tab, student, data, updateData, examKeyLibrary }) {
   if (tab === "logs") return html`<${LogsEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "notes") return html`<${NotesEditor} data=${data} updateData=${updateData} />`;
   if (tab === "progress") return html`
     <div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
@@ -5278,7 +5280,7 @@ function MonthlyReportView({ student, data, updateData }) {
           mode: "monthlyReport",
           studentName: student.name,
           month,
-          rough: { content: draftContent, good, improve, comment, nextMonth },
+          rough: { content: draftContent, good, improve, comment, nextMonth, notes: (data.notes || []).map((n) => n.content).join("\n") },
         }),
       });
       const json = await res.json();
@@ -5491,6 +5493,18 @@ function MonthlyReportView({ student, data, updateData }) {
         `)}
       <//>
 
+      ${(data.notes || []).length > 0 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗒 그동안 적어둔 메모 (참고용 — 아래 3~6번에 옮겨 적거나, "AI로 리포트 다듬기"에 자동으로 참고돼요)</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          ${data.notes.map((n) => html`
+            <div key=${n.id} style=${{ padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
+              <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 2 }}>${n.createdAt ? fmtDateTime(n.createdAt) : ""}</div>
+              <div style=${{ whiteSpace: "pre-wrap" }}>${n.content}</div>
+            </div>
+          `)}
+        <//>
+      `}
+
       <${Card} style=${{ marginBottom: 20, background: "#FBF6EA", border: `1px solid ${C.gold}` }}>
         <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style=${{ flex: 1, fontSize: 12.5, color: C.slate }}>
@@ -5525,6 +5539,56 @@ function MonthlyReportView({ student, data, updateData }) {
   `;
 }
 
+// 날짜와 무관하게 교사만 보는 자유 메모 — 수업 기록(logs)과 달리 특정 수업일에 묶이지 않는
+// 학생 특이사항용. 월말 리포트 작성 화면(MonthlyReportView)에서 그대로 참고할 수 있도록 노출된다.
+function NotesEditor({ data, updateData }) {
+  const [content, setContent] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [editContent, setEditContent] = useState("");
+  const notes = data.notes || [];
+  async function add() {
+    if (!content.trim()) return;
+    await updateData((d) => ({ ...d, notes: [{ id: uid(), content: content.trim(), createdAt: Date.now() }, ...(d.notes || [])] }));
+    setContent("");
+  }
+  async function remove(id) { await updateData((d) => ({ ...d, notes: (d.notes || []).filter((n) => n.id !== id) })); }
+  function startEdit(n) { setEditId(n.id); setEditContent(n.content); }
+  async function saveEdit() {
+    await updateData((d) => ({ ...d, notes: (d.notes || []).map((n) => (n.id === editId ? { ...n, content: editContent } : n)) }));
+    setEditId(null);
+  }
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗒 메모</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>날짜와 상관없이 기억해둘 특이사항을 자유롭게 적어두는 곳이에요. 학생·학부모에게는 보이지 않고, 월말 리포트 작성 화면에서 참고용으로 다시 볼 수 있어요.</div>
+        <${Field} label="새 메모"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 관계대명사 헷갈려함, 발음 교정 꾸준히 필요, 학부모 상담 시 성적 스트레스 언급함" /><//>
+        <${Button} variant="gold" onClick=${add}>메모 추가<//>
+      <//>
+      ${notes.length === 0 && html`<${Empty} text="아직 메모가 없어요." />`}
+      ${notes.map((n) => html`
+        <${Card} key=${n.id}>
+          ${editId === n.id ? html`
+            <${Field} label="내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${editContent} onChange=${(e) => setEditContent(e.target.value)} /><//>
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="gold" onClick=${saveEdit}>저장<//>
+              <${Button} variant="ghost" onClick=${() => setEditId(null)}>취소<//>
+            </div>
+          ` : html`
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <div style=${{ fontSize: 11, color: C.slate }}>${n.createdAt ? fmtDateTime(n.createdAt) : ""}</div>
+              <div style=${{ display: "flex", gap: 10 }}>
+                <button onClick=${() => startEdit(n)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
+                <button onClick=${() => remove(n.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+              </div>
+            </div>
+            <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${n.content}</div>
+          `}
+        <//>
+      `)}
+    </div>
+  `;
+}
 function LogsEditor({ data, updateData }) {
   const [date, setDate] = useState(today()); const [content, setContent] = useState("");
   const [editId, setEditId] = useState(null);
