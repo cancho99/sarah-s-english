@@ -2265,6 +2265,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "studentInfo") {
     body = html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
+      updateData=${updateData} dataCache=${dataCache}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
       addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
   } else if (section === "hwstatus") {
@@ -2831,7 +2832,7 @@ function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
 
 // 학생 정보: personal info + schedule/goals editing, student-first (there's only ever one thing
 // to do per student here, unlike 학생 관리's category-first flow) — also owns add/delete-student.
-function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, updateData, dataCache, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
   function handleDelete() {
     if (confirm(`${selected.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) {
@@ -2840,6 +2841,8 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
     }
   }
   if (selected) {
+    const data = dataCache[selected.id] || emptyData();
+    const boundUpdateData = (updater) => updateData(selected.id, updater);
     return html`
       <div>
         <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -2849,6 +2852,7 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
         <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생 정보</div>
         <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
         <${ScheduleGoalEditor} student=${selected} updateStudentRosterEntry=${updateStudentRosterEntry} />
+        <${TuitionEditor} key=${selected.id} student=${selected} data=${data} updateData=${boundUpdateData} />
       </div>
     `;
   }
@@ -2881,7 +2885,7 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
 // Mobile-only category order (teacher's requested order for the phone icon grid) — desktop keeps
 // STUDENT_PANEL_TABS's own order untouched, since both screens share that one array for everything
 // else (which component renders, the icon/label text).
-const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "tuition", "consult", "storage"];
+const MOBILE_STUDENT_CATEGORY_ORDER = ["progress", "logs", "vocabLog", "dailyReport", "homework", "vocab", "mock", "materials", "regularExam", "todo", "consult", "storage"];
 // Desktop-only extra category, folded into 학생 관리 instead of keeping its own sidebar icon —
 // global (not per-student), so it renders straight away with no student-list step.
 const DESKTOP_ONLY_CATEGORIES = [{ key: "attendance", label: "출결 관리", icon: "✅" }];
@@ -4475,7 +4479,6 @@ const STUDENT_PANEL_TABS = [
   { key: "mock", label: "모의고사", icon: "📄" },
   { key: "regularExam", label: "시험", icon: "🏫" },
   { key: "materials", label: "자료실", icon: "📁" },
-  { key: "tuition", label: "출결·수업료", icon: "💰" },
   { key: "consult", label: "상담 신청", icon: "🗓" },
   { key: "storage", label: "저장 공간 관리", icon: "💾" },
 ];
@@ -4498,7 +4501,6 @@ function StudentTabBody({ tab, student, data, updateData, examKeyLibrary }) {
   if (tab === "mock") return html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`;
   if (tab === "regularExam") return html`<${RegularExamEditor} data=${data} updateData=${updateData} />`;
   if (tab === "materials") return html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`;
-  if (tab === "tuition") return html`<${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "consult") return html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`;
   if (tab === "storage") return html`<${StorageCleanupPanel} data=${data} updateData=${updateData} />`;
   return null;
