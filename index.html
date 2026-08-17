@@ -537,6 +537,49 @@ function fmtDateTime(ms) {
     return `${y}.${mo}.${da} ${h}:${mi}`;
   } catch { return ""; }
 }
+// tutoringExceptions entries used to be bare "YYYY-MM-DD" strings, then { date, deletedAt } objects
+// (deletedAt lets a restore UI sort by when a class was removed rather than only which date it fell
+// on). Now they also carry { time, endTime } so an exception targets one specific slot on that
+// date, not every class that day — a day can have more than one registered weekly slot (e.g. 월
+// 7시 and 월 8시 both recurring), and excepting one must not hide the other. Legacy entries with no
+// time field are treated as applying to every slot on that date (their only possible meaning before
+// this changed), so existing production data keeps working without a migration.
+function exceptionDate(e) { return typeof e === "string" ? e : e.date; }
+function isTutoringExcepted(exceptions, dateStr, time, endTime) {
+  return (exceptions || []).some((e) => {
+    if (exceptionDate(e) !== dateStr) return false;
+    if (typeof e === "string" || !e.time) return true; // legacy, no slot info — applies to the whole date
+    return e.time === time && (e.endTime || "") === (endTime || "");
+  });
+}
+function addTutoringException(list, dateStr, time, endTime) {
+  return [
+    ...(list || []).filter((e) => !(exceptionDate(e) === dateStr && (typeof e === "string" || (e.time === time && (e.endTime || "") === (endTime || ""))))),
+    { date: dateStr, time, endTime: endTime || "", deletedAt: Date.now() },
+  ];
+}
+// scheduleByMonth (student.scheduleByMonth = { "2026-08": [{day,time,endTime}], ... }) is the
+// per-month-keyed replacement for the old single schedule/scheduleMonth pair — mirrors how
+// monthlyInstances already works. Falls back to the legacy fields when a month has no
+// scheduleByMonth entry yet, so the old ScheduleGoalEditor UI (still writing schedule/scheduleMonth
+// until it's rewritten) keeps working and nothing silently goes invisible in the gap between
+// rewriting the read side and the write side.
+function patternForMonth(scheduleByMonth, legacySchedule, legacyScheduleMonth, month) {
+  const raw = (scheduleByMonth || {})[month] || (legacyScheduleMonth === month ? (legacySchedule || []) : []);
+  // Defensive de-dup by day+time+endTime — a stray exact-duplicate slot (whatever produced it,
+  // past migrations or otherwise) would double-render the same class on the calendar, double-count
+  // it for tuition, and make "delete one copy" look like it did nothing since the other copy is
+  // still there. Every consumer goes through this one function, so de-duping here fixes all of
+  // them at once, and since ScheduleGoalEditor always saves the full de-duped array back, the very
+  // next edit/delete permanently cleans up any duplicate that existed in storage.
+  const seen = new Set();
+  return raw.filter((s) => {
+    const key = `${s.day}|${s.time}|${s.endTime || ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 function fmtMinutes(min) {
   if (!min) return "0분";
   const h = Math.floor(min / 60), m = min % 60;
@@ -629,18 +672,25 @@ function nextClassText(student, todayStr) {
   const nowHM = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
   const exceptions = student.tutoringExceptions || [];
   const candidates = [];
-  (student.schedule || []).forEach((s) => {
-    for (let offset = 0; offset <= 14; offset++) {
-      const dt = new Date(now); dt.setDate(dt.getDate() + offset);
-      const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-      if (DAY_NAMES[dt.getDay()] !== s.day) continue;
-      if (dateStr.slice(0, 7) !== student.scheduleMonth) continue; // 이번 달치로 등록된 패턴이 아니면 다음 수업 후보에서 제외
-      if (exceptions.includes(dateStr)) continue;
-      if (offset === 0 && s.time < nowHM) continue;
+  // Walk day-by-day (rather than slot-by-slot) so a slot that only exists in next month's
+  // scheduleByMonth pattern is still found once the 14-day window crosses into that month.
+  // seenSlot dedups a weekly slot to its single nearest occurrence, same as the old
+  // slot-then-day loop did via its inner break.
+  const seenSlot = new Set();
+  for (let offset = 0; offset <= 14; offset++) {
+    const dt = new Date(now); dt.setDate(dt.getDate() + offset);
+    const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    const pattern = patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, dateStr.slice(0, 7));
+    pattern.forEach((s) => {
+      if (s.day !== DAY_NAMES[dt.getDay()]) return;
+      if (isTutoringExcepted(exceptions, dateStr, s.time, s.endTime)) return;
+      const slotKey = `${s.day}|${s.time}|${s.endTime || ""}`;
+      if (seenSlot.has(slotKey)) return;
+      if (offset === 0 && s.time < nowHM) return;
+      seenSlot.add(slotKey);
       candidates.push({ date: dateStr, time: s.time, kind: "tutoring" });
-      break;
-    }
-  });
+    });
+  }
   Object.values(student.monthlyInstances || {}).forEach((list) => {
     (list || []).forEach((inst) => {
       if (inst.date > todayStr || (inst.date === todayStr && inst.time >= nowHM)) {
@@ -1287,7 +1337,7 @@ function App() {
   }
 
   if (screen === "teacherDash") {
-    return html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList}
+    return html`<${TeacherDash} roster=${roster} saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry}
       selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache} onLogout=${logout}
       levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
@@ -2121,7 +2171,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
 // "studentInfo" only exists on mobile (a phone-only split of what desktop shows all together inside
 // 학생 관리) — it has no entry in navItems, so it's added separately when building the mobile home grid.
 const MOBILE_TEACHER_SECTIONS = ["studentInfo", "students", "schedule", "revenue"];
-function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
+function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   const [section, setSection] = useState("mainpage");
   // Lifted out of StudentsSection so the desktop sidebar's hover flyout (below) can jump straight
@@ -2214,7 +2264,7 @@ function TeacherDash({ roster, saveRosterList, selectedStudentId, setSelectedStu
       category=${studentCategory} setCategory=${setStudentCategory}
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "studentInfo") {
-    body = html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
+    body = html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
       addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
   } else if (section === "hwstatus") {
@@ -2387,28 +2437,38 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
   `;
 }
 
-function ScheduleGoalEditor({ student, saveRosterList, roster }) {
+function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
   const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
-  const [showExceptions, setShowExceptions] = useState(false); // list of dates removed via "이 날짜만 삭제" — tucked away since it's only needed to undo a mistaken removal
   // Left column is add/edit-one-at-a-time — registered slots are NOT listed here (that would just
   // duplicate what the calendar on the right already shows). Clicking a class on the calendar loads
   // it into this form via onSelectItem instead of a separate editable list.
   const [form, setForm] = useState({ day: "월", time: "18:00", endTime: "19:00" });
-  const [editingIndex, setEditingIndex] = useState(null); // index into student.schedule, or null while adding a new one
+  const [editingIndex, setEditingIndex] = useState(null); // index into the selected month's pattern array, or null while adding a new one
   // Set when a calendar chip (tutoring occurrence or one-off instance) is clicked — lets the
   // teacher retime/move just that one date without touching the recurring weekly pattern.
   const [instanceEdit, setInstanceEdit] = useState(null);
   const [busy, setBusy] = useState(false);
   const [justSubmitted, setJustSubmitted] = useState(false); // 추가/수정 직후 잠깐 확인 메시지를 보여줌
+  const [dupeMsg, setDupeMsg] = useState(false); // 이미 등록된 것과 완전히 같은 요일/시간을 추가하려 했을 때 — 조용히 무시하면 "등록이 안 되는 버그"처럼 보여서 명시적으로 알려줌
   const [month, setMonth] = useState(today().slice(0, 7));
   const [monthly, setMonthly] = useState((student.monthlyInstances || {})[today().slice(0, 7)] || []);
   const [monthlySaved, setMonthlySaved] = useState(false);
+  // Which month's 매주 반복 수업 패턴 the left form + right calendar are showing/editing —
+  // student.scheduleByMonth[selectedMonth] is the source of truth (falling back to legacy
+  // schedule/scheduleMonth via patternForMonth for months not yet migrated). Every month is
+  // symmetric: picking a different month here (or navigating the calendar, which drives the same
+  // state) never touches any other month's data, so there's no more "current vs upcoming" special
+  // case and no promotion step — a save always writes straight into that one month's own bucket.
+  const [selectedMonth, setSelectedMonth] = useState(today().slice(0, 7));
+  const activeSchedule = patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, selectedMonth);
   useEffect(() => {
-    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false); setShowExceptions(false); setInstanceEdit(null);
+    setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setShowMonthly(false); setInstanceEdit(null);
     setJustSubmitted(false);
     setMonth(today().slice(0, 7));
     setMonthly((student.monthlyInstances || {})[today().slice(0, 7)] || []);
+    setSelectedMonth(today().slice(0, 7));
   }, [student.id]);
+  useEffect(() => { resetForm(); }, [selectedMonth]);
   // Skipped once right after copyMonthlyToNextMonth switches `month` — that function already
   // seeds `monthly` with the copied draft, and this effect would otherwise immediately stomp it
   // with the (unrelated, possibly empty) saved data for the new month.
@@ -2421,19 +2481,23 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
   function selectForEdit(idx) {
-    const s = (student.schedule || [])[idx];
+    const s = activeSchedule[idx];
     if (!s) return;
     setForm({ day: s.day, time: s.time, endTime: s.endTime || "" });
     setEditingIndex(idx);
     setInstanceEdit(null);
   }
-  function resetForm() { setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); }
+  function resetForm() { setForm({ day: "월", time: "18:00", endTime: "19:00" }); setEditingIndex(null); setDupeMsg(false); }
 
   // Clicking a calendar chip opens the single-date editor instead of the recurring form.
+  // origTime/origEndTime preserve the clicked slot's identity separately from time/endTime (which
+  // the form fields below edit as the target time) — needed so excepting/deleting always refers to
+  // the slot that was actually clicked, not whatever time the teacher has since typed into the form.
   function selectInstance(item) {
     setInstanceEdit({
       source: item.source, origDate: item.dateStr, date: item.dateStr,
-      time: item.time, endTime: item.endTime || "", type: item.type, _idx: item._idx, _midx: item._midx,
+      time: item.time, endTime: item.endTime || "", origTime: item.time, origEndTime: item.endTime || "",
+      type: item.type, _idx: item._idx, _midx: item._midx,
     });
     setEditingIndex(null);
   }
@@ -2447,28 +2511,27 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     try {
       const monthKeyNew = date.slice(0, 7);
       if (item.source === "tutoring") {
-        const nextInstances = [...((student.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type: "tutoring" }];
-        await saveRosterList(roster.map((r) => (r.id === student.id
-          ? {
-              ...r,
-              tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), item.dateStr])],
-              monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: nextInstances },
-            }
-          : r)));
+        await updateStudentRosterEntry(student.id, (r) => ({
+          ...r,
+          tutoringExceptions: addTutoringException(r.tutoringExceptions, item.dateStr, item.time, item.endTime),
+          monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: [...((r.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type: "tutoring" }] },
+        }));
       } else if (item.source === "monthly") {
         const monthKeyOrig = item.dateStr.slice(0, 7);
         if (monthKeyOrig === monthKeyNew) {
-          const arr = (student.monthlyInstances || {})[monthKeyOrig] || [];
-          const nextArr = arr.map((inst, i) => (i === item._midx ? { ...inst, date, time, endTime } : inst));
-          await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextArr } } : r)));
+          await updateStudentRosterEntry(student.id, (r) => {
+            const arr = (r.monthlyInstances || {})[monthKeyOrig] || [];
+            const nextArr = arr.map((inst, i) => (i === item._midx ? { ...inst, date, time, endTime } : inst));
+            return { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextArr } };
+          });
         } else {
-          const origArr = (student.monthlyInstances || {})[monthKeyOrig] || [];
-          const movedInst = origArr[item._midx] || {};
-          const nextOrigArr = origArr.filter((_, i) => i !== item._midx);
-          const nextNewArr = [...((student.monthlyInstances || {})[monthKeyNew] || []), { ...movedInst, date, time, endTime }];
-          await saveRosterList(roster.map((r) => (r.id === student.id
-            ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextOrigArr, [monthKeyNew]: nextNewArr } }
-            : r)));
+          await updateStudentRosterEntry(student.id, (r) => {
+            const origArr = (r.monthlyInstances || {})[monthKeyOrig] || [];
+            const movedInst = origArr[item._midx] || {};
+            const nextOrigArr = origArr.filter((_, i) => i !== item._midx);
+            const nextNewArr = [...((r.monthlyInstances || {})[monthKeyNew] || []), { ...movedInst, date, time, endTime }];
+            return { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyOrig]: nextOrigArr, [monthKeyNew]: nextNewArr } };
+          });
         }
       }
     } finally {
@@ -2483,8 +2546,10 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     try {
       const monthKeyNew = date.slice(0, 7);
       const type = item.source === "tutoring" ? "tutoring" : (item.type || "makeup");
-      const nextInstances = [...((student.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type }];
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: nextInstances } } : r)));
+      await updateStudentRosterEntry(student.id, (r) => ({
+        ...r,
+        monthlyInstances: { ...(r.monthlyInstances || {}), [monthKeyNew]: [...((r.monthlyInstances || {})[monthKeyNew] || []), { date, time, endTime, type }] },
+      }));
     } finally {
       setBusy(false);
     }
@@ -2497,7 +2562,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   async function saveInstanceEdit() {
     if (!instanceEdit) return;
     await applyInstanceChange(
-      { source: instanceEdit.source, dateStr: instanceEdit.origDate, _midx: instanceEdit._midx },
+      { source: instanceEdit.source, dateStr: instanceEdit.origDate, _midx: instanceEdit._midx, time: instanceEdit.origTime, endTime: instanceEdit.origEndTime },
       { date: instanceEdit.date, time: instanceEdit.time, endTime: instanceEdit.endTime }
     );
     setInstanceEdit(null);
@@ -2510,19 +2575,50 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     );
     setInstanceEdit(null);
   }
+  // For "tutoring" this excepts just this one date for this one slot (origTime/origEndTime), so a
+  // day with two separately-registered times (e.g. 월 7시 and 월 8시) can have just one of them
+  // skipped on a given date while the other still shows — tutoringExceptions is now slot-aware, not
+  // just date-aware, so this no longer risks masking a different slot on the same date.
   async function deleteInstanceEdit() {
     if (!instanceEdit) return;
     setBusy(true);
     try {
       if (instanceEdit.source === "tutoring") {
-        await removeTutoringOccurrence(instanceEdit.origDate);
+        await updateStudentRosterEntry(student.id, (r) => ({
+          ...r,
+          tutoringExceptions: addTutoringException(r.tutoringExceptions, instanceEdit.origDate, instanceEdit.origTime, instanceEdit.origEndTime),
+        }));
       } else {
         const monthKey = instanceEdit.origDate.slice(0, 7);
-        const arr = (student.monthlyInstances || {})[monthKey] || [];
-        const nextArr = arr.filter((_, i) => i !== instanceEdit._midx);
-        await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKey]: nextArr } } : r)));
+        await updateStudentRosterEntry(student.id, (r) => {
+          const arr = (r.monthlyInstances || {})[monthKey] || [];
+          const nextArr = arr.filter((_, i) => i !== instanceEdit._midx);
+          return { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [monthKey]: nextArr } };
+        });
       }
       setInstanceEdit(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+  // A slot can already be registered in scheduleByMonth while looking completely empty on the
+  // calendar, if every one of its occurrences got individually excepted via "이 날짜만 삭제" (the
+  // known trap of repeatedly excepting one date at a time instead of using "통째로 삭제") — that's
+  // exactly what isDupe below catches, and this gives a one-click way out instead of leaving the
+  // teacher stuck unable to either see or re-add the class.
+  async function clearExceptionsForSlot(day, time, endTime) {
+    setBusy(true);
+    try {
+      await updateStudentRosterEntry(student.id, (r) => ({
+        ...r,
+        tutoringExceptions: (r.tutoringExceptions || []).filter((e) => {
+          const dow = DAY_NAMES[new Date(exceptionDate(e) + "T00:00:00").getDay()];
+          if (dow !== day) return true;
+          if (typeof e === "string" || !e.time) return false; // legacy whole-date exception on this weekday
+          return !(e.time === time && (e.endTime || "") === (endTime || ""));
+        }),
+      }));
+      setDupeMsg(false);
     } finally {
       setBusy(false);
     }
@@ -2530,18 +2626,26 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
   async function submitForm() {
     setBusy(true);
     try {
-      const next = [...(student.schedule || [])];
+      const next = [...activeSchedule];
       // 등록한 게 캘린더에 바로 안 보이면(예: 해당 요일이 tutoringExceptions로 다 빠져있는 경우)
       // 안 됐다고 생각해서 같은 슬롯을 반복 클릭해 여러 번 추가하는 경우가 있어서, 완전히
       // 똑같은 요일/시작/종료 슬롯은 새로 추가하지 않고 조용히 무시한다.
       const isDupe = editingIndex == null && next.some((s) => s.day === form.day && s.time === form.time && (s.endTime || "") === (form.endTime || ""));
+      if (isDupe) {
+        setDupeMsg(true);
+        return;
+      }
+      setDupeMsg(false);
       if (editingIndex != null) next[editingIndex] = { ...form };
-      else if (!isDupe) next.push({ ...form });
+      else next.push({ ...form });
       // tutoringExceptions는 절대 여기서 건드리지 않는다 — "이 날짜만 삭제"로 뺀 특정 날짜는
-      // 같은 요일 패턴을 다시 등록해도 되살아나면 안 된다 (한 번 지운 건 계속 지워진 채로. 되살리려면
-      // "제외한 날짜" 목록에서 직접 복원). scheduleMonth는 이번 달로 찍어서, 스케줄이 매달 바뀌는
-      // 만큼 교사가 매달 다시 저장해야 캘린더/수업료/다음수업안내에 반영되게 한다.
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7) } : r)));
+      // 같은 요일 패턴을 다시 등록해도 되살아나면 안 된다 (한 번 지운 건 계속 지워진 채로.
+      // 되살리려면 "제외한 날짜" 목록에서 직접 복원). 저장은 selectedMonth 버킷 하나만 갱신하므로
+      // 다른 달의 패턴은 전혀 영향받지 않는다.
+      await updateStudentRosterEntry(student.id, (r) => ({
+        ...r,
+        scheduleByMonth: { ...(r.scheduleByMonth || {}), [selectedMonth]: next },
+      }));
       // 저장 후 폼을 기본값(월요일 18~19시)으로 조용히 되돌리면, 방금 등록한 내용이 안 보여서
       // "저장이 안 됐나?" 싶어 같은 요일을 다시 누르다가 실수로 다른 요일/시간이 잘못 추가되는
       // 일이 반복됐다. 폼 값은 그대로 두고 "등록됐어요" 확인 메시지만 잠깐 보여준다.
@@ -2556,32 +2660,25 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     if (editingIndex == null) return;
     setBusy(true);
     try {
-      const next = (student.schedule || []).filter((_, i) => i !== editingIndex);
-      await saveRosterList(roster.map((r) => (r.id === student.id ? { ...r, schedule: next, scheduleMonth: today().slice(0, 7) } : r)));
+      const next = activeSchedule.filter((_, i) => i !== editingIndex);
+      await updateStudentRosterEntry(student.id, (r) => ({
+        ...r,
+        scheduleByMonth: { ...(r.scheduleByMonth || {}), [selectedMonth]: next },
+      }));
       resetForm();
     } finally {
       setBusy(false);
     }
   }
-  async function removeTutoringOccurrence(dateStr) {
-    await saveRosterList(roster.map((r) => (r.id === student.id
-      ? { ...r, tutoringExceptions: [...new Set([...(r.tutoringExceptions || []), dateStr])] }
-      : r)));
-  }
-  async function restoreTutoringOccurrence(dateStr) {
-    await saveRosterList(roster.map((r) => (r.id === student.id
-      ? { ...r, tutoringExceptions: (r.tutoringExceptions || []).filter((d) => d !== dateStr) }
-      : r)));
-  }
-
   function generateMonth() {
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     const generated = [];
+    const pattern = patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, month);
     for (let d = 1; d <= daysInMonth; d++) {
       const dt = new Date(y, m - 1, d);
       const dayName = DAY_NAMES[dt.getDay()];
-      const match = (student.schedule || []).find((s) => s.day === dayName);
+      const match = pattern.find((s) => s.day === dayName);
       if (match) generated.push({ date: `${month}-${String(d).padStart(2, "0")}`, time: match.time, endTime: match.endTime, type: "tutoring" });
     }
     setMonthly(generated);
@@ -2607,20 +2704,26 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
     setMonthlySaved(false);
   }
   async function saveMonthly() {
-    await saveRosterList(roster.map((r) => (r.id === student.id
-      ? { ...r, monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly } }
-      : r)));
+    await updateStudentRosterEntry(student.id, (r) => ({
+      ...r,
+      monthlyInstances: { ...(r.monthlyInstances || {}), [month]: monthly },
+    }));
     setMonthlySaved(true);
   }
+
+  const todayMonthStr = today().slice(0, 7);
 
   return html`
     <${Card} style=${{ marginBottom: 16 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>🗓 수업 스케줄</div>
-      ${student.scheduleMonth !== today().slice(0, 7) && html`
-        <div style=${{ fontSize: 11.5, color: C.gold, background: "#FBF4EA", borderRadius: 4, padding: "8px 10px", marginBottom: 12 }}>
-          ⚠ 매주 반복 수업 패턴은 ${student.scheduleMonth ? `${student.scheduleMonth}에` : "등록된 적이"} 등록돼 있어요. 이번 달(${today().slice(0, 7)}) 수업을 캘린더/수업료에 반영하려면 아래에서 다시 저장해 주세요.
+      <div style=${{ marginBottom: 14 }}>
+        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>편집할 달 — 왼쪽 폼과 오른쪽 달력이 이 달 기준으로 같이 움직여요. 달마다 따로 저장되니 다른 달을 골라도 지금 이 달 내용은 그대로 남아요.</div>
+        <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div style=${{ width: 140 }}><${MonthField} value=${selectedMonth} onChange=${setSelectedMonth} /></div>
+          ${selectedMonth !== todayMonthStr && html`<button onClick=${() => setSelectedMonth(todayMonthStr)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px", fontSize: 11.5, color: C.navy, cursor: "pointer" }}>이번 달로</button>`}
+          <span style=${{ fontSize: 11.5, color: C.slate }}>${activeSchedule.length > 0 ? `${activeSchedule.length}개 등록됨` : "등록된 게 없어요"}</span>
         </div>
-      `}
+      </div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, alignItems: "start" }}>
         <div>
           ${instanceEdit ? html`
@@ -2642,8 +2745,9 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setInstanceEdit(null)}>취소<//>
             </div>
             ${instanceEdit.source === "tutoring" && html`
-              <button onClick=${() => selectForEdit(instanceEdit._idx)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 16 }}>
-                이 요일 수업 시간을 통째로 수정하려면 여기
+              <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 8 }}>"이 날짜만 삭제"는 이 날짜의 이 시간 수업만 빠지고, 다른 날의 같은 시간 수업이나 같은 날의 다른 시간 수업은 그대로 남아요.</div>
+              <button onClick=${() => selectForEdit(instanceEdit._idx)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 16 }}>
+                이 시간 수업을 앞으로 계속(모든 날짜) 삭제/수정하려면 여기
               </button>
             `}
           ` : html`
@@ -2663,6 +2767,13 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               ${editingIndex != null && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${resetForm}>취소<//>`}
               ${justSubmitted && html`<span style=${{ fontSize: 11.5, color: C.navy, fontWeight: 700 }}>✓ ${form.day}요일 ${form.time}~${form.endTime} 등록됐어요</span>`}
             </div>
+            ${dupeMsg && html`
+              <div style=${{ fontSize: 11.5, color: C.danger, background: "#F7E9E6", borderRadius: 4, padding: "8px 10px", marginBottom: 16 }}>
+                <div style=${{ fontWeight: 700, marginBottom: 4 }}>이미 ${form.day}요일 ${form.time}~${form.endTime}로 등록돼 있어요</div>
+                <div style=${{ fontSize: 10.5, marginBottom: 6 }}>달력에 안 보인다면, 개별 날짜마다 "이 날짜만 삭제"를 눌러서 전부 제외돼 있을 수 있어요. 등록 자체는 남아있는 상태예요.</div>
+                <button onClick=${() => clearExceptionsForSlot(form.day, form.time, form.endTime)} disabled=${busy} style=${{ background: "none", border: "none", color: C.gold, fontWeight: 700, fontSize: 11.5, cursor: "pointer", padding: 0 }}>이 시간의 제외된 날짜 전부 복원해서 다시 보이기</button>
+              </div>
+            `}
             <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 16 }}>같은 요일에 시간을 또 등록하면 새 항목이 추가돼요 — 시간을 바꾸려면 오른쪽 달력에서 그 수업을 눌러 수정해 주세요.</div>
           `}
 
@@ -2703,33 +2814,15 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
               </div>
             `}
           </div>
-
-          <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 12, marginTop: 12 }}>
-            <button onClick=${() => setShowExceptions((v) => !v)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
-              ${showExceptions ? "▾" : "▸"} 이 날짜만 삭제로 제외한 날짜 ${(student.tutoringExceptions || []).length > 0 ? `(${(student.tutoringExceptions || []).length})` : ""}
-            </button>
-            ${showExceptions && html`
-              <div style=${{ marginTop: 10 }}>
-                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>매주 패턴을 다시 등록해도 아래 날짜들은 자동으로 살아나지 않아요. 실수로 뺐다면 복원을 눌러 주세요.</div>
-                ${(student.tutoringExceptions || []).length === 0 ? html`
-                  <div style=${{ fontSize: 11.5, color: C.slate }}>제외한 날짜가 없어요.</div>
-                ` : [...(student.tutoringExceptions || [])].sort().map((d) => html`
-                  <div key=${d} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${C.line}`, borderRadius: 4, padding: "6px 10px", marginBottom: 6 }}>
-                    <span style=${{ fontSize: 12 }}>${d}</span>
-                    <button onClick=${() => restoreTutoringOccurrence(d)} style=${{ background: "none", border: "none", color: C.gold, fontWeight: 700, fontSize: 11.5, cursor: "pointer", padding: 0 }}>복원</button>
-                  </div>
-                `)}
-              </div>
-            `}
-          </div>
         </div>
 
         <div>
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${SchoolEndTimesRow} schoolEndTimes=${student.schoolEndTimes} />
-          <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []}
-            tutoringMonth=${student.scheduleMonth} otherMonth=${student.otherScheduleMonth}
-            tutoringExceptions=${student.tutoringExceptions || []} onRemoveTutoring=${removeTutoringOccurrence} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
+          <${MonthlyScheduleGrid} scheduleByMonth=${student.scheduleByMonth} schedule=${student.schedule || []} scheduleMonth=${student.scheduleMonth}
+            monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []} otherMonth=${student.otherScheduleMonth}
+            viewMonth=${selectedMonth} onMonthChange=${setSelectedMonth}
+            tutoringExceptions=${student.tutoringExceptions || []} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
         </div>
       </div>
     <//>
@@ -2738,7 +2831,7 @@ function ScheduleGoalEditor({ student, saveRosterList, roster }) {
 
 // 학생 정보: personal info + schedule/goals editing, student-first (there's only ever one thing
 // to do per student here, unlike 학생 관리's category-first flow) — also owns add/delete-student.
-function StudentInfoSection({ roster, saveRosterList, selectedStudentId, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
   function handleDelete() {
     if (confirm(`${selected.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) {
@@ -2755,7 +2848,7 @@ function StudentInfoSection({ roster, saveRosterList, selectedStudentId, setSele
         </div>
         <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생 정보</div>
         <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
-        <${ScheduleGoalEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
+        <${ScheduleGoalEditor} student=${selected} updateStudentRosterEntry=${updateStudentRosterEntry} />
       </div>
     `;
   }
@@ -4106,8 +4199,8 @@ function MasterScheduleView({ roster, saveRosterList }) {
 function hasClassOn(student, dateStr) {
   const dayName = MASTER_SCHEDULE_DAY_NAMES[new Date(dateStr + "T00:00:00").getDay()];
   const exceptions = student.tutoringExceptions || [];
-  const patternMatch = dateStr.slice(0, 7) === student.scheduleMonth
-    && (student.schedule || []).some((s) => s.day === dayName) && !exceptions.includes(dateStr);
+  const pattern = patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, dateStr.slice(0, 7));
+  const patternMatch = pattern.some((s) => s.day === dayName && !isTutoringExcepted(exceptions, dateStr, s.time, s.endTime));
   const monthlyMatch = ((student.monthlyInstances || {})[dateStr.slice(0, 7)] || []).some((m) => m.date === dateStr);
   return patternMatch || monthlyMatch;
 }
@@ -4181,9 +4274,10 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
     const absent = records.filter(([, rec]) => rec.status === "absent");
     const makeupDone = absent.filter(([, rec]) => rec.makeupDone).length;
     const makeupNeeded = absent.length - makeupDone;
-    // 수업료 계산과 같은 기준(countPlannedSessions) — 주간 반복 패턴(scheduleMonth 일치 시) + 이 달
-    // monthlyInstances 중 과외(tutoring)만. 보강(makeup) 인스턴스는 정규 등록 수업일이 아니라서 제외.
-    const totalDays = countPlannedSessions(s.schedule, s.monthlyInstances, s.tutoringExceptions, month, s.scheduleMonth);
+    // 수업료 계산과 같은 기준(countPlannedSessions) — 주간 반복 패턴(scheduleByMonth, 없으면
+    // scheduleMonth 일치 시 legacy schedule로 폴백) + 이 달 monthlyInstances 중 과외(tutoring)만.
+    // 보강(makeup) 인스턴스는 정규 등록 수업일이 아니라서 제외.
+    const totalDays = countPlannedSessions(s.scheduleByMonth, s.schedule, s.scheduleMonth, s.monthlyInstances, s.tutoringExceptions, month);
     return { student: s, totalDays, present, absentCount: absent.length, makeupDone, makeupNeeded };
   }) : [];
 
@@ -6684,16 +6778,19 @@ const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 // that have actually happened yet. 보강("makeup") instances are excluded: a makeup class fills
 // in for one that was already billed (or excepted out) elsewhere, so counting it too would
 // double-bill it.
-function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, viewMonth, scheduleMonth) {
+function countPlannedSessions(scheduleByMonth, schedule, scheduleMonth, monthlyInstances, tutoringExceptions, viewMonth) {
   const [y, m] = viewMonth.split("-").map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
   let count = 0;
-  if (viewMonth === scheduleMonth) {
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
-      const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
-      if ((schedule || []).some((s) => s.day === dayName) && !(tutoringExceptions || []).includes(dateStr)) count++;
-    }
+  const pattern = patternForMonth(scheduleByMonth, schedule, scheduleMonth, viewMonth);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
+    const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+    // Counts per matching slot, not per day — a day with two separately-registered times (e.g.
+    // 월 7시 and 월 8시) is two billed sessions that day, not one.
+    pattern.forEach((s) => {
+      if (s.day === dayName && !isTutoringExcepted(tutoringExceptions, dateStr, s.time, s.endTime)) count++;
+    });
   }
   count += ((monthlyInstances || {})[viewMonth] || []).filter((inst) => inst.type === "tutoring").length;
   return count;
@@ -6712,13 +6809,13 @@ function countPlannedSessions(schedule, monthlyInstances, tutoringExceptions, vi
 //    repeat-every-week behavior as tutoring.
 // tutoringExceptions/otherExceptions hold specific dates ("YYYY-MM-DD") where a recurring
 // weekly-pattern item should be skipped that one time — e.g. cancelled for a holiday — without
-// touching the pattern itself. onRemoveTutoring/onRemoveOther, when passed, add that date to the
-// relevant exceptions list; only the entry that owns a given source can remove its occurrences
-// (the teacher's view passes onRemoveTutoring, the student's view passes onRemoveOther).
+// touching the pattern itself. tutoring chips have no inline remove button (removing one occurrence
+// vs. the whole weekly slot was easy to conflate — see the comment on canRemove below), so only
+// onRemoveOther (student's own "other academy" schedule) is wired to the calendar's quick ×.
 // viewMonth/onMonthChange make this a controlled component when the caller needs to know which
 // month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
 // month state) otherwise, which is all the schedule-only call sites need.
-function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveTutoring, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, tutoringMonth, otherMonth }) {
+function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, otherMonth }) {
   const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
   const viewMonth = viewMonthProp || internalMonth;
   const setViewMonth = onMonthChange || setInternalMonth;
@@ -6731,18 +6828,19 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  // tutoring/other are recurring weekly patterns that are only "registered" for one month at a
-  // time (student.scheduleMonth / student.otherScheduleMonth) — so they only render on the grid
-  // while the currently-viewed month matches the month they were last (re-)registered for.
-  // monthlyInstances is unaffected since each entry already carries its own concrete date.
-  const tutoringActive = !tutoringMonth || viewMonth === tutoringMonth;
+  // tutoring is resolved per the month currently on screen via patternForMonth (scheduleByMonth
+  // first, falling back to legacy schedule/scheduleMonth) — every month is symmetric, no more
+  // "active for this one registered month only" gating or separate upcoming-draft concept needed.
+  // other (otherSchedule) is still a single recurring pattern gated to one month at a time, since
+  // that's a separate, untouched feature.
+  const tutoring = patternForMonth(scheduleByMonth, schedule, scheduleMonth, viewMonth);
   const otherActive = !otherMonth || viewMonth === otherMonth;
 
   function itemsForDay(d) {
     const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
     const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
     return [
-      ...(tutoringActive ? (tutoring || []) : []).map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !(tutoringExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
+      ...tutoring.map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !isTutoringExcepted(tutoringExceptions, dateStr, s.time, s.endTime)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
       ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강", _midx: monthly.indexOf(s) })),
       ...(otherActive ? (other || []) : []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
@@ -6787,7 +6885,13 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
               style=${{ border: `1px solid ${isDragOver ? C.gold : isToday ? C.gold : C.line}`, borderRadius: 4, padding: 3, minHeight: 54, background: isDragOver ? "#FBF4EA" : undefined }}>
               <div style=${{ fontSize: 10, color: isToday ? C.gold : C.slate, fontWeight: isToday ? 700 : 400, marginBottom: 2 }}>${d}</div>
               ${items.map((it, ii) => {
-                const canRemove = (it.source === "tutoring" && onRemoveTutoring) || (it.source === "other" && onRemoveOther);
+                // Tutoring (매주 반복 수업) chips deliberately have no inline × — a quick × here used
+                // to only except that one date (tutoringExceptions), leaving the weekly registration
+                // itself in place, which teachers repeatedly mistook for "delete this class entirely"
+                // (a known confusion, see handoff.md). Clicking the chip now always opens the
+                // instanceEdit panel, where "이 날짜만 삭제" (single date) and the link to fully
+                // edit/delete the weekly slot are two clearly separate, clearly labeled actions.
+                const canRemove = it.source === "other" && onRemoveOther;
                 const canSelect = (it.source === "tutoring" || it.source === "monthly") && onSelectItem;
                 const canDrag = (it.source === "tutoring" || it.source === "monthly") && onMoveOccurrence;
                 return html`
@@ -6801,7 +6905,7 @@ function MonthlyScheduleGrid({ tutoring, monthlyInstances, other, tutoringExcept
                     style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700, cursor: canSelect ? (canDrag ? "grab" : "pointer") : undefined }}>
                     ${it.time}${it.endTime ? `~${it.endTime}` : ""} ${it.label}
                     ${canRemove && html`
-                      <span onClick=${(e) => { if (canSelect) e.stopPropagation(); (it.source === "tutoring" ? onRemoveTutoring : onRemoveOther)(it.dateStr); }}
+                      <span onClick=${(e) => { if (canSelect) e.stopPropagation(); onRemoveOther(it.dateStr); }}
                         title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>
                     `}
                   </div>
@@ -6837,7 +6941,7 @@ function TuitionEditor({ student, data, updateData }) {
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
   }
 
-  const plannedCount = countPlannedSessions(student.schedule, student.monthlyInstances, student.tutoringExceptions, viewMonth, student.scheduleMonth);
+  const plannedCount = countPlannedSessions(student.scheduleByMonth, student.schedule, student.scheduleMonth, student.monthlyInstances, student.tutoringExceptions, viewMonth);
   const calculated = plannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
   const managementFeeNum = Number(managementFee) || 0;
   const subtotal = calculated + managementFeeNum;
@@ -6943,13 +7047,13 @@ function TuitionEditor({ student, data, updateData }) {
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>이번 달 계획된 수업</div>
         <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선불 청구라서 실제 출석이 아니라 이 달에 예정된 수업 횟수로 계산돼요. 특정 날짜를 빼거나 과외/보강 일정을 추가하려면 위쪽 "수업 스케줄"에서 조정해 주세요.</div>
-        ${viewMonth !== student.scheduleMonth && html`
+        ${patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, viewMonth).length === 0 && html`
           <div style=${{ fontSize: 11.5, color: C.danger, background: "#F7E9E6", borderRadius: 4, padding: "8px 10px", marginBottom: 10 }}>
-            ⚠ ${viewMonth}에는 매주 반복 수업 패턴이 등록돼 있지 않아서(${student.scheduleMonth ? `${student.scheduleMonth}에 등록됨` : "등록된 적 없음"}), 아래 수업 횟수에 반영되지 않았어요. 보강/추가 일정으로 넣은 건만 잡혀요.
+            ⚠ ${viewMonth}에는 등록된 매주 반복 수업 패턴이 없어서 아래 수업 횟수에 반영되지 않았어요. 보강/추가 일정으로 넣은 건만 잡혀요.
           </div>
         `}
-        <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${[]}
-          tutoringMonth=${student.scheduleMonth}
+        <${MonthlyScheduleGrid} scheduleByMonth=${student.scheduleByMonth} schedule=${student.schedule || []} scheduleMonth=${student.scheduleMonth}
+          monthlyInstances=${student.monthlyInstances || {}} other=${[]}
           tutoringExceptions=${student.tutoringExceptions || []}
           viewMonth=${viewMonth} onMonthChange=${setViewMonth} />
       <//>
@@ -7111,8 +7215,9 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
         <${SchoolEndTimesRow} schoolEndTimes=${schoolEndTimes} />
-        <${MonthlyScheduleGrid} tutoring=${student.schedule || []} monthlyInstances=${student.monthlyInstances || {}} other=${items}
-          tutoringMonth=${student.scheduleMonth} otherMonth=${student.otherScheduleMonth}
+        <${MonthlyScheduleGrid} scheduleByMonth=${student.scheduleByMonth} schedule=${student.schedule || []} scheduleMonth=${student.scheduleMonth}
+          monthlyInstances=${student.monthlyInstances || {}} other=${items}
+          otherMonth=${student.otherScheduleMonth}
           tutoringExceptions=${student.tutoringExceptions || []}
           otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
       <//>
