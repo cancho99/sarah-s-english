@@ -2116,7 +2116,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
       <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
-        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 관리 > 출결·수업료에서 입력해 주세요." />` : isMobile ? html`
+        ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 정보 > (학생 선택)에서 입력해 주세요." />` : isMobile ? html`
           <div>
             ${rows.map(({ student, rec }) => html`
               <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "9px 0", borderTop: `1px solid ${C.line}` }}>
@@ -6943,11 +6943,18 @@ function TuitionEditor({ student, data, updateData }) {
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
   }
 
-  const plannedCount = countPlannedSessions(student.scheduleByMonth, student.schedule, student.scheduleMonth, student.monthlyInstances, student.tutoringExceptions, viewMonth);
-  const calculated = plannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
+  const rec = (data.tuitionRecords || {})[viewMonth];
+  // 확정 전엔 항상 실시간 스케줄 기준으로 계산하고, 확정 후엔 rec에 얼려둔 값을 그대로 보여준다 —
+  // "수정"을 눌러 잠금을 풀기 전까진 스케줄이 바뀌어도 이 달 수업료는 안 바뀌어야 하기 때문.
+  const isConfirmed = !!rec?.confirmed;
+  const livePlannedCount = countPlannedSessions(student.scheduleByMonth, student.schedule, student.scheduleMonth, student.monthlyInstances, student.tutoringExceptions, viewMonth);
+  const liveCalculated = livePlannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
+  const plannedCount = isConfirmed ? (rec.plannedCount || 0) : livePlannedCount;
+  const calculated = isConfirmed ? (rec.calculatedAmount || 0) : liveCalculated;
+  const displayHourlyRate = isConfirmed ? (rec.hourlyRate || 0) : (Number(data.hourlyRate) || 0);
+  const displaySessionHours = isConfirmed ? (rec.sessionHours || 0) : (Number(data.sessionHours) || 0);
   const managementFeeNum = Number(managementFee) || 0;
   const subtotal = calculated + managementFeeNum;
-  const rec = (data.tuitionRecords || {})[viewMonth];
   const finalAmount = overrideAmount !== "" ? Number(overrideAmount) : subtotal;
 
   async function saveRecord(publishOverride) {
@@ -6966,11 +6973,43 @@ function TuitionEditor({ student, data, updateData }) {
           published,
           paid: rec?.paid || false,
           paidAt: rec?.paidAt || null,
+          confirmed: rec?.confirmed || false,
           updatedAt: Date.now(),
         },
       },
     }));
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+
+  async function confirmRecord() {
+    await updateData((d) => ({
+      ...d,
+      tuitionRecords: {
+        ...(d.tuitionRecords || {}),
+        [viewMonth]: {
+          plannedCount, hourlyRate: d.hourlyRate || 0, sessionHours: d.sessionHours || 0,
+          calculatedAmount: calculated,
+          managementFee: managementFeeNum,
+          overrideAmount: overrideAmount !== "" ? Number(overrideAmount) : null,
+          note: note.trim(),
+          amount: finalAmount,
+          published: rec?.published || false,
+          paid: rec?.paid || false,
+          paidAt: rec?.paidAt || null,
+          confirmed: true,
+          updatedAt: Date.now(),
+        },
+      },
+    }));
+    setSavedMsg("확정했어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+
+  async function unconfirmRecord() {
+    await updateData((d) => ({
+      ...d,
+      tuitionRecords: { ...(d.tuitionRecords || {}), [viewMonth]: { ...(d.tuitionRecords || {})[viewMonth], confirmed: false, updatedAt: Date.now() } },
+    }));
+    setSavedMsg("수정할 수 있어요."); setTimeout(() => setSavedMsg(""), 2000);
   }
 
   // Separate from saveRecord — a pure payment-received flag, so marking it doesn't require
@@ -7020,8 +7059,8 @@ function TuitionEditor({ student, data, updateData }) {
       <table>
         <tr><th>항목</th><th>내용</th></tr>
         <tr><td>이번 달 예정 수업 횟수</td><td>${plannedCount}회</td></tr>
-        <tr><td>회당 수업 시간</td><td>${data.sessionHours || 0}시간</td></tr>
-        <tr><td>시간당 수업료</td><td>${(data.hourlyRate || 0).toLocaleString()}원</td></tr>
+        <tr><td>회당 수업 시간</td><td>${displaySessionHours}시간</td></tr>
+        <tr><td>시간당 수업료</td><td>${displayHourlyRate.toLocaleString()}원</td></tr>
         <tr><td>수업료 소계</td><td>${calculated.toLocaleString()}원</td></tr>
         <tr><td>학업관리비</td><td>${managementFeeNum.toLocaleString()}원</td></tr>
         <tr class="amtrow"><td>납부하실 금액</td><td>${finalAmount.toLocaleString()}원</td></tr>
@@ -7061,26 +7100,33 @@ function TuitionEditor({ student, data, updateData }) {
       <//>
 
       <${Card}>
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${viewMonth} 수업료</div>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+          ${viewMonth} 수업료
+          ${isConfirmed && html`<span style=${{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.navy, borderRadius: 3, padding: "2px 7px" }}>🔒 확정됨</span>`}
+        </div>
         <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>
-          예정된 수업 ${plannedCount}회 × ${data.sessionHours || 0}시간 × ${(data.hourlyRate || 0).toLocaleString()}원
+          예정된 수업 ${plannedCount}회 × ${displaySessionHours}시간 × ${displayHourlyRate.toLocaleString()}원
           = <b style=${{ color: C.navy }}>${calculated.toLocaleString()}원</b>
         </div>
+        ${isConfirmed && html`<div style=${{ fontSize: 11.5, color: C.navy, background: "#EDF1F6", borderRadius: 4, padding: "8px 10px", marginBottom: 10 }}>🔒 확정된 달이에요. 이후 수업 스케줄이 바뀌어도 이 금액은 자동으로 바뀌지 않아요. 바꾸려면 아래 "수정"을 눌러 잠금을 풀어주세요.</div>`}
         <${Field} label="학업관리비 (원) — 해당 없는 학생은 비워두면 0원">
-          <input style=${inputStyle} type="number" value=${managementFee} onChange=${(e) => setManagementFee(e.target.value)} placeholder="0" />
+          <input style=${inputStyle} type="number" value=${managementFee} onChange=${(e) => setManagementFee(e.target.value)} placeholder="0" disabled=${isConfirmed} />
         <//>
-        <${Field} label="비고 (예: 7/1 결석 → 8월로 이월. 학부모에게도 보여요)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
+        <${Field} label="비고 (예: 7/1 결석 → 8월로 이월. 학부모에게도 보여요)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${note} onChange=${(e) => setNote(e.target.value)} disabled=${isConfirmed} /><//>
         <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>수업료 ${calculated.toLocaleString()}원 + 학업관리비 ${managementFeeNum.toLocaleString()}원 = 소계 <b style=${{ color: C.navy }}>${subtotal.toLocaleString()}원</b></div>
         <${Field} label="최종 금액 직접 입력 (비워두면 위 소계 사용)">
-          <input style=${inputStyle} type="number" value=${overrideAmount} onChange=${(e) => setOverrideAmount(e.target.value)} placeholder=${String(subtotal)} />
+          <input style=${inputStyle} type="number" value=${overrideAmount} onChange=${(e) => setOverrideAmount(e.target.value)} placeholder=${String(subtotal)} disabled=${isConfirmed} />
         <//>
         <div style=${{ ...serif, fontSize: 18, color: C.navy, margin: "10px 0" }}>최종 금액: ${finalAmount.toLocaleString()}원</div>
         <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord()}>저장 (공개 안 함)<//>
+          ${!isConfirmed && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord()}>저장 (공개 안 함)<//>`}
           ${rec?.published
             ? html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord(false)}>학부모 공개 취소<//>`
             : html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => saveRecord(true)}>학부모에게 안내(공개)<//>`}
           <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${printInvoice}>🖨 명세서 인쇄/PDF<//>
+          ${isConfirmed
+            ? html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${unconfirmRecord}>수정<//>`
+            : html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${confirmRecord}>확정<//>`}
           ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
         </div>
         ${rec?.published && html`<div style=${{ fontSize: 11.5, color: C.gold, marginTop: 6 }}>✓ 학부모 화면에 공개되어 있어요.</div>`}
