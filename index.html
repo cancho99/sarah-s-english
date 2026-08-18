@@ -169,6 +169,25 @@ const { useState, useEffect, useRef } = React;
 const META_COLLECTION = "sarahsEnglishMeta";
 const META_DOC_ID = "main";
 const STUDENTS_COLLECTION = "sarahsEnglishStudents";
+// Persists just enough to restore a login across a page refresh — role + which student (for
+// student/parent) — never the passcode itself. Teacher role has no separate token to check, so
+// restoring it here trusts localStorage the same way the in-memory session already did once
+// TeacherLogin passed; that's an accepted tradeoff for a small single-teacher site, not a new one.
+const SESSION_STORAGE_KEY = "sarahsEnglishSession";
+function saveSessionToStorage(session) {
+  try {
+    if (!session) { localStorage.removeItem(SESSION_STORAGE_KEY); return; }
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(
+      session.role === "teacher" ? { role: "teacher" } : { role: session.role, studentId: session.student.id }
+    ));
+  } catch (e) {}
+}
+function loadSessionFromStorage() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
 
 let store = null; // in-memory cache: { roster, teacherAuth, studentData }
 
@@ -1215,6 +1234,23 @@ function App() {
         setAnnouncement(s.announcement || null);
         setExamKeyLibrary(s.examKeyLibrary || []);
         setSharedDriveFolderLink(s.sharedDriveFolderLink || "");
+        // Restore a login that survived a refresh — only once, right after the roster we need to
+        // look student sessions up against first arrives. A stale/deleted student id just falls
+        // through to the logged-out home screen instead of restoring anything.
+        const saved = loadSessionFromStorage();
+        if (saved) {
+          if (saved.role === "teacher") {
+            setSession({ role: "teacher" }); setScreen("teacherDash");
+          } else if (saved.role === "student" || saved.role === "parent") {
+            const s2 = (s.roster || []).find((r) => r.id === saved.studentId);
+            if (s2) {
+              setSession({ role: saved.role, student: s2 });
+              setScreen(saved.role === "student" ? "studentDash" : "parentDash");
+            } else {
+              saveSessionToStorage(null);
+            }
+          }
+        }
       } catch (e) {
         if (!cancelled) setLoadError(true);
       }
@@ -1319,6 +1355,7 @@ function App() {
   }
 
   function logout() {
+    saveSessionToStorage(null);
     setSession(null); setSelectedStudentId(null); setErr(""); setScreen("home");
   }
 
@@ -1365,19 +1402,19 @@ function App() {
       ${isModal && html`<${Modal} onClose=${() => setScreen("home")}>
         ${screen === "levelTest" && html`<${LevelTestBooking} onBack=${() => setScreen("home")} onSubmit=${async (b) => { await addBooking(b); }} />`}
         ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("home")}
-          onSetPass=${async (p) => { const ta = { passcode: p }; await saveTeacherAuthGlobal(ta); setSession({ role: "teacher" }); setScreen("teacherDash"); }}
-          onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { setSession({ role: "teacher" }); setScreen("teacherDash"); } else setErr("비밀번호가 맞지 않아요."); }}
+          onSetPass=${async (p) => { const ta = { passcode: p }; await saveTeacherAuthGlobal(ta); const s = { role: "teacher" }; saveSessionToStorage(s); setSession(s); setScreen("teacherDash"); }}
+          onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { const s = { role: "teacher" }; saveSessionToStorage(s); setSession(s); setScreen("teacherDash"); } else setErr("비밀번호가 맞지 않아요."); }}
           err=${err} />`}
         ${screen === "studentLogin" && html`<${StudentParentLogin} mode="student" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
-            setSession({ role: "student", student: s }); setScreen("studentDash");
+            const sess = { role: "student", student: s }; saveSessionToStorage(sess); setSession(sess); setScreen("studentDash");
             // Fire-and-forget: recording the login time shouldn't block or fail the login itself.
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastStudentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "student_login");
           }} />`}
         ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
-            setSession({ role: "parent", student: s }); setScreen("parentDash");
+            const sess = { role: "parent", student: s }; saveSessionToStorage(sess); setSession(sess); setScreen("parentDash");
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastParentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "parent_login");
           }} />`}
