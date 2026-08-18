@@ -5849,6 +5849,11 @@ function VocabResultRow({ r, title, updateData }) {
       }),
     }));
   }
+  async function removeResult(e) {
+    e.stopPropagation();
+    if (!confirm("이 응시 기록을 삭제할까요? (중복 제출 등을 정리할 때 사용하세요)")) return;
+    await updateData((d) => ({ ...d, vocabResults: d.vocabResults.filter((x) => x.id !== r.id) }));
+  }
 
   return html`
     <div style=${{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.line}` }}>
@@ -5856,6 +5861,7 @@ function VocabResultRow({ r, title, updateData }) {
         <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
         <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${ok ? "합격" : "재시험 필요"}</span>
         ${hasBreakdown && html`<span style=${{ fontSize: 11, color: C.slate, marginLeft: "auto" }}>${open ? "▲ 답안 닫기" : "▼ 답안 보기"}</span>`}
+        <button onClick=${removeResult} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13, padding: "0 2px" }}>✕</button>
       </div>
       ${open && hasBreakdown && html`
         <div style=${{ marginTop: 8, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 4, padding: 10 }}>
@@ -6219,14 +6225,19 @@ function ExamEditor({ data, updateData }) {
 // the teacher WHAT a student actually answered, only how many were wrong. Reads r.answers (added
 // alongside the student edit-answers feature); older results saved before that field existed just
 // show the score line with no expand affordance, same as before.
-function MockResultRow({ r, answerKey }) {
+function MockResultRow({ r, answerKey, updateData }) {
   const [open, setOpen] = useState(false);
   const hasAnswers = Array.isArray(r.answers) && r.answers.length === answerKey.length;
+  async function removeResult() {
+    if (!confirm("이 응시 기록을 삭제할까요? (중복 제출 등을 정리할 때 사용하세요)")) return;
+    await updateData((d) => ({ ...d, mockExamResults: d.mockExamResults.filter((x) => x.id !== r.id) }));
+  }
   return html`
     <div style=${{ marginBottom: 6 }}>
       <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
         <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}${r.editedAt ? " (수정됨)" : ""}${r.wrong && r.wrong.length > 0 ? ` (틀린 문제: ${r.wrong.join(", ")})` : ""}</span>
         ${hasAnswers && html`<button onClick=${() => setOpen((o) => !o)} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>${open ? "답 접기" : "답 보기"}</button>`}
+        <button onClick=${removeResult} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13, padding: "0 2px", marginLeft: "auto" }}>✕</button>
       </div>
       ${open && hasAnswers && html`
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, background: C.ivory, padding: 8, borderRadius: 4 }}>
@@ -6426,7 +6437,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               </div>
               ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: notSubmittedPastDeadline ? C.danger : t.expired ? C.gold : C.slate, fontWeight: notSubmittedPastDeadline ? 700 : 400, marginTop: 8 }}>${t.expired ? "⏳ 기간만료 (밀린 목록에서 빠짐)" : notSubmittedPastDeadline ? "✗ 마감이 지났는데 아직 응시하지 않았어요." : "아직 응시하지 않았어요."}</div>` : html`
                 <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                  ${results.map((r) => html`<${MockResultRow} key=${r.id} r=${r} answerKey=${t.answerKey} />`)}
+                  ${results.map((r) => html`<${MockResultRow} key=${r.id} r=${r} answerKey=${t.answerKey} updateData=${updateData} />`)}
                 </div>
               `}
             `}
@@ -6445,6 +6456,15 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [wrong, setWrong] = useState([]);
+  // onSubmit is a Firestore round-trip in the parent; without this guard, tapping "결과 저장하고
+  // 나가기" more than once before that resolves (slow/mobile network) writes one duplicate result
+  // per extra tap, since each call appends a fresh uid()'d entry independently.
+  const [saving, setSaving] = useState(false);
+  async function submitResult() {
+    if (saving) return;
+    setSaving(true);
+    await onSubmit(result, total, wrong, answers);
+  }
 
   function pick(i, val) { if (submitted) return; setAnswers((a) => a.map((v, idx) => (idx === i ? val : v))); }
 
@@ -6466,7 +6486,7 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
           <div style=${{ fontSize: 34, ...serif, color: C.gold }}>${result} <span style=${{ fontSize: 18, color: C.slate }}>/ ${total}</span></div>
           ${wrong.length > 0 && html`<div style=${{ fontSize: 13, color: C.danger, marginTop: 10 }}>틀린 문제: ${wrong.join(", ")}번</div>`}
         <//>
-        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total, wrong, answers)}>결과 저장하고 나가기<//>
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${saving} onClick=${submitResult}>${saving ? "저장 중..." : "결과 저장하고 나가기"}<//>
       </div>
     `;
   }
@@ -7650,6 +7670,14 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [breakdown, setBreakdown] = useState(null);
+  // See the same guard in MockExamTaker — without it, repeated taps on "결과 저장하고 나가기"
+  // before the parent's Firestore write resolves each append their own duplicate result.
+  const [saving, setSaving] = useState(false);
+  async function submitResult() {
+    if (saving) return;
+    setSaving(true);
+    await onSubmit(result, total, breakdown);
+  }
 
   function pick(qi, val) { if (submitted) return; setAnswers((a) => a.map((v, idx) => (idx === qi ? val : v))); }
 
@@ -7697,7 +7725,7 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
             `)}
           <//>
         `}
-        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => onSubmit(result, total, breakdown)}>결과 저장하고 나가기<//>
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${saving} onClick=${submitResult}>${saving ? "저장 중..." : "결과 저장하고 나가기"}<//>
       </div>
     `;
   }
