@@ -2821,7 +2821,7 @@ function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
           <div style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700, marginBottom: 8 }}>월간 시간표 (과외 + 보강 + 학생이 입력한 다른 학원)</div>
           <${SchoolEndTimesRow} schoolEndTimes=${student.schoolEndTimes} />
           <${MonthlyScheduleGrid} scheduleByMonth=${student.scheduleByMonth} schedule=${student.schedule || []} scheduleMonth=${student.scheduleMonth}
-            monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []} otherMonth=${student.otherScheduleMonth}
+            monthlyInstances=${student.monthlyInstances || {}} other=${student.otherSchedule || []} otherInstances=${student.otherInstances || {}} otherMonth=${student.otherScheduleMonth}
             viewMonth=${selectedMonth} onMonthChange=${setSelectedMonth}
             tutoringExceptions=${student.tutoringExceptions || []} onSelectItem=${selectInstance} onMoveOccurrence=${moveOccurrence} />
         </div>
@@ -6873,15 +6873,20 @@ function countPlannedSessions(scheduleByMonth, schedule, scheduleMonth, monthlyI
 //    told apart in the calendar.
 //  - other: student.otherSchedule — student-owned, day-of-week recurring "other academies", same
 //    repeat-every-week behavior as tutoring.
+//  - otherInstances: student.otherInstances[month] — student-owned, specific-date one-offs for
+//    other academies (e.g. a single math makeup class, or just-this-week's time change) that
+//    don't belong in the weekly otherSchedule pattern at all. Mirrors monthlyInstances but has no
+//    `type` field since every entry here is inherently a one-off.
 // tutoringExceptions/otherExceptions hold specific dates ("YYYY-MM-DD") where a recurring
 // weekly-pattern item should be skipped that one time — e.g. cancelled for a holiday — without
 // touching the pattern itself. tutoring chips have no inline remove button (removing one occurrence
 // vs. the whole weekly slot was easy to conflate — see the comment on canRemove below), so only
-// onRemoveOther (student's own "other academy" schedule) is wired to the calendar's quick ×.
+// onRemoveOther (student's own "other academy" schedule) and onRemoveOtherInstance (the one-off
+// entries above) are wired to the calendar's quick ×.
 // viewMonth/onMonthChange make this a controlled component when the caller needs to know which
 // month is on screen (e.g. tuition calc must match the visible month); uncontrolled (own internal
 // month state) otherwise, which is all the schedule-only call sites need.
-function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthlyInstances, other, tutoringExceptions, otherExceptions, onRemoveOther, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, otherMonth }) {
+function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthlyInstances, other, otherInstances, tutoringExceptions, otherExceptions, onRemoveOther, onRemoveOtherInstance, onSelectItem, onMoveOccurrence, viewMonth: viewMonthProp, onMonthChange, otherMonth }) {
   const [internalMonth, setInternalMonth] = useState(today().slice(0, 7));
   const viewMonth = viewMonthProp || internalMonth;
   const setViewMonth = onMonthChange || setInternalMonth;
@@ -6890,6 +6895,7 @@ function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthly
   const startWeekday = new Date(y, m - 1, 1).getDay();
   const daysInMonth = new Date(y, m, 0).getDate();
   const monthly = (monthlyInstances || {})[viewMonth] || [];
+  const otherMonthly = (otherInstances || {})[viewMonth] || [];
   const cells = [];
   for (let i = 0; i < startWeekday; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -6909,6 +6915,7 @@ function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthly
       ...tutoring.map((s, idx) => ({ ...s, _idx: idx })).filter((s) => s.day === dayName && !isTutoringExcepted(tutoringExceptions, dateStr, s.time, s.endTime)).map((s) => ({ ...s, source: "tutoring", label: "영어과외" })),
       ...monthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "monthly", label: s.type === "tutoring" ? "영어과외" : "영어보강", _midx: monthly.indexOf(s) })),
       ...(otherActive ? (other || []) : []).filter((s) => s.day === dayName && !(otherExceptions || []).includes(dateStr)).map((s) => ({ ...s, source: "other", label: s.name || "학원" })),
+      ...otherMonthly.filter((s) => s.date === dateStr).map((s) => ({ ...s, source: "otherInstance", label: s.name || "학원" })),
     ].sort((a, b) => a.time.localeCompare(b.time)).map((it) => ({ ...it, dateStr }));
   }
 
@@ -6957,9 +6964,10 @@ function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthly
                 // (a known confusion, see handoff.md). Clicking the chip now always opens the
                 // instanceEdit panel, where "이 날짜만 삭제" (single date) and the link to fully
                 // edit/delete the weekly slot are two clearly separate, clearly labeled actions.
-                const canRemove = it.source === "other" && onRemoveOther;
+                const canRemove = (it.source === "other" && onRemoveOther) || (it.source === "otherInstance" && onRemoveOtherInstance);
                 const canSelect = (it.source === "tutoring" || it.source === "monthly") && onSelectItem;
                 const canDrag = (it.source === "tutoring" || it.source === "monthly") && onMoveOccurrence;
+                const isOther = it.source === "other" || it.source === "otherInstance";
                 return html`
                   <div key=${ii} onClick=${canSelect ? () => onSelectItem(it) : undefined}
                     draggable=${canDrag ? true : undefined}
@@ -6968,10 +6976,10 @@ function MonthlyScheduleGrid({ scheduleByMonth, schedule, scheduleMonth, monthly
                       e.dataTransfer.setData("text/plain", JSON.stringify({ source: it.source, dateStr: it.dateStr, time: it.time, endTime: it.endTime || "", type: it.type, _idx: it._idx, _midx: it._midx }));
                     } : undefined}
                     title=${canSelect ? "눌러서 이 날짜 시간 수정 · 드래그해서 다른 날로 이동 (Alt 누른 채 드래그하면 복사)" : undefined}
-                    style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: it.source === "other" ? "#EEF2F6" : "#FBF4EA", color: it.source === "other" ? C.ink : C.gold, fontWeight: it.source === "other" ? 500 : 700, cursor: canSelect ? (canDrag ? "grab" : "pointer") : undefined }}>
+                    style=${{ position: "relative", fontSize: 9, padding: "1px 3px", marginBottom: 2, borderRadius: 2, background: isOther ? "#EEF2F6" : "#FBF4EA", color: isOther ? C.ink : C.gold, fontWeight: isOther ? 500 : 700, cursor: canSelect ? (canDrag ? "grab" : "pointer") : undefined }}>
                     ${it.time}${it.endTime ? `~${it.endTime}` : ""} ${it.label}
                     ${canRemove && html`
-                      <span onClick=${(e) => { if (canSelect) e.stopPropagation(); onRemoveOther(it.dateStr); }}
+                      <span onClick=${(e) => { if (canSelect) e.stopPropagation(); if (it.source === "other") onRemoveOther(it.dateStr); else onRemoveOtherInstance(it); }}
                         title="이 날짜만 삭제" style=${{ position: "absolute", top: -3, right: -3, width: 10, height: 10, lineHeight: "10px", textAlign: "center", borderRadius: "50%", background: C.danger, color: "#fff", fontSize: 8, cursor: "pointer" }}>×</span>
                     `}
                   </div>
@@ -7229,9 +7237,20 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   const [saved, setSaved] = useState(false);
   const [schoolEndTimes, setSchoolEndTimes] = useState(student.schoolEndTimes || {});
   const [schoolSaved, setSchoolSaved] = useState(false);
+  // 매주 반복 패턴(otherSchedule)과 별개로, 이번 주만 있는 보강 등 특정 날짜 하나짜리 다른 학원
+  // 일정을 등록하는 폼. otherInstances[월]에 날짜 그대로 쌓이고, otherSchedule과 달리 반복되지
+  // 않으므로 exceptions 없이 그냥 배열에서 지우면 된다.
+  const [instDate, setInstDate] = useState(today());
+  const [instName, setInstName] = useState(OTHER_SCHEDULE_PRESETS[0]);
+  const [instCustomName, setInstCustomName] = useState("");
+  const [instTime, setInstTime] = useState("18:00");
+  const [instEndTime, setInstEndTime] = useState("19:00");
+  const [instSaved, setInstSaved] = useState(false);
   useEffect(() => {
     setItems(student.otherSchedule || []); setSaved(false);
     setSchoolEndTimes(student.schoolEndTimes || {}); setSchoolSaved(false);
+    setInstDate(today()); setInstName(OTHER_SCHEDULE_PRESETS[0]); setInstCustomName("");
+    setInstTime("18:00"); setInstEndTime("19:00"); setInstSaved(false);
   }, [student.id]);
 
   function addSlot() { setItems([...items, { day: "월", time: "18:00", endTime: "19:00", name: "수학학원" }]); setSaved(false); }
@@ -7254,6 +7273,29 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
   }
   async function removeOtherOccurrence(dateStr) {
     await updateStudentRosterEntry(student.id, (r) => ({ ...r, otherScheduleExceptions: [...new Set([...(r.otherScheduleExceptions || []), dateStr])] }));
+  }
+
+  const upcomingInstances = Object.values(student.otherInstances || {}).flat()
+    .filter((it) => it.date >= today()).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  async function addOtherInstance() {
+    const name = (instName === "기타" ? instCustomName : instName).trim();
+    if (!instDate || !name) return;
+    const monthKey = instDate.slice(0, 7);
+    await updateStudentRosterEntry(student.id, (r) => ({
+      ...r,
+      otherInstances: {
+        ...(r.otherInstances || {}),
+        [monthKey]: [...((r.otherInstances || {})[monthKey] || []), { id: uid(), date: instDate, time: instTime, endTime: instEndTime, name }],
+      },
+    }));
+    setInstSaved(true); setTimeout(() => setInstSaved(false), 2000);
+  }
+  async function removeOtherInstance(item) {
+    const monthKey = item.date.slice(0, 7);
+    await updateStudentRosterEntry(student.id, (r) => ({
+      ...r,
+      otherInstances: { ...(r.otherInstances || {}), [monthKey]: ((r.otherInstances || {})[monthKey] || []).filter((x) => x.id !== item.id) },
+    }));
   }
 
   function setSchoolEndTime(day, val) { setSchoolEndTimes((s) => ({ ...s, [day]: val })); setSchoolSaved(false); }
@@ -7325,13 +7367,48 @@ function StudentScheduleEditor({ student, updateStudentRosterEntry }) {
         </div>
       <//>
       <${Card}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 4 }}>➕ 개별 일정 추가 (보강 · 이번 주만 시간 변경 등)</div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>매주 반복이 아니라 특정 날짜 하루만 있는 다른 학원 일정을 등록해 주세요. 예: 이번 주 수학 보강, 이번 주만 시간이 바뀐 경우. 선생님도 이 내용을 볼 수 있어요.</div>
+        <div style=${{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>날짜</div>
+            <${DateField} value=${instDate} onChange=${setInstDate} />
+          </div>
+          <select style=${{ ...inputStyle, marginBottom: 0, width: 110 }} value=${instName} onChange=${(e) => setInstName(e.target.value)}>
+            ${OTHER_SCHEDULE_PRESETS.map((n) => html`<option key=${n} value=${n}>${n}</option>`)}
+            <option value="기타">기타</option>
+          </select>
+          ${instName === "기타" && html`<input style=${{ ...inputStyle, marginBottom: 0, flex: 1, minWidth: 100 }} value=${instCustomName} onChange=${(e) => setInstCustomName(e.target.value)} placeholder="학원/과목 이름 입력" />`}
+        </div>
+        <div style=${{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          <${TimeField} value=${instTime} onChange=${setInstTime} />
+          <span style=${{ color: C.slate }}>~</span>
+          <${TimeField} value=${instEndTime} onChange=${setInstEndTime} />
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${addOtherInstance}>추가<//>
+          ${instSaved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>추가됐어요.</span>`}
+        </div>
+        ${upcomingInstances.length > 0 && html`
+          <div style=${{ marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate, marginBottom: 8 }}>등록된 개별 일정</div>
+            ${upcomingInstances.map((it) => html`
+              <div key=${it.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}>
+                <div>${fmtDateDay(it.date)} · ${it.time}${it.endTime ? `~${it.endTime}` : ""} · ${it.name}</div>
+                <button onClick=${() => removeOtherInstance(it)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 14 }}>✕</button>
+              </div>
+            `)}
+          </div>
+        `}
+      <//>
+      <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>월간 시간표 (과외 + 보강 + 다른 학원)</div>
         <${SchoolEndTimesRow} schoolEndTimes=${schoolEndTimes} />
         <${MonthlyScheduleGrid} scheduleByMonth=${student.scheduleByMonth} schedule=${student.schedule || []} scheduleMonth=${student.scheduleMonth}
-          monthlyInstances=${student.monthlyInstances || {}} other=${items}
+          monthlyInstances=${student.monthlyInstances || {}} other=${items} otherInstances=${student.otherInstances || {}}
           otherMonth=${student.otherScheduleMonth}
           tutoringExceptions=${student.tutoringExceptions || []}
-          otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} />
+          otherExceptions=${student.otherScheduleExceptions || []} onRemoveOther=${removeOtherOccurrence} onRemoveOtherInstance=${removeOtherInstance} />
       <//>
     </div>
   `;
