@@ -6565,6 +6565,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const [studySubject, setStudySubject] = useState("");
   const [studyContent, setStudyContent] = useState("");
   const [resumedFromSession, setResumedFromSession] = useState(false);
+  const [studyReminderDismissed, setStudyReminderDismissed] = useState(false);
 
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
@@ -6656,6 +6657,9 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
   const todayTotalMin = todayEntries.reduce((sum, s) => sum + (s.minutes || 0), 0);
   const monthTotalMin = monthlyStudyMinutes(studyLog, todayStr.slice(0, 7));
+  // 로그인 직후(홈 화면) 한 번만 — 오늘 아직 기록된 공부 시간이 없을 때만 띄운다. 이미 기록했으면
+  // 안 귀찮게 하고, 닫거나 "지금 기록하기"를 누르면 이 로그인 세션 동안은 다시 안 뜬다.
+  const showStudyReminder = tab === null && todayEntries.length === 0 && !studyReminderDismissed;
 
   async function startTimer() {
     const isFreshStart = elapsedSec === 0; // vs. resuming a paused session — different notification kind, but both notify
@@ -6699,6 +6703,19 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     return html`
       <div>
         ${header}
+        ${showStudyReminder && html`
+          <${Modal} onClose=${() => setStudyReminderDismissed(true)}>
+            <div style=${{ textAlign: "center" }}>
+              <div style=${{ fontSize: 30, marginBottom: 8 }}>⏱</div>
+              <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 8 }}>오늘 공부 시간을 기록해 주세요</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 18 }}>아직 오늘 기록된 공부 시간이 없어요. "지금 기록하기"를 누르면 타이머 화면으로 바로 이동해요.</div>
+              <div style=${{ display: "flex", gap: 8, justifyContent: "center" }}>
+                <${Button} variant="gold" onClick=${() => { setStudyReminderDismissed(true); setTab("studyTimer"); }}>지금 기록하기<//>
+                <${Button} variant="ghost" onClick=${() => setStudyReminderDismissed(true)}>나중에<//>
+              </div>
+            </div>
+          <//>
+        `}
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
           <${Card} style=${{ marginBottom: 0 }}>
             <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
