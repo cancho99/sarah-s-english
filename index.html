@@ -1525,6 +1525,96 @@ function NotifyButton({ onEnable }) {
   `;
 }
 
+// Non-interactive mock-browser-window chrome (traffic-light dots + label) wrapping a scaled-down
+// replica of the actual student/parent home screens below, so a prospective parent can see what
+// they'd get after logging in without needing a real account to show them.
+function PreviewFrame({ label, roleLabel, children }) {
+  return html`
+    <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", boxShadow: "0 10px 30px rgba(20,22,26,0.08)" }}>
+      <div style=${{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderBottom: `1px solid ${C.line}`, background: C.ivory }}>
+        <span style=${{ width: 9, height: 9, borderRadius: "50%", background: "#E3B3AC" }} />
+        <span style=${{ width: 9, height: 9, borderRadius: "50%", background: "#EFD79B" }} />
+        <span style=${{ width: 9, height: 9, borderRadius: "50%", background: "#B9D6BA" }} />
+        <div style=${{ marginLeft: 10, fontSize: 11, color: C.slate, fontWeight: 600 }}>${label}</div>
+      </div>
+      <div style=${{ padding: 18 }}>
+        <div style=${{ fontSize: 10, letterSpacing: 1, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 10 }}>${roleLabel}</div>
+        ${children}
+      </div>
+    </div>
+  `;
+}
+
+function DashboardPreviewSection() {
+  const todayStr = today();
+  const demoData = {
+    homework: [
+      { id: "p1", content: "Grammar in Use Unit 12 문제풀이", done: true, dueDate: todayStr },
+      { id: "p2", content: "리딩 지문 3개 요약 정리", done: true, dueDate: todayStr },
+      { id: "p3", content: "단어시험 오답노트 정리", done: true, dueDate: todayStr },
+      { id: "p4", content: "에세이 초안 작성", done: false, dueDate: todayStr },
+    ],
+    studyLog: [{ id: "s1", date: todayStr, minutes: 640 }],
+  };
+  const todayTodo = ["에세이 초안 작성", "🔤 오늘 마감 · 누적 단어 200 단어 시험"];
+  const nextClassLabel = "수요일 · 오후 7:40 ~ 9:50";
+
+  function iconGrid(actions) {
+    return html`
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 10 }}>
+        ${actions.map((a) => html`
+          <div key=${a.key} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <div style=${{ width: 34, height: 34, borderRadius: "50%", background: a.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>${a.icon}</div>
+            <div style=${{ fontSize: 9.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.25 }}>${a.label}</div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+
+  const nextClassBanner = html`
+    <div style=${{ background: C.navy, borderRadius: 8, padding: "12px 14px", marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+      <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
+      <div style=${{ ...serif, fontSize: 14, color: "#fff", fontWeight: 700 }}>${nextClassLabel}</div>
+    </div>
+  `;
+  const todoCard = html`
+    <${Card} style=${{ marginBottom: 10 }}>
+      <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
+      ${todayTodo.map((t, i) => html`<div key=${i} style=${{ fontSize: 11.5, padding: "2px 0" }}>${t}</div>`)}
+    <//>
+  `;
+
+  return html`
+    <div style=${{ padding: "10px 24px 54px", maxWidth: 940, margin: "0 auto" }}>
+      <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Preview</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>로그인하면, 학생과 학부모님은 이런 화면을 봅니다</div>
+      <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+        예시 데이터로 구성한 화면이며, 실제 학생 정보가 아닙니다.
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+        <${PreviewFrame} label="학생 로그인 화면 (예시)" roleLabel="Student">
+          <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>민준 학생</div>
+          ${todoCard}
+          <${HomeworkProgressCard} data=${demoData} />
+          ${nextClassBanner}
+          ${iconGrid(STUDENT_HOME_ACTIONS)}
+        <//>
+        <${PreviewFrame} label="학부모 로그인 화면 (예시)" roleLabel="Parent">
+          <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>민준 학생 학부모님</div>
+          ${todoCard}
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <${HomeworkProgressCard} data=${demoData} />
+            <${StudyTimeStatCard} studyLog=${demoData.studyLog} />
+          </div>
+          ${nextClassBanner}
+          ${iconGrid(PARENT_HOME_ACTIONS)}
+        <//>
+      </div>
+    </div>
+  `;
+}
+
 function HomePage({ setScreen, announcement }) {
   const isMobile = useIsMobile();
   const [loginMenuOpen, setLoginMenuOpen] = useState(false);
@@ -1638,6 +1728,8 @@ function HomePage({ setScreen, announcement }) {
           `)}
         </div>
       </div>
+
+      <${DashboardPreviewSection} />
 
       <div style=${{ padding: "10px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Management</div>
