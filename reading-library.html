@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sarah's English — 영어 동화 · 소설 읽기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --navy:#1C2B4A; --gold:#B8935A; --ivory:#FAF7F1; --ink:#14161A;
+    --slate:#5B6270; --line:#DCD8CF; --white:#FFFFFF; --danger:#A6473A;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:'Pretendard','Apple SD Gothic Neo',sans-serif;
+    background:var(--ivory); color:var(--ink);
+  }
+  header{
+    background:var(--navy); color:#fff; padding:18px 20px;
+    display:flex; align-items:center; gap:10px;
+  }
+  header .title{ font-family:'Jua',sans-serif; font-size:19px; }
+  header .sub{ font-size:11.5px; color:#C9D2E3; margin-left:auto; }
+  .vocab-btn{
+    background:none; border:1px solid rgba(255,255,255,0.45); color:#fff; border-radius:999px;
+    padding:5px 12px; font-size:11.5px; cursor:pointer; white-space:nowrap;
+  }
+  .vocab-btn:hover{ background:rgba(255,255,255,0.12); }
+  main{ max-width:760px; margin:0 auto; padding:22px 16px 60px; }
+  .crumbs{ font-size:12.5px; color:var(--slate); margin-bottom:14px; }
+  .crumbs button{ background:none; border:none; color:var(--gold); font-weight:700; cursor:pointer; font-size:12.5px; padding:0; }
+
+  .level-grid{ display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; }
+  @media (max-width:560px){ .level-grid{ grid-template-columns:repeat(3, 1fr); } }
+  .level-tile{
+    background:var(--white); border:1px solid var(--line); border-radius:10px;
+    padding:16px 6px; text-align:center; cursor:pointer;
+  }
+  .level-tile:hover{ border-color:var(--gold); background:#FBF6EA; }
+  .level-tile .lv{ font-family:'Jua',sans-serif; font-size:18px; color:var(--navy); }
+  .level-tile .count{ font-size:10px; color:var(--gold); margin-top:2px; font-weight:700; }
+
+  .card{ background:var(--white); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:10px; cursor:pointer; }
+  .card:hover{ border-color:var(--gold); }
+  .card .t{ font-weight:700; color:var(--navy); font-size:14px; }
+  .card .m{ font-size:11.5px; color:var(--slate); margin-top:4px; }
+  .empty{ text-align:center; color:var(--slate); font-size:13px; padding:40px 0; }
+
+  .reader{ background:var(--white); border:1px solid var(--line); border-radius:8px; padding:20px; }
+  .reader .lv-tag{ font-size:11px; color:var(--gold); font-weight:700; }
+  .reader .rt-title{ font-family:'Jua',sans-serif; font-size:20px; color:var(--navy); margin:8px 0 14px; }
+  .reader .body{ font-size:15px; line-height:1.85; white-space:pre-wrap; }
+  .reader .src{ font-size:11px; color:var(--slate); margin-top:20px; padding-top:12px; border-top:1px dashed var(--line); }
+  .reader .src a{ color:var(--slate); }
+  .reader .hint{ font-size:11px; color:var(--slate); margin-bottom:12px; }
+  .body .w{ cursor:pointer; border-radius:2px; }
+  .body .w:hover{ background:#FBF6EA; }
+  .body .w.saved{ text-decoration:underline; text-decoration-color:var(--gold); text-decoration-thickness:2px; text-underline-offset:2px; }
+  .word-tooltip{
+    position:absolute; background:var(--navy); color:#fff; padding:6px 11px; border-radius:6px;
+    font-size:12.5px; z-index:50; box-shadow:0 4px 12px rgba(0,0,0,0.18); pointer-events:none;
+    max-width:240px; display:none;
+  }
+
+  .vocab-book-title{ font-weight:700; color:var(--navy); font-size:13.5px; margin-bottom:8px; }
+  .vocab-grid{ display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--line); gap:1px; }
+  .vocab-grid .cell{ background:var(--white); padding:10px 12px; font-size:13.5px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .vocab-grid .cell.head{ background:var(--ivory); font-size:11px; font-weight:700; color:var(--slate); }
+  .vocab-grid .cell.word{ font-weight:700; color:var(--navy); }
+  .vocab-grid .cell.meaning .del{ background:none; border:none; color:var(--danger); cursor:pointer; font-size:13px; flex-shrink:0; }
+
+  details{ margin-top:36px; border-top:1px solid var(--line); padding-top:16px; }
+  summary{ cursor:pointer; font-size:12.5px; color:var(--slate); font-weight:700; }
+  .form input, .form select, .form textarea{
+    width:100%; padding:9px 11px; border-radius:3px; border:1px solid var(--line);
+    font-size:13.5px; margin-bottom:8px; font-family:inherit; background:#fff; color:var(--ink);
+  }
+  .form textarea{ min-height:140px; }
+  .form-row{ display:flex; gap:8px; }
+  .form-row > *{ flex:1; }
+  button.primary{
+    background:var(--gold); color:#fff; border:none; border-radius:4px; padding:9px 18px;
+    font-size:13px; font-weight:700; cursor:pointer;
+  }
+  .msg{ font-size:12px; color:var(--navy); margin-top:8px; }
+  .story-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .story-row .actions button{ background:none; border:none; cursor:pointer; font-size:11.5px; }
+  .story-row .actions .edit{ color:var(--gold); }
+  .story-row .actions .del{ color:var(--danger); font-size:14px; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="title">📚 영어 동화 · 소설 읽기</span>
+  <button id="vocab-nav-btn" class="vocab-btn" style="display:none; margin-left:16px;">📔 나의 단어장</button>
+  <span class="sub">Sarah's English</span>
+</header>
+
+<main>
+  <div class="crumbs" id="crumbs"></div>
+  <div id="view"></div>
+  <div id="word-tooltip" class="word-tooltip"></div>
+
+  <details id="admin-panel" style="display:none;">
+    <summary>+ 이야기 추가 / 관리</summary>
+    <div class="form" style="margin-top:12px;">
+      <input id="f-title" placeholder="제목 (필수)" />
+      <div class="form-row">
+        <select id="f-level"></select>
+        <input id="f-genre" placeholder="장르 (선택, 예: 동화)" />
+      </div>
+      <input id="f-source" placeholder="출처 (필수, 예: Public Domain · Aesop's Fables)" />
+      <input id="f-sourceUrl" placeholder="출처 링크 (선택)" />
+      <textarea id="f-text" placeholder="본문 (필수, 문단 사이는 빈 줄로 구분)"></textarea>
+      <button class="primary" id="f-submit">등록</button>
+      <button class="primary" id="f-cancel" style="background:var(--line); color:var(--ink); display:none; margin-left:8px;">취소</button>
+      <div class="msg" id="f-msg"></div>
+    </div>
+    <div id="admin-list" style="margin-top:20px;"></div>
+  </details>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
+  authDomain: "sarah-s-english.firebaseapp.com",
+  databaseURL: "https://sarah-s-english-default-rtdb.firebaseio.com",
+  projectId: "sarah-s-english",
+  storageBucket: "sarah-s-english.firebasestorage.app",
+  messagingSenderId: "444699532890",
+  appId: "1:444699532890:web:44084cd90d0aa0b5ca0263",
+  measurementId: "G-1SVW405RS7"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const readingCol = collection(db, "readingLibrary");
+
+// 학생 홈 화면 버튼이 ?student=<id>&name=<name>을 붙여서 이 페이지를 연다. 이 값이 있어야만 "나의
+// 단어장"(단어 클릭 저장) 기능을 쓸 수 있다 — 관리자(#admin)나 링크를 모르는 방문자는 studentId가
+// 없어서 이 기능이 자동으로 숨겨진다. 단어장은 학생 메인 문서(sarahsEnglishStudents)와 완전히 분리된
+// 전용 컬렉션(readingVocab, 문서 1개 = 학생 1명)에 저장 — 그 큰 문서의 트랜잭션 로직을 새로 안 건드리고,
+// 이 기능만 따로 안전하게 둘 수 있다.
+const params = new URLSearchParams(location.search);
+const studentId = params.get("student") || "";
+const vocabDocRef = studentId ? doc(db, "readingVocab", studentId) : null;
+let vocabWords = []; // [{ word, meaning, source, addedAt }]
+
+async function loadVocab() {
+  if (!vocabDocRef) return;
+  const snap = await getDoc(vocabDocRef);
+  vocabWords = snap.exists() ? (snap.data().words || []) : [];
+}
+
+async function saveVocab() {
+  await setDoc(vocabDocRef, { words: vocabWords });
+}
+
+// 단어 하나 또는 짧은 단어 몇 개만 번역기에 넘기면 문맥이 없어서 엉뚱한 뜻(예: "laps up"이 그대로
+// "랩업"으로 음역됨)이 나오기 쉽다. 실제 테스트해보니 번역기는 "완전한 문장"을 통째로 줄 때 훨씬
+// 정확하게 문맥에 맞는 뜻을 골랐다(예: "The fox laps up the soup fast." → "여우는 수프를 빠르게
+// 핥아먹었습니다."). 그래서 클릭한 단어가 속한 문장 전체를 찾아서 번역한다. 다만 문장이 아주 길면
+// (고학년 지문) 그 문장 전체를 보여주면 너무 길어지므로, 그럴 땐 단어 주변 몇 단어만 잘라 쓴다.
+function getContextPhrase(target) {
+  const beforeChunks = [];
+  let node = target.previousSibling;
+  while (node) {
+    const t = node.textContent;
+    if (/[.!?]/.test(t)) break; // 이 노드에 마침표가 있으면 그 앞은 이전 문장 — 포함하지 않고 멈춘다
+    beforeChunks.unshift(t);
+    node = node.previousSibling;
+  }
+  const afterChunks = [];
+  node = target.nextSibling;
+  while (node) {
+    const t = node.textContent;
+    afterChunks.push(t);
+    if (/[.!?]/.test(t)) break; // 이 문장의 마침표까지는 포함하고 여기서 멈춘다
+    node = node.nextSibling;
+  }
+  const sentence = (beforeChunks.join("") + target.textContent + afterChunks.join("")).replace(/\s+/g, " ").trim();
+  if (sentence.split(/\s+/).length <= 14) return sentence;
+
+  // 문장이 너무 길면 대상 단어 앞뒤 3단어씩만 잘라서 쓴다
+  const radius = 3;
+  const collect = (startSibling, forward) => {
+    const chunks = [];
+    let n = startSibling, wordsSeen = 0;
+    while (n && wordsSeen < radius) {
+      chunks.push(n.textContent);
+      if (n.classList && n.classList.contains("w")) wordsSeen++;
+      n = forward ? n.nextSibling : n.previousSibling;
+    }
+    return forward ? chunks : chunks.reverse();
+  };
+  const shortBefore = collect(target.previousSibling, false).join("");
+  const shortAfter = collect(target.nextSibling, true).join("");
+  return (shortBefore + target.textContent + shortAfter).replace(/\s+/g, " ").trim();
+}
+
+// 무료 사전/번역 API(MyMemory) 대신 품질이 훨씬 좋은 구글 번역의 공개 엔드포인트를 쓴다 — 공식
+// API 키 없이도 쓸 수 있는, 널리 쓰이는 방식이다.
+async function fetchGoogleTranslate(text, dt) {
+  const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=${dt}&q=${encodeURIComponent(text)}`);
+  return res.json();
+}
+
+async function translateToKorean(text) {
+  try {
+    const data = await fetchGoogleTranslate(text, "t");
+    return (data[0] || []).map((seg) => seg[0]).join("").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+// 학생이 원하는 건 "그 문장에서 실제로 쓰인 뜻"을 "짧게" — 단어 하나만 번역하면 문맥을 몰라서
+// 틀리기 쉽고(예: laps → "랩"), 문장을 통째로 번역하면 정확하지만 너무 길다. 그래서 두 가지를
+// 같이 쓴다: (1) 문장 전체를 번역해서 실제로 어떤 뜻으로 쓰였는지 확인하고, (2) 그 단어의 품사별
+// 사전 후보 뜻 목록(dt=bd) 중에서 문장 번역 속에 실제로 등장하는 어간을 가진 짧은 후보를 찾아
+// 그것만 돌려준다. 못 찾으면 단어 하나만 번역한 결과로 대체한다.
+async function contextualShortMeaning(word, sentence) {
+  const [sentenceKo, dictData] = await Promise.all([
+    translateToKorean(sentence),
+    fetchGoogleTranslate(word, "bd").catch(() => null),
+  ]);
+  const posGroups = (dictData && dictData[1]) || [];
+  const allGlosses = [];
+  posGroups.forEach((g) => (g[1] || []).forEach((gl) => allGlosses.push(gl)));
+  if (allGlosses.length === 0 || !sentenceKo) return sentenceKo || translateToKorean(word);
+  for (const gloss of allGlosses) {
+    if (gloss.length >= 2 && sentenceKo.includes(gloss.slice(0, 2))) return gloss;
+  }
+  for (const gloss of allGlosses) {
+    if (sentenceKo.includes(gloss.slice(0, 1))) return gloss;
+  }
+  return allGlosses[0];
+}
+
+async function addToVocab(word, source, contextPhrase) {
+  const meaning = await contextualShortMeaning(word, contextPhrase || word);
+  vocabWords = [{ word, meaning, source, addedAt: Date.now() }, ...vocabWords.filter((v) => v.word.toLowerCase() !== word.toLowerCase())];
+  try {
+    await saveVocab();
+  } catch (e) {
+    console.error("단어장 저장 실패", e);
+  }
+  return meaning;
+}
+
+function displayMeaning(word, meaning) {
+  return (meaning && meaning.trim() && meaning.trim().toLowerCase() !== word.toLowerCase()) ? meaning : "뜻을 찾지 못했어요";
+}
+
+// 클릭한 단어 바로 위에 뜻을 보여주는 말풍선. 다른 곳을 클릭하거나 4초가 지나면 사라진다.
+let tooltipTimer = null;
+function showWordTooltip(target, text) {
+  const tip = document.getElementById("word-tooltip");
+  tip.textContent = text;
+  tip.style.display = "block";
+  const rect = target.getBoundingClientRect();
+  tip.style.left = `${rect.left + window.scrollX}px`;
+  tip.style.top = `${Math.max(8, rect.top + window.scrollY - tip.offsetHeight - 8)}px`;
+  clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(hideWordTooltip, 4000);
+}
+function hideWordTooltip() {
+  document.getElementById("word-tooltip").style.display = "none";
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".w")) hideWordTooltip();
+});
+
+// 학생/학부모에게는 학년 표기 없이 Lv.1~10만 보여준다(요청에 따라 UI에서 학년 라벨 제거).
+// 아래는 새 이야기를 쓸 때 참고하는 난이도 기준 — 처음엔 "원어민 학년"(초3=native 3rd grade)을
+// 그대로 갖다 썼다가 Lv.1이 실제 한국 학생에게 너무 어렵다는 피드백을 받고, 원어민 학년이 아니라
+// "한국에서 영어를 배우는 학생"이 실제로 감당할 수 있는 어휘·문장 길이 기준으로 다시 잡았다.
+// Lv.1  超고빈도 사이트워드 위주, 현재형 중심, 문장 3~8단어, 반복 구조, 전체 40~90단어, 의성어/느낌표로 재미 요소
+// Lv.2  Lv.1 + 과거형 조금 섞임, 90~140단어
+// Lv.3  이야기 구조(시작-사건-끝) 뚜렷해짐, 120~170단어
+// Lv.4  and/but/so/because 등 연결어 등장, 170~220단어
+// Lv.5  대화 비중 늘어남, 200~260단어
+// Lv.6  260~320단어, 좀 더 다양한 어휘
+// Lv.7  300~360단어
+// Lv.8  고전 동화/짧은 소설 발췌 가능, 320~400단어
+// Lv.9  고전 단편(각색), 400~500단어
+// Lv.10 문학적 표현·복문 위주 고전 단편(각색), 500~700단어
+const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ n }));
+function levelLabel(n) {
+  return `Lv.${n}`;
+}
+
+let items = [];
+let view = { screen: "levels", level: null, storyId: null };
+let editingId = null;
+
+async function loadItems() {
+  const snap = await getDocs(readingCol);
+  items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.level || 0) - (b.level || 0) || (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+}
+
+function wordCount(text) { return (text || "").split(/\s+/).filter(Boolean).length; }
+
+function renderCrumbs() {
+  const el = document.getElementById("crumbs");
+  if (view.screen === "levels") { el.innerHTML = "레벨을 선택하세요."; return; }
+  if (view.screen === "list") {
+    el.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.textContent = "← 레벨 목록으로";
+    btn.onclick = () => { view = { screen: "levels" }; render(); };
+    el.appendChild(btn);
+    return;
+  }
+  if (view.screen === "reader") {
+    el.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.textContent = "← 목록으로";
+    btn.onclick = () => { view.screen = "list"; render(); };
+    el.appendChild(btn);
+    return;
+  }
+  if (view.screen === "vocab") {
+    el.innerHTML = "";
+    const btn = document.createElement("button");
+    btn.textContent = "← 레벨 목록으로";
+    btn.onclick = () => { view = { screen: "levels" }; render(); };
+    el.appendChild(btn);
+  }
+}
+
+function renderLevels() {
+  const el = document.createElement("div");
+  el.className = "level-grid";
+  LEVELS.forEach((lv) => {
+    const count = items.filter((it) => it.level === lv.n).length;
+    const tile = document.createElement("div");
+    tile.className = "level-tile";
+    tile.innerHTML = `<div class="lv">Lv.${lv.n}</div><div class="count">${count}편</div>`;
+    tile.onclick = () => { view = { screen: "list", level: lv.n }; render(); };
+    el.appendChild(tile);
+  });
+  return el;
+}
+
+function renderList() {
+  const list = items.filter((it) => it.level === view.level);
+  const wrap = document.createElement("div");
+  if (list.length === 0) {
+    wrap.innerHTML = `<div class="empty">${levelLabel(view.level)}에는 아직 등록된 이야기가 없어요.</div>`;
+    return wrap;
+  }
+  list.forEach((it) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div class="t">${it.title}</div><div class="m">${[it.genre, it.source].filter(Boolean).join(" · ")} · ${wordCount(it.text)}단어</div>`;
+    card.onclick = () => { view = { screen: "reader", level: view.level, storyId: it.id }; render(); };
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
+
+// 단어(알파벳/작은따옴표로만 이뤄진 덩어리)만 클릭 가능한 span으로 감싸고, 나머지 공백·줄바꿈·문장부호는
+// 그대로 둔다 — white-space:pre-wrap이 문단 구분을 계속 살려준다. 이미 단어장에 있는 단어는 밑줄로 표시.
+function wrapWords(text) {
+  const escaped = (text || "").replace(/</g, "&lt;");
+  const saved = new Set(vocabWords.map((v) => v.word.toLowerCase()));
+  return escaped.replace(/[A-Za-z']+/g, (w) => {
+    const key = w.toLowerCase();
+    const cls = saved.has(key) ? "w saved" : "w";
+    return `<span class="${cls}" data-word="${key}">${w}</span>`;
+  });
+}
+
+function renderReader() {
+  const it = items.find((x) => x.id === view.storyId);
+  const wrap = document.createElement("div");
+  if (!it) { wrap.innerHTML = `<div class="empty">이야기를 찾을 수 없어요.</div>`; return wrap; }
+  const srcHtml = it.sourceUrl
+    ? `<a href="${it.sourceUrl}" target="_blank" rel="noopener noreferrer">${it.source || ""}</a>`
+    : (it.source || "");
+  wrap.innerHTML = `
+    <div class="reader">
+      <div class="lv-tag">${levelLabel(it.level)}${it.genre ? " · " + it.genre : ""}</div>
+      <div class="rt-title">${it.title}</div>
+      ${studentId ? `<div class="hint">모르는 단어를 누르면 나의 단어장에 저장돼요.</div>` : ""}
+      <div class="body">${wrapWords(it.text)}</div>
+      <div class="src">출처: ${srcHtml}</div>
+    </div>
+  `;
+  return wrap;
+}
+
+function renderVocab() {
+  const wrap = document.createElement("div");
+  if (!studentId) {
+    wrap.innerHTML = `<div class="empty">학생 홈 화면의 버튼으로 들어와야 나만의 단어장을 쓸 수 있어요.</div>`;
+    return wrap;
+  }
+  if (vocabWords.length === 0) {
+    wrap.innerHTML = `<div class="empty">아직 저장한 단어가 없어요. 이야기를 읽다가 모르는 단어를 눌러 보세요.</div>`;
+    return wrap;
+  }
+  // 단어는 나온 책(source) 기준으로 묶어서 보여준다. 한 단어는 항상 최신 출처 하나만 갖고 있으므로
+  // (addToVocab이 재저장할 때 이전 항목을 지우고 새로 넣는다) 그룹 간 중복 걱정 없이 나눌 수 있다.
+  const groups = new Map();
+  vocabWords.forEach((v) => {
+    const key = v.source || "기타";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(v);
+  });
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    const latest = (key) => Math.max(...groups.get(key).map((v) => v.addedAt || 0));
+    return latest(b) - latest(a);
+  });
+
+  sortedKeys.forEach((key) => {
+    const section = document.createElement("div");
+    section.style.marginBottom = "22px";
+    const heading = document.createElement("div");
+    heading.className = "vocab-book-title";
+    heading.textContent = `📖 ${key} (${groups.get(key).length}단어)`;
+    section.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "vocab-grid";
+    grid.innerHTML = `<div class="cell head">영어</div><div class="cell head">뜻</div>` + groups.get(key).map((v) => `
+      <div class="cell word">${v.word}</div>
+      <div class="cell meaning"><span>${displayMeaning(v.word, v.meaning)}</span><button class="del" data-word="${v.word.replace(/"/g, "&quot;")}">✕</button></div>
+    `).join("");
+    grid.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".del");
+      if (!btn) return;
+      vocabWords = vocabWords.filter((v) => v.word !== btn.dataset.word);
+      await saveVocab();
+      render();
+    });
+    section.appendChild(grid);
+    wrap.appendChild(section);
+  });
+  return wrap;
+}
+
+function render() {
+  renderCrumbs();
+  const el = document.getElementById("view");
+  el.innerHTML = "";
+  if (view.screen === "levels") el.appendChild(renderLevels());
+  else if (view.screen === "list") el.appendChild(renderList());
+  else if (view.screen === "reader") el.appendChild(renderReader());
+  else if (view.screen === "vocab") el.appendChild(renderVocab());
+  if (isAdmin) renderAdminList();
+}
+
+if (studentId) {
+  const vocabBtn = document.getElementById("vocab-nav-btn");
+  vocabBtn.style.display = "inline-block";
+  vocabBtn.onclick = () => { view = { screen: "vocab" }; render(); };
+}
+
+// 본문 안의 단어(.w)를 클릭하면 그 자리에서 뜻을 바로 보여주고 단어장에 저장 — 문단마다 새로
+// 리스너를 달지 않도록 #view에 한 번만 위임해서 건다. 이미 저장된 단어(.saved)를 다시 누르면
+// 새로 조회하지 않고 저장된 뜻을 그대로 다시 보여준다.
+document.getElementById("view").addEventListener("click", async (e) => {
+  const target = e.target.closest(".w");
+  if (!target) return;
+  if (!studentId) { alert("학생 홈 화면의 버튼으로 들어와야 단어장에 저장할 수 있어요."); return; }
+  const word = target.dataset.word;
+  if (target.classList.contains("saved")) {
+    const existing = vocabWords.find((v) => v.word.toLowerCase() === word);
+    showWordTooltip(target, existing ? displayMeaning(word, existing.meaning) : "...");
+    return;
+  }
+  showWordTooltip(target, "뜻 찾는 중...");
+  target.classList.add("saved");
+  const story = items.find((x) => x.id === view.storyId);
+  const contextPhrase = getContextPhrase(target);
+  const meaning = await addToVocab(word, story ? story.title : "", contextPhrase);
+  showWordTooltip(target, displayMeaning(word, meaning));
+});
+
+// ---------- 관리(추가/수정/삭제) — 학생에게 링크되는 기본 화면(#admin 없이 접속)에는 이 패널
+// 자체가 DOM에 없다. 선생님만 주소 뒤에 #admin을 붙여서(reading-library.html#admin) 접근한다.
+const isAdmin = location.hash === "#admin";
+if (!isAdmin) {
+  document.getElementById("admin-panel").remove();
+}
+
+let fTitle, fLevel, fGenre, fSource, fSourceUrl, fText, fSubmit, fCancel, fMsg;
+if (isAdmin) {
+  document.getElementById("admin-panel").style.display = "";
+  fTitle = document.getElementById("f-title");
+  fLevel = document.getElementById("f-level");
+  fGenre = document.getElementById("f-genre");
+  fSource = document.getElementById("f-source");
+  fSourceUrl = document.getElementById("f-sourceUrl");
+  fText = document.getElementById("f-text");
+  fSubmit = document.getElementById("f-submit");
+  fCancel = document.getElementById("f-cancel");
+  fMsg = document.getElementById("f-msg");
+
+  LEVELS.forEach((lv) => {
+    const opt = document.createElement("option");
+    opt.value = lv.n;
+    opt.textContent = `Lv.${lv.n}`;
+    fLevel.appendChild(opt);
+  });
+}
+
+function resetForm() {
+  editingId = null;
+  fTitle.value = ""; fGenre.value = ""; fSource.value = ""; fSourceUrl.value = ""; fText.value = "";
+  fLevel.value = "1";
+  fSubmit.textContent = "등록";
+  fCancel.style.display = "none";
+  fMsg.textContent = "";
+}
+if (isAdmin) {
+  resetForm();
+  fCancel.onclick = resetForm;
+  fSubmit.onclick = async () => {
+    const entry = {
+      title: fTitle.value.trim(), level: Number(fLevel.value), genre: fGenre.value.trim(),
+      source: fSource.value.trim(), sourceUrl: fSourceUrl.value.trim(), text: fText.value.trim(),
+    };
+    if (!entry.title || !entry.source || !entry.text) { fMsg.textContent = "제목·출처·본문은 필수예요."; return; }
+    try {
+      if (editingId) await updateDoc(doc(db, "readingLibrary", editingId), entry);
+      else await addDoc(readingCol, { ...entry, createdAt: serverTimestamp() });
+      fMsg.textContent = editingId ? "수정했어요." : "등록했어요.";
+      resetForm();
+      await loadItems();
+      render();
+    } catch (e) {
+      fMsg.textContent = "저장에 실패했어요: " + String(e.message || e).slice(0, 200);
+    }
+  };
+}
+
+function renderAdminList() {
+  const el = document.getElementById("admin-list");
+  el.innerHTML = "";
+  items.forEach((it) => {
+    const row = document.createElement("div");
+    row.className = "card";
+    row.style.cursor = "default";
+    row.innerHTML = `
+      <div class="story-row">
+        <div>
+          <div class="t">${it.title}</div>
+          <div class="m">${levelLabel(it.level)}${it.genre ? " · " + it.genre : ""} · ${it.source || ""}</div>
+        </div>
+        <div class="actions">
+          <button class="edit">수정</button>
+          <button class="del">✕</button>
+        </div>
+      </div>
+    `;
+    row.querySelector(".edit").onclick = () => {
+      editingId = it.id;
+      fTitle.value = it.title || ""; fLevel.value = it.level || 1; fGenre.value = it.genre || "";
+      fSource.value = it.source || ""; fSourceUrl.value = it.sourceUrl || ""; fText.value = it.text || "";
+      fSubmit.textContent = "수정 저장";
+      fCancel.style.display = "inline-block";
+      fMsg.textContent = "";
+      document.querySelector("details").open = true;
+    };
+    row.querySelector(".del").onclick = async () => {
+      if (!confirm(`"${it.title}"을(를) 삭제할까요?`)) return;
+      await deleteDoc(doc(db, "readingLibrary", it.id));
+      if (editingId === it.id) resetForm();
+      await loadItems();
+      render();
+    };
+    el.appendChild(row);
+  });
+}
+
+(async () => {
+  await loadItems();
+  await loadVocab();
+  render();
+})();
+</script>
+</body>
+</html>

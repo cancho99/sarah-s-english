@@ -2366,6 +2366,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     { key: "archive", label: "보관함", icon: "🗃" },
     { key: "wordbank", label: "단어 시험지 생성", icon: "🔤" },
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
+    { key: "readingLibrary", label: "읽기 자료실 관리", icon: "📚" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
     { key: "settings", label: "설정", icon: "⚙️" },
@@ -2388,6 +2389,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     body = html`<${ArchiveSection} />`;
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
+  } else if (section === "readingLibrary") {
+    body = html`<${ReadingLibraryAdminSection} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`;
   } else if (section === "revenue") {
@@ -3429,6 +3432,17 @@ function WordbankSection() {
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>기존에 쓰시던 단어 시험지 생성 도구가 이 안에 그대로 들어와 있어요. 같은 Firebase 데이터를 쓰기 때문에 여기서 만든 시험지도 그대로 저장돼요.</div>
       <iframe src="wordtest.html" style=${{ width: "100%", height: "78vh", border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff" }} />
+    </div>
+  `;
+}
+
+// 읽기 자료실 관리 — 별도 독립 페이지(reading-library.html)를 그대로 iframe으로 불러온다. 학생에게
+// 링크되는 기본 주소(해시 없음)는 관리 패널이 아예 안 뜨므로, 여기서는 #admin을 붙여서 연다.
+function ReadingLibraryAdminSection() {
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학생 홈 화면의 "영어 동화 · 소설 읽기" 버튼이 여는 페이지예요. 여기서 이야기를 추가·수정·삭제하면 학생 화면에 바로 반영돼요.</div>
+      <iframe src="reading-library.html#admin" style=${{ width: "100%", height: "82vh", border: `1px solid ${C.line}`, borderRadius: 4, background: "#fff" }} />
     </div>
   `;
 }
@@ -6939,6 +6953,11 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
             </button>
           `)}
         </div>
+
+        <a href=${`reading-library.html?student=${encodeURIComponent(student.id)}&name=${encodeURIComponent(student.name)}`} target="_blank" rel="noopener noreferrer" style=${{ width: "100%", boxSizing: "border-box", background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", marginBottom: 18, textDecoration: "none" }}>
+          <span style=${{ fontSize: 18 }}>📚</span>
+          <span style=${{ fontSize: 13, fontWeight: 700, color: C.ink }}>영어 동화 · 소설 읽기</span>
+        </a>
       </div>
     `;
   }
