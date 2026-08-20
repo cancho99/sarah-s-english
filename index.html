@@ -5212,7 +5212,7 @@ function buildDailyReportText(student, data, date, hwFrom) {
   const yesterdayStr = `${y}-${m2}-${d2}`;
   const fromD = hwFrom && hwFrom <= yesterdayStr ? hwFrom : yesterdayStr;
   const inRange = (d) => d && d >= fromD && d <= yesterdayStr;
-  const hwRange = (data.homework || []).filter((h) => !h.expired && inRange(h.dueDate));
+  const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
   const hwDone = hwRange.filter((h) => h.done);
   const hwUndone = hwRange.filter((h) => !h.done);
   const hwBlock = hwRange.length === 0 ? "기록 없음" : [
