@@ -6400,6 +6400,17 @@ function AnswerKeyBoxes({ answers, onChangeCount, onChangeAt }) {
   `;
 }
 
+// Shared by MockExamTaker's initial submit and MockExamEditor's saveEdit (regrading after an
+// answer-key correction) so the two never drift into different pass/fail logic.
+function gradeMockAnswers(answers, answerKey) {
+  let score = 0; const wrong = [];
+  answerKey.forEach((correct, i) => {
+    if (normText(answers[i]) === normText(correct) && normText(answers[i]).length > 0) score++;
+    else wrong.push(i + 1);
+  });
+  return { score, wrong };
+}
+
 function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyAnswers, setKeyAnswers] = useState([]);
@@ -6463,7 +6474,16 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   async function saveEdit() {
     const key = editKeyAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
     if (!editTitle || key.length === 0 || key.length !== editKeyAnswers.length) { setEditMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
-    await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key } : t)) }));
+    await updateData((d) => ({
+      ...d,
+      mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key } : t)),
+      // 정답을 고친 뒤에도 이미 채점된 응시 기록의 점수/틀린 문제가 옛 정답 기준으로 남아있지
+      // 않도록, 학생이 실제로 제출한 답(r.answers)이 남아있는 기록만 새 정답으로 재채점한다.
+      mockExamResults: (d.mockExamResults || []).map((r) => {
+        if (r.testId !== editId || !Array.isArray(r.answers) || r.answers.length !== key.length) return r;
+        return { ...r, ...gradeMockAnswers(r.answers, key) };
+      }),
+    }));
     setEditId(null);
   }
   const list = data.mockExams || [];
@@ -6594,12 +6614,8 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
   function pick(i, val) { if (submitted) return; setAnswers((a) => a.map((v, idx) => (idx === i ? val : v))); }
 
   function submit() {
-    let score = 0; const wrongNums = [];
-    test.answerKey.forEach((correct, i) => {
-      if (normText(answers[i]) === normText(correct) && normText(answers[i]).length > 0) score++;
-      else wrongNums.push(i + 1);
-    });
-    setResult(score); setWrong(wrongNums); setSubmitted(true);
+    const { score, wrong } = gradeMockAnswers(answers, test.answerKey);
+    setResult(score); setWrong(wrong); setSubmitted(true);
   }
 
   if (submitted) {
