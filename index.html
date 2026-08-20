@@ -7104,6 +7104,29 @@ function countPlannedSessions(scheduleByMonth, schedule, scheduleMonth, monthlyI
   count += ((monthlyInstances || {})[viewMonth] || []).filter((inst) => inst.type === "tutoring").length;
   return count;
 }
+// Same source/filter logic as countPlannedSessions, but returns the actual dates instead of just
+// a count — used by the invoice printout so parents can see exactly which days they're paying for,
+// not just a total. Kept as a separate function (rather than having countPlannedSessions build the
+// list and return its length) so the hot per-day count path stays a simple counter.
+function plannedSessionDates(scheduleByMonth, schedule, scheduleMonth, monthlyInstances, tutoringExceptions, viewMonth) {
+  const [y, m] = viewMonth.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const pattern = patternForMonth(scheduleByMonth, schedule, scheduleMonth, viewMonth);
+  const dates = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${viewMonth}-${String(d).padStart(2, "0")}`;
+    const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+    pattern.forEach((s) => {
+      if (s.day === dayName && !isTutoringExcepted(tutoringExceptions, dateStr, s.time, s.endTime)) {
+        dates.push({ dateStr, time: s.time, endTime: s.endTime || "" });
+      }
+    });
+  }
+  ((monthlyInstances || {})[viewMonth] || []).filter((inst) => inst.type === "tutoring").forEach((inst) => {
+    dates.push({ dateStr: inst.date, time: inst.time, endTime: inst.endTime || "" });
+  });
+  return dates.sort((a, b) => (a.dateStr === b.dateStr ? a.time.localeCompare(b.time) : a.dateStr.localeCompare(b.dateStr)));
+}
 
 // Combined monthly calendar of three schedule sources that live in different places and are
 // edited by different people:
@@ -7264,8 +7287,10 @@ function TuitionEditor({ student, data, updateData }) {
   const isConfirmed = !!rec?.confirmed;
   const livePlannedCount = countPlannedSessions(student.scheduleByMonth, student.schedule, student.scheduleMonth, student.monthlyInstances, student.tutoringExceptions, viewMonth);
   const liveCalculated = livePlannedCount * (Number(data.sessionHours) || 0) * (Number(data.hourlyRate) || 0);
+  const liveSessionDates = plannedSessionDates(student.scheduleByMonth, student.schedule, student.scheduleMonth, student.monthlyInstances, student.tutoringExceptions, viewMonth);
   const plannedCount = isConfirmed ? (rec.plannedCount || 0) : livePlannedCount;
   const calculated = isConfirmed ? (rec.calculatedAmount || 0) : liveCalculated;
+  const sessionDates = isConfirmed ? (rec.sessionDates || liveSessionDates) : liveSessionDates;
   const displayHourlyRate = isConfirmed ? (rec.hourlyRate || 0) : (Number(data.hourlyRate) || 0);
   const displaySessionHours = isConfirmed ? (rec.sessionHours || 0) : (Number(data.sessionHours) || 0);
   const managementFeeNum = Number(managementFee) || 0;
@@ -7281,6 +7306,7 @@ function TuitionEditor({ student, data, updateData }) {
         [viewMonth]: {
           plannedCount, hourlyRate: d.hourlyRate || 0, sessionHours: d.sessionHours || 0,
           calculatedAmount: calculated,
+          sessionDates,
           managementFee: managementFeeNum,
           overrideAmount: overrideAmount !== "" ? Number(overrideAmount) : null,
           note: note.trim(),
@@ -7304,6 +7330,7 @@ function TuitionEditor({ student, data, updateData }) {
         [viewMonth]: {
           plannedCount, hourlyRate: d.hourlyRate || 0, sessionHours: d.sessionHours || 0,
           calculatedAmount: calculated,
+          sessionDates,
           managementFee: managementFeeNum,
           overrideAmount: overrideAmount !== "" ? Number(overrideAmount) : null,
           note: note.trim(),
@@ -7340,30 +7367,45 @@ function TuitionEditor({ student, data, updateData }) {
 
   function printInvoice() {
     const [y, m] = viewMonth.split("-");
-    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>수업료 명세서</title>
+    const invoiceNo = `SE-${student.id}-${y}${m}`;
+    const dateRows = sessionDates.length
+      ? sessionDates.map((s, i) => `<tr><td class="num">${i + 1}</td><td>${fmtDateDay(s.dateStr)}</td><td>${s.time}${s.endTime ? `~${s.endTime}` : ""}</td></tr>`).join("")
+      : `<tr><td colspan="3" class="empty">등록된 수업 일정이 없어요.</td></tr>`;
+    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>수업료 명세서 — ${student.name} ${y}.${m}</title>
       <style>
-        @page { size: A4; margin: 24mm 20mm; }
+        @page { size: A4; margin: 22mm 20mm; }
         body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
-        .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #C7A34E;padding-bottom:12px;margin-bottom:20px;}
+        .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #C7A34E;padding-bottom:12px;margin-bottom:6px;}
         .hd .brand{font-size:16px;font-weight:700;color:#1C2B4A;}
         .hd .tag{font-size:10px;letter-spacing:2px;color:#B8935A;font-weight:700;}
+        .hd .invno{font-size:10px;color:#8A8370;text-align:right;}
         .logowrap{text-align:center;margin-bottom:14px;}
         .logowrap img{height:56px;width:auto;}
         h1{text-align:center;font-size:20px;color:#1C2B4A;margin:4px 0 24px;}
         .metarow{display:flex;border-top:1px solid #D8D2BE;border-bottom:1px solid #D8D2BE;font-size:12.5px;}
         .metarow div{flex:1;padding:9px 4px;}
         .metarow .lbl{color:#8A8370;font-size:10px;display:block;margin-bottom:3px;}
-        table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:22px;}
+        .sec-title{font-size:12.5px;font-weight:700;color:#1C2B4A;margin:24px 0 8px;padding-left:8px;border-left:3px solid #C7A34E;}
+        table{width:100%;border-collapse:collapse;font-size:12.5px;}
         th{background:#1C2B4A;color:#fff;padding:9px 8px;font-weight:600;font-size:11.5px;text-align:left;}
-        td{padding:9px 8px;border-bottom:1px solid #EDE9DD;}
+        td{padding:8px 8px;border-bottom:1px solid #EDE9DD;}
         .amtrow td{font-weight:700;font-size:15px;color:#1C2B4A;border-top:2px solid #1C2B4A;border-bottom:none;}
-        .note{margin-top:16px;font-size:12px;color:#5B6270;white-space:pre-wrap;line-height:1.7;}
+        .dates-table td.num{color:#B8935A;font-weight:700;width:28px;}
+        .dates-table td.empty{color:#8A8370;text-align:center;padding:16px 8px;}
+        .dates-table tr:nth-child(even) td{background:#FAF8F3;}
+        .note-box{margin-top:22px;border:1.5px solid #C7A34E;border-left:6px solid #C7A34E;background:#FBF4E4;border-radius:4px;padding:12px 14px;}
+        .note-box .note-hd{font-size:12px;font-weight:700;color:#8A6A1F;letter-spacing:1px;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+        .note-box .note-body{font-size:13px;color:#3A3123;white-space:pre-wrap;line-height:1.7;}
+        .footer{margin-top:32px;padding-top:12px;border-top:1px solid #EDE9DD;font-size:10.5px;color:#8A8370;text-align:center;line-height:1.6;}
         .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:flex-end;gap:12px;font-size:12px;z-index:100;}
         .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;}
         @media print{ .toolbar{display:none !important;} }
       </style></head><body>
       <div class="toolbar"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>
-      <div class="hd"><span class="brand">Sarah's English</span><span class="tag">수업료 명세서</span></div>
+      <div class="hd">
+        <div><span class="brand">Sarah's English</span><br/><span class="tag">수업료 명세서</span></div>
+        <div class="invno">명세서 번호<br/>${invoiceNo}</div>
+      </div>
       <div class="logowrap"><img src="${LOGO_DATA_URI}" alt="Sarah's English" /></div>
       <h1>${y}년 ${Number(m)}월 수업료 안내</h1>
       <div class="metarow">
@@ -7380,7 +7422,13 @@ function TuitionEditor({ student, data, updateData }) {
         <tr><td>학업관리비</td><td>${managementFeeNum.toLocaleString()}원</td></tr>
         <tr class="amtrow"><td>납부하실 금액</td><td>${finalAmount.toLocaleString()}원</td></tr>
       </table>
-      ${note.trim() ? `<div class="note"><b>비고</b><br/>${note.trim().replace(/</g, "&lt;")}</div>` : ""}
+      <div class="sec-title">${y}년 ${Number(m)}월 수업 일정 (총 ${plannedCount}회)</div>
+      <table class="dates-table">
+        <tr><th>회차</th><th>날짜</th><th>시간</th></tr>
+        ${dateRows}
+      </table>
+      ${note.trim() ? `<div class="note-box"><div class="note-hd">📌 비고</div><div class="note-body">${note.trim().replace(/</g, "&lt;")}</div></div>` : ""}
+      <div class="footer">본 명세서는 Sarah's English에서 발행되었습니다. 문의사항은 담당 선생님께 연락해 주세요.</div>
       </body></html>`;
     const win = window.open("", "_blank");
     if (!win) { alert("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
