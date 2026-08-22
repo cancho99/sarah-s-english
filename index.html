@@ -1585,14 +1585,53 @@ function DashboardPreviewSection() {
     <//>
   `;
 
+  // 선생님이 실제로 보는 TeacherOverview("오늘 확인해야 할 것" 패널)의 축소판 — 로그인 없이 볼 수
+  // 있는 스크린샷 대신, 다른 두 미리보기와 같은 방식(예시 데이터 목업)으로 만들었다.
+  const teacherPendingItems = [
+    { tag: "숙제", tagColor: C.gold, name: "민준", detail: "에세이 초안 작성", status: "✗ 미완료" },
+    { tag: "단어시험", tagColor: C.gold, name: "서연", detail: "누적 단어 200 재시험", status: "✗ 미통과" },
+    { tag: "모의고사", tagColor: C.gold, name: "지호", detail: "3월 모의고사 답안 제출", status: "✗ 미응시" },
+  ];
+  const TEACHER_PREVIEW_ACTIONS = [
+    { key: "students", label: "학생 관리", icon: "🗂", bg: "#EAF1FB" },
+    { key: "wordbank", label: "단어시험지 생성", icon: "🔤", bg: "#FBF4EA" },
+    { key: "readingLibrary", label: "읽기 자료실 관리", icon: "📚", bg: "#F3EDF7" },
+    { key: "reports", label: "리포트 작성", icon: "📊", bg: "#E9F1EA" },
+    { key: "examkeys", label: "정답표 라이브러리", icon: "📑", bg: "#FDEDE9" },
+    { key: "revenue", label: "매출", icon: "💰", bg: "#EAF6F6" },
+  ];
+  const teacherPanel = html`
+    <${PreviewFrame} label="선생님 관리 화면 (예시)" roleLabel="Teacher">
+      <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>오늘(${fmtDate(todayStr)}) 확인해야 할 것</div>
+      <${Card} style=${{ marginBottom: 10 }}>
+        <div style=${{ fontSize: 10, color: C.slate, marginBottom: 8 }}>기한·예정일이 오늘이거나 지났는데 아직 처리 안 된 항목을 학생 전체 기준으로 모았어요.</div>
+        ${teacherPendingItems.map((it, i) => html`
+          <div key=${i} style=${{ fontSize: 11.5, padding: "6px 0", borderBottom: i < teacherPendingItems.length - 1 ? `1px dotted ${C.line}` : "none" }}>
+            <div style=${{ fontSize: 9.5, color: it.tagColor, fontWeight: 700 }}>${it.tag}</div>
+            <div style=${{ display: "flex", justifyContent: "space-between" }}>
+              <span><b>${it.name}</b> — ${it.detail}</span>
+              <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${it.status}</span>
+            </div>
+          </div>
+        `)}
+      <//>
+      <${Card} style=${{ marginBottom: 10 }}>
+        <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📢 공지사항</div>
+        <div style=${{ fontSize: 11.5, color: C.slate }}>여기 적으면 전체 학생·학부모 화면에 함께 노출돼요.</div>
+      <//>
+      ${iconGrid(TEACHER_PREVIEW_ACTIONS)}
+    <//>
+  `;
+
   return html`
     <div style=${{ padding: "10px 24px 54px", maxWidth: 940, margin: "0 auto" }}>
       <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Preview</div>
-      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>로그인하면, 학생과 학부모님은 이런 화면을 봅니다</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>로그인하면, 이런 화면으로 관리하고 확인합니다</div>
       <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
         예시 데이터로 구성한 화면이며, 실제 학생 정보가 아닙니다.
       </div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+        ${teacherPanel}
         <${PreviewFrame} label="학생 로그인 화면 (예시)" roleLabel="Student">
           <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>민준 학생</div>
           ${todoCard}
@@ -1614,6 +1653,87 @@ function DashboardPreviewSection() {
     </div>
   `;
 }
+
+// 실제 월말 리포트 인쇄본(MonthlyReportView.printReport())과 같은 색·표 구성을 예시 데이터로
+// 축소 재현한 것 — 로그인해야만 볼 수 있는 실제 리포트를, 실제 학생 정보 노출 없이 홈페이지에서
+// "이런 문서를 받는다"는 걸 바로 보여주기 위한 목업이다. REPORT_CATEGORIES/REPORT_RATINGS는
+// 실제 리포트 작성 화면에서 쓰는 것과 동일한 값을 그대로 가져다 썼다.
+function ReportPreviewSection() {
+  const demoRatings = { vocab: "우수", grammar: "매우 우수", reading: "우수", writing: "보통", attitude: "매우 우수", homework: "우수" };
+  return html`
+    <div style=${{ padding: "10px 24px 54px", maxWidth: 640, margin: "0 auto" }}>
+      <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Report</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>매달 이런 리포트를 받으실 수 있어요</div>
+      <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+        예시 데이터로 구성한 실제 월말 리포트 양식이며, 실제 학생 정보가 아닙니다. 인쇄해서 드리거나 PDF로도 전달해 드려요.
+      </div>
+      <div style=${{ background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 14px 34px rgba(20,22,26,0.12)", padding: "26px 24px", fontFamily: "'Noto Sans KR', sans-serif" }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `2px solid ${C.gold}`, paddingBottom: 8, marginBottom: 14 }}>
+          <span style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>T. Sarah's English</span>
+          <span style=${{ fontSize: 9.5, letterSpacing: 2, color: C.gold, fontWeight: 700 }}>MONTHLY REPORT</span>
+        </div>
+        <div style=${{ ...serif, fontSize: 18, color: C.navy, textAlign: "center" }}>8월 월말 학습 리포트</div>
+        <div style=${{ fontSize: 9.5, letterSpacing: 2, color: C.gold, fontWeight: 700, textAlign: "center", marginTop: 2 }}>2026 · MONTHLY PROGRESS REPORT</div>
+        <div style=${{ display: "flex", borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, marginTop: 14, fontSize: 11 }}>
+          <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>학생명</span>민준</div>
+          <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>학년</span>중2</div>
+          <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>평가 기간</span>2026년 8월</div>
+        </div>
+        <div style=${{ marginTop: 18 }}>
+          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>1</span>
+            출결 및 학습 현황
+          </div>
+          <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
+            <tr>${["수업일수", "출석", "결석/보강", "과제 수행률", "단어 통과율"].map((h) => html`<th key=${h} style=${{ background: C.navy, color: "#fff", padding: "6px 4px", fontWeight: 600 }}>${h}</th>`)}</tr>
+            <tr>${["8", "8", "0 / 1", "92%", "88%"].map((v, i) => html`<td key=${i} style=${{ padding: "6px 4px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>${v}</td>`)}</tr>
+          </table>
+        </div>
+        <div style=${{ marginTop: 18 }}>
+          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>2</span>
+            영역별 성취 평가
+          </div>
+          <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+            <tr>
+              <th style=${{ background: C.navy, color: "#fff", padding: "6px 4px", fontWeight: 600, textAlign: "left" }}></th>
+              ${REPORT_RATINGS.map((r) => html`<th key=${r} style=${{ background: C.navy, color: "#fff", padding: "6px 2px", fontWeight: 600 }}>${r}</th>`)}
+            </tr>
+            ${REPORT_CATEGORIES.map((c) => html`
+              <tr key=${c.key}>
+                <td style=${{ padding: "5px 4px", borderBottom: `1px solid ${C.line}`, fontWeight: 700, whiteSpace: "nowrap" }}>${c.label.split(" ")[0]}</td>
+                ${REPORT_RATINGS.map((r) => html`<td key=${r} style=${{ padding: "5px 2px", textAlign: "center", borderBottom: `1px solid ${C.line}`, color: C.gold, fontWeight: 700 }}>${demoRatings[c.key] === r ? "●" : ""}</td>`)}
+              </tr>
+            `)}
+          </table>
+        </div>
+        <div style=${{ marginTop: 18 }}>
+          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>3</span>
+            칭찬할 점 & 보완할 점
+          </div>
+          <div style=${{ display: "flex", gap: 16, fontSize: 11, lineHeight: 1.8 }}>
+            <div style=${{ flex: 1 }}>
+              <div style=${{ fontWeight: 700, marginBottom: 4 }}>👍 잘하고 있어요</div>
+              <div style=${{ color: C.slate }}>독해 속도가 눈에 띄게 빨라졌고, 오답노트를 스스로 정리하는 습관이 잡혔어요.</div>
+            </div>
+            <div style=${{ flex: 1 }}>
+              <div style=${{ fontWeight: 700, marginBottom: 4 }}>🌱 더 채워볼 점</div>
+              <div style=${{ color: C.slate }}>작문에서 시제 실수가 반복돼, 다음 달엔 이 부분을 집중적으로 다룰 예정이에요.</div>
+            </div>
+          </div>
+        </div>
+        <div style=${{ textAlign: "center", fontSize: 9, color: "#8A8370", letterSpacing: 1, marginTop: 24 }}>Sarah's English · 학생 한 명, 한 달의 기록</div>
+      </div>
+    </div>
+  `;
+}
+
+const CURRICULUM_HIGHLIGHTS = [
+  { icon: "📖", title: "스토리 읽기로 독해력 · 문해력", body: "정해진 교재 진도만이 아니라, 레벨에 맞는 동화·소설을 직접 읽게 하고 그 기록을 관리합니다. 읽은 만큼 독해력과 문해력이 함께 쌓여요." },
+  { icon: "✍️", title: "내가 직접 만드는 문제", body: "시중 문제집을 그대로 풀리지 않고, 내신·모의고사 기출 지문을 직접 변형해 실전 감각을 기르는 문제를 만듭니다." },
+  { icon: "📊", title: "리포트로 남기는 성장", body: "그렇게 쌓인 기록은 데일리·월말 리포트로 정리되어, 학부모님께 그대로 전달됩니다." },
+];
 
 function HomePage({ setScreen, announcement }) {
   const isMobile = useIsMobile();
@@ -1671,7 +1791,7 @@ function HomePage({ setScreen, announcement }) {
         <div style=${{ fontSize: 11, letterSpacing: 3, color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>Private English Tutoring, Systematized</div>
         <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도<br />+<br />학원의 체계적 관리</div>
         <div style=${{ fontSize: 14, color: C.slate, marginTop: 14, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.7 }}>
-          한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 학습 기록과 성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 과외입니다.
+          한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 커리큘럼과 학습·성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 과외입니다.
         </div>
       </div>
 
@@ -1683,6 +1803,23 @@ function HomePage({ setScreen, announcement }) {
             <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${v.body}</div>
           </div>
         `)}
+      </div>
+
+      <div style=${{ padding: "10px 24px 54px", maxWidth: 940, margin: "0 auto" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Curriculum</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>읽고, 만들고, 기록하는 커리큘럼</div>
+        <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+          교재 진도만 나가는 게 아니라, 읽기로 실력을 쌓고 직접 만든 문제로 실전을 대비합니다.
+        </div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
+          ${CURRICULUM_HIGHLIGHTS.map((c) => html`
+            <div key=${c.title} style=${{ background: C.white, border: `1px solid ${C.line}`, padding: "22px 20px" }}>
+              <div style=${{ fontSize: 22, marginBottom: 12 }}>${c.icon}</div>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 8 }}>${c.title}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${c.body}</div>
+            </div>
+          `)}
+        </div>
       </div>
 
       <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
@@ -1709,17 +1846,19 @@ function HomePage({ setScreen, announcement }) {
         </div>
       </div>
 
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
+      <div style=${{ padding: "10px 24px 54px", maxWidth: 980, margin: "0 auto" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>System</div>
         <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>믿을 수 있는 건, 결국 시스템</div>
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(215px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
           ${[
-            { title: "엄격한 단어시험 기준", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 다음 날 화상으로 재시험을 봅니다." },
+            { title: "단어시험 → 재시험까지 한 번에", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 재시험 일정이 바로 잡히고, 통과 여부가 이 관리 페이지에 즉시 반영됩니다." },
             { title: "전용 관리 페이지로 기록", body: "숙제 완료 여부, 단어시험 점수, 학습 내용을 카카오톡 대화 속에 흘려보내지 않고 이 페이지 안에 날짜별로 정리해 남깁니다. 학부모님도 로그인해서 언제든 확인하실 수 있어요." },
             { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 대비 집중 기간으로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
             { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
             { title: "정기 학부모 보고", body: "주간 점검, 월간 리포트, 정기평가·내신 결과까지 — 분기 상담과 함께 아이의 학습을 투명하게 공유합니다." },
             { title: "학생별 맞춤 진도 관리", body: "반 편성이 아니라 학생 한 명 기준으로 교재·진도·목표를 따로 설정하고 관리합니다." },
+            { title: "동화 · 소설 온라인 서재", body: "레벨별 영어 동화·소설을 따로 만든 사이트에서 읽습니다. 모르는 단어를 누르면 자동으로 그 학생의 개인 단어장에 저장돼, 읽은 만큼 어휘가 함께 쌓입니다." },
+            { title: "자료실 — 오답 해설영상까지", body: "자주 틀리는 문제는 해설 영상을 찍어 자료실에 올려드려요. 학생은 언제든 다시 돌려보며 복습할 수 있습니다." },
           ].map((s) => html`
             <div key=${s.title} style=${{ background: C.white, padding: "22px 22px" }}>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 8 }}>${s.title}</div>
@@ -1740,11 +1879,13 @@ function HomePage({ setScreen, announcement }) {
         <div>
           ${[
             { n: "01", title: "수업 직후 — 학습 기록", body: "그날 다룬 문법·독해 내용을 바로 기록해 남깁니다. 무슨 수업을 했는지 기억에 의존하지 않아요." },
-            { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 대상으로 바로 표시됩니다." },
-            { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다." },
+            { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 일정이 바로 잡히고 이 페이지에 표시됩니다." },
+            { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다. 완료하지 않으면 학부모님께도 알림이 가요." },
             { n: "04", title: "정기시험 볼 때마다 — 성적 추이 기록", body: "내신·모의고사 점수를 목표 대비로 기록해, 등락이 아니라 흐름을 봅니다." },
-            { n: "05", title: "매일 — 데일리 리포트", body: "그날 배운 내용·단어시험 결과·숙제 여부를 정리한 리포트를 바로 보내드립니다." },
-            { n: "06", title: "매달 말 — 월말 리포트", body: "숙제 완료율, 단어시험 합격율, 정기시험 결과를 한 장으로 정리해 전달드립니다." },
+            { n: "05", title: "학생이 직접 — 온라인 서재에서 읽고 단어장 쌓기", body: "레벨에 맞는 영어 동화·소설을 따로 만든 서재 사이트에서 읽습니다. 모르는 단어를 누르면 그 학생의 개인 단어장에 자동으로 쌓여요." },
+            { n: "06", title: "필요할 때마다 — 자료실에 해설영상 업로드", body: "자주 틀리는 문제는 해설 영상을 찍어 자료실에 올려드립니다. 학생은 언제든 다시 돌려보며 복습할 수 있어요." },
+            { n: "07", title: "매일 — 데일리 리포트", body: "그날 배운 내용·단어시험 결과·숙제 여부를 정리해 데일리 리포트로 남깁니다. 발행하는 즉시 학부모님 로그인 화면에서 바로 확인하실 수 있어요." },
+            { n: "08", title: "매달 말 — 월말 리포트", body: "숙제 완료율, 단어시험 합격율, 정기시험 결과를 한 장으로 정리해 전달드립니다. 마찬가지로 로그인하면 바로 확인하실 수 있어요." },
           ].map((s) => html`
             <div key=${s.n} style=${{ display: "flex", gap: 18, padding: "16px 4px", borderBottom: `1px solid ${C.line}` }}>
               <div style=${{ ...serif, fontStyle: "italic", fontSize: 15, color: C.gold, flexShrink: 0, width: 26 }}>${s.n}</div>
@@ -1756,6 +1897,8 @@ function HomePage({ setScreen, announcement }) {
           `)}
         </div>
       </div>
+
+      <${ReportPreviewSection} />
 
       <div style=${{ padding: "10px 24px 56px", maxWidth: 640, margin: "0 auto", textAlign: "center" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 14 }}>About</div>
