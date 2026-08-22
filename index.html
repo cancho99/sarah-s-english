@@ -791,7 +791,7 @@ function shuffle(arr) {
   }
   return a;
 }
-const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {}, notes: [] });
+const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {}, notes: [], roadmap: null });
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
 // Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
@@ -2322,7 +2322,7 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
 }
 
 // ---------- Teacher dashboard ----------
-function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, onSelectStudentInfo, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
   const [loaded, setLoaded] = useState(false);
   const [annText, setAnnText] = useState(announcement ? announcement.text : "");
   const [annSaved, setAnnSaved] = useState(false);
@@ -2398,6 +2398,21 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
     (d.consultRequests || []).forEach((r) => allConsults.push({ student: s, r }));
   });
   const pendingConsults = allConsults.filter((c) => c.r.status !== "완료");
+
+  // 로드맵 지연 — 현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를
+  // 안 한 학생. 숙제/단어시험/모의고사 미완료를 모으는 위 로직과 같은 방식(기한 지남 + 미완료).
+  const roadmapAlerts = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const rm = d.roadmap;
+    if (!rm || !(rm.phases || []).length) return;
+    const phase = rm.phases[rm.currentPhaseIndex || 0];
+    if (phase && phase.targetDate && !phase.diagnosticDone && phase.targetDate < todayStr) {
+      const overdueDays = Math.round((new Date(todayStr + "T00:00:00") - new Date(phase.targetDate + "T00:00:00")) / 86400000);
+      roadmapAlerts.push({ student: s, phase, overdueDays });
+    }
+  });
+  roadmapAlerts.sort((a, b) => b.overdueDays - a.overdueDays);
 
   return html`
     <div>
@@ -2492,6 +2507,19 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
           `)}
           <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} onClick=${bulkClearOldPhotos}>예전 방식 사진 한꺼번에 정리<//>
           <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 "저장 공간 관리" 탭에서 세부적으로 정리할 수도 있어요.</div>
+        <//>
+      `}
+
+      ${roadmapAlerts.length > 0 && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginTop: 20, marginBottom: 8 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
+        <${Card} style=${{ borderLeft: `3px solid ${C.danger}` }}>
+          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
+          ${roadmapAlerts.map((x) => html`
+            <div key=${x.student.id} onClick=${() => onSelectStudentInfo(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 0", cursor: "pointer", display: "flex", justifyContent: "space-between", borderBottom: `1px dotted ${C.line}` }}>
+              <span><b>${x.student.name}</b> — ${x.phase.title || "진행 단계"}</span>
+              <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${x.overdueDays}일 지연</span>
+            </div>
+          `)}
         <//>
       `}
     </div>
@@ -2716,7 +2744,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
-      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory(null); }} />`;
+      onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory(null); }}
+      onSelectStudentInfo=${(id) => { setSection("studentInfo"); setSelectedStudentId(id); }} />`;
   }
 
   if (isMobile) {
@@ -3290,6 +3319,7 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
         <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
         <${ScheduleGoalEditor} student=${selected} updateStudentRosterEntry=${updateStudentRosterEntry} />
         <${TuitionEditor} key=${selected.id} student=${selected} data=${data} updateData=${boundUpdateData} />
+        <${RoadmapEditor} key=${selected.id} student=${selected} data=${data} updateData=${boundUpdateData} />
       </div>
     `;
   }
@@ -7820,6 +7850,184 @@ function TuitionEditor({ student, data, updateData }) {
         `}
       <//>
     </div>
+  `;
+}
+
+// 학생별 5단계(Phase) 장기 로드맵을 선생님이 직접 기록·추적하는 패널. 각 Phase의 목표 종료일이
+// 지났는데 아직 "진단시험 완료" 처리를 안 했으면 TeacherOverview 홈 화면에 지연 경고로 뜬다
+// (숙제/단어시험/모의고사 미완료를 모으는 것과 같은 방식) — 이게 이 기능의 핵심 목적이다.
+function RoadmapEditor({ student, data, updateData }) {
+  const roadmap = data.roadmap;
+  const todayStr = today();
+  const [viewIdx, setViewIdx] = useState(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
+  const [finalGoal, setFinalGoal] = useState(roadmap?.finalGoal || "");
+  const [overallNotes, setOverallNotes] = useState(roadmap?.overallNotes || "");
+  const [title, setTitle] = useState("");
+  const [periodLabel, setPeriodLabel] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [focus, setFocus] = useState("");
+  const [materials, setMaterials] = useState("");
+  const [detail, setDetail] = useState("");
+  const [savedMsg, setSavedMsg] = useState("");
+
+  useEffect(() => {
+    setViewIdx(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
+    setFinalGoal(roadmap?.finalGoal || "");
+    setOverallNotes(roadmap?.overallNotes || "");
+  }, [student.id]);
+  useEffect(() => {
+    const p = (roadmap?.phases || [])[viewIdx];
+    setTitle(p?.title || ""); setPeriodLabel(p?.periodLabel || ""); setTargetDate(p?.targetDate || "");
+    setFocus(p?.focus || ""); setMaterials(p?.materials || ""); setDetail(p?.detail || "");
+  }, [viewIdx, student.id]);
+
+  function blankPhase(n) {
+    return { title: `Phase ${n}`, periodLabel: "", targetDate: "", focus: "", materials: "", detail: "", diagnosticDone: false, diagnosticDate: null };
+  }
+
+  async function createRoadmap() {
+    await updateData((d) => ({ ...d, roadmap: { finalGoal: "", currentPhaseIndex: 0, overallNotes: "", phases: [1, 2, 3, 4, 5].map(blankPhase) } }));
+  }
+
+  if (!roadmap) {
+    return html`
+      <${Card}>
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🗺 학습 로드맵</div>
+        <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 10 }}>이 학생의 로드맵이 아직 없어요. 만들어 두면 단계별 목표 종료일이 지났는데 다음 단계로 못 넘어간 경우를 홈 화면에서 바로 확인할 수 있어요.</div>
+        <${Button} variant="gold" style=${{ padding: "8px 16px", fontSize: 12.5 }} onClick=${createRoadmap}>+ 로드맵 만들기 (5단계)<//>
+      <//>
+    `;
+  }
+
+  const phases = roadmap.phases || [];
+  const phase = phases[viewIdx] || {};
+  const currentIdx = roadmap.currentPhaseIndex || 0;
+  const overdueDays = phase.targetDate && !phase.diagnosticDone && phase.targetDate < todayStr
+    ? Math.round((new Date(todayStr + "T00:00:00") - new Date(phase.targetDate + "T00:00:00")) / 86400000)
+    : 0;
+
+  async function saveAll() {
+    await updateData((d) => {
+      const rm = d.roadmap || roadmap;
+      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, title, periodLabel, targetDate, focus, materials, detail } : p));
+      return { ...d, roadmap: { ...rm, finalGoal, overallNotes, phases: nextPhases } };
+    });
+    setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
+  }
+  async function completeAndAdvance() {
+    let nextLen = phases.length;
+    await updateData((d) => {
+      const rm = d.roadmap || roadmap;
+      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, title, periodLabel, targetDate, focus, materials, detail, diagnosticDone: true, diagnosticDate: todayStr } : p));
+      nextLen = nextPhases.length;
+      const nextCurrent = viewIdx < nextPhases.length - 1 ? viewIdx + 1 : viewIdx;
+      return { ...d, roadmap: { ...rm, finalGoal, overallNotes, phases: nextPhases, currentPhaseIndex: nextCurrent } };
+    });
+    setViewIdx((i) => (i < nextLen - 1 ? i + 1 : i));
+  }
+  async function reopenPhase() {
+    await updateData((d) => {
+      const rm = d.roadmap || roadmap;
+      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, diagnosticDone: false, diagnosticDate: null } : p));
+      return { ...d, roadmap: { ...rm, phases: nextPhases } };
+    });
+  }
+  async function setAsCurrent() {
+    await updateData((d) => ({ ...d, roadmap: { ...(d.roadmap || roadmap), currentPhaseIndex: viewIdx } }));
+  }
+  async function addPhase() {
+    await updateData((d) => {
+      const rm = d.roadmap || roadmap;
+      const nextPhases = [...(rm.phases || []), blankPhase((rm.phases || []).length + 1)];
+      return { ...d, roadmap: { ...rm, phases: nextPhases } };
+    });
+  }
+  async function removePhase() {
+    if (!confirm(`"${phase.title || `Phase ${viewIdx + 1}`}" 단계를 삭제할까요?`)) return;
+    const removedIdx = viewIdx;
+    await updateData((d) => {
+      const rm = d.roadmap || roadmap;
+      const nextPhases = (rm.phases || []).filter((_, i) => i !== removedIdx);
+      const nextCurrent = Math.min(rm.currentPhaseIndex || 0, Math.max(0, nextPhases.length - 1));
+      return { ...d, roadmap: { ...rm, phases: nextPhases, currentPhaseIndex: nextCurrent } };
+    });
+    setViewIdx((i) => Math.max(0, i - (removedIdx <= i ? 1 : 0)));
+  }
+
+  return html`
+    <${Card}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>🗺 학습 로드맵</div>
+        ${overdueDays > 0 && html`<span style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⚠ ${phase.title || `Phase ${viewIdx + 1}`} 목표일 ${overdueDays}일 지남</span>`}
+      </div>
+      <${Field} label="최종 목표">
+        <input style=${inputStyle} value=${finalGoal} onChange=${(e) => setFinalGoal(e.target.value)} placeholder="예: 고2 여름방학 · 수능 영어 1등급" />
+      <//>
+
+      <div style=${{ display: "flex", alignItems: "center", margin: "14px 0 4px" }}>
+        ${phases.map((p, i) => html`
+          <div key=${i} style=${{ display: "flex", alignItems: "center", flex: i < phases.length - 1 ? 1 : "0 0 auto" }}>
+            <div onClick=${() => setViewIdx(i)} title=${p.title || `Phase ${i + 1}`} style=${{
+              width: 26, height: 26, borderRadius: "50%", flexShrink: 0, cursor: "pointer", boxSizing: "border-box",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700,
+              border: `2px solid ${i === viewIdx ? C.gold : i === currentIdx ? C.navy : C.line}`,
+              background: i < currentIdx || (i === currentIdx && p.diagnosticDone) ? C.navy : C.white,
+              color: i < currentIdx || (i === currentIdx && p.diagnosticDone) ? "#fff" : (i === currentIdx ? C.navy : C.slate),
+            }}>${i + 1}</div>
+            ${i < phases.length - 1 && html`<div style=${{ flex: 1, height: 2, background: i < currentIdx ? C.navy : C.line }} />`}
+          </div>
+        `)}
+      </div>
+      <div style=${{ fontSize: 9.5, color: C.slate, marginBottom: 12 }}>${currentIdx + 1}/${phases.length}단계 진행 중 — 위 원형 단계를 눌러 다른 단계를 보거나 편집할 수 있어요.</div>
+
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+        <div style=${{ flex: 1, minWidth: 160 }}>
+          <${Field} label="단계 이름">
+            <input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} />
+          <//>
+        </div>
+        <div style=${{ display: "flex", gap: 6, paddingBottom: 12 }}>
+          ${viewIdx !== currentIdx && html`<${Button} variant="ghost" style=${{ padding: "6px 10px", fontSize: 11.5 }} onClick=${setAsCurrent}>현재 단계로 지정<//>`}
+          <button onClick=${removePhase} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "0 9px", borderRadius: 3, cursor: "pointer" }}>단계 삭제</button>
+        </div>
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <${Field} label="기간 (텍스트, 예: 중3 현재 ~ 여름방학)">
+          <input style=${inputStyle} value=${periodLabel} onChange=${(e) => setPeriodLabel(e.target.value)} />
+        <//>
+        <${Field} label="목표 종료일 (지연 알림 기준)">
+          <input type="date" style=${inputStyle} value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} />
+        <//>
+      </div>
+      <${Field} label="학습 초점">
+        <input style=${inputStyle} value=${focus} onChange=${(e) => setFocus(e.target.value)} />
+      <//>
+      <${Field} label="주요 교재 · 자료">
+        <input style=${inputStyle} value=${materials} onChange=${(e) => setMaterials(e.target.value)} />
+      <//>
+      <${Field} label="상세 계획 / 메모">
+        <textarea style=${{ ...inputStyle, minHeight: 90 }} value=${detail} onChange=${(e) => setDetail(e.target.value)} />
+      <//>
+
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+        <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${saveAll}>저장<//>
+        ${phase.diagnosticDone
+          ? html`
+            <span style=${{ fontSize: 12, color: "#3D6B4F", fontWeight: 700 }}>✓ 진단시험 완료 (${fmtDate(phase.diagnosticDate)})</span>
+            <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${reopenPhase}>완료 취소<//>
+          `
+          : html`<${Button} variant="gold" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${completeAndAdvance}>진단시험 완료 · 다음 단계로<//>`}
+        ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
+      </div>
+
+      <${Button} variant="ghost" style=${{ marginTop: 14, padding: "6px 12px", fontSize: 11.5 }} onClick=${addPhase}>+ 단계 추가<//>
+
+      <div style=${{ marginTop: 14 }}>
+        <${Field} label="약점 관리 · 정기 보고 메모">
+          <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${overallNotes} onChange=${(e) => setOverallNotes(e.target.value)} placeholder="약점 영역 진단/보강 방식, 주간·월간 학부모 보고 주기 등 자유롭게 기록 (위 저장 버튼으로 함께 저장돼요)" />
+        <//>
+      </div>
+    <//>
   `;
 }
 
