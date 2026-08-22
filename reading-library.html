@@ -111,11 +111,20 @@
       <input id="f-title" placeholder="제목 (필수)" />
       <div class="form-row">
         <select id="f-level"></select>
+        <select id="f-category">
+          <option value="Fiction">Fiction</option>
+          <option value="Nonfiction">Nonfiction</option>
+          <option value="Informational">Informational</option>
+        </select>
         <input id="f-genre" placeholder="장르 (선택, 예: 동화)" />
       </div>
       <input id="f-source" placeholder="출처 (필수, 예: Public Domain · Aesop's Fables)" />
-      <input id="f-sourceUrl" placeholder="출처 링크 (선택)" />
+      <div class="form-row">
+        <input id="f-sourceUrl" placeholder="출처 링크 (선택)" />
+        <input id="f-license" placeholder="라이선스 (예: Original, Public Domain)" />
+      </div>
       <textarea id="f-text" placeholder="본문 (필수, 문단 사이는 빈 줄로 구분)"></textarea>
+      <textarea id="f-vocab" placeholder="핵심 단어 (선택, 한 줄에 하나)&#10;Lv.1~5:  단어 | 뜻 | 예문&#10;Lv.6~10: 단어 | 품사 | 문맥 의미 | 예문"></textarea>
       <button class="primary" id="f-submit">등록</button>
       <button class="primary" id="f-cancel" style="background:var(--line); color:var(--ink); display:none; margin-left:8px;">취소</button>
       <div class="msg" id="f-msg"></div>
@@ -278,22 +287,54 @@ document.addEventListener("click", (e) => {
 });
 
 // 학생/학부모에게는 학년 표기 없이 Lv.1~10만 보여준다(요청에 따라 UI에서 학년 라벨 제거).
-// 아래는 새 이야기를 쓸 때 참고하는 난이도 기준 — 처음엔 "원어민 학년"(초3=native 3rd grade)을
-// 그대로 갖다 썼다가 Lv.1이 실제 한국 학생에게 너무 어렵다는 피드백을 받고, 원어민 학년이 아니라
-// "한국에서 영어를 배우는 학생"이 실제로 감당할 수 있는 어휘·문장 길이 기준으로 다시 잡았다.
-// Lv.1  超고빈도 사이트워드 위주, 현재형 중심, 문장 3~8단어, 반복 구조, 전체 40~90단어, 의성어/느낌표로 재미 요소
-// Lv.2  Lv.1 + 과거형 조금 섞임, 90~140단어
-// Lv.3  이야기 구조(시작-사건-끝) 뚜렷해짐, 120~170단어
-// Lv.4  and/but/so/because 등 연결어 등장, 170~220단어
-// Lv.5  대화 비중 늘어남, 200~260단어
-// Lv.6  260~320단어, 좀 더 다양한 어휘
-// Lv.7  300~360단어
-// Lv.8  고전 동화/짧은 소설 발췌 가능, 320~400단어
-// Lv.9  고전 단편(각색), 400~500단어
-// Lv.10 문학적 표현·복문 위주 고전 단편(각색), 500~700단어
+// 대상은 초3~고3 전체이고, Level 1~10은 그 기간 전체에 걸친 하나의 이어지는 독해력 성장
+// 커리큘럼이다. Level이 올라갈수록 단어 수만이 아니라 어휘·문장 구조·문법·추론·추상성이
+// 함께 어려워지도록 설계했다 — 단어 수가 비슷해도(예: Lv.5와 Lv.9) 실제 난이도는 크게 다를 수 있다.
+// Lv.1  초3, 150~250단어 — 영어 읽기 습관 형성. 매우 쉬운 어휘, 짧은 문장, 반복 구조.
+// Lv.2  초3~4, 200~350단어 — 기본 Story 이해. compound sentence 시작, 과거형 증가.
+// Lv.3  초4, 250~400단어 — 문장 단위 독해. 시작-사건-끝 구조, 기본 nonfiction 가능.
+// Lv.4  초4~5, 300~500단어 — 문단 독해. relative clause 기초, because/although/while/if.
+// Lv.5  초5~6, 400~600단어 — 긴 글 이해. 원인/결과, 비교/대조, 기본 추론.
+// Lv.6  초6~중1, 500~750단어 — 중등 독해 진입. 긴 문장, 관계절, 수동태, 추론.
+// Lv.7  중1~중2, 600~900단어 — 중등 본격 독해. 복잡한 문장, paraphrasing, main idea.
+// Lv.8  중2~중3, 700~1000단어 — 고등 독해 준비. economics/philosophy 기초, inference/summary.
+// Lv.9  중3~고1, 800~1200단어 — 고등 영어 진입. academic nonfiction, 필자 주장 파악.
+// Lv.10 고1~고3, 800~1500단어 — 수능/고등 심화 독해. 고밀도 academic nonfiction, 논증/반론.
+// Fiction/Nonfiction 비율은 Lv.1~3 70/30 → Lv.4~6 50/50 → Lv.7~8 30/70 → Lv.9~10 15~20/80~85로
+// 점차 nonfiction 중심으로 옮겨간다.
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => ({ n }));
+
+// 학생/학부모 화면은 학년 표기를 원하지 않아 Lv.만 보여주지만(위 참고), 선생님(#admin)은 반
+// 편성/추천 시 참고할 수 있게 같이 보여준다. 값은 위 레벨별 주 대상 학년 그대로.
+const GRADE_BY_LEVEL = { 1: "초3", 2: "초3~4", 3: "초4", 4: "초4~5", 5: "초5~6", 6: "초6~중1", 7: "중1~중2", 8: "중2~중3", 9: "중3~고1", 10: "고1~고3" };
 function levelLabel(n) {
-  return `Lv.${n}`;
+  return isAdmin ? `Lv.${n} (${GRADE_BY_LEVEL[n] || ""})` : `Lv.${n}`;
+}
+
+// vocabulary는 레벨에 따라 두 형태를 쓴다 — Lv.1~5는 { word, meaning, example } 3필드,
+// Lv.6~10은 품사/문맥 의미를 추가한 { word, pos, meaningInContext, example } 4필드. 등록 폼에서는
+// 한 줄에 "단어 | 뜻(또는 품사|문맥의미) | 예문" 형태로 입력받아 "|" 개수(줄당 필드 수)로 형태를
+// 자동 판별해 파싱한다 — 레벨별로 다른 입력 UI를 따로 만들지 않기 위한 절충.
+function parseVocabLines(raw) {
+  return (raw || "")
+    .split("\n")
+    .map((line) => line.split("|").map((s) => s.trim()))
+    .filter((parts) => parts[0])
+    .map((parts) => {
+      if (parts.length >= 4) return { word: parts[0], pos: parts[1], meaningInContext: parts[2], example: parts[3] || "" };
+      return { word: parts[0], meaning: parts[1] || "", example: parts[2] || "" };
+    });
+}
+function vocabLinesFromEntry(vocabulary) {
+  return (vocabulary || [])
+    .map((v) => ("pos" in v ? [v.word, v.pos, v.meaningInContext, v.example] : [v.word, v.meaning, v.example]).join(" | "))
+    .join("\n");
+}
+
+// journalQuestions는 문서마다 저장하지 않고 레벨(Journal tier)에서 매번 계산한다 — wordCount와
+// 같은 이유로, 값이 4단계(레벨대별)로만 갈리는 정형 데이터라 굳이 각 문서에 중복 저장할 필요가 없다.
+function journalTierForLevel(n) {
+  return n <= 3 ? "1-3" : n <= 6 ? "4-6" : n <= 8 ? "7-8" : "9-10";
 }
 
 let items = [];
@@ -343,7 +384,7 @@ function renderLevels() {
     const count = items.filter((it) => it.level === lv.n).length;
     const tile = document.createElement("div");
     tile.className = "level-tile";
-    tile.innerHTML = `<div class="lv">Lv.${lv.n}</div><div class="count">${count}편</div>`;
+    tile.innerHTML = `<div class="lv">${levelLabel(lv.n)}</div><div class="count">${count}편</div>`;
     tile.onclick = () => { view = { screen: "list", level: lv.n }; render(); };
     el.appendChild(tile);
   });
@@ -493,15 +534,18 @@ if (!isAdmin) {
   document.getElementById("admin-panel").remove();
 }
 
-let fTitle, fLevel, fGenre, fSource, fSourceUrl, fText, fSubmit, fCancel, fMsg;
+let fTitle, fLevel, fCategory, fGenre, fSource, fSourceUrl, fLicense, fText, fVocab, fSubmit, fCancel, fMsg;
 if (isAdmin) {
   document.getElementById("admin-panel").style.display = "";
   fTitle = document.getElementById("f-title");
   fLevel = document.getElementById("f-level");
+  fCategory = document.getElementById("f-category");
   fGenre = document.getElementById("f-genre");
   fSource = document.getElementById("f-source");
   fSourceUrl = document.getElementById("f-sourceUrl");
+  fLicense = document.getElementById("f-license");
   fText = document.getElementById("f-text");
+  fVocab = document.getElementById("f-vocab");
   fSubmit = document.getElementById("f-submit");
   fCancel = document.getElementById("f-cancel");
   fMsg = document.getElementById("f-msg");
@@ -509,15 +553,16 @@ if (isAdmin) {
   LEVELS.forEach((lv) => {
     const opt = document.createElement("option");
     opt.value = lv.n;
-    opt.textContent = `Lv.${lv.n}`;
+    opt.textContent = levelLabel(lv.n);
     fLevel.appendChild(opt);
   });
 }
 
 function resetForm() {
   editingId = null;
-  fTitle.value = ""; fGenre.value = ""; fSource.value = ""; fSourceUrl.value = ""; fText.value = "";
+  fTitle.value = ""; fGenre.value = ""; fSource.value = ""; fSourceUrl.value = ""; fLicense.value = ""; fText.value = ""; fVocab.value = "";
   fLevel.value = "1";
+  fCategory.value = "Fiction";
   fSubmit.textContent = "등록";
   fCancel.style.display = "none";
   fMsg.textContent = "";
@@ -526,9 +571,11 @@ if (isAdmin) {
   resetForm();
   fCancel.onclick = resetForm;
   fSubmit.onclick = async () => {
+    const level = Number(fLevel.value);
     const entry = {
-      title: fTitle.value.trim(), level: Number(fLevel.value), genre: fGenre.value.trim(),
-      source: fSource.value.trim(), sourceUrl: fSourceUrl.value.trim(), text: fText.value.trim(),
+      title: fTitle.value.trim(), level, category: fCategory.value, genre: fGenre.value.trim(),
+      source: fSource.value.trim(), sourceUrl: fSourceUrl.value.trim(), license: fLicense.value.trim(),
+      text: fText.value.trim(), vocabulary: parseVocabLines(fVocab.value), journalLevel: journalTierForLevel(level),
     };
     if (!entry.title || !entry.source || !entry.text) { fMsg.textContent = "제목·출처·본문은 필수예요."; return; }
     try {
@@ -555,7 +602,7 @@ function renderAdminList() {
       <div class="story-row">
         <div>
           <div class="t">${it.title}</div>
-          <div class="m">${levelLabel(it.level)}${it.genre ? " · " + it.genre : ""} · ${it.source || ""}</div>
+          <div class="m">${levelLabel(it.level)}${it.category ? " · " + it.category : ""}${it.genre ? " · " + it.genre : ""} · ${it.source || ""}</div>
         </div>
         <div class="actions">
           <button class="edit">수정</button>
@@ -565,8 +612,9 @@ function renderAdminList() {
     `;
     row.querySelector(".edit").onclick = () => {
       editingId = it.id;
-      fTitle.value = it.title || ""; fLevel.value = it.level || 1; fGenre.value = it.genre || "";
-      fSource.value = it.source || ""; fSourceUrl.value = it.sourceUrl || ""; fText.value = it.text || "";
+      fTitle.value = it.title || ""; fLevel.value = it.level || 1; fCategory.value = it.category || "Fiction"; fGenre.value = it.genre || "";
+      fSource.value = it.source || ""; fSourceUrl.value = it.sourceUrl || ""; fLicense.value = it.license || "";
+      fText.value = it.text || ""; fVocab.value = vocabLinesFromEntry(it.vocabulary);
       fSubmit.textContent = "수정 저장";
       fCancel.style.display = "inline-block";
       fMsg.textContent = "";
