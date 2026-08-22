@@ -1546,6 +1546,7 @@ function PreviewFrame({ label, roleLabel, children }) {
 }
 
 function DashboardPreviewSection() {
+  const isMobile = useIsMobile();
   const todayStr = today();
   const demoData = {
     homework: [
@@ -1630,7 +1631,14 @@ function DashboardPreviewSection() {
       <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
         예시 데이터로 구성한 화면이며, 실제 학생 정보가 아닙니다.
       </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 20 }}>
+      <div style=${{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "none" : "repeat(3, 1fr)",
+        gridAutoFlow: isMobile ? "column" : "row",
+        gridAutoColumns: isMobile ? "84%" : undefined,
+        overflowX: isMobile ? "auto" : "visible",
+        gap: 20, padding: isMobile ? "4px 4px 12px" : 0,
+      }}>
         ${teacherPanel}
         <${PreviewFrame} label="학생 로그인 화면 (예시)" roleLabel="Student">
           <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>민준 학생</div>
@@ -1654,86 +1662,177 @@ function DashboardPreviewSection() {
   `;
 }
 
-// 실제 월말 리포트 인쇄본(MonthlyReportView.printReport())과 같은 색·표 구성을 예시 데이터로
-// 축소 재현한 것 — 로그인해야만 볼 수 있는 실제 리포트를, 실제 학생 정보 노출 없이 홈페이지에서
-// "이런 문서를 받는다"는 걸 바로 보여주기 위한 목업이다. REPORT_CATEGORIES/REPORT_RATINGS는
-// 실제 리포트 작성 화면에서 쓰는 것과 동일한 값을 그대로 가져다 썼다.
+// 실제 데일리 리포트(TeacherDash의 리포트 작성 화면)와 월말 리포트 인쇄본
+// (MonthlyReportView.printReport())의 색·표 구성을 예시 데이터로 축소 재현한 것 — 로그인해야만
+// 볼 수 있는 실제 리포트를, 실제 학생 정보 노출 없이 홈페이지에서 "이런 문서를 받는다"는 걸 바로
+// 보여주기 위한 목업이다.
 function ReportPreviewSection() {
-  const demoRatings = { vocab: "우수", grammar: "매우 우수", reading: "우수", writing: "보통", attitude: "매우 우수", homework: "우수" };
-  return html`
-    <div style=${{ padding: "10px 24px 54px", maxWidth: 640, margin: "0 auto" }}>
-      <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Report</div>
-      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>매달 이런 리포트를 받으실 수 있어요</div>
-      <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
-        예시 데이터로 구성한 실제 월말 리포트 양식이며, 실제 학생 정보가 아닙니다. 인쇄해서 드리거나 PDF로도 전달해 드려요.
-      </div>
-      <div style=${{ background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 14px 34px rgba(20,22,26,0.12)", padding: "26px 24px", fontFamily: "'Noto Sans KR', sans-serif" }}>
-        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `2px solid ${C.gold}`, paddingBottom: 8, marginBottom: 14 }}>
-          <span style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>T. Sarah's English</span>
-          <span style=${{ fontSize: 9.5, letterSpacing: 2, color: C.gold, fontWeight: 700 }}>MONTHLY REPORT</span>
+  const isMobile = useIsMobile();
+  const reportCardStyle = { display: "flex", flexDirection: "column", flex: 1, background: C.white, border: `1px solid ${C.line}`, boxShadow: "0 14px 34px rgba(20,22,26,0.12)", padding: "22px 20px", fontFamily: "'Noto Sans KR', sans-serif" };
+  const reportHead = html`
+    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: `2px solid ${C.gold}`, paddingBottom: 8, marginBottom: 14 }}>
+      <span style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>T. Sarah's English</span>
+      <span style=${{ fontSize: 9, letterSpacing: 2, color: C.gold, fontWeight: 700 }}>MONTHLY REPORT</span>
+    </div>
+  `;
+  const sectionTitle = (n, label) => html`
+    <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+      <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>${n}</span>
+      ${label}
+    </div>
+  `;
+  const colCaption = (title, sub) => html`
+    <div style=${{ textAlign: "center", fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>
+      ${title}<span style=${{ display: "block", fontSize: 10, fontWeight: 400, color: C.slate, marginTop: 2 }}>${sub}</span>
+    </div>
+  `;
+  const pageFoot = (label) => html`<div style=${{ textAlign: "center", fontSize: 9, color: "#8A8370", letterSpacing: 1, marginTop: "auto", paddingTop: 16 }}>${label}</div>`;
+
+  const dailyCol = html`
+    <div>
+      ${colCaption("데일리 리포트", "매 수업마다, 학부모님 로그인 화면에 바로")}
+      <div style=${{ display: "flex", flexDirection: "column", flex: 1, background: "#FBF8F0", border: `1px solid ${C.line}`, borderRadius: 10, overflow: "hidden", boxShadow: "0 10px 28px rgba(20,22,26,0.08)" }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px 4px" }}>
+          <div style=${{ ...serif, fontSize: 13.5, color: C.navy }}>민준 학생 학부모님</div>
+          <div style=${{ fontSize: 9.5, color: C.slate }}>🔔 알림 켜짐 · 로그아웃</div>
         </div>
-        <div style=${{ ...serif, fontSize: 18, color: C.navy, textAlign: "center" }}>8월 월말 학습 리포트</div>
-        <div style=${{ fontSize: 9.5, letterSpacing: 2, color: C.gold, fontWeight: 700, textAlign: "center", marginTop: 2 }}>2026 · MONTHLY PROGRESS REPORT</div>
-        <div style=${{ display: "flex", borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, marginTop: 14, fontSize: 11 }}>
+        <div style=${{ fontSize: 10.5, color: C.slate, padding: "2px 16px 12px" }}>선생님이 작성을 완료한 리포트만 여기에 표시돼요.</div>
+        <div style=${{ background: C.white, margin: "0 14px 16px", border: `1px solid ${C.line}`, borderRadius: 8, padding: "16px 16px 18px" }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 8 }}>2026.08.18</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, marginBottom: 12 }}>[민준] 8/18(화) 수업 안내</div>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginTop: 12 }}>📘 오늘 배운 내용</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4, lineHeight: 1.8 }}>관계대명사 who / which 구별 연습<br />독해 지문 2개 오답 해설</div>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginTop: 12 }}>✏️ 단어시험 결과</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4, lineHeight: 1.8 }}>누적 단어 150 · 92% 합격</div>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginTop: 12 }}>📝 숙제 확인 <span style=${{ fontSize: 9.5, fontWeight: 700, color: "#3F8C5A", background: "#E7F3EA", padding: "2px 7px", borderRadius: 10 }}>✅ 완료</span></div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4, lineHeight: 1.8 }}>에세이 초안 작성<br />단어 오답노트 정리</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const monthlyPage1 = html`
+    <div>
+      ${colCaption("월말 리포트 · 1쪽", "표지 · 출결 · NELT 성적")}
+      <div style=${reportCardStyle}>
+        ${reportHead}
+        <div style=${{ ...serif, fontSize: 17, color: C.navy, textAlign: "center" }}>8월 월말 학습 리포트</div>
+        <div style=${{ fontSize: 9, letterSpacing: 2, color: C.gold, fontWeight: 700, textAlign: "center", marginTop: 2 }}>2026 · MONTHLY PROGRESS REPORT</div>
+        <div style=${{ display: "flex", borderTop: `1px solid ${C.line}`, marginTop: 14, fontSize: 11 }}>
           <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>학생명</span>민준</div>
           <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>학년</span>중2</div>
+        </div>
+        <div style=${{ display: "flex", borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}`, fontSize: 11 }}>
+          <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>담당 선생님</span>Sarah</div>
           <div style=${{ flex: 1, padding: "7px 4px" }}><span style=${{ display: "block", fontSize: 9.5, color: "#8A8370", marginBottom: 2 }}>평가 기간</span>2026년 8월</div>
         </div>
         <div style=${{ marginTop: 18 }}>
-          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>1</span>
-            출결 및 학습 현황
-          </div>
+          ${sectionTitle("1", "출결 및 학습 현황")}
           <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 10.5 }}>
             <tr>${["수업일수", "출석", "결석/보강", "과제 수행률", "단어 통과율"].map((h) => html`<th key=${h} style=${{ background: C.navy, color: "#fff", padding: "6px 4px", fontWeight: 600 }}>${h}</th>`)}</tr>
             <tr>${["8", "8", "0 / 1", "92%", "88%"].map((v, i) => html`<td key=${i} style=${{ padding: "6px 4px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>${v}</td>`)}</tr>
           </table>
         </div>
         <div style=${{ marginTop: 18 }}>
-          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>2</span>
-            영역별 성취 평가
-          </div>
-          <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
-            <tr>
-              <th style=${{ background: C.navy, color: "#fff", padding: "6px 4px", fontWeight: 600, textAlign: "left" }}></th>
-              ${REPORT_RATINGS.map((r) => html`<th key=${r} style=${{ background: C.navy, color: "#fff", padding: "6px 2px", fontWeight: 600 }}>${r}</th>`)}
-            </tr>
-            ${REPORT_CATEGORIES.map((c) => html`
-              <tr key=${c.key}>
-                <td style=${{ padding: "5px 4px", borderBottom: `1px solid ${C.line}`, fontWeight: 700, whiteSpace: "nowrap" }}>${c.label.split(" ")[0]}</td>
-                ${REPORT_RATINGS.map((r) => html`<td key=${r} style=${{ padding: "5px 2px", textAlign: "center", borderBottom: `1px solid ${C.line}`, color: C.gold, fontWeight: 700 }}>${demoRatings[c.key] === r ? "●" : ""}</td>`)}
-              </tr>
-            `)}
-          </table>
+          ${sectionTitle("1-1", "NELT 성적")}
+          <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Lv. 5 중2수준 · 상위 38%</div>
+          <div style=${{ fontSize: 10.5, color: C.slate, lineHeight: 1.8 }}>어휘 중2 수준(상위 41%) · 문법 중3 수준(상위 22%)<br />듣기 중2 수준(상위 45%) · 독해 중1 수준(상위 58%)</div>
+          <svg viewBox="0 0 600 190" preserveAspectRatio="xMidYMid meet" style=${{ width: "100%", height: "auto", margin: "12px 0 6px" }}>
+            <polyline points="60,150 300,105 540,60" fill="none" stroke=${C.gold} stroke-width="2" />
+            <circle cx="60" cy="150" r="4" fill=${C.gold} />
+            <circle cx="300" cy="105" r="4" fill=${C.gold} />
+            <circle cx="540" cy="60" r="4" fill=${C.gold} />
+            <text x="60" y="110" text-anchor="middle" font-size="13" font-weight="700" fill=${C.slate}>초6수준</text>
+            <text x="60" y="126" text-anchor="middle" font-size="11" fill=${C.slate}>상위 71%</text>
+            <text x="60" y="178" text-anchor="middle" font-size="10.5" fill=${C.slate}>03-10</text>
+            <text x="300" y="65" text-anchor="middle" font-size="13" font-weight="700" fill=${C.slate}>중1수준</text>
+            <text x="300" y="81" text-anchor="middle" font-size="11" fill=${C.slate}>상위 52%</text>
+            <text x="300" y="178" text-anchor="middle" font-size="10.5" fill=${C.slate}>06-05</text>
+            <text x="540" y="20" text-anchor="middle" font-size="13" font-weight="700" fill=${C.navy}>중2수준</text>
+            <text x="540" y="36" text-anchor="middle" font-size="11" fill=${C.slate}>상위 38%</text>
+            <text x="540" y="178" text-anchor="middle" font-size="10.5" fill=${C.slate}>08-20</text>
+          </svg>
+          <div style=${{ fontSize: 11, color: C.slate, lineHeight: 1.8 }}>종합: Lv. 5 중2수준 · 상위 38% (직전 상위 52% 대비 ▲ 상위 14%p 향상)</div>
         </div>
+        ${pageFoot("Sarah's English · 학생 한 명, 한 달의 기록 · 1 / 2")}
+      </div>
+    </div>
+  `;
+
+  const monthlyPage2 = html`
+    <div>
+      ${colCaption("월말 리포트 · 2쪽", "학습 내용과 코멘트")}
+      <div style=${reportCardStyle}>
+        ${reportHead}
+        ${sectionTitle("3", "이번 달 학습 내용")}
+        <div style=${{ fontSize: 11, color: C.slate, lineHeight: 1.8 }}>관계대명사와 분사구문을 중심으로 문법을 정리했습니다.<br />독해에서는 틀린 문제 위주로 오답 해설을 진행했습니다.</div>
         <div style=${{ marginTop: 18 }}>
-          <div style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
-            <span style=${{ width: 18, height: 18, borderRadius: 3, background: C.gold, color: "#fff", fontSize: 10, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>3</span>
-            칭찬할 점 & 보완할 점
-          </div>
-          <div style=${{ display: "flex", gap: 16, fontSize: 11, lineHeight: 1.8 }}>
+          ${sectionTitle("4", "칭찬할 점 & 보완할 점")}
+          <div style=${{ display: "flex", gap: 14, fontSize: 10.5, lineHeight: 1.8 }}>
             <div style=${{ flex: 1 }}>
-              <div style=${{ fontWeight: 700, marginBottom: 4 }}>👍 잘하고 있어요</div>
+              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 4 }}>👍 잘하고 있어요</div>
               <div style=${{ color: C.slate }}>독해 속도가 눈에 띄게 빨라졌고, 오답노트를 스스로 정리하는 습관이 잡혔어요.</div>
             </div>
             <div style=${{ flex: 1 }}>
-              <div style=${{ fontWeight: 700, marginBottom: 4 }}>🌱 더 채워볼 점</div>
+              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 4 }}>✏️ 더 챙기면 좋아요</div>
               <div style=${{ color: C.slate }}>작문에서 시제 실수가 반복돼, 다음 달엔 이 부분을 집중적으로 다룰 예정이에요.</div>
             </div>
           </div>
         </div>
-        <div style=${{ textAlign: "center", fontSize: 9, color: "#8A8370", letterSpacing: 1, marginTop: 24 }}>Sarah's English · 학생 한 명, 한 달의 기록</div>
+        <div style=${{ marginTop: 18 }}>
+          ${sectionTitle("5", "선생님 종합 코멘트")}
+          <div style=${{ fontSize: 11, color: C.slate, lineHeight: 1.8 }}>민준이는 매주 성실하게 숙제를 챙겨오고 있어요.<br />이번 달엔 특히 독해 속도가 눈에 띄게 좋아졌습니다.<br />지금처럼만 꾸준히 해준다면 다음 학기도 기대됩니다.</div>
+        </div>
+        <div style=${{ marginTop: 18 }}>
+          ${sectionTitle("6", "다음 달 학습 방향")}
+          <div style=${{ fontSize: 11, color: C.slate, lineHeight: 1.8 }}>이번 달 배운 문법을 독해에 바로 적용하는 연습을 늘리고, 단어 시험 범위도 점차 넓혀갈 예정입니다.</div>
+        </div>
+        <div style=${{ marginTop: "auto", paddingTop: 20 }}>
+          <div style=${{ textAlign: "center", fontSize: 9, color: "#8A8370", letterSpacing: 1 }}>Sarah's English · 학생 한 명, 한 달의 기록</div>
+          <div style=${{ textAlign: "center", fontSize: 9, color: "#8A8370", letterSpacing: 1, marginTop: 4 }}>2 / 2</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return html`
+    <div id="report" style=${{ padding: "60px 24px 54px" }}>
+      <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Report</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>매일, 그리고 매달<br />이런 리포트를 받으실 수 있어요</div>
+      <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+        예시 데이터로 구성한 실제 리포트 화면·양식이며, 실제 학생 정보가 아닙니다. 인쇄해서 드리거나 PDF로도 전달해 드려요.
+      </div>
+      <div style=${{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "none" : "repeat(3, minmax(230px, 1fr))",
+        gridAutoFlow: isMobile ? "column" : "row",
+        gridAutoColumns: isMobile ? "84%" : undefined,
+        overflowX: isMobile ? "auto" : "visible",
+        gap: 18, alignItems: "stretch", maxWidth: 1200, margin: "0 auto", padding: isMobile ? "4px 4px 12px" : 0,
+      }}>
+        ${dailyCol}${monthlyPage1}${monthlyPage2}
       </div>
     </div>
   `;
 }
 
-const CURRICULUM_HIGHLIGHTS = [
-  { icon: "📖", title: "스토리 읽기로 독해력 · 문해력", body: "정해진 교재 진도만이 아니라, 레벨에 맞는 동화·소설을 직접 읽게 하고 그 기록을 관리합니다. 읽은 만큼 독해력과 문해력이 함께 쌓여요." },
-  { icon: "✍️", title: "내가 직접 만드는 문제", body: "시중 문제집을 그대로 풀리지 않고, 내신·모의고사 기출 지문을 직접 변형해 실전 감각을 기르는 문제를 만듭니다." },
-  { icon: "📊", title: "리포트로 남기는 성장", body: "그렇게 쌓인 기록은 데일리·월말 리포트로 정리되어, 학부모님께 그대로 전달됩니다." },
+const CURRICULUM_TIERS = [
+  { badge: "초등부", desc: "흥미를 잃지 않게, 기초를 단단히 — 읽기 습관까지 함께", chips: ["단어", "문법", "독해", "작문", "책읽기", "독서 기록"] },
+  { badge: "중등부", desc: "내신 대비를 기본으로, 책읽기와 북리포트로 사고력까지", chips: ["단어", "문법", "독해", "내신", "책읽기", "북리포트"] },
+  { badge: "고등부", desc: "내신과 수능, 두 갈래를 함께 준비", chips: ["단어", "문법", "독해", "내신", "모의고사(수능 준비)"] },
 ];
+
+const HOME_ANCHORS = [
+  { href: "#philosophy", label: "교육목표" },
+  { href: "#curriculum", label: "커리큘럼" },
+  { href: "#system", label: "시스템" },
+  { href: "#regions", label: "지역" },
+  { href: "#report", label: "리포트" },
+  { href: "#contact", label: "상담 예약" },
+];
+
+// 섹션을 번갈아 강조하기 위한 배경색 — 목업의 `section.alt` 배경(--surface-2)과 동일한 톤.
+const SECTION_ALT_BG = "#F3EEE0";
 
 function HomePage({ setScreen, announcement }) {
   const isMobile = useIsMobile();
@@ -1745,108 +1844,117 @@ function HomePage({ setScreen, announcement }) {
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [loginMenuOpen]);
-  const values = [
-    { n: "01", title: "1:1 맞춤 수업", body: "학생 한 명 한 명의 속도와 약점에 맞춰 커리큘럼을 그때그때 조정합니다. 정해진 진도표가 학생을 따라가는 게 아니라, 학생에 맞춰 진도표를 짭니다." },
-    { n: "02", title: "체계적인 기록 관리", body: "매 수업의 학습 내용, 단어시험 합격률, 숙제 완료율, 정기시험 성적까지 — 학원 못지않게 꼼꼼히 기록하고 추적합니다." },
-    { n: "03", title: "정기 학습 리포트", body: "매달 학부모님께 숙제·단어시험·정기시험 결과를 한 장으로 정리한 리포트를 전달해 드립니다. 아이의 학습 상황을 언제든 투명하게 확인하실 수 있어요." },
-  ];
+  const heroBand = { background: "linear-gradient(135deg, #1C2B4A 0%, #101A2E 100%)" };
   const loginMenuItemStyle = { display: "block", width: "100%", textAlign: "left", padding: "10px 14px", fontSize: 12.5, background: "none", border: "none", borderBottom: `1px solid ${C.line}`, color: C.ink, cursor: "pointer", fontFamily: "inherit" };
   return html`
     <div>
-      <div style=${{ background: C.ink, height: 6 }} />
-      <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${C.line}`, background: C.ivory }}>
-        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div role="img" aria-label="Sarah's English" style=${{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.navy}`, boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
-          <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
-        </div>
-        ${isMobile ? html`
-          <div ref=${loginMenuRef} style=${{ position: "relative", display: "flex", gap: 6, alignItems: "center" }}>
-            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
-            <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setLoginMenuOpen((v) => !v)}>로그인 ${loginMenuOpen ? "▴" : "▾"}<//>
-            ${loginMenuOpen && html`
-              <div style=${{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: "0 6px 16px rgba(20,22,26,0.15)", overflow: "hidden", minWidth: 132, zIndex: 5 }}>
-                <button onClick=${() => { setLoginMenuOpen(false); setScreen("teacherLogin"); }} style=${loginMenuItemStyle}>선생님 로그인</button>
-                <button onClick=${() => { setLoginMenuOpen(false); setScreen("studentLogin"); }} style=${loginMenuItemStyle}>학생 로그인</button>
-                <button onClick=${() => { setLoginMenuOpen(false); setScreen("parentLogin"); }} style=${{ ...loginMenuItemStyle, borderBottom: "none" }}>학부모 로그인</button>
-              </div>
-            `}
+      <div style=${{ position: "sticky", top: 0, zIndex: 20, background: C.ivory }}>
+        <div style=${{ background: C.navy, height: 6 }} />
+        <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${C.line}`, gap: 16, flexWrap: "wrap" }}>
+          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div role="img" aria-label="Sarah's English" style=${{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.navy}`, boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
+            <div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah's English</div>
           </div>
-        ` : html`
-          <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
-            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
-            <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
-            <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
+          ${!isMobile && html`
+            <nav style=${{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+              ${HOME_ANCHORS.map((a) => html`<a key=${a.href} href=${a.href} style=${{ fontSize: 12.5, color: C.slate, textDecoration: "none" }}>${a.label}</a>`)}
+            </nav>
+          `}
+          ${isMobile ? html`
+            <div ref=${loginMenuRef} style=${{ position: "relative", display: "flex", gap: 6, alignItems: "center" }}>
+              <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트 예약<//>
+              <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setLoginMenuOpen((v) => !v)}>로그인 ${loginMenuOpen ? "▴" : "▾"}<//>
+              ${loginMenuOpen && html`
+                <div style=${{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, boxShadow: "0 6px 16px rgba(20,22,26,0.15)", overflow: "hidden", minWidth: 132, zIndex: 5 }}>
+                  <button onClick=${() => { setLoginMenuOpen(false); setScreen("teacherLogin"); }} style=${loginMenuItemStyle}>선생님 로그인</button>
+                  <button onClick=${() => { setLoginMenuOpen(false); setScreen("studentLogin"); }} style=${loginMenuItemStyle}>학생 로그인</button>
+                  <button onClick=${() => { setLoginMenuOpen(false); setScreen("parentLogin"); }} style=${{ ...loginMenuItemStyle, borderBottom: "none" }}>학부모 로그인</button>
+                </div>
+              `}
+            </div>
+          ` : html`
+            <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
+              <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("teacherLogin")}>선생님 로그인<//>
+              <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("studentLogin")}>학생 로그인<//>
+              <${Button} variant="primary" style=${{ padding: "8px 12px", fontSize: 12 }} onClick=${() => setScreen("parentLogin")}>학부모 로그인<//>
+            </div>
+          `}
+        </div>
+        ${announcement && announcement.text && html`
+          <div style=${{ background: C.gold, padding: "12px 24px", textAlign: "center" }}>
+            <span style=${{ fontSize: 12.5, color: "#fff", fontWeight: 700, letterSpacing: 0.3 }}>📢 ${announcement.text}</span>
           </div>
         `}
       </div>
 
-      ${announcement && announcement.text && html`
-        <div style=${{ background: C.gold, padding: "12px 24px", textAlign: "center" }}>
-          <span style=${{ fontSize: 12.5, color: "#fff", fontWeight: 700, letterSpacing: 0.3 }}>📢 ${announcement.text}</span>
+      <div style=${{ ...heroBand, padding: "72px 24px 60px", textAlign: "center", position: "relative", overflow: "hidden" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 3, color: "#E3C98C", fontWeight: 700, textTransform: "uppercase" }}>Private English Tutoring, Systematized</div>
+        <div style=${{ ...serif, fontSize: 30, color: "#fff", marginTop: 16, lineHeight: 1.5 }}>
+          과외의 밀착 지도<br />
+          <span style=${{ display: "inline-block", width: 34, height: 2, background: C.gold, margin: "10px 0" }} /><br />
+          학원의 체계적 관리
         </div>
-      `}
-
-      <div style=${{ padding: "56px 24px 44px", textAlign: "center" }}>
-        <div style=${{ fontSize: 11, letterSpacing: 3, color: C.gold, fontWeight: 700, textTransform: "uppercase" }}>Private English Tutoring, Systematized</div>
-        <div style=${{ ...serif, fontSize: 30, color: C.ink, marginTop: 14, lineHeight: 1.4 }}>과외의 밀착 지도<br />+<br />학원의 체계적 관리</div>
-        <div style=${{ fontSize: 14, color: C.slate, marginTop: 14, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.7 }}>
-          한 명의 학생에게 온전히 집중하는 1:1 수업이지만, 커리큘럼과 학습·성적 관리는 학원처럼 체계적으로. Sarah's English는 그 두 가지를 함께 갖춘 개인 영어 과외입니다.
+        <div style=${{ fontSize: 14.5, color: "#D9DCE6", marginTop: 16, maxWidth: 480, marginLeft: "auto", marginRight: "auto", lineHeight: 1.8 }}>
+          한 명의 학생에게 온전히 집중하는 1:1 수업이지만,<br />커리큘럼과 학습·성적 관리는 학원처럼 체계적으로.
+        </div>
+        <div style=${{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 26 }}>
+          ${["1:1 맞춤 수업", "체계적 기록 관리", "정기 학습 리포트"].map((b) => html`
+            <span key=${b} style=${{ fontSize: 11.5, padding: "7px 14px", borderRadius: 20, border: "1px solid rgba(255,255,255,0.25)", background: "rgba(255,255,255,0.06)", color: "#fff" }}>${b}</span>
+          `)}
+        </div>
+        <div style=${{ display: "flex", gap: 10, justifyContent: "center", marginTop: 28, flexWrap: "wrap" }}>
+          <${Button} variant="gold" style=${{ padding: "10px 18px", fontSize: 13, color: C.navy }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
+          <a href="#philosophy" style=${{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, padding: "10px 18px", borderRadius: 3, border: "1px solid rgba(255,255,255,0.5)", color: "#fff", textDecoration: "none" }}>교육목표 보기 ↓</a>
         </div>
       </div>
 
-      <div style=${{ padding: "10px 24px 50px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, maxWidth: 820, margin: "0 auto" }}>
-        ${values.map((v) => html`
-          <div key=${v.n} style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: 22 }}>
-            <div style=${{ ...serif, fontStyle: "italic", fontSize: 13, color: C.gold, marginBottom: 8 }}>${v.n}</div>
-            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 8 }}>${v.title}</div>
-            <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${v.body}</div>
-          </div>
-        `)}
-      </div>
-
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 940, margin: "0 auto" }}>
-        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Curriculum</div>
-        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>읽고, 만들고, 기록하는 커리큘럼</div>
-        <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
-          교재 진도만 나가는 게 아니라, 읽기로 실력을 쌓고 직접 만든 문제로 실전을 대비합니다.
+      <div id="philosophy" style=${{ padding: "60px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Philosophy</div>
+        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>교육목표</div>
+        <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", maxWidth: 560, margin: "0 auto 36px", lineHeight: 1.7 }}>
+          수업의 질은 물론,<br />체계적인 관리까지 더해서,<br />학습 성취라는 결과로 만들어냅니다.
         </div>
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-          ${CURRICULUM_HIGHLIGHTS.map((c) => html`
-            <div key=${c.title} style=${{ background: C.white, border: `1px solid ${C.line}`, padding: "22px 20px" }}>
-              <div style=${{ fontSize: 22, marginBottom: 12 }}>${c.icon}</div>
-              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 8 }}>${c.title}</div>
-              <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.7 }}>${c.body}</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
+          ${[
+            { ico: "🎯", title: "학생 맞춤", body: "반 편성이 아니라 학생 한 명 기준으로 진도와 목표를 정하고 조정합니다." },
+            { ico: "🔁", title: "끝까지 관리", body: "숙제든 단어시험이든 시작만 시키지 않고, 끝날 때까지 확인하고 다시 챙깁니다." },
+            { ico: "📈", title: "결과로 증명", body: "그렇게 쌓인 관리가 성적이라는 눈에 보이는 결과로 이어집니다." },
+          ].map((p) => html`
+            <div key=${p.title} style=${{ background: C.white, padding: "26px 24px" }}>
+              <div style=${{ fontSize: 22, marginBottom: 12 }}>${p.ico}</div>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 8 }}>${p.title}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, lineHeight: 1.75 }}>${p.body}</div>
             </div>
           `)}
         </div>
       </div>
 
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
-        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Regions</div>
-        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>과외 지역</div>
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
-          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "24px 26px" }}>
-            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>강서 · 마곡 / 목동</div>
-            <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>초등부터 고등까지</div>
-            <div style=${{ marginTop: 14 }}>
-              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}><span style=${{ color: C.slate }}>초등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 3회 · 1시간 30분</span></div>
-              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
-            </div>
-            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>단어·숙제·진도를 매 회차 안에서 통합으로 점검합니다. 숙제가 밀리면 주말 보충으로 반드시 그 주 안에 채워드리며, 별도 비용은 받지 않습니다.</div>
+      <div style=${{ background: SECTION_ALT_BG }}>
+        <div id="curriculum" style=${{ padding: "60px 24px 54px", maxWidth: 940, margin: "0 auto" }}>
+          <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Curriculum</div>
+          <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>학년별 커리큘럼</div>
+          <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+            시중 문제집으로 기본기를 다지고,<br />내신·모의고사 기출은 직접 변형한 문제로 실전 감각까지 더합니다.
           </div>
-          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "24px 26px" }}>
-            <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>대치 · 과천 / 양재</div>
-            <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>중등부터 고등까지</div>
-            <div style=${{ marginTop: 14 }}>
-              <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
-            </div>
-            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>숙제가 밀리면 주말 Zoom 보충으로 채워드리며, 별도 비용은 받지 않습니다. 고3은 주 1회 실전 모의고사를 Zoom으로 함께 진행합니다.</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18 }}>
+            ${CURRICULUM_TIERS.map((t) => html`
+              <div key=${t.badge} style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "24px 22px" }}>
+                <span style=${{ display: "inline-block", background: C.navy, color: "#fff", fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, padding: "3px 11px", borderRadius: 20, marginBottom: 14 }}>${t.badge}</span>
+                <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>${t.desc}</div>
+                <div style=${{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                  ${t.chips.map((c) => html`<span key=${c} style=${{ fontSize: 11.5, padding: "5px 11px", borderRadius: 20, border: `1px solid ${C.line}`, background: "#FBF6EA", color: C.navy, fontWeight: 600 }}>${c}</span>`)}
+                </div>
+              </div>
+            `)}
+          </div>
+          <div style=${{ textAlign: "center", fontSize: 12.5, color: C.slate, marginTop: 26, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.8 }}>
+            학년대별로 다루는 영역은 다르지만,<br />그 안에서도 학생 개인의 속도와 약점에 맞춰 비중을 조정합니다.
           </div>
         </div>
       </div>
 
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 980, margin: "0 auto" }}>
+      <div id="system" style=${{ padding: "60px 24px 54px", maxWidth: 980, margin: "0 auto" }}>
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>System</div>
         <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>믿을 수 있는 건, 결국 시스템</div>
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(215px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
@@ -1868,33 +1976,67 @@ function HomePage({ setScreen, announcement }) {
         </div>
       </div>
 
-      <${DashboardPreviewSection} />
-
-      <div style=${{ padding: "10px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
-        <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Management</div>
-        <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>학생 관리 전용 페이지로, 이렇게 관리합니다</div>
-        <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
-          학생 한 명 한 명의 기록을 이 페이지 안에 날짜별로 쌓습니다. 학부모님도 로그인해서 언제든 직접 확인하실 수 있어요.
-        </div>
-        <div>
-          ${[
-            { n: "01", title: "수업 직후 — 학습 기록", body: "그날 다룬 문법·독해 내용을 바로 기록해 남깁니다. 무슨 수업을 했는지 기억에 의존하지 않아요." },
-            { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 일정이 바로 잡히고 이 페이지에 표시됩니다." },
-            { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다. 완료하지 않으면 학부모님께도 알림이 가요." },
-            { n: "04", title: "정기시험 볼 때마다 — 성적 추이 기록", body: "내신·모의고사 점수를 목표 대비로 기록해, 등락이 아니라 흐름을 봅니다." },
-            { n: "05", title: "학생이 직접 — 온라인 서재에서 읽고 단어장 쌓기", body: "레벨에 맞는 영어 동화·소설을 따로 만든 서재 사이트에서 읽습니다. 모르는 단어를 누르면 그 학생의 개인 단어장에 자동으로 쌓여요." },
-            { n: "06", title: "필요할 때마다 — 자료실에 해설영상 업로드", body: "자주 틀리는 문제는 해설 영상을 찍어 자료실에 올려드립니다. 학생은 언제든 다시 돌려보며 복습할 수 있어요." },
-            { n: "07", title: "매일 — 데일리 리포트", body: "그날 배운 내용·단어시험 결과·숙제 여부를 정리해 데일리 리포트로 남깁니다. 발행하는 즉시 학부모님 로그인 화면에서 바로 확인하실 수 있어요." },
-            { n: "08", title: "매달 말 — 월말 리포트", body: "숙제 완료율, 단어시험 합격율, 정기시험 결과를 한 장으로 정리해 전달드립니다. 마찬가지로 로그인하면 바로 확인하실 수 있어요." },
-          ].map((s) => html`
-            <div key=${s.n} style=${{ display: "flex", gap: 18, padding: "16px 4px", borderBottom: `1px solid ${C.line}` }}>
-              <div style=${{ ...serif, fontStyle: "italic", fontSize: 15, color: C.gold, flexShrink: 0, width: 26 }}>${s.n}</div>
-              <div>
-                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${s.title}</div>
-                <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 5, lineHeight: 1.7 }}>${s.body}</div>
+      <div style=${{ background: SECTION_ALT_BG }}>
+        <div id="regions" style=${{ padding: "60px 24px 54px", maxWidth: 900, margin: "0 auto" }}>
+          <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Regions</div>
+          <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>과외 지역</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
+            <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "24px 26px" }}>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>강서 · 마곡 / 목동</div>
+              <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>초등부터 고등까지</div>
+              <div style=${{ marginTop: 14 }}>
+                <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px dotted ${C.line}`, fontSize: 12.5 }}><span style=${{ color: C.slate }}>초등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 3회 · 1시간 30분</span></div>
+                <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
+              </div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>단어·숙제·진도를 매 회차 안에서 통합으로 점검합니다.</div>
+              <div style=${{ marginTop: 14, padding: "12px 14px", background: "#FBF6EA", borderLeft: `3px solid ${C.gold}`, fontSize: 12, color: C.ink, lineHeight: 1.75 }}>
+                🏠 중등부터는 데일리·주간 숙제가 밀리면 주말에 선생님 자택으로 불러 그 주 학습을 마무리합니다.<br />시간은 따로 정해져 있지 않고, 추가 비용은 받지 않습니다.
               </div>
             </div>
-          `)}
+            <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "24px 26px" }}>
+              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>대치 · 과천 / 양재</div>
+              <div style=${{ ...serif, fontSize: 17, color: C.navy, marginTop: 8 }}>중등부터 고등까지</div>
+              <div style=${{ marginTop: 14 }}>
+                <div style=${{ display: "flex", justifyContent: "space-between", padding: "9px 0", fontSize: 12.5 }}><span style=${{ color: C.slate }}>중·고등학생</span><span style=${{ color: C.ink, fontWeight: 600 }}>주 2회 · 2시간</span></div>
+              </div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 14, lineHeight: 1.75 }}>고3은 주 1회 실전 모의고사를 Zoom으로 함께 진행합니다.</div>
+              <div style=${{ marginTop: 14, padding: "12px 14px", background: "#FBF6EA", borderLeft: `3px solid ${C.gold}`, fontSize: 12, color: C.ink, lineHeight: 1.75 }}>
+                💻 데일리·주간 숙제가 밀리면 주말에 Zoom으로 그 주 학습을 마무리합니다.<br />시간은 따로 정해져 있지 않고, 추가 비용은 받지 않습니다.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <${DashboardPreviewSection} />
+
+      <div style=${{ background: SECTION_ALT_BG }}>
+        <div id="management" style=${{ padding: "60px 24px 54px", maxWidth: 820, margin: "0 auto" }}>
+          <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 6, textAlign: "center" }}>Management</div>
+          <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 10 }}>학생 관리 전용 페이지로, 이렇게 관리합니다</div>
+          <div style=${{ fontSize: 13, color: C.slate, textAlign: "center", maxWidth: 560, margin: "0 auto 26px", lineHeight: 1.75 }}>
+            학생 한 명 한 명의 기록을 이 페이지 안에 날짜별로 쌓습니다. 학부모님도 로그인해서 언제든 직접 확인하실 수 있어요.
+          </div>
+          <div>
+            ${[
+              { n: "01", title: "수업 직후 — 학습 기록", body: "그날 다룬 문법·독해 내용을 바로 기록해 남깁니다. 무슨 수업을 했는지 기억에 의존하지 않아요." },
+              { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 일정이 바로 잡히고 이 페이지에 표시됩니다." },
+              { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다. 완료하지 않으면 학부모님께도 알림이 가요." },
+              { n: "04", title: "정기시험 볼 때마다 — 성적 추이 기록", body: "내신·모의고사 점수를 목표 대비로 기록해, 등락이 아니라 흐름을 봅니다." },
+              { n: "05", title: "학생이 직접 — 온라인 서재에서 읽고 단어장 쌓기", body: "레벨에 맞는 영어 동화·소설을 따로 만든 서재 사이트에서 읽습니다. 모르는 단어를 누르면 그 학생의 개인 단어장에 자동으로 쌓여요." },
+              { n: "06", title: "필요할 때마다 — 자료실에 해설영상 업로드", body: "자주 틀리는 문제는 해설 영상을 찍어 자료실에 올려드립니다. 학생은 언제든 다시 돌려보며 복습할 수 있어요." },
+              { n: "07", title: "매일 — 데일리 리포트", body: "그날 배운 내용·단어시험 결과·숙제 여부를 정리해 데일리 리포트로 남깁니다. 발행하는 즉시 학부모님 로그인 화면에서 바로 확인하실 수 있어요." },
+              { n: "08", title: "매달 말 — 월말 리포트", body: "숙제 완료율, 단어시험 합격율, 정기시험 결과를 한 장으로 정리해 전달드립니다. 마찬가지로 로그인하면 바로 확인하실 수 있어요." },
+            ].map((s) => html`
+              <div key=${s.n} style=${{ display: "flex", gap: 18, padding: "16px 4px", borderBottom: `1px solid ${C.line}` }}>
+                <div style=${{ ...serif, fontStyle: "italic", fontSize: 15, color: C.gold, flexShrink: 0, width: 26 }}>${s.n}</div>
+                <div>
+                  <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${s.title}</div>
+                  <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 5, lineHeight: 1.7 }}>${s.body}</div>
+                </div>
+              </div>
+            `)}
+          </div>
         </div>
       </div>
 
@@ -1904,6 +2046,17 @@ function HomePage({ setScreen, announcement }) {
         <div style=${{ fontSize: 11, letterSpacing: 2, color: C.gold, fontWeight: 700, textTransform: "uppercase", marginBottom: 14 }}>About</div>
         <div style=${{ fontSize: 13.5, color: C.slate, lineHeight: 1.85 }}>
           학원에서 아이들을 가르치며 체계적인 커리큘럼과 관리 시스템의 힘을 배웠습니다. 지금은 그 경험을 바탕으로, 학원에서는 어려운 온전한 1:1 밀착 지도에 학원 수준의 기록·관리 시스템을 더해 가르치고 있습니다.
+        </div>
+      </div>
+
+      <div id="contact" style=${{ ...heroBand, padding: "64px 24px", textAlign: "center" }}>
+        <div style=${{ fontSize: 11, letterSpacing: 2, color: "#E3C98C", fontWeight: 700, textTransform: "uppercase" }}>Get Started</div>
+        <div style=${{ ...serif, fontSize: 22, color: "#fff", marginTop: 10 }}>1:1의 밀착, 학원의 체계 — 지금 시작해보세요</div>
+        <div style=${{ fontSize: 13.5, color: "#D9DCE6", maxWidth: 520, margin: "14px auto 0", lineHeight: 1.8 }}>
+          레벨테스트는 별도 비용 없이 진행되며, 아이의 현재 실력을 확인하고 이후 커리큘럼을 함께 설계합니다.
+        </div>
+        <div style=${{ marginTop: 26 }}>
+          <${Button} variant="gold" style=${{ padding: "10px 20px", fontSize: 13.5, color: C.navy }} onClick=${() => setScreen("levelTest")}>레벨테스트·상담 예약<//>
         </div>
       </div>
 
