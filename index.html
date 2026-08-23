@@ -7853,6 +7853,24 @@ function TuitionEditor({ student, data, updateData }) {
   `;
 }
 
+// 로드맵의 "프리미엄 학부모 화면"용 확장 필드(스킬 매트릭스/교재 목록/단계별 목표)는 한 줄에
+// 필드 하나씩 다 만들면 선생님 편집 화면이 지나치게 길어져서, 파이프(|)로 구분한 여러 줄
+// 텍스트 하나로 입력받고 저장 시에만 배열로 파싱한다 — ParentRoadmapSection이 그 배열을 읽는다.
+function parsePipeRows(text, fields) {
+  return (text || "").split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    const parts = line.split("|").map((p) => p.trim());
+    const obj = {};
+    fields.forEach((f, i) => { obj[f] = parts[i] || ""; });
+    return obj;
+  });
+}
+function stringifyPipeRows(rows, fields) {
+  return (rows || []).map((r) => fields.map((f) => r[f] || "").join(" | ")).join("\n");
+}
+function parseLines(text) {
+  return (text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
 // 학생별 5단계(Phase) 장기 로드맵을 선생님이 직접 기록·추적하는 패널. 각 Phase의 목표 종료일이
 // 지났는데 아직 "진단시험 완료" 처리를 안 했으면 TeacherOverview 홈 화면에 지연 경고로 뜬다
 // (숙제/단어시험/모의고사 미완료를 모으는 것과 같은 방식) — 이게 이 기능의 핵심 목적이다.
@@ -7869,24 +7887,50 @@ function RoadmapEditor({ student, data, updateData }) {
   const [materials, setMaterials] = useState("");
   const [detail, setDetail] = useState("");
   const [savedMsg, setSavedMsg] = useState("");
+  // 프리미엄 학부모 화면(ParentRoadmapSection)용 확장 필드 — 전부 선택 입력이라 비어 있으면
+  // 그 화면 쪽에서 알아서 간단한 형태로 대체해서 보여준다(예: skills 없으면 스킬 매트릭스 숨김).
+  const [currentLevelLabel, setCurrentLevelLabel] = useState(roadmap?.currentLevelLabel || "");
+  const [targetLevelLabel, setTargetLevelLabel] = useState(roadmap?.targetLevelLabel || "");
+  const [skillsText, setSkillsText] = useState(stringifyPipeRows(roadmap?.skills, ["label", "current", "target", "pct", "nextFocus"]));
+  const [whyDiagnosis, setWhyDiagnosis] = useState(roadmap?.whyRoadmap?.diagnosis || "");
+  const [whyPriority, setWhyPriority] = useState(roadmap?.whyRoadmap?.priority || "");
+  const [whyIntervention, setWhyIntervention] = useState(roadmap?.whyRoadmap?.intervention || "");
+  const [whyOutcome, setWhyOutcome] = useState(roadmap?.whyRoadmap?.outcome || "");
+  const [objectivesText, setObjectivesText] = useState("");
+  const [completionCriteria, setCompletionCriteria] = useState("");
+  const [whyThisStep, setWhyThisStep] = useState("");
+  const [materialsListText, setMaterialsListText] = useState("");
 
   useEffect(() => {
     setViewIdx(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
     setFinalGoal(roadmap?.finalGoal || "");
     setOverallNotes(roadmap?.overallNotes || "");
+    setCurrentLevelLabel(roadmap?.currentLevelLabel || "");
+    setTargetLevelLabel(roadmap?.targetLevelLabel || "");
+    setSkillsText(stringifyPipeRows(roadmap?.skills, ["label", "current", "target", "pct", "nextFocus"]));
+    setWhyDiagnosis(roadmap?.whyRoadmap?.diagnosis || ""); setWhyPriority(roadmap?.whyRoadmap?.priority || "");
+    setWhyIntervention(roadmap?.whyRoadmap?.intervention || ""); setWhyOutcome(roadmap?.whyRoadmap?.outcome || "");
   }, [student.id]);
   useEffect(() => {
     const p = (roadmap?.phases || [])[viewIdx];
     setTitle(p?.title || ""); setPeriodLabel(p?.periodLabel || ""); setTargetDate(p?.targetDate || "");
     setFocus(p?.focus || ""); setMaterials(p?.materials || ""); setDetail(p?.detail || "");
+    setObjectivesText((p?.objectives || []).join("\n"));
+    setCompletionCriteria(p?.completionCriteria || "");
+    setWhyThisStep(p?.whyThisStep || "");
+    setMaterialsListText(stringifyPipeRows(p?.materialsList, ["name", "purpose", "role"]));
   }, [viewIdx, student.id]);
 
   function blankPhase(n) {
-    return { title: `Phase ${n}`, periodLabel: "", targetDate: "", focus: "", materials: "", detail: "", diagnosticDone: false, diagnosticDate: null };
+    return {
+      title: `Phase ${n}`, periodLabel: "", targetDate: "", focus: "", materials: "", detail: "",
+      diagnosticDone: false, diagnosticDate: null,
+      objectives: [], completionCriteria: "", whyThisStep: "", materialsList: [],
+    };
   }
 
   async function createRoadmap() {
-    await updateData((d) => ({ ...d, roadmap: { finalGoal: "", currentPhaseIndex: 0, overallNotes: "", phases: [1, 2, 3, 4, 5].map(blankPhase) } }));
+    await updateData((d) => ({ ...d, roadmap: { finalGoal: "", currentPhaseIndex: 0, overallNotes: "", currentLevelLabel: "", targetLevelLabel: "", skills: [], whyRoadmap: null, phases: [1, 2, 3, 4, 5].map(blankPhase) } }));
   }
 
   if (!roadmap) {
@@ -7906,11 +7950,29 @@ function RoadmapEditor({ student, data, updateData }) {
     ? Math.round((new Date(todayStr + "T00:00:00") - new Date(phase.targetDate + "T00:00:00")) / 86400000)
     : 0;
 
+  function currentPhasePatch() {
+    return {
+      title, periodLabel, targetDate, focus, materials, detail,
+      objectives: parseLines(objectivesText),
+      completionCriteria,
+      whyThisStep,
+      materialsList: parsePipeRows(materialsListText, ["name", "purpose", "role"]),
+    };
+  }
+  function topLevelPatch() {
+    const why = whyDiagnosis || whyPriority || whyIntervention || whyOutcome
+      ? { diagnosis: whyDiagnosis, priority: whyPriority, intervention: whyIntervention, outcome: whyOutcome } : null;
+    return {
+      finalGoal, overallNotes, currentLevelLabel, targetLevelLabel,
+      skills: parsePipeRows(skillsText, ["label", "current", "target", "pct", "nextFocus"]),
+      whyRoadmap: why,
+    };
+  }
   async function saveAll() {
     await updateData((d) => {
       const rm = d.roadmap || roadmap;
-      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, title, periodLabel, targetDate, focus, materials, detail } : p));
-      return { ...d, roadmap: { ...rm, finalGoal, overallNotes, phases: nextPhases } };
+      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, ...currentPhasePatch() } : p));
+      return { ...d, roadmap: { ...rm, ...topLevelPatch(), phases: nextPhases } };
     });
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
   }
@@ -7918,10 +7980,10 @@ function RoadmapEditor({ student, data, updateData }) {
     let nextLen = phases.length;
     await updateData((d) => {
       const rm = d.roadmap || roadmap;
-      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, title, periodLabel, targetDate, focus, materials, detail, diagnosticDone: true, diagnosticDate: todayStr } : p));
+      const nextPhases = (rm.phases || []).map((p, i) => (i === viewIdx ? { ...p, ...currentPhasePatch(), diagnosticDone: true, diagnosticDate: todayStr } : p));
       nextLen = nextPhases.length;
       const nextCurrent = viewIdx < nextPhases.length - 1 ? viewIdx + 1 : viewIdx;
-      return { ...d, roadmap: { ...rm, finalGoal, overallNotes, phases: nextPhases, currentPhaseIndex: nextCurrent } };
+      return { ...d, roadmap: { ...rm, ...topLevelPatch(), phases: nextPhases, currentPhaseIndex: nextCurrent } };
     });
     setViewIdx((i) => (i < nextLen - 1 ? i + 1 : i));
   }
@@ -7962,6 +8024,30 @@ function RoadmapEditor({ student, data, updateData }) {
       </div>
       <${Field} label="최종 목표">
         <input style=${inputStyle} value=${finalGoal} onChange=${(e) => setFinalGoal(e.target.value)} placeholder="예: 고2 여름방학 · 수능 영어 1등급" />
+      <//>
+
+      <details style=${{ marginBottom: 12 }}>
+        <summary style=${{ fontSize: 11.5, color: C.slate, cursor: "pointer" }}>프리미엄 학부모 화면용 정보 (선택 입력) ▾</summary>
+        <div style=${{ marginTop: 10 }}>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <${Field} label="현재 레벨 (예: TOEFL Junior Advanced)">
+              <input style=${inputStyle} value=${currentLevelLabel} onChange=${(e) => setCurrentLevelLabel(e.target.value)} />
+            <//>
+            <${Field} label="목표 레벨 (예: TOEFL iBT)">
+              <input style=${inputStyle} value=${targetLevelLabel} onChange=${(e) => setTargetLevelLabel(e.target.value)} />
+            <//>
+          </div>
+          <${Field} label="스킬 매트릭스 — 한 줄에 하나씩, '영역 | 현재 | 목표 | 진행률(0~100) | 다음 초점'">
+            <textarea style=${{ ...inputStyle, minHeight: 80, fontFamily: "monospace", fontSize: 12 }} value=${skillsText} onChange=${(e) => setSkillsText(e.target.value)} placeholder="Reading | B1+ | B2 | 78 | Inference & Author's Purpose" />
+          <//>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginTop: 10, marginBottom: 4 }}>왜 이 로드맵인가 (Why This Roadmap)</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <${Field} label="진단 (Diagnosis)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyDiagnosis} onChange=${(e) => setWhyDiagnosis(e.target.value)} /><//>
+            <${Field} label="우선순위 (Priority)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyPriority} onChange=${(e) => setWhyPriority(e.target.value)} /><//>
+            <${Field} label="개입/보강 (Intervention)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyIntervention} onChange=${(e) => setWhyIntervention(e.target.value)} /><//>
+            <${Field} label="기대 성과 (Expected Outcome)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyOutcome} onChange=${(e) => setWhyOutcome(e.target.value)} /><//>
+          </div>
+        </div>
       <//>
 
       <div style=${{ display: "flex", alignItems: "center", margin: "14px 0 4px" }}>
@@ -8007,6 +8093,24 @@ function RoadmapEditor({ student, data, updateData }) {
       <//>
       <${Field} label="상세 계획 / 메모">
         <textarea style=${{ ...inputStyle, minHeight: 90 }} value=${detail} onChange=${(e) => setDetail(e.target.value)} />
+      <//>
+
+      <details style=${{ marginBottom: 12 }}>
+        <summary style=${{ fontSize: 11.5, color: C.slate, cursor: "pointer" }}>이 단계 프리미엄 화면용 정보 (선택 입력) ▾</summary>
+        <div style=${{ marginTop: 10 }}>
+          <${Field} label="핵심 목표 (Core Objectives) — 한 줄에 하나씩">
+            <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${objectivesText} onChange=${(e) => setObjectivesText(e.target.value)} placeholder="Academic Vocabulary 확장&#10;긴 문장 구조 분석 능력 강화" />
+          <//>
+          <${Field} label="교재 목록 — 한 줄에 하나씩, '교재명 | 용도 | 역할'">
+            <textarea style=${{ ...inputStyle, minHeight: 70, fontFamily: "monospace", fontSize: 12 }} value=${materialsListText} onChange=${(e) => setMaterialsListText(e.target.value)} placeholder="Wordly Wise | Academic Vocabulary | Vocabulary Foundation" />
+          <//>
+          <${Field} label="다음 단계 진입 조건 (Completion Criteria)">
+            <input style=${inputStyle} value=${completionCriteria} onChange=${(e) => setCompletionCriteria(e.target.value)} placeholder="예: Vocabulary 90%+ · Grammar 85%+ · Reading Accuracy 80%+" />
+          <//>
+          <${Field} label="왜 이 단계인가 (Why This Step)">
+            <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${whyThisStep} onChange=${(e) => setWhyThisStep(e.target.value)} placeholder="예: 중등 수준의 영어 이해력을 고등 Academic English로 확장하기 위해..." />
+          <//>
+        </div>
       <//>
 
       <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
@@ -8591,9 +8695,203 @@ function ParentMonthlyReportCard({ month, report }) {
   `;
 }
 
+// 로드맵 편집 화면(RoadmapEditor)에서 학부모용 확장 필드가 비어 있을 때, 선생님이 입력한
+// 기본 텍스트(focus/materials 문자열)만으로도 프리미엄 화면이 어색하지 않게 대체 표시되도록
+// 하는 변환 함수들 — objectives/materialsList가 채워져 있으면 그쪽을 우선한다.
+function phaseObjectives(phase) {
+  if ((phase.objectives || []).length) return phase.objectives;
+  return (phase.focus || "").split(/[,·]/).map((s) => s.trim()).filter(Boolean);
+}
+function phaseMaterialsList(phase) {
+  if ((phase.materialsList || []).length) return phase.materialsList;
+  return (phase.materials || "").split("·").map((s) => s.trim()).filter(Boolean).map((name) => ({ name, purpose: "", role: "" }));
+}
+
+// 학부모용 "Premium Learning Roadmap" — 학생 정보의 RoadmapEditor(교사용, 편집)와 같은
+// data.roadmap을 읽기 전용으로 보여주되, 국제학교/교육 컨설팅 리포트 톤에 맞춰 완전히 다른
+// 레이아웃(Student Profile → Progress → Timeline → Current/Next/Goal → Skill Matrix →
+// Why This Roadmap)으로 재구성한다. 확장 필드(skills/whyRoadmap/objectives/materialsList 등)가
+// 비어 있으면 그 섹션을 감추거나 기본 텍스트로 대체해, 아직 안 채운 학생도 어색하지 않게 만든다.
+function ParentRoadmapSection({ student, data }) {
+  const roadmap = data.roadmap;
+  const [openIdx, setOpenIdx] = useState(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
+  useEffect(() => { setOpenIdx(roadmap ? (roadmap.currentPhaseIndex || 0) : 0); }, [student.id]);
+
+  if (!roadmap || !(roadmap.phases || []).length) {
+    return html`<${Empty} text="아직 등록된 학습 로드맵이 없어요." />`;
+  }
+
+  const phases = roadmap.phases;
+  const currentIdx = Math.min(roadmap.currentPhaseIndex || 0, phases.length - 1);
+  const currentPhase = phases[currentIdx];
+  const nextPhase = phases[currentIdx + 1];
+  const completedCount = phases.slice(0, currentIdx).length + (currentPhase.diagnosticDone ? 1 : 0);
+  const progressPct = Math.round((completedCount / phases.length) * 100);
+  const why = roadmap.whyRoadmap;
+  const hasWhy = why && (why.diagnosis || why.priority || why.intervention || why.outcome);
+  const skills = roadmap.skills || [];
+
+  const navy = C.navy, ink = C.ink, slate = C.slate, line = C.line, gold = C.gold, white = C.white;
+  const eyebrow = { fontSize: 10.5, letterSpacing: 2.5, color: gold, fontWeight: 700, textTransform: "uppercase" };
+  const sectionTitle = { ...serif, fontSize: 16, color: navy, marginBottom: 14 };
+  const label = { fontSize: 9.5, letterSpacing: 1, color: slate, textTransform: "uppercase", fontWeight: 700 };
+
+  function statusOf(i) {
+    if (i < currentIdx || (i === currentIdx && currentPhase.diagnosticDone)) return "done";
+    if (i === currentIdx) return "current";
+    return "upcoming";
+  }
+
+  return html`
+    <div style=${{ maxWidth: 760, margin: "0 auto" }}>
+      <div style=${eyebrow}>Premium Learning Roadmap</div>
+      <div style=${{ ...serif, fontSize: 20, color: ink, marginTop: 4, marginBottom: 20 }}>${student.name} 학생 영어 학습 로드맵</div>
+
+      <div style=${{ background: white, border: `1px solid ${line}`, borderRadius: 14, padding: "24px 26px", marginBottom: 24, display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 28 }}>
+        <div>
+          <div style=${label}>Student Academic Profile</div>
+          <div style=${{ ...serif, fontSize: 22, color: navy, marginTop: 8 }}>${student.name}</div>
+          <div style=${{ fontSize: 12, color: slate, marginTop: 2 }}>${[student.school, student.grade].filter(Boolean).join(" · ") || "—"}</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 18 }}>
+            <div><div style=${label}>Current Level</div><div style=${{ fontSize: 13.5, color: ink, fontWeight: 700, marginTop: 4 }}>${roadmap.currentLevelLabel || currentPhase.title}</div></div>
+            <div><div style=${label}>Target</div><div style=${{ fontSize: 13.5, color: ink, fontWeight: 700, marginTop: 4 }}>${roadmap.targetLevelLabel || "—"}</div></div>
+          </div>
+          <div style=${{ marginTop: 14 }}>
+            <div style=${label}>Long-Term Goal</div>
+            <div style=${{ fontSize: 13, color: navy, fontWeight: 700, marginTop: 4, lineHeight: 1.6 }}>${roadmap.finalGoal || "—"}</div>
+          </div>
+        </div>
+        <div style=${{ borderLeft: `1px solid ${line}`, paddingLeft: 28, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style=${label}>Academic Progress</div>
+          <div style=${{ ...serif, fontSize: 40, color: navy, marginTop: 6 }}>${progressPct}%</div>
+          <div style=${{ display: "flex", alignItems: "center", marginTop: 14 }}>
+            ${phases.map((p, i) => html`
+              <div key=${i} style=${{ display: "flex", alignItems: "center", flex: i < phases.length - 1 ? 1 : "0 0 auto" }}>
+                <div style=${{
+                  width: statusOf(i) === "current" ? 11 : 8, height: statusOf(i) === "current" ? 11 : 8, borderRadius: "50%", flexShrink: 0,
+                  background: statusOf(i) === "upcoming" ? white : (statusOf(i) === "current" ? gold : navy),
+                  border: `1.5px solid ${statusOf(i) === "upcoming" ? line : (statusOf(i) === "current" ? gold : navy)}`,
+                }} />
+                ${i < phases.length - 1 && html`<div style=${{ flex: 1, height: 1, background: i < currentIdx ? navy : line }} />`}
+              </div>
+            `)}
+          </div>
+          <div style=${{ display: "flex", justifyContent: "space-between", fontSize: 10, color: slate, marginTop: 6 }}>
+            <span>Foundation</span><span>Target</span>
+          </div>
+          <div style=${{ fontSize: 11.5, color: slate, marginTop: 14, lineHeight: 1.7 }}>
+            현재 단계 <b style=${{ color: navy }}>${currentPhase.title}</b>${nextPhase ? html` · 다음 단계 <b style=${{ color: navy }}>${nextPhase.title}</b>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div style=${sectionTitle}>Long-Term Roadmap</div>
+      <div style=${{ marginBottom: 28 }}>
+        ${phases.map((p, i) => {
+          const status = statusOf(i);
+          const isOpen = openIdx === i;
+          const objectives = phaseObjectives(p);
+          const materialsList = phaseMaterialsList(p);
+          return html`
+            <div key=${i} style=${{ display: "flex", gap: 16 }}>
+              <div style=${{ display: "flex", flexDirection: "column", alignItems: "center", width: 22, flexShrink: 0 }}>
+                <div style=${{
+                  width: 20, height: 20, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700,
+                  background: status === "done" ? navy : status === "current" ? gold : white,
+                  border: `1.5px solid ${status === "upcoming" ? line : (status === "current" ? gold : navy)}`,
+                  color: status === "upcoming" ? slate : "#fff",
+                }}>${status === "done" ? "✓" : i + 1}</div>
+                ${i < phases.length - 1 && html`<div style=${{ width: 1, flex: 1, minHeight: 20, background: i < currentIdx ? navy : line, marginTop: 4 }} />`}
+              </div>
+              <div style=${{ flex: 1, paddingBottom: 26, minWidth: 0 }}>
+                <div onClick=${() => setOpenIdx(isOpen ? -1 : i)} style=${{ cursor: "pointer" }}>
+                  <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
+                    <div style=${{ fontSize: 14, fontWeight: 700, color: status === "upcoming" ? slate : navy }}>${p.title}</div>
+                    <div style=${{ fontSize: 10.5, color: slate }}>${status === "done" ? "COMPLETED" : status === "current" ? "IN PROGRESS" : "UPCOMING"}</div>
+                  </div>
+                  <div style=${{ fontSize: 11.5, color: slate, marginTop: 3 }}>${p.periodLabel || ""}${p.targetDate ? ` · 목표 ${fmtDate(p.targetDate)}` : ""}</div>
+                </div>
+                ${isOpen && html`
+                  <div style=${{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${line}` }}>
+                    ${objectives.length > 0 && html`
+                      <div style=${label}>Core Objectives</div>
+                      <div style=${{ marginTop: 6, marginBottom: 14 }}>
+                        ${objectives.map((o, oi) => html`<div key=${oi} style=${{ fontSize: 12.5, color: ink, padding: "3px 0", paddingLeft: 14, position: "relative" }}><span style=${{ position: "absolute", left: 0, color: gold }}>—</span>${o}</div>`)}
+                      </div>
+                    `}
+                    ${materialsList.length > 0 && html`
+                      <div style=${label}>Core Materials</div>
+                      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 6, marginBottom: 14 }}>
+                        ${materialsList.map((m, mi) => html`
+                          <div key=${mi} style=${{ border: `1px solid ${line}`, borderRadius: 8, padding: "10px 12px" }}>
+                            <div style=${{ fontSize: 12, fontWeight: 700, color: navy }}>${m.name}</div>
+                            ${m.purpose && html`<div style=${{ fontSize: 10.5, color: slate, marginTop: 3 }}>${m.purpose}</div>`}
+                            ${m.role && html`<div style=${{ fontSize: 10, color: gold, marginTop: 2, fontWeight: 700 }}>${m.role}</div>`}
+                          </div>
+                        `)}
+                      </div>
+                    `}
+                    ${p.whyThisStep && html`
+                      <div style=${label}>Why This Step?</div>
+                      <div style=${{ fontSize: 12.5, color: ink, lineHeight: 1.7, marginTop: 6, marginBottom: 14 }}>${p.whyThisStep}</div>
+                    `}
+                    ${p.completionCriteria && html`
+                      <div style=${label}>Completion Criteria</div>
+                      <div style=${{ fontSize: 12.5, color: ink, lineHeight: 1.7, marginTop: 6 }}>${p.completionCriteria}</div>
+                    `}
+                  </div>
+                `}
+              </div>
+            </div>
+          `;
+        })}
+      </div>
+
+      ${skills.length > 0 && html`
+        <div style=${sectionTitle}>Academic Skill Map</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 28 }}>
+          ${skills.map((s, si) => html`
+            <div key=${si} style=${{ background: white, border: `1px solid ${line}`, borderRadius: 10, padding: "16px 18px" }}>
+              <div style=${label}>${s.label}</div>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 8 }}>
+                <div style=${{ fontSize: 11.5, color: slate }}>Current <b style=${{ color: navy }}>${s.current}</b></div>
+                <div style=${{ fontSize: 11.5, color: slate }}>Target <b style=${{ color: navy }}>${s.target}</b></div>
+              </div>
+              ${s.pct !== "" && html`
+                <div style=${{ height: 5, borderRadius: 3, background: C.ivory, marginTop: 10, overflow: "hidden" }}>
+                  <div style=${{ height: "100%", width: `${Math.max(0, Math.min(100, Number(s.pct) || 0))}%`, background: gold, borderRadius: 3 }} />
+                </div>
+              `}
+              ${s.nextFocus && html`<div style=${{ fontSize: 10.5, color: slate, marginTop: 8 }}>Next Focus · ${s.nextFocus}</div>`}
+            </div>
+          `)}
+        </div>
+      `}
+
+      ${hasWhy && html`
+        <div style=${sectionTitle}>Why This Roadmap?</div>
+        <div style=${{ marginBottom: 10 }}>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 1, background: line, border: `1px solid ${line}`, borderRadius: 10, overflow: "hidden" }}>
+            ${[
+              ["Diagnosis", why.diagnosis], ["Learning Priority", why.priority],
+              ["Intervention", why.intervention], ["Expected Outcome", why.outcome],
+            ].filter(([, v]) => v).map(([t, v], i) => html`
+              <div key=${i} style=${{ background: white, padding: "16px 18px" }}>
+                <div style=${label}>${t}</div>
+                <div style=${{ fontSize: 12.5, color: ink, marginTop: 8, lineHeight: 1.75 }}>${v}</div>
+              </div>
+            `)}
+          </div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
 // Icon-grid home menu for the parent dashboard — same pattern as STUDENT_HOME_ACTIONS, so a parent
 // logging in sees the same kind of app-like home screen as their kid instead of a desktop tab strip.
 const PARENT_HOME_ACTIONS = [
+  { key: "roadmap", label: "학습 로드맵", icon: "🗺", bg: "#EEF1F6" },
   { key: "studyTime", label: "누적 공부 시간", icon: "⏱", bg: "#EAF6F6" },
   { key: "dailyReport", label: "데일리 리포트", icon: "📰", bg: "#F3EDF7" },
   { key: "monthlyReport", label: "월말 리포트", icon: "📊", bg: "#FBF4EA" },
@@ -8734,6 +9032,8 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
       `}
 
       ${tab === "consult" && html`<${ConsultRequestPanel} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
+
+      ${tab === "roadmap" && html`<${ParentRoadmapSection} student=${student} data=${data} />`}
     </div>
   `;
 }
