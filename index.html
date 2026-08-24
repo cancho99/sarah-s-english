@@ -74,6 +74,8 @@
     .ap-split-form-left { width: 100%; }
     .ap-split-form-right { border-left: none; padding-left: 0; border-top: 1px solid #DCD8CF; padding-top: 16px; margin-top: 4px; }
     .main-quad-grid { grid-template-columns: 1fr !important; grid-template-rows: none !important; height: auto !important; }
+    .main-two-col { grid-template-columns: 1fr !important; height: auto !important; }
+    .main-two-col > div { height: auto !important; }
     /* Most of the teacher dashboard's text/buttons/inputs are sized with fixed inline px styles
        (not CSS classes), so a font-size rule here can't reach them — a media-query-only zoom scales
        the already-rendered pixels uniformly instead, enlarging everything (including inline-styled
@@ -203,6 +205,7 @@ async function loadStore(attempts = 3) {
         levelTestBookings: Array.isArray(rec.levelTestBookings) ? rec.levelTestBookings : [],
         announcement: rec.announcement || null,
         examKeyLibrary: Array.isArray(rec.examKeyLibrary) ? rec.examKeyLibrary : [],
+        teacherTodos: Array.isArray(rec.teacherTodos) ? rec.teacherTodos : [],
         sharedDriveFolderLink: rec.sharedDriveFolderLink || "",
         studentData: {}, // fetched per-student on demand via ensureData()
       };
@@ -222,7 +225,7 @@ async function saveMeta() {
     // setDoc would replace the ENTIRE meta doc, silently wiping fields this function doesn't know
     // about (e.g. teacherFcmTokens, written separately by addTeacherFcmToken's own transaction)
     // any time a teacher saves the roster/announcement/bookings/exam key library.
-    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [], sharedDriveFolderLink: store.sharedDriveFolderLink || "" }, { merge: true });
+    await window.__setDoc(ref, { roster: store.roster, teacherAuth: store.teacherAuth, levelTestBookings: store.levelTestBookings || [], announcement: store.announcement || null, examKeyLibrary: store.examKeyLibrary || [], teacherTodos: store.teacherTodos || [], sharedDriveFolderLink: store.sharedDriveFolderLink || "" }, { merge: true });
     return true;
   } catch (e) {
     console.error("saveMeta error", e);
@@ -734,6 +737,30 @@ function nextClassText(student, todayStr) {
   const label = diffDays === 0 ? "오늘" : diffDays === 1 ? "내일" : `${dt.getMonth() + 1}/${dt.getDate()} (${DAY_NAMES[dt.getDay()]})`;
   return `${label} ${best.time}${best.kind === "makeup" ? " (보강)" : ""}`;
 }
+// 선생님 홈 화면의 "오늘 내 수업 스케줄" — 전체 학생을 훑어 오늘 날짜에 잡혀 있는 수업만 모은다.
+// nextClassText와 같은 두 소스(주간 반복 패턴 + monthlyInstances 보강/이동 수업)를 합치되, 학생별
+// "다음 수업 1개"가 아니라 "오늘 하루 전체"를 모으는 것이라 날짜를 하루로 고정해 순회한다.
+function todaysClassesForRoster(roster, todayStr) {
+  const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+  const dayName = DAY_NAMES[new Date(todayStr + "T00:00:00").getDay()];
+  const month = todayStr.slice(0, 7);
+  const list = [];
+  (roster || []).forEach((student) => {
+    const pattern = patternForMonth(student.scheduleByMonth, student.schedule, student.scheduleMonth, month);
+    const exceptions = student.tutoringExceptions || [];
+    pattern.forEach((s) => {
+      if (s.day !== dayName) return;
+      if (isTutoringExcepted(exceptions, todayStr, s.time, s.endTime)) return;
+      list.push({ student, time: s.time, endTime: s.endTime, kind: "정기" });
+    });
+    ((student.monthlyInstances || {})[month] || []).forEach((inst) => {
+      if (inst.date !== todayStr || inst.type !== "tutoring") return;
+      list.push({ student, time: inst.time, endTime: inst.endTime, kind: "보강" });
+    });
+  });
+  list.sort((a, b) => a.time.localeCompare(b.time));
+  return list;
+}
 // Shown on student home, parent home, and the teacher's per-student "학습 현황" tab — one place
 // defining what "숙제 진행율" means so the number is identical everywhere it appears.
 function HomeworkProgressCard({ data, big }) {
@@ -919,36 +946,85 @@ function parseVocabPaste(text) {
   }
   return rows;
 }
-function parseExamPaste(text) {
-  const blocks = text.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  const out = [];
-  for (const block of blocks) {
-    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 3) continue;
-    const isMarker = (l) => /^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/.test(l);
-    const isAnswer = (l) => /^정답\s*[:：]?/.test(l);
-    const qLines = [];
-    let i = 0;
-    while (i < lines.length && !isMarker(lines[i]) && !isAnswer(lines[i])) { qLines.push(lines[i]); i++; }
-    if (qLines.length === 0) continue;
-    qLines[0] = qLines[0].replace(/^\d+[.\)]\s*/, "");
-    const qText = qLines.join("\n");
-    const choices = [];
-    let answerIdx = 0;
-    for (; i < lines.length; i++) {
-      const line = lines[i];
-      const ansMatch = line.match(/^정답\s*[:：]?\s*([1-9A-Da-d])/);
-      if (ansMatch) {
-        const a = ansMatch[1];
-        answerIdx = /[1-9]/.test(a) ? parseInt(a, 10) - 1 : a.toUpperCase().charCodeAt(0) - 65;
-        continue;
-      }
-      const marker = line.match(/^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/);
-      if (marker) choices.push(line.slice(marker[0].length).trim());
-      else if (choices.length > 0) choices[choices.length - 1] += " " + line;
-    }
-    if (qText && choices.length >= 2) out.push({ q: qText, choices, answer: Math.min(Math.max(answerIdx, 0), choices.length - 1) });
+// Plain single-column PDF text extraction — same technique as wordtest.html's extractPdfText
+// (group text items by rounded Y position so words on the same printed line stay together, then
+// read lines top-to-bottom). Good enough for digitally-typed worksheets; scanned/photographed
+// pages or dense multi-column layouts (common in real 기출/교재 PDFs) will come out jumbled or
+// empty since there's no column detection or OCR here — the teacher still reviews/edits the
+// extracted text in the paste box before "가져오기" runs parseExamPaste on it.
+async function extractPdfPlainText(file) {
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   }
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const rows = {};
+    content.items.forEach((it) => {
+      const y = Math.round(it.transform[5]);
+      (rows[y] || (rows[y] = [])).push(it.str);
+    });
+    Object.keys(rows).map(Number).sort((a, b) => b - a).forEach((y) => lines.push(rows[y].join(" ")));
+  }
+  return lines.join("\n");
+}
+// Real worksheets/기출 text (typed by hand, or extracted from a PDF) don't reliably use a blank
+// line to separate one question from the next — teachers commonly leave a blank line INSIDE a
+// question (between the stem and its choices) instead, and/or run the "정답: N" line straight
+// into the next question's stem with no gap at all. Splitting on blank lines first (the original
+// approach) broke on both of those real patterns, silently dropping or corrupting questions. This
+// version never treats a blank line as meaningful — the only thing that ends one question and
+// starts the next is hitting a "정답:" line, since that's the one marker real worksheets always
+// place right after the content it's grading. Also recognizes ①-⑩ circled-number answers (e.g.
+// "정답: ③"), not just plain digits/letters — Korean worksheets almost always give the answer as
+// a circled number, not "정답: 3". A block with no choice markers at all becomes a 서술형
+// (subjective) question instead of being dropped, since real worksheets mix objective and
+// short-answer/서술형 items freely.
+function parseExamPaste(text) {
+  const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩";
+  const markerRe = /^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/;
+  function markerToIndex(raw, choiceCount) {
+    const ch = (raw || "").trim()[0];
+    if (!ch) return null;
+    const circled = CIRCLED.indexOf(ch);
+    if (circled >= 0) return circled;
+    if (/[1-9]/.test(ch)) return parseInt(ch, 10) - 1;
+    if (/[A-Da-d]/.test(ch)) return ch.toUpperCase().charCodeAt(0) - 65;
+    return null;
+  }
+
+  const out = [];
+  let qLines = [];
+  let choices = [];
+
+  function flush(answerRaw) {
+    const qText = qLines.join("\n").trim().replace(/^\d+[.\)]\s*/, "");
+    if (qText) {
+      if (choices.length >= 2) {
+        const idx = markerToIndex(answerRaw, choices.length);
+        out.push({ q: qText, type: "mc", choices, answer: idx == null ? 0 : Math.min(Math.max(idx, 0), choices.length - 1) });
+      } else if (answerRaw && answerRaw.trim()) {
+        out.push({ q: qText, type: "subjective", answer: answerRaw.trim() });
+      }
+    }
+    qLines = []; choices = [];
+  }
+
+  text.split("\n").map((l) => l.trim()).forEach((line) => {
+    if (!line) return; // blank lines carry no structural meaning here — always skip
+    const ansMatch = line.match(/^정답\s*[:：]?\s*(.+)$/);
+    if (ansMatch) { flush(ansMatch[1]); return; }
+    // Only treat a marker-looking line as a CHOICE once the question's own stem text has started
+    // — otherwise a leading "1. 문제 내용" (question numbering) would itself get mistaken for the
+    // first choice, since "1." matches the same marker pattern as "1) 보기".
+    const marker = qLines.length > 0 ? line.match(markerRe) : null;
+    if (marker) { choices.push(line.slice(marker[0].length).trim()); return; }
+    if (choices.length > 0) choices[choices.length - 1] += " " + line; // wrapped choice text
+    else qLines.push(line);
+  });
   return out;
 }
 function normText(s) { return String(s ?? "").replace(/\s+/g, "").toLowerCase(); }
@@ -1222,6 +1298,7 @@ function App() {
   const [levelTestBookings, setLevelTestBookings] = useState([]);
   const [announcement, setAnnouncement] = useState(null);
   const [examKeyLibrary, setExamKeyLibrary] = useState([]);
+  const [teacherTodos, setTeacherTodos] = useState([]);
   const [sharedDriveFolderLink, setSharedDriveFolderLink] = useState("");
   const [session, setSession] = useState(null);
   const [dataCache, setDataCache] = useState({});
@@ -1242,6 +1319,7 @@ function App() {
         setLevelTestBookings(s.levelTestBookings || []);
         setAnnouncement(s.announcement || null);
         setExamKeyLibrary(s.examKeyLibrary || []);
+        setTeacherTodos(s.teacherTodos || []);
         setSharedDriveFolderLink(s.sharedDriveFolderLink || "");
         // Restore a login that survived a refresh — only once, right after the roster we need to
         // look student sessions up against first arrives. A stale/deleted student id just falls
@@ -1286,6 +1364,11 @@ function App() {
   async function saveExamKeyLibrary(list) {
     setExamKeyLibrary(list);
     if (store) store.examKeyLibrary = list;
+    await saveMeta();
+  }
+  async function saveTeacherTodos(list) {
+    setTeacherTodos(list);
+    if (store) store.teacherTodos = list;
     await saveMeta();
   }
   async function saveSharedDriveFolderLink(link) {
@@ -1389,6 +1472,7 @@ function App() {
       levelTestBookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       announcement=${announcement} saveAnnouncement=${saveAnnouncement}
       examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary}
+      teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
       addTeacherFcmToken=${addTeacherFcmToken}
       teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal}
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
@@ -2322,10 +2406,11 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
 }
 
 // ---------- Teacher dashboard ----------
-function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestBookings, announcement, saveAnnouncement, onGoBookings, onGoHwStatus, onSelectStudent, onSelectStudentInfo, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestBookings, announcement, saveAnnouncement, teacherTodos, saveTeacherTodos, onGoBookings, onGoHwStatus, onSelectStudent, onSelectStudentInfo, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
   const [loaded, setLoaded] = useState(false);
   const [annText, setAnnText] = useState(announcement ? announcement.text : "");
   const [annSaved, setAnnSaved] = useState(false);
+  const [todoText, setTodoText] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -2343,33 +2428,53 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
     setTimeout(() => setAnnSaved(false), 2500);
   }
 
+  async function addTodo() {
+    if (!todoText.trim()) return;
+    await saveTeacherTodos([{ id: uid(), content: todoText.trim(), done: false, createdAt: today() }, ...(teacherTodos || [])]);
+    setTodoText("");
+  }
+  async function toggleTodo(id) {
+    await saveTeacherTodos((teacherTodos || []).map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  }
+  async function removeTodo(id) {
+    await saveTeacherTodos((teacherTodos || []).filter((t) => t.id !== id));
+  }
+  const todoList = [...(teacherTodos || [])].sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+
   const pendingBookings = (levelTestBookings || []).filter((b) => b.status !== "완료");
   const todayStr = today();
-  const todayHomework = [];
-  const todayVocab = []; // 재시험 날짜가 오늘이거나 지났는데 아직(그 시험을) 통과 못한 것 — StudentDash의 notPassedVocab/todayVocab/overdueVocab과 같은 기준
-  const todayMock = []; // 응시 날짜가 오늘이거나 지났는데 아직 결과(응시) 기록이 없는 모의고사 — StudentDash의 unsubmittedMock/todayMock/overdueMock과 같은 기준
+  const todayClasses = todaysClassesForRoster(roster, todayStr);
+  const todayHomework = [], overdueHomework = [];
+  const todayVocab = [], overdueVocab = []; // 재시험 날짜가 오늘/지났는데 아직 응시 기록이 없는 것(합격 여부는 안 봄 — 응시하면 마감) — StudentDash의 notTakenVocab/todayVocab/overdueVocab과 같은 기준
+  const todayMock = [], overdueMock = []; // 응시 날짜가 오늘/지났는데 아직 결과(응시) 기록이 없는 모의고사 — StudentDash의 unsubmittedMock/todayMock/overdueMock과 같은 기준
   roster.forEach((s) => {
     const d = dataCache[s.id] || emptyData();
     (d.homework || []).forEach((h) => {
-      if (h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired) todayHomework.push({ student: s, hw: h });
+      if (!h.dueDate || h.dueDate > todayStr || h.done || h.expired) return;
+      (h.dueDate === todayStr ? todayHomework : overdueHomework).push({ student: s, hw: h });
     });
     (d.vocabTests || []).forEach((t) => {
       if (t.expired || !t.retestDate || t.retestDate > todayStr) return;
-      const results = (d.vocabResults || []).filter((r) => r.testId === t.id);
-      const latest = results[0];
-      const pct = latest ? Math.round((latest.score / latest.total) * 100) : -1;
-      if (pct < vocabPassThreshold(t.title)) todayVocab.push({ student: s, test: t });
+      // 합격 여부와 무관하게 "응시했으면 마감" — 미응시(응시 기록 없음)일 때만 확인이 필요하다.
+      const hasResult = (d.vocabResults || []).some((r) => r.testId === t.id);
+      if (hasResult) return;
+      (t.retestDate === todayStr ? todayVocab : overdueVocab).push({ student: s, test: t });
     });
     (d.mockExams || []).forEach((t) => {
       if (t.expired || !t.date || t.date > todayStr) return;
       const hasResult = (d.mockExamResults || []).some((r) => r.testId === t.id);
-      if (!hasResult) todayMock.push({ student: s, test: t });
+      if (hasResult) return;
+      (t.date === todayStr ? todayMock : overdueMock).push({ student: s, test: t });
     });
   });
   todayHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
+  overdueHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
   todayVocab.sort((a, b) => a.test.retestDate.localeCompare(b.test.retestDate));
+  overdueVocab.sort((a, b) => a.test.retestDate.localeCompare(b.test.retestDate));
   todayMock.sort((a, b) => a.test.date.localeCompare(b.test.date));
+  overdueMock.sort((a, b) => a.test.date.localeCompare(b.test.date));
   const todayCheckCount = todayHomework.length + todayVocab.length + todayMock.length;
+  const overdueCheckCount = overdueHomework.length + overdueVocab.length + overdueMock.length;
 
   const LIMIT_KB = 1000;
   const sizeInfo = roster.map((s) => {
@@ -2414,11 +2519,45 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   });
   roadmapAlerts.sort((a, b) => b.overdueDays - a.overdueDays);
 
+  const todayIncompleteCount = todoList.filter((t) => !t.done).length;
   return html`
     <div>
-      <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>왼쪽 목록에서 학생을 바로 선택하시거나, 아래에서 전체 현황을 확인하세요.</div>
+      <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>왼쪽에서 오늘 수업과 할 일을 확인하고, 오른쪽에서 전체 현황을 확인하세요.</div>
 
-      <div className="main-quad-grid" style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 20, height: "calc(100vh - 190px)", minHeight: 480 }}>
+      <div className="main-two-col" style=${{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20, height: "calc(100vh - 190px)", minHeight: 480 }}>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 20, minHeight: 0 }}>
+          <div style=${{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>🗓 오늘(${fmtDate(todayStr)}) 내 수업 스케줄</div>
+            <${Card} style=${{ marginBottom: 0, flex: 1, minHeight: 0, overflowY: "auto" }}>
+              ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 예정된 수업이 없어요.</div>` : todayClasses.map((c, i) => html`
+                <div key=${i} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span><b>${c.time}</b>${c.endTime ? `~${c.endTime}` : ""} · ${c.student.name}</span>
+                  ${c.kind === "보강" && html`<span style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>보강</span>`}
+                </div>
+              `)}
+            <//>
+          </div>
+          <div style=${{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>✅ 할 일 ${todayIncompleteCount > 0 ? `(${todayIncompleteCount})` : ""}</div>
+            <${Card} style=${{ marginBottom: 0, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <div style=${{ display: "flex", gap: 6, marginBottom: 8, flexShrink: 0 }}>
+                <input style=${{ ...inputStyle, flex: 1, marginBottom: 0, fontSize: 12.5 }} value=${todoText} onChange=${(e) => setTodoText(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addTodo()} placeholder="할 일 추가" />
+                <${Button} variant="gold" style=${{ padding: "7px 14px", fontSize: 12 }} onClick=${addTodo}>추가<//>
+              </div>
+              <div style=${{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                ${todoList.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>할 일이 없어요.</div>` : todoList.map((t) => html`
+                  <div key=${t.id} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0", borderBottom: `1px dotted ${C.line}` }}>
+                    <input type="checkbox" checked=${t.done} onChange=${() => toggleTodo(t.id)} style=${{ width: 15, height: 15, flexShrink: 0, appearance: "auto" }} />
+                    <span style=${{ flex: 1, minWidth: 0, fontSize: 12.5, textDecoration: t.done ? "line-through" : "none", color: t.done ? C.slate : C.ink }}>${t.content}</span>
+                    <button onClick=${() => removeTodo(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 14 }}>×</button>
+                  </div>
+                `)}
+              </div>
+            <//>
+          </div>
+        </div>
+
+        <div className="main-quad-grid" style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 20, height: "100%", minHeight: 0 }}>
         <div style=${{ display: "flex", flexDirection: "column", minHeight: 0 }}>
           <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📢 공지사항</div>
           <${Card} style=${{ padding: 22, marginBottom: 0, flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -2440,45 +2579,86 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
           <//>
         </div>
         <div style=${{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📝 오늘(${fmtDate(todayStr)}) 확인해야 할 것 ${todayCheckCount > 0 ? `(${todayCheckCount}건)` : ""}</div>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8, flexShrink: 0 }}>📝 확인해야 할 것 ${(todayCheckCount + overdueCheckCount) > 0 ? `(${todayCheckCount + overdueCheckCount}건)` : ""}</div>
           <${Card} style=${{ marginBottom: 0, flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>기한/예정일이 오늘이거나 지났는데 아직 처리 안 된 숙제·단어시험·모의고사를 학생 전체 기준으로 모았어요.</div>
-            ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : todayCheckCount === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 게 없어요.</div>` : html`
-              ${todayHomework.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 6 }}>숙제</div>
-                ${todayHomework.map(({ student, hw }, i) => html`
-                  <div key=${"hw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-                    <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
-                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
-                      <span><b>${student.name}</b> — ${hw.content}</span>
-                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
+            ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : (todayCheckCount + overdueCheckCount) === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>확인이 필요한 게 없어요.</div>` : html`
+              ${todayCheckCount > 0 && html`
+                <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700 }}>🔴 오늘(${fmtDate(todayStr)}) 응시·마감 (${todayCheckCount}건)</div>
+                ${todayHomework.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 6 }}>숙제</div>
+                  ${todayHomework.map(({ student, hw }, i) => html`
+                    <div key=${"hw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${hw.content}</span>
+                        <span style=${{ color: C.gold, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>오늘 마감</span>
+                      </div>
                     </div>
-                  </div>
-                `)}
+                  `)}
+                `}
+                ${todayVocab.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>단어시험</div>
+                  ${todayVocab.map(({ student, test }, i) => html`
+                    <div key=${"vc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>재시험 예정일 ${fmtDate(test.retestDate)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${test.title}</span>
+                        <span style=${{ color: C.gold, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>오늘 응시</span>
+                      </div>
+                    </div>
+                  `)}
+                `}
+                ${todayMock.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>모의고사</div>
+                  ${todayMock.map(({ student, test }, i) => html`
+                    <div key=${"mk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>응시일 ${fmtDate(test.date)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${test.title}</span>
+                        <span style=${{ color: C.gold, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>오늘 응시</span>
+                      </div>
+                    </div>
+                  `)}
+                `}
               `}
-              ${todayVocab.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>단어시험</div>
-                ${todayVocab.map(({ student, test }, i) => html`
-                  <div key=${"vc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-                    <div style=${{ fontSize: 10.5, color: C.slate }}>재시험 예정일 ${fmtDate(test.retestDate)}</div>
-                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
-                      <span><b>${student.name}</b> — ${test.title}</span>
-                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미통과</span>
+              ${overdueCheckCount > 0 && html`
+                <div style=${{ fontSize: 11, color: C.danger, fontWeight: 700, marginTop: todayCheckCount > 0 ? 16 : 0 }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
+                ${overdueHomework.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 6 }}>숙제</div>
+                  ${overdueHomework.map(({ student, hw }, i) => html`
+                    <div key=${"ohw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(hw.dueDate)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${hw.content}</span>
+                        <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미완료</span>
+                      </div>
                     </div>
-                  </div>
-                `)}
-              `}
-              ${todayMock.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.gold, fontWeight: 700, marginTop: 10 }}>모의고사</div>
-                ${todayMock.map(({ student, test }, i) => html`
-                  <div key=${"mk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
-                    <div style=${{ fontSize: 10.5, color: C.slate }}>응시일 ${fmtDate(test.date)}</div>
-                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
-                      <span><b>${student.name}</b> — ${test.title}</span>
-                      <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미응시</span>
+                  `)}
+                `}
+                ${overdueVocab.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>단어시험</div>
+                  ${overdueVocab.map(({ student, test }, i) => html`
+                    <div key=${"ovc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>재시험 예정일 ${fmtDate(test.retestDate)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${test.title}</span>
+                        <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미응시</span>
+                      </div>
                     </div>
-                  </div>
-                `)}
+                  `)}
+                `}
+                ${overdueMock.length > 0 && html`
+                  <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>모의고사</div>
+                  ${overdueMock.map(({ student, test }, i) => html`
+                    <div key=${"omk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dotted ${C.line}`, cursor: "pointer" }}>
+                      <div style=${{ fontSize: 10.5, color: C.slate }}>응시일 ${fmtDate(test.date)}</div>
+                      <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                        <span><b>${student.name}</b> — ${test.title}</span>
+                        <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>✗ 미응시</span>
+                      </div>
+                    </div>
+                  `)}
+                `}
               `}
             `}
             <div onClick=${onGoHwStatus} style=${{ fontSize: 11.5, color: C.gold, marginTop: 8, cursor: "pointer" }}>전체 숙제 현황 보기 →</div>
@@ -2494,6 +2674,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
             `)}
             <div onClick=${onGoBookings} style=${{ fontSize: 11.5, color: C.gold, marginTop: 6, cursor: "pointer" }}>레벨테스트·상담 문의에서 함께 보기 →</div>
           <//>
+        </div>
         </div>
       </div>
 
@@ -2633,7 +2814,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
 // "studentInfo" only exists on mobile (a phone-only split of what desktop shows all together inside
 // 학생 관리) — it has no entry in navItems, so it's added separately when building the mobile home grid.
 const MOBILE_TEACHER_SECTIONS = ["studentInfo", "students", "schedule", "revenue"];
-function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
+function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, teacherTodos, saveTeacherTodos, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   const [section, setSection] = useState("mainpage");
   // Lifted out of StudentsSection so the desktop sidebar's hover flyout (below) can jump straight
@@ -2743,6 +2924,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // section === "mainpage"
     body = html`<${TeacherOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       levelTestBookings=${levelTestBookings} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+      teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
       onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory(null); }}
       onSelectStudentInfo=${(id) => { setSection("studentInfo"); setSelectedStudentId(id); }} />`;
@@ -4956,6 +5138,8 @@ const STUDENT_PANEL_TABS = [
   { key: "homework", label: "숙제", icon: "📝" },
   { key: "vocab", label: "단어 시험(퀴즈)", icon: "🔤" },
   { key: "mock", label: "모의고사", icon: "📄" },
+  { key: "examTests", label: "추가시험(퀴즈)", icon: "📋" },
+  { key: "wrongNote", label: "오답노트", icon: "❌" },
   { key: "regularExam", label: "시험", icon: "🏫" },
   { key: "materials", label: "자료실", icon: "📁" },
   { key: "consult", label: "상담 신청", icon: "🗓" },
@@ -4979,6 +5163,8 @@ function StudentTabBody({ tab, student, data, updateData, examKeyLibrary }) {
   if (tab === "homework") return html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "vocab") return html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "mock") return html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`;
+  if (tab === "examTests") return html`<${ExamEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "wrongNote") return html`<${WrongNoteSection} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "regularExam") return html`<${RegularExamEditor} data=${data} updateData=${updateData} />`;
   if (tab === "materials") return html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`;
   if (tab === "consult") return html`<${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />`;
@@ -6546,10 +6732,12 @@ function VocabEditor({ student, data, updateData }) {
           </div>
           ${grp.items.map((t) => {
         const results = data.vocabResults.filter((r) => r.testId === t.id);
-        const latest = results[0];
-        const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
-        const notPassed = !latest || latestPct < vocabPassThreshold(t.title);
-        const notSubmittedPastDeadline = notPassed && !t.expired && gIsOverdue;
+        // 시험을 봤으면(응시 기록이 있으면) 합격 여부와 상관없이 "마감"으로 친다 — 재응시를
+        // 시키고 싶으면 새 단어시험을 새로 만들면 되고, 이미 본 시험을 "기간만료로 표시"로
+        // 수동으로 닫아줄 필요가 없다. 그래서 이 버튼·마감 지남 경고는 응시 기록이 아예 없는
+        // 경우에만 뜬다.
+        const notTaken = results.length === 0;
+        const notSubmittedPastDeadline = notTaken && !t.expired && gIsOverdue;
         return html`
           <${Card} key=${t.id}>
             <div style=${{ display: "flex", justifyContent: "space-between" }}>
@@ -6558,7 +6746,7 @@ function VocabEditor({ student, data, updateData }) {
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 단어 ${t.words.length}개</div>
               </div>
               <div style=${{ display: "flex", gap: 10 }}>
-                ${notPassed && html`<button onClick=${() => toggleExpired(t.id)} style=${{ background: "none", border: "none", color: t.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${t.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
+                ${notTaken && html`<button onClick=${() => toggleExpired(t.id)} style=${{ background: "none", border: "none", color: t.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${t.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
                 <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
               </div>
             </div>
@@ -6577,40 +6765,116 @@ function VocabEditor({ student, data, updateData }) {
   `;
 }
 
+// Editable fields for a single exam question — type toggle, stem, and either MC choices+radio or
+// a subjective model-answer field. Shared by ExamEditor's manual/paste-imported question list and
+// WrongNoteSection's AI-variant review list, so the two never drift into different editing UIs for
+// what's ultimately the same {q, type, choices?, answer} shape. Takes the whole question object and
+// hands back a replacement via onChange — the caller owns where in its own array that goes.
+function QuestionEditorFields({ q, onChange }) {
+  function setQText(val) { onChange({ ...q, q: val }); }
+  function setType(type) {
+    onChange(type === "subjective" ? { q: q.q, type: "subjective", answer: "" } : { q: q.q, type: "mc", choices: ["", ""], answer: 0 });
+  }
+  function setChoice(ci, val) { onChange({ ...q, choices: q.choices.map((c, cidx) => (cidx === ci ? val : c)) }); }
+  function setAnswer(ci) { onChange({ ...q, answer: ci }); }
+  function addChoice() { onChange({ ...q, choices: [...q.choices, ""] }); }
+  function removeChoice(ci) { onChange({ ...q, choices: q.choices.filter((_, cidx) => cidx !== ci), answer: q.answer === ci ? 0 : q.answer > ci ? q.answer - 1 : q.answer }); }
+  function setSubjectiveAnswer(val) { onChange({ ...q, answer: val }); }
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+        <select style=${{ fontSize: 11.5, padding: "3px 6px" }} value=${q.type === "subjective" ? "subjective" : "mc"} onChange=${(e) => setType(e.target.value)}>
+          <option value="mc">객관식</option>
+          <option value="subjective">서술형</option>
+        </select>
+      </div>
+      <textarea style=${{ ...inputStyle, minHeight: 50, marginBottom: 8 }} placeholder="문제 내용" value=${q.q} onChange=${(e) => setQText(e.target.value)} />
+      ${q.type === "subjective" ? html`
+        <${Field} label="모범 답안">
+          <input style=${inputStyle} placeholder="정답으로 인정할 답" value=${q.answer} onChange=${(e) => setSubjectiveAnswer(e.target.value)} />
+        <//>
+        <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>대소문자·띄어쓰기 차이는 무시하고 채점돼요. 표현이 다르면 오답으로 처리될 수 있으니, 학생이 실제로 맞혔는데 틀린 걸로 나오면 오답노트에서 "이미 아는 문제로 처리"로 고쳐주세요.</div>
+      ` : html`
+        ${q.choices.map((c, ci) => html`
+          <div key=${ci} style=${{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
+            <input type="radio" checked=${q.answer === ci} onChange=${() => setAnswer(ci)} style=${{ width: 15, height: 15, flexShrink: 0, appearance: "auto" }} />
+            <input style=${{ ...inputStyle, flex: 1 }} placeholder=${`보기 ${ci + 1}`} value=${c} onChange=${(e) => setChoice(ci, e.target.value)} />
+            ${q.choices.length > 2 && html`<button onClick=${() => removeChoice(ci)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
+          </div>
+        `)}
+        <button onClick=${addChoice} style=${{ background: "none", border: "none", color: C.navy, fontSize: 12, cursor: "pointer", padding: 0, marginTop: 4 }}>+ 보기 추가</button>
+        <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>라디오 버튼으로 정답을 표시하세요.</div>
+      `}
+    </div>
+  `;
+}
+
 function ExamEditor({ data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
-  const [questions, setQuestions] = useState([{ q: "", choices: ["", ""], answer: 0 }]);
+  const [questions, setQuestions] = useState([{ q: "", type: "mc", choices: ["", ""], answer: 0 }]);
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   function runParse() {
     const parsed = parseExamPaste(pasteText);
     if (parsed.length === 0) { setPasteMsg("인식된 문제가 없어요. 형식을 확인해 주세요."); return; }
     setQuestions(parsed); setPasteMsg(`${parsed.length}개 문제를 불러왔어요. 아래에서 확인 후 저장하세요.`); setShowPaste(false); setPasteText("");
   }
-  function setQ(i, val) { setQuestions((qs) => qs.map((row, idx) => (idx === i ? { ...row, q: val } : row))); }
-  function setChoice(qi, ci, val) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: row.choices.map((c, cidx) => (cidx === ci ? val : c)) } : row))); }
-  function setAnswer(qi, ci) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, answer: ci } : row))); }
-  function addChoice(qi) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: [...row.choices, ""] } : row))); }
-  function removeChoice(qi, ci) { setQuestions((qs) => qs.map((row, idx) => (idx === qi ? { ...row, choices: row.choices.filter((_, cidx) => cidx !== ci), answer: row.answer === ci ? 0 : row.answer > ci ? row.answer - 1 : row.answer } : row))); }
-  function addQuestion() { setQuestions((qs) => [...qs, { q: "", choices: ["", ""], answer: 0 }]); }
+  // Extracts raw text from an uploaded PDF and drops it straight into the same paste box
+  // runParse() already reads from — this only saves the teacher the "PDF 열기 → 드래그 선택 →
+  // 복사" step, it doesn't parse anything itself. Only reliable for single-column, digitally-typed
+  // PDFs; scanned/multi-column pages (common in real 기출/교재 PDFs) will need manual cleanup
+  // afterward, same as if they'd copy-pasted it themselves.
+  async function handlePdfUpload(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setPdfBusy(true); setPasteMsg("");
+    try {
+      const text = await extractPdfPlainText(file);
+      setPasteText(text); setShowPaste(true);
+      setPasteMsg("PDF에서 텍스트를 뽑아왔어요. 실제 시험 형식과 다를 수 있으니 아래에서 확인하고, 문제 사이는 빈 줄로, 정답은 각 문제 밑에 \"정답: 1\" 식으로 되어 있는지 고친 뒤 가져오기를 눌러주세요.");
+    } catch (e2) {
+      console.error("PDF 텍스트 추출 실패", e2);
+      setPasteMsg("PDF에서 텍스트를 읽지 못했어요. 스캔본(이미지) PDF는 지원되지 않아요.");
+    }
+    setPdfBusy(false);
+  }
+  function setQuestionAt(i, next) { setQuestions((qs) => qs.map((row, idx) => (idx === i ? next : row))); }
+  function addQuestion() { setQuestions((qs) => [...qs, { q: "", type: "mc", choices: ["", ""], answer: 0 }]); }
   function removeQuestion(i) { setQuestions((qs) => qs.filter((_, idx) => idx !== i)); }
   async function save() {
-    const clean = questions.filter((q) => q.q && q.choices.every((c) => c) && q.choices.length >= 2);
+    const clean = questions.filter((q) => q.q && (q.type === "subjective" ? !!(q.answer && q.answer.trim()) : q.choices && q.choices.every((c) => c) && q.choices.length >= 2));
     if (!title || clean.length === 0) return;
     await updateData((d) => ({ ...d, examTests: [{ id: uid(), title, date: today(), questions: clean }, ...d.examTests] }));
-    setTitle(""); setQuestions([{ q: "", choices: ["", ""], answer: 0 }]); setCreating(false);
+    setTitle(""); setQuestions([{ q: "", type: "mc", choices: ["", ""], answer: 0 }]); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, examTests: d.examTests.filter((t) => t.id !== id) })); }
 
+  const activeExamSession = data.activeTestSession && data.activeTestSession.type === "exam" ? data.activeTestSession : null;
+
   return html`
     <div>
+      ${activeExamSession && html`
+        <div style=${{ fontSize: 12.5, color: "#fff", background: C.danger, borderRadius: 4, padding: "8px 12px", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>🔴 응시중</span>
+          <span>${activeExamSession.testTitle || "추가 시험"} — ${fmtTime(activeExamSession.startedAt)}부터 (이 화면을 새로고침하면 최신 상태로 갱신돼요)</span>
+        </div>
+      `}
       ${!creating ? html`
         <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 추가 시험 만들기<//>
       ` : html`
         <${Card}>
           <${Field} label="시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 관계대명사 추가 문제" /><//>
           ${!showPaste ? html`
-            <${Button} variant="ghost" onClick=${() => setShowPaste(true)} style=${{ marginBottom: 12 }}>붙여넣기로 한번에 가져오기<//>
+            <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <${Button} variant="ghost" onClick=${() => setShowPaste(true)}>붙여넣기로 한번에 가져오기<//>
+              <label style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: C.navy, cursor: pdfBusy ? "default" : "pointer", opacity: pdfBusy ? 0.5 : 1 }}>
+                ${pdfBusy ? "PDF 읽는 중..." : "PDF에서 텍스트 가져오기"}
+                <input type="file" accept="application/pdf" disabled=${pdfBusy} onChange=${handlePdfUpload} style=${{ display: "none" }} />
+              </label>
+            </div>
           ` : html`
             <${Card} style=${{ background: C.ivory }}>
               <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6 }}>문제 사이는 빈 줄로 구분해 주세요.</div>
@@ -6626,20 +6890,11 @@ function ExamEditor({ data, updateData }) {
           ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
           ${questions.map((q, qi) => html`
             <div key=${qi} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 10 }}>
-              <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>문제 ${qi + 1}</div>
                 ${questions.length > 1 && html`<button onClick=${() => removeQuestion(qi)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
               </div>
-              <textarea style=${{ ...inputStyle, minHeight: 50, marginBottom: 8 }} placeholder="문제 내용" value=${q.q} onChange=${(e) => setQ(qi, e.target.value)} />
-              ${q.choices.map((c, ci) => html`
-                <div key=${ci} style=${{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
-                  <input type="radio" checked=${q.answer === ci} onChange=${() => setAnswer(qi, ci)} />
-                  <input style=${{ ...inputStyle, flex: 1 }} placeholder=${`보기 ${ci + 1}`} value=${c} onChange=${(e) => setChoice(qi, ci, e.target.value)} />
-                  ${q.choices.length > 2 && html`<button onClick=${() => removeChoice(qi, ci)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>`}
-                </div>
-              `)}
-              <button onClick=${() => addChoice(qi)} style=${{ background: "none", border: "none", color: C.navy, fontSize: 12, cursor: "pointer", padding: 0, marginTop: 4 }}>+ 보기 추가</button>
-              <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>라디오 버튼으로 정답을 표시하세요.</div>
+              <${QuestionEditorFields} q=${q} onChange=${(next) => setQuestionAt(qi, next)} />
             </div>
           `)}
           <${Button} variant="ghost" onClick=${addQuestion} style=${{ marginBottom: 12 }}>+ 문제 추가<//>
@@ -6670,6 +6925,201 @@ function ExamEditor({ data, updateData }) {
           <//>
         `;
       })}
+    </div>
+  `;
+}
+
+// Pulls every currently-wrong question out of examResults[].breakdown (the same {prompt, given,
+// correct, ok} rows TestTaker already records per submission — no separate storage needed) and
+// dedupes to "the most recent time this exact question was answered" per prompt text, newest
+// result first since examResults is unshifted on submit. If that latest occurrence was wrong, the
+// question is still outstanding; if the student got it right on a later attempt (e.g. a review
+// test built from this same list), it drops off on its own. wrongCount is a lifetime tally (not
+// just the latest miss) so frequently-missed questions can float to the top.
+function collectWrongExamItems(examTests, examResults) {
+  const wrongCounts = {};
+  examResults.forEach((r) => (r.breakdown || []).forEach((row) => {
+    if (!row.ok) wrongCounts[row.prompt] = (wrongCounts[row.prompt] || 0) + 1;
+  }));
+  const seen = new Set();
+  const items = [];
+  examResults.forEach((r) => {
+    const test = examTests.find((t) => t.id === r.testId);
+    (r.breakdown || []).forEach((row, i) => {
+      if (seen.has(row.prompt)) return;
+      seen.add(row.prompt);
+      if (row.ok) return;
+      const original = test && test.questions[i];
+      items.push({
+        key: row.prompt, prompt: row.prompt, given: row.given, correct: row.correct,
+        testTitle: test ? test.title : "(삭제된 시험)", date: r.date,
+        resultId: r.id, rowIndex: i, wrongCount: wrongCounts[row.prompt],
+        question: original ? { ...original } : null,
+      });
+    });
+  });
+  items.sort((a, b) => b.wrongCount - a.wrongCount);
+  return items;
+}
+
+// A variant question the AI returned isn't trusted as-is (same reasoning as every other AI-JSON
+// path in this app — examkey/NELT parsing, report drafts — all get reviewed before saving). This
+// only guards against a shape the review form and gradeing logic couldn't handle at all (missing
+// stem, <2 choices, an out-of-range answer index, an empty subjective answer); it doesn't judge
+// whether the question is actually good, that's what the review screen is for.
+function sanitizeVariantQuestion(raw) {
+  if (!raw || !raw.q || typeof raw.q !== "string") return null;
+  if (raw.type === "subjective") {
+    const answer = typeof raw.answer === "string" ? raw.answer.trim() : "";
+    if (!answer) return null;
+    return { q: raw.q, type: "subjective", answer };
+  }
+  const choices = Array.isArray(raw.choices) ? raw.choices.filter((c) => typeof c === "string" && c.trim()) : [];
+  if (choices.length < 2) return null;
+  const answer = Number.isInteger(raw.answer) ? Math.min(Math.max(raw.answer, 0), choices.length - 1) : 0;
+  return { q: raw.q, type: "mc", choices, answer };
+}
+
+function WrongNoteSection({ student, data, updateData }) {
+  const [selected, setSelected] = useState({});
+  const [msg, setMsg] = useState("");
+  const [variantCount, setVariantCount] = useState(5);
+  const [generating, setGenerating] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftQuestions, setDraftQuestions] = useState(null);
+  const items = collectWrongExamItems(data.examTests || [], data.examResults || []);
+  const selectableItems = items.filter((it) => it.question);
+  const selectedCount = Object.keys(selected).filter((k) => selected[k]).length;
+
+  function toggle(key) { setSelected((s) => ({ ...s, [key]: !s[key] })); setMsg(""); }
+  function selectAll() { setSelected(Object.fromEntries(selectableItems.map((it) => [it.key, true]))); setMsg(""); }
+  function clearAll() { setSelected({}); setMsg(""); }
+
+  async function markResolved(item) {
+    await updateData((d) => ({
+      ...d,
+      examResults: d.examResults.map((x) => {
+        if (x.id !== item.resultId) return x;
+        const breakdown = x.breakdown.map((row, i) => (i === item.rowIndex ? { ...row, ok: true, manualOverride: true } : row));
+        const score = breakdown.filter((row) => row.ok).length;
+        return { ...x, breakdown, score };
+      }),
+    }));
+  }
+
+  async function makeReviewTest() {
+    const chosen = items.filter((it) => selected[it.key] && it.question);
+    if (chosen.length === 0) { setMsg("선택한 문항 중 복습 시험에 포함할 수 있는 문항이 없어요."); return; }
+    await updateData((d) => ({
+      ...d,
+      examTests: [{ id: uid(), title: `오답 복습 (${fmtDate(today())})`, date: today(), questions: chosen.map((it) => ({ ...it.question })) }, ...d.examTests],
+    }));
+    setSelected({});
+    setMsg(`${chosen.length}개 문항으로 복습 시험을 만들었어요 — "추가시험(퀴즈)" 탭에서 확인할 수 있어요.`);
+  }
+
+  // One AI call per selected item (the prompt is written around a single source question), run in
+  // parallel — variantCount is "per 문항", matching how the teacher actually thinks about it
+  // ("2번은 시제 문제니까 그 유형으로 5개"), not a single total split across however many items
+  // happen to be selected.
+  async function generateVariants() {
+    const chosen = items.filter((it) => selected[it.key] && it.question);
+    if (chosen.length === 0) { setMsg("변형 문제를 만들 오답 문항을 먼저 선택해 주세요."); return; }
+    setGenerating(true); setMsg("");
+    try {
+      const results = await Promise.all(chosen.map(async (it) => {
+        try {
+          const res = await fetch(NELT_WORKER_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ mode: "examVariant", sourceQuestion: it.question, count: variantCount, grade: (student && student.grade) || "" }),
+          });
+          const json = await res.json();
+          if (!res.ok || json.error) throw new Error(json.error || "AI 생성 실패");
+          const clean = (Array.isArray(json) ? json : []).map(sanitizeVariantQuestion).filter(Boolean);
+          return { ok: true, prompt: it.prompt, questions: clean };
+        } catch (e) {
+          return { ok: false, prompt: it.prompt, error: String(e.message || e) };
+        }
+      }));
+      const allQuestions = results.filter((r) => r.ok).flatMap((r) => r.questions);
+      const failed = results.filter((r) => !r.ok);
+      if (allQuestions.length === 0) {
+        setMsg("변형 문제를 하나도 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
+      } else {
+        setDraftQuestions(allQuestions);
+        setDraftTitle(`오답 변형 복습 (${fmtDate(today())})`);
+        setMsg(failed.length > 0 ? `${failed.length}개 문항은 변형 생성에 실패해서 제외했어요. 나머지 ${allQuestions.length}개를 아래에서 검토해 주세요.` : `${allQuestions.length}개의 변형 문제를 만들었어요 — 아래에서 검토 후 저장하세요.`);
+      }
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function updateDraftAt(i, next) { setDraftQuestions((qs) => qs.map((q, idx) => (idx === i ? next : q))); }
+  function removeDraftAt(i) { setDraftQuestions((qs) => qs.filter((_, idx) => idx !== i)); }
+
+  async function saveDraft() {
+    const clean = draftQuestions.filter((q) => q.q && (q.type === "subjective" ? !!(q.answer && q.answer.trim()) : q.choices && q.choices.every((c) => c) && q.choices.length >= 2));
+    if (!draftTitle.trim() || clean.length === 0) return;
+    await updateData((d) => ({ ...d, examTests: [{ id: uid(), title: draftTitle.trim(), date: today(), questions: clean }, ...d.examTests] }));
+    setDraftQuestions(null); setDraftTitle(""); setSelected({});
+    setMsg(`${clean.length}개 문항으로 변형 복습 시험을 만들었어요 — "추가시험(퀴즈)" 탭에서 확인할 수 있어요.`);
+  }
+
+  if (items.length === 0) return html`<${Empty} text="현재 틀린 채로 남아있는 추가시험 문항이 없어요." />`;
+
+  if (draftQuestions) {
+    return html`
+      <div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>AI가 만든 변형 문제예요. 내용을 확인하고 필요하면 고친 뒤 저장하세요.</div>
+        <${Field} label="시험 이름"><input style=${inputStyle} value=${draftTitle} onChange=${(e) => setDraftTitle(e.target.value)} /><//>
+        ${draftQuestions.map((q, i) => html`
+          <div key=${i} style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: 10, marginBottom: 10 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>문제 ${i + 1}</div>
+              <button onClick=${() => removeDraftAt(i)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
+            <${QuestionEditorFields} q=${q} onChange=${(next) => updateDraftAt(i, next)} />
+          </div>
+        `)}
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="gold" onClick=${saveDraft}>저장<//>
+          <${Button} variant="ghost" onClick=${() => { setDraftQuestions(null); setMsg(""); }}>취소<//>
+        </div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>추가시험에서 아직 다시 맞히지 못한 문항이에요. 그대로 복습 시험에 넣거나, AI로 비슷한 유형의 새 문제를 만들어 복습시킬 수 있어요. 원본 시험이 삭제된 문항은 둘 다 포함할 수 없어요(수동으로 "이미 아는 문제로 처리"만 가능).</div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "6px 12px" }} onClick=${selectAll}>전체 선택<//>
+        <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "6px 12px" }} onClick=${clearAll}>전체 해제<//>
+        <${Button} variant="gold" style=${{ fontSize: 12 }} disabled=${selectedCount === 0} onClick=${makeReviewTest}>선택한 ${selectedCount}개로 그대로 복습 시험 만들기<//>
+      </div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <span style=${{ fontSize: 12, color: C.slate }}>문항당</span>
+        <input type="number" min="1" max="20" style=${{ ...inputStyle, width: 60, marginBottom: 0, padding: "6px 8px" }} value=${variantCount} onChange=${(e) => setVariantCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
+        <span style=${{ fontSize: 12, color: C.slate }}>개씩 변형</span>
+        <${Button} variant="gold" style=${{ fontSize: 12 }} disabled=${selectedCount === 0 || generating} onClick=${generateVariants}>${generating ? "AI가 만드는 중..." : `선택한 ${selectedCount}개로 변형 문제 만들기 (AI)`}<//>
+      </div>
+      ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 12 }}>${msg}</div>`}
+      ${items.map((it) => html`
+        <${Card} key=${it.key} style=${{ marginBottom: 8, opacity: it.question ? 1 : 0.6 }}>
+          <div style=${{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <input type="checkbox" style=${{ width: 15, height: 15, flexShrink: 0, appearance: "auto", marginTop: 4 }} disabled=${!it.question} checked=${!!selected[it.key]} onChange=${() => toggle(it.key)} />
+            <div style=${{ flex: 1 }}>
+              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${it.prompt}</div>
+              <div style=${{ fontSize: 12, marginTop: 3, color: C.danger }}>학생 답: ${it.given}</div>
+              <div style=${{ fontSize: 12, color: C.slate }}>정답: ${it.correct}</div>
+              <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${it.testTitle} · ${fmtDate(it.date)} · 총 ${it.wrongCount}번 틀림${!it.question ? " · 원본 시험 삭제됨" : ""}</div>
+            </div>
+            <button onClick=${() => markResolved(it)} style=${{ fontSize: 11, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.gold}`, background: "none", color: C.gold, cursor: "pointer", whiteSpace: "nowrap" }}>이미 아는 문제로 처리</button>
+          </div>
+        <//>
+      `)}
     </div>
   `;
 }
@@ -7050,6 +7500,7 @@ const STUDENT_HOME_ACTIONS = [
   { key: "vocab", label: "단어 시험", icon: "🔤", bg: "#EAF1FB" },
   { key: "materials", label: "자료실", icon: "📁", bg: "#F3EDF7" },
   { key: "mock", label: "모의고사 채점", icon: "📄", bg: "#E9F1EA" },
+  { key: "examTests", label: "추가시험", icon: "📋", bg: "#FDF0E3" },
   { key: "schedule", label: "이번달 시간표", icon: "🗓", bg: "#FDEDE9" },
   { key: "studyTimer", label: "공부 시간 기록", icon: "⏱", bg: "#EAF6F6" },
 ];
@@ -7159,16 +7610,13 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   const unsubmittedMock = (data.mockExams || []).filter((t) => !t.expired && !(data.mockExamResults || []).some((r) => r.testId === t.id));
   const todayMock = unsubmittedMock.filter((t) => t.date === todayStr);
   const overdueMock = unsubmittedMock.filter((t) => t.date < todayStr);
-  const notPassedVocab = (data.vocabTests || []).filter((t) => {
+  // 합격 여부와 무관하게 "응시했으면 마감" — 응시 기록이 아예 없는 시험만 안 본 것으로 친다.
+  const notTakenVocab = (data.vocabTests || []).filter((t) => {
     if (t.expired) return false;
-    const results = (data.vocabResults || []).filter((r) => r.testId === t.id);
-    const latest = results[0];
-    if (!latest) return true;
-    const pct = Math.round((latest.score / latest.total) * 100);
-    return pct < vocabPassThreshold(t.title);
+    return !(data.vocabResults || []).some((r) => r.testId === t.id);
   });
-  const todayVocab = notPassedVocab.filter((t) => t.retestDate === todayStr);
-  const overdueVocab = notPassedVocab.filter((t) => t.retestDate && t.retestDate < todayStr);
+  const todayVocab = notTakenVocab.filter((t) => t.retestDate === todayStr);
+  const overdueVocab = notTakenVocab.filter((t) => t.retestDate && t.retestDate < todayStr);
   const nextClass = nextClassText(student, todayStr);
   const studyLog = data.studyLog || [];
   const todayEntries = studyLog.filter((s) => s.date === todayStr);
@@ -7188,6 +7636,10 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   async function startMockTest(t, editResultId) {
     setEditingMockResultId(editResultId); setActiveMock(t);
     await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "mock", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
+  }
+  async function startExamTest(t) {
+    setActiveTest({ type: "exam", test: t });
+    await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "exam", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
   }
 
   async function startTimer() {
@@ -7337,12 +7789,12 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         const latest = myResults[0];
         const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
         const threshold = vocabPassThreshold(t.title);
-        const needsRetest = latest && latestPct < threshold;
-        const notDoneYet = !latest || needsRetest;
-        const isOverdue = notDoneYet && !t.expired && gIsOverdue;
-        const isToday = notDoneYet && !t.expired && gIsToday;
+        const needsRetest = latest && latestPct < threshold; // 정보 표시용(합격/재시험 필요 배지) — 마감 여부와는 무관
+        const notTaken = !latest; // 응시했으면 합격 여부와 상관없이 마감으로 친다
+        const isOverdue = notTaken && !t.expired && gIsOverdue;
+        const isToday = notTaken && !t.expired && gIsToday;
         return html`
-          <${Card} key=${t.id} style=${isOverdue ? { borderLeft: `3px solid ${C.danger}` } : isToday ? { borderLeft: `3px solid ${C.gold}` } : needsRetest && !t.expired ? { borderLeft: `3px solid ${C.danger}` } : {}}>
+          <${Card} key=${t.id} style=${isOverdue ? { borderLeft: `3px solid ${C.danger}` } : isToday ? { borderLeft: `3px solid ${C.gold}` } : {}}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style=${{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -7410,6 +7862,22 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           })}
         </div>
       `;}))}
+
+      ${tab === "examTests" && ((data.examTests || []).length === 0 ? html`<${Empty} text="등록된 추가시험이 없어요." />` : (data.examTests || []).map((t) => {
+        const myResults = (data.examResults || []).filter((r) => r.testId === t.id);
+        return html`
+          <${Card} key=${t.id}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDateDay(t.date)} · 문항 ${t.questions.length}개</div>
+                ${myResults.length > 0 && html`<div style=${{ fontSize: 12, marginTop: 6 }}>✓ 최근 결과: ${myResults[0].score} / ${myResults[0].total}</div>`}
+              </div>
+              <${Button} variant=${myResults.length ? "ghost" : "gold"} onClick=${() => startExamTest(t)}>${myResults.length ? "다시 풀기" : "응시하기"}<//>
+            </div>
+          <//>
+        `;
+      }))}
 
       ${tab === "materials" && html`
         <div>
@@ -8510,7 +8978,7 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
     const vmode = test.mode || "mix";
     return questions.map(() => (vmode === "w2m" ? "w2m" : vmode === "m2w" ? "m2w" : (Math.random() < 0.5 ? "w2m" : "m2w")));
   });
-  const [answers, setAnswers] = useState(type === "vocab" ? Array(total).fill("") : Array(total).fill(null));
+  const [answers, setAnswers] = useState(() => questions.map((q) => (type === "vocab" || q.type === "subjective") ? "" : null));
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
   const [breakdown, setBreakdown] = useState(null);
@@ -8540,6 +9008,14 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
           const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word || ""} (${q.synonyms.join(", ")}도 정답)` : (q.word || "(단어 없음)");
           rows.push({ prompt: q.meaning || "(뜻 없음)", given: answers[i] || "(빈칸)", correct: correctDisplay, ok });
         }
+      } else if (q.type === "subjective") {
+        // checkWordAnswer (exact-after-normalizing + known-synonym check), not checkVocabAnswer's
+        // substring-containment matching — that would wrongly accept "whom" for an answer of
+        // "who" since one contains the other, which is fine for a Korean meaning/definition string
+        // but wrong for grading an exact word/short-phrase answer like this.
+        const ok = checkWordAnswer(answers[i], q.answer, q.synonyms);
+        if (ok) score++;
+        rows.push({ prompt: q.q || "", given: answers[i] || "(빈칸)", correct: q.answer || "", ok });
       } else {
         const ok = answers[i] === q.answer;
         if (ok) score++;
@@ -8583,6 +9059,8 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
           <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10, whiteSpace: "pre-wrap" }}>${qi + 1}. ${type === "vocab" ? (directions[qi] === "w2m" ? q.word : q.meaning) : q.q}</div>
           ${type === "vocab" ? html`
             <input style=${inputStyle} placeholder=${directions[qi] === "w2m" ? "뜻을 입력하세요" : "영어 단어를 입력하세요"} value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
+          ` : q.type === "subjective" ? html`
+            <input style=${inputStyle} placeholder="답을 입력하세요" value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
           ` : q.choices.map((opt, oi) => {
             const selected = answers[qi] === oi;
             return html`
