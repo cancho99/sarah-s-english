@@ -482,11 +482,13 @@ New UI                          ← Teacher Center, Exam Studio 등 신규 화�
 | 4 | Reading Log + Reading Analytics | **완료** — 신규 `readingActivity` 컬렉션(§8.1)으로 실제 읽기 상태/시간 추적 추가, `reading-library.html`에 Teacher Reading Dashboard 신설, Daily/Monthly/Parent Report에 연결 |
 | 5 | Grammar Question Bank | **완료** — Question Bank Core(`services/questionBankService.js`) + `grammarQuestions` 컬렉션 + Teacher UI(`QuestionBankSection`). §11 참고 |
 | 6 | Reading Passage/Question Bank | **완료** — Question Bank Core 확장(§12.9) + `readingPassages`/`readingQuestions` 컬렉션 + Teacher UI(`ReadingQuestionBankView`). §12 참고. `readingLibrary`와는 완전히 별개(§12.1) |
-| 7 | Sarah's Original + 품질관리 | 완전 신규 |
-| 8 | Exam Studio | `examTests`/`mockExams`/`examKeyLibrary`/`ExamKeyLibrarySection`(AI vision 파싱 이미 구현) 재배치 위주 |
+| 7 | ~~Sarah's Original + 품질관리~~ → **Exam Builder로 대체 진행됨(완료)** | 사용자가 실제 세션에서 "PHASE 7"을 Sarah's Original이 아니라 Exam Builder로 지정해 진행했다(§13). `examPapers` 컬렉션 + Question Bank Core 최소 확장(`incrementUsageCount`, §13.9) + Teacher UI(`ExamBuilderView`). Grammar/Reading 두 은행에서 문제를 조합해 시험지를 만드는 기능 — `examTests`/`mockExams`/`examKeyLibrary`는 손대지 않음(§13.1). **Sarah's Original + 품질관리는 아직 미착수 상태로 남아있다** — 번호가 비게 됐으니 향후 별도 Phase로 다시 배정 필요(§10-정정 참고) |
+| 8 | Exam Studio | 원래 계획: `examTests`/`mockExams`/`examKeyLibrary`/`ExamKeyLibrarySection`(AI vision 파싱 이미 구현) 재배치 위주. **Phase 7에서 먼저 만들어진 Exam Builder(`examPapers`)가 사실상 이 Phase의 핵심 산출물을 상당 부분 선점했다** — 남은 범위는 기존 `examTests`/`mockExams`/`examKeyLibrary`를 Exam Builder와 어떻게 연결할지(또는 그대로 병존시킬지) 결정하는 것으로 좁혀졌다. 착수 전 사용자와 범위 재확인 필요 |
 | 9 | Vocabulary/Mock Exam 통합 | 이미 대부분 구현됨 — Daily/Monthly Report 자동조인에 연결하는 게 남은 일 |
-| 10 | 학생 약점 분석 | 신규 — `regularExams`/`vocabResults`/`examResults`를 소스로 사용 |
+| 10 | 학생 약점 분석 | 신규 — `regularExams`/`vocabResults`/`examResults`를 소스로 사용. Exam Builder의 `examPapers`가 향후 `examAttempts`(§13.9, 미구현)로 연결되면 이 Phase의 소스가 하나 더 늘어난다 |
 | 11 | Business/Revenue UI 재구조화 | `RevenueOverviewSection`(`:2710`)/`tuitionRecords` 이미 존재 — 신규 네비게이션 구조로 이동 + UI 고급화 위주 |
+
+**§10-정정 (2026-08-24, Exam Builder 완료 시점)**: 이 표의 Phase 번호는 요청서 §29 원안 그대로였으나, 실제 세션은 "PHASE 5/6/7"이라는 사용자 지시 라벨을 그대로 따라갔고 그 내용이 원안과 어긋난 지점(Phase 7)이 생겼다. **번호 자체보다 "무엇이 완료됐고 무엇이 남았는가"가 진짜 소스**다 — 완료: 0~6, 7(Exam Builder로 대체). 미착수: Sarah's Original + 품질관리(원래 7번 내용), Exam Studio(8, 축소된 범위), 9, 10, 11. 다음 Phase에 어떤 번호를 붙일지, Sarah's Original을 언제 다시 스케줄에 넣을지는 사용자가 다음 지시에서 정한다 — 이 문서가 임의로 번호를 재배정하지 않는다.
 
 **다음 단계**: 사용자 승인 후 Phase 1(백업/export 기능 + Service layer 뼈대)부터 착수. 대규모 migration이나 기존 기능 삭제는 하지 않음.
 
@@ -1077,3 +1079,103 @@ student → examAttempt → questionId → 정/오
 10. `examPapers` 컬렉션은 additive로만 추가한다.
 
 **다음 단계**: 구현 착수. 구현 후 불필요한 screenshot/전체 regression 대신 DOM/JS 기반 최소 테스트로 검증한다.
+
+---
+
+## 14. Sarah's Original + 품질관리 (원래 로드맵 7번, 설계 2026-08-24)
+
+> **이 절은 설계 문서다 — 코드 미구현.** 사용자 승인 후 구현 Phase 착수. 이 Phase는 지금까지의 Phase 5~7과 성격이 다르다 — **이 프로젝트에서 처음으로 AI API 호출이 실제로 관련되는 지점**이라, CLAUDE.md의 API 비용 정책을 코드로 강제하는 설계가 핵심이다.
+
+### 14.1 "Sarah's Original"이 무엇인가 — 새 컬렉션이 아니라 새 출처(source)
+
+Phase 0 시점 스케치(§8)는 `originalQuestions`라는 **별도 컬렉션**을 제안했었다. 하지만 Phase 5/6을 실제로 구현해보니 이미 다음이 전부 갖춰져 있다:
+- `source.type` enum에 `AI_GENERATED`가 이미 존재(§11.2 `SOURCE_TYPES`)
+- status pipeline에 `AI_REVIEW` 단계가 이미 존재하고, **PUBLISHED는 APPROVED에서만 진입 가능**하다는 가드가 이미 구현·검증됨(§11.5, "AI가 자동으로 승인하지 않는다"를 코드로 이미 강제하고 있음)
+- Grammar/Reading 두 은행 모두 fingerprint 중복탐지·versioning·delete 정책을 이미 공유
+
+**따라서 별도 컬렉션을 만들지 않는다.** "Sarah's Original"은 새로운 콘텐츠 종류가 아니라 **기존 `grammarQuestions`/`readingQuestions`에 AI가 채워 넣는 DRAFT**다 — `source.type: "AI_GENERATED"`로 표시되고, 그 외에는 교사가 손으로 입력한 문제와 완전히 동일한 파이프라인(검수→승인→출제)을 탄다. Phase 0 스케치의 `AI_DRAFT|AI_CHECKED|...` 전용 status enum도 불필요 — 이미 구현된 `STATUS_FLOW`(DRAFT→AI_REVIEW→TEACHER_REVIEW→APPROVED→PUBLISHED)가 그 역할을 한다.
+
+이 정정은 §11.10/§12.11이 이미 해온 것과 같은 종류다 — Phase 0 스케치보다 실제 구현된 Core가 우선한다.
+
+### 14.2 이미 존재하는 AI 백엔드와의 관계
+
+`functions/index.js`(`aiWorker`)에 이미 배포된 관련 모드가 있다:
+- 기본 모드(no `mode`, `SYSTEM_PROMPT`) — 지문을 넣으면 수능 유형 문제를 생성. 현재 출력은 `passage-transform.html`이 받아 `passageArchive`에 저장한다.
+- `examVariant` 모드(`VARIANT_SYSTEM_PROMPT`) — 오답 1개를 주면 같은 세부 문법/어휘 하위유형의 새 문제 N개를 생성. 현재 오답노트 재시험 화면에서 직접 소비.
+
+**이번 Phase가 하는 일은 AI를 새로 만드는 게 아니라, 이미 있는 AI 출력의 "도착지"를 Question Bank로 하나 더 연결하는 것이다.** 기존 `passage-transform.html`/오답노트 재시험 기능은 전혀 건드리지 않는다(그 경로들은 그대로 `passageArchive`/재시험 화면으로 계속 간다) — Question Bank 연결은 **완전히 별도의, 추가적인 진입점**이다.
+
+### 14.3 `services/questionGenerationService.js` — AI를 호출하는 유일한 파일
+
+CLAUDE.md API 비용 정책(§4 서비스 레이어 분리)을 그대로 구현한다.
+
+```
+questionBankService.js       ← AI 호출 0건 (검증됨, §11.1/§12.1). 이번 Phase에서도 이 파일은 건드리지 않는다.
+questionGenerationService.js ← AI 호출이 허용되는 유일한 파일 (신규)
+```
+
+**호출은 오직 교사의 명시적 버튼 클릭에서만 발생한다** — 페이지 로드/은행 열람/검색/필터 그 무엇도 이 서비스를 부르지 않는다. 구조:
+
+```js
+// 의사코드 — 실제 시그니처는 구현 시 확정
+async function generateGrammarQuestionDrafts({ grade, mainCategory, subCategory, questionType, difficulty, count }) {
+  // 1. aiWorker 호출 (fetch, provider-agnostic 어댑터 뒤에 숨김 — §14.7)
+  // 2. 응답을 grammarQuestions 스키마로 매핑
+  // 3. QB.createGrammarQuestion(..., { extraFields: { source: { type: "AI_GENERATED", note: "..." } } })로
+  //    저장 — 이 함수 자체는 questionGenerationService가 아니라 questionBankService의 기존 함수를 그대로 호출
+  // 4. 저장된 DRAFT 배열 반환 (버려지지 않음, §14.5)
+}
+```
+
+**호출 방향이 중요하다**: `questionGenerationService`는 `questionBankService`의 `createGrammarQuestion`/`createReadingQuestion`을 **호출**하지만, 그 반대는 성립하지 않는다(`questionBankService`는 `questionGenerationService`를 알지도 못한다). 이 단방향 의존성이 "Question Bank는 AI 없이도 완전히 작동해야 한다"(CLAUDE.md)를 파일 구조로 강제한다.
+
+### 14.4 Provider-agnostic 어댑터
+
+```js
+// questionGenerationService.js 내부, 노출하지 않는 내부 함수
+async function callProvider(prompt, opts) {
+  // 지금은 aiWorker(Claude) 하나만 실제 연결.
+  // 향후 Gemini/OpenAI/로컬 모델 추가 시 이 함수 내부만 분기하면 되고,
+  // generateGrammarQuestionDrafts 등 상위 함수는 provider를 몰라도 된다.
+}
+```
+이번 Phase에서 실제로 다른 provider를 붙이지는 않는다 — **분기 가능한 형태로만** 만들어둔다(CLAUDE.md §8 요구사항).
+
+### 14.5 UI — 비용 표시 + 결과는 항상 저장
+
+**"AI로 문제 생성" 버튼에는 예외 없이 비용 경고를 표시한다**: "AI 사용 — API 비용 발생" + 예상 생성 개수. 클릭 전에 조건(학년/대주제/난이도/개수)을 먼저 설정하게 하고, 실행은 별도의 명확한 확인 클릭을 한 번 더 요구한다(실수로 여러 번 눌러 중복 과금되는 사고 방지).
+
+**생성 결과는 항상 DRAFT로 저장된다** — Preview만 하고 버리는 흐름은 만들지 않는다(CLAUDE.md: "같은 문제를 다시 생성하지 않도록 한다", 재생성 = 중복 과금). 생성 직후 화면은 자동으로 Question Bank 목록의 "AI_GENERATED 출처, 방금 생성됨" 필터로 이동해 교사가 바로 검수를 시작할 수 있게 한다.
+
+**품질관리 대시보드**(이번 Phase의 "품질관리" 부분): Grammar/Reading 두 은행을 가로질러 "AI_REVIEW 또는 TEACHER_REVIEW 상태인 문제"만 모아 보여주는 큐 뷰를 추가한다 — 지금은 은행별로 따로 필터링해야 검수 대상을 찾을 수 있는데, AI 생성 물량이 늘면 이 교차 큐가 필요해진다. `QB.queryQuestions`를 grammar 목록과 reading 목록에 각각 돌려 합치면 되므로 Core 변경은 필요 없다.
+
+### 14.6 중복 방지와의 상호작용
+
+AI가 대량으로 문제를 생성하면 fingerprint 중복 경고(§11.7/§12.11)가 자주 뜰 수 있다 — 이는 **버그가 아니라 의도된 동작**이다. AI에게 "이런 유형으로 5개 만들어줘"를 반복 요청하면 비슷한 문장이 나올 가능성이 높고, 기존의 비차단 경고 방식이 그대로 작동해 교사가 판단하게 한다. 이번 Phase에서 이 동작을 바꾸지 않는다.
+
+### 14.7 API 비용 정책 재확인
+
+- Question Bank 조회/검색/필터/저장/버저닝: AI 호출 0건 (변경 없음)
+- AI 호출은 오직 "AI로 문제 생성" 버튼 클릭 시에만, `questionGenerationService.js` 안에서만 발생
+- 개발/테스트 중에는 실제 AI API를 호출하지 않는다 — mock 응답 또는 고정 fixture로 `questionGenerationService`의 저장 경로(응답 매핑 → DRAFT 저장 → source.type 표시)를 검증한다. 실제 호출은 사용자가 명시적으로 요청할 때만.
+
+### 14.8 이번 Phase에서 제외한 것
+
+- 실제 두 번째 AI provider 연결(Gemini/OpenAI 등) — 어댑터 형태만 준비
+- AI 유사도 기반 중복 탐지(비용 정책상 이번에도 금지, §11.7/§12.11과 동일한 이유)
+- Reading 지문 자체의 AI 생성(현재 논의는 문제 생성에 한정 — 지문까지 AI로 만드는 것은 별도 확인 필요, open question)
+- 오답노트 `examVariant` 경로를 Question Bank로 흡수하는 것(기존 기능 그대로 유지, 통합은 향후 별도 검토)
+
+### 14.9 결정 사항 (사용자 승인, 2026-08-24)
+
+1. **AI 생성 대상: Grammar + Reading 둘 다.** Reading은 지문 자체는 AI로 만들지 않는다 — **기존 PUBLISHED 지문에 문제만 AI로 추가 생성**한다(§14.8과 일관).
+2. **API 호출 횟수 = 1클릭 1호출.** 기존 `examVariant` 핸들러(`functions/index.js:543` 부근)를 직접 확인한 결과, `count`(1~20으로 서버에서 clamp)는 프롬프트 안의 "몇 개 만들어라" 지시일 뿐이고 **Anthropic API 호출은 요청당 정확히 1번**이다(`fetch` 1회 → JSON 배열 응답에 N개 문항이 들어있음). 이번에 추가하는 두 새 모드도 동일 패턴을 따른다 — 비용 표시(§14.5)는 "1회 호출 · 최대 N개 생성"으로 정확하다.
+3. **품질관리 큐: 이번 Phase에 포함.** `QuestionBankSection`에 은행 교차 "검수 대기" 탭을 추가한다.
+
+**백엔드 조사 결과 — 왜 새 Cloud Functions 모드가 2개 필요한가**: 기존 `aiWorker`의 기본 모드는 **지문이 있어야만** 호출 가능한 "지문→문제 생성"이고, 그 문제 유형(`TYPE_INSTRUCTIONS`)도 수능형 17종에 한정돼 있어 우리 Reading taxonomy(32종, 중학교 내신 포함)와 맞지 않는다. `examVariant`는 "원본 문제 1개"가 반드시 있어야 한다. **Grammar는 지문도 원본 문제도 없이 조건(학년/대주제/세부문법/유형/난이도)만으로 생성**해야 하므로 기존 모드 어디에도 맞지 않는다. 그래서:
+- **`grammarGenerate`(신규 모드)**: 조건 → 문제 배열. 기존 `examVariant`와 동일한 JSON 응답 스키마 관례를 따르되 `explanation`/`wrongChoiceExplanations`를 추가해 우리 스키마(§11.2)와 더 가깝게 맞춘다.
+- **`readingGenerate`(신규 모드)**: PUBLISHED 지문 텍스트 + 우리 `READING_QUESTION_TYPES` 라벨 → 그 지문에 대한 문제 배열. 기존 기본 모드의 `TYPE_INSTRUCTIONS`/`SYSTEM_PROMPT`를 확장하지 않고 **완전히 새 프롬프트로 분리**한다 — `passage-transform.html`이 실제로 쓰는 기존 프롬프트를 공유 상수 형태로 건드리면 그 기능에 회귀 위험이 생기기 때문(기존 기능 절대 수정 금지 원칙).
+
+두 모드 모두 기존 6개 모드(default/transform/monthlyReport/examkey/examVariant/nelt)의 코드·프롬프트·동작을 **한 글자도 바꾸지 않고** 새 분기로만 추가한다.
+
+**다음 단계**: 구현 착수. 실제 Firebase 배포(`firebase deploy --only functions`)는 코드 작성·로컬 테스트가 끝난 뒤 **배포 직전에 별도로 다시 확인받는다.**

@@ -189,6 +189,90 @@ ${choicesLine}정답: ${answerDisplay}
 위 순서대로 이 문제의 세부 문법/어휘 유형을 먼저 판별한 뒤, 그 유형을 절대 벗어나지 않는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
 }
 
+// ── Sarah's Original — Question Bank AI 문제 생성 (원래 로드맵 Phase 7, ARCHITECTURE.md §14) ──
+// 기존 SYSTEM_PROMPT/TYPE_INSTRUCTIONS(passage-transform.html이 실제 사용 중)는 절대 건드리지 않고
+// 완전히 새 프롬프트 2개를 추가한다 — 하나는 지문 없이 조건만으로(Grammar), 하나는 기존 PUBLISHED
+// 지문 텍스트를 입력받아(Reading) 생성한다.
+
+const GRAMMAR_GENERATE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 문법 문제를 만드는 전문 교육 평가 개발자입니다.
+지문이나 원본 문제 없이, 주어진 조건(학년/문법 대주제/세부 문법/문제 유형/난이도)만으로 새 문제를 만듭니다.
+
+[작업 순서]
+1) 주어진 세부 문법 범위를 벗어나지 않는 문제만 만드세요. 예: "현재완료"가 조건이면 과거시제/미래시제 등 다른 시제 개념이 섞이면 안 됩니다.
+2) 주어진 문제 유형(빈칸/어법상 옳은 것/어법상 틀린 것/서술형 등)에 맞는 형식으로 만드세요.
+3) 요청받은 난이도 수준에 맞게 만드세요. Basic은 기본 문형, Killer는 복합 함정(이중 부정, 도치와 결합 등)을 포함할 수 있습니다.
+4) 문제를 만든 뒤 스스로 재검토하세요: 보기 중 정답이 정확히 하나뿐인가? 오답도 그럴듯하게 헷갈리는가? 이 검토를 통과한 문제만 출력하세요.
+5) 해설(explanation)은 학생이 왜 그 답인지 이해할 수 있도록 문법 규칙을 짧게 설명하세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- 객관식이면 보기 4개(정답 1개 + 오답 3개)를 만드세요. "answer"는 choices 배열의 정답 인덱스(0부터 시작)입니다.
+- 서술형이면 보기 없이 모범 답안 텍스트만 "answer"에 담으세요.
+- 요청받은 개수만큼 정확히 만들고, 문제끼리 서로 겹치지 않게 다양한 문장으로 만드세요.
+
+[JSON 스키마] (배열)
+[
+  {
+    "type": "mc 또는 subjective",
+    "q": "문제 지시문 + 문제 문장",
+    "choices": ["보기1", "보기2", "보기3", "보기4"],
+    "answer": 0,
+    "explanation": "정답 근거를 설명하는 해설",
+    "wrongChoiceExplanations": ["보기1이 오답인 이유", "보기2가 오답인 이유", "보기3이 오답인 이유", "보기4가 오답인 이유"]
+  }
+]
+(type이 subjective이면 "choices"와 "wrongChoiceExplanations"는 빈 배열로, "answer"에는 정답 텍스트를 문자열로 담으세요.)`;
+
+function buildGrammarGeneratePrompt({ grade, mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, count }) {
+  return `[생성 조건]
+학년: ${grade || "지정 없음"}
+문법 대주제: ${mainCategoryLabel || "지정 없음"}
+세부 문법: ${subCategoryLabel || "지정 없음"}
+문제 유형: ${questionTypeLabel || "지정 없음"}
+난이도: ${difficultyLabel || "지정 없음"}
+
+위 조건에 맞는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
+}
+
+const READING_GENERATE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 독해 문제를 만드는 전문 교육 평가 개발자입니다.
+주어진 영어 지문 하나와 조건(문제 유형/난이도)을 보고, 그 지문에 대한 새 문제를 만듭니다.
+
+[작업 순서]
+1) 반드시 주어진 지문 내용에 근거한 문제만 만드세요 — 지문에 없는 내용을 정답 근거로 쓰면 안 됩니다.
+2) 주어진 문제 유형에 맞는 형식으로 만드세요(예: "내용 일치"면 지문 내용과 일치/불일치를 판단하는 선택지, "빈칸"이면 지문의 핵심 문장/연결어를 빈칸 처리).
+3) 요청받은 난이도 수준에 맞게 만드세요.
+4) 문제를 만든 뒤 스스로 재검토하세요: 정답이 지문 근거로 명확히 하나뿐인가? 오답도 지문을 대충 읽으면 헷갈릴 만큼 그럴듯한가?
+5) 해설(explanation)에는 지문의 어느 부분이 근거인지 짧게 밝히세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- 객관식이면 보기 4개(정답 1개 + 오답 3개)를 만드세요. "answer"는 choices 배열의 정답 인덱스(0부터 시작)입니다.
+- 서술형이면 보기 없이 모범 답안 텍스트만 "answer"에 담으세요.
+- 요청받은 개수만큼 정확히 만들고, 문제끼리 서로 겹치지 않게 만드세요.
+
+[JSON 스키마] (배열)
+[
+  {
+    "type": "mc 또는 subjective",
+    "q": "문제 지시문",
+    "choices": ["보기1", "보기2", "보기3", "보기4"],
+    "answer": 0,
+    "explanation": "지문 근거를 밝히는 해설"
+  }
+]
+(type이 subjective이면 "choices"는 빈 배열로, "answer"에는 정답 텍스트를 문자열로 담으세요.)`;
+
+function buildReadingGeneratePrompt({ passageText, questionTypeLabel, difficultyLabel, count }) {
+  return `[지문]
+${passageText}
+
+[생성 조건]
+문제 유형: ${questionTypeLabel || "지정 없음"}
+난이도: ${difficultyLabel || "지정 없음"}
+
+위 지문에 대해 조건에 맞는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
+}
+
 // NELT 성적표 분석에 쓰는 모델.
 const NELT_MODEL = "claude-haiku-4-5-20251001";
 
@@ -413,12 +497,17 @@ exports.aiWorker = onRequest(
     }
 
     const body = req.body || {};
-    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade } = body;
+    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade,
+      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
     const isExamKey = mode === "examkey";
     const isExamVariant = mode === "examVariant";
+    // Phase 7(원래 로드맵 순서상 "Sarah's Original") — Question Bank용 AI 생성 2모드. 기존 6개 모드의
+    // 프롬프트/핸들러는 한 글자도 건드리지 않고 새 분기만 추가한다(ARCHITECTURE.md §14.9).
+    const isGrammarGenerate = mode === "grammarGenerate";
+    const isReadingGenerate = mode === "readingGenerate";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -576,6 +665,96 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(varParsed);
+      return;
+    }
+
+    if (isGrammarGenerate) {
+      const n = Math.max(1, Math.min(20, Number(count) || 5));
+      let genRes;
+      try {
+        genRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: GRAMMAR_GENERATE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildGrammarGeneratePrompt({ grade, mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, count: n }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!genRes.ok) {
+        const errText = await genRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const genData = await genRes.json();
+      const genText = (genData.content || []).map((b) => b.text || "").join("");
+      let genParsed;
+      try {
+        genParsed = JSON.parse(stripFences(genText));
+      } catch {
+        genParsed = extractLastJsonArray(stripFences(genText));
+      }
+      if (!Array.isArray(genParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: genText });
+        return;
+      }
+      res.status(200).json(genParsed);
+      return;
+    }
+
+    if (isReadingGenerate) {
+      if (!passageText || passageText.trim().length < 20) {
+        res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
+        return;
+      }
+      const n = Math.max(1, Math.min(20, Number(count) || 5));
+      let rgRes;
+      try {
+        rgRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: READING_GENERATE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildReadingGeneratePrompt({ passageText, questionTypeLabel, difficultyLabel, count: n }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!rgRes.ok) {
+        const errText = await rgRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const rgData = await rgRes.json();
+      const rgText = (rgData.content || []).map((b) => b.text || "").join("");
+      let rgParsed;
+      try {
+        rgParsed = JSON.parse(stripFences(rgText));
+      } catch {
+        rgParsed = extractLastJsonArray(stripFences(rgText));
+      }
+      if (!Array.isArray(rgParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: rgText });
+        return;
+      }
+      res.status(200).json(rgParsed);
       return;
     }
 
