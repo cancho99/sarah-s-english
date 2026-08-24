@@ -10,14 +10,16 @@ window.SarahServices = window.SarahServices || {};
   const { getAllDocs } = window.SarahServices.firebaseClient;
 
   async function buildFullBackup() {
-    const [meta, students, grammarQuestions] = await Promise.all([
+    const [meta, students, grammarQuestions, readingPassages, readingQuestions] = await Promise.all([
       getMeta(),
       getAllStudentDocs(),
       getAllDocs("grammarQuestions"), // Phase 5 — first Question Bank collection, see questionBankService.js
+      getAllDocs("readingPassages"), // Phase 6 — ARCHITECTURE.md §12.3
+      getAllDocs("readingQuestions"), // Phase 6 — ARCHITECTURE.md §12.3
     ]);
     return {
       exportedAt: new Date().toISOString(),
-      version: "1.1",
+      version: "1.2",
       source: "Sarah's English — services/backupService.js",
       // sarahsEnglishMeta/main as-is: roster (incl. student/parent login codes, schedule,
       // FCM tokens), teacherAuth, levelTestBookings, announcement, examKeyLibrary, teacherTodos,
@@ -31,9 +33,14 @@ window.SarahServices = window.SarahServices || {};
       // present on the live document (nothing is filtered out or renamed).
       students: students || {},
       // grammarQuestions/<id> as-is, keyed by question id (Phase 5). Future banks
-      // (readingQuestions/mockExamQuestionBank/originalQuestions) should be added here the same way
-      // when they're built, so a full backup always covers every question-bank collection that exists.
+      // (mockExamQuestionBank/originalQuestions) should be added here the same way when they're
+      // built, so a full backup always covers every question-bank collection that exists.
       grammarQuestions: grammarQuestions || {},
+      // readingPassages/<id> + readingQuestions/<id> as-is (Phase 6, ARCHITECTURE.md §12.3) — the
+      // Reading Question Bank, NOT the student-facing readingLibrary/readingActivity/readingJournal
+      // collections (those are already inside `students` and unaffected by this bank).
+      readingPassages: readingPassages || {},
+      readingQuestions: readingQuestions || {},
     };
   }
 

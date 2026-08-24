@@ -245,19 +245,40 @@ window.SarahServices = window.SarahServices || {};
     return Object.entries(docs).map(([id, data]) => ({ id, ...data }));
   }
 
-  function blankReview() {
-    return {
-      grammarChecked: null, answerVerified: null, explanationVerified: null,
-      difficultyAppropriate: null, distractorQuality: null,
-      naeshinFit: null, suneungFit: null, duplicateChecked: null,
-      reviewNote: "", reviewedBy: null, reviewedAt: null,
-    };
+  // Review checklists differ per bank (Phase 6, ARCHITECTURE.md §12.8): grammar checks 8 things,
+  // reading checks 10 (passage↔question link, evidence clarity, rote-memory, ... ). Keyed by schema
+  // so a bank asks for its own list; "grammar" stays the default so every Phase 5 call site and
+  // every existing grammarQuestions doc keeps the exact same shape.
+  const REVIEW_SCHEMAS = {
+    grammar: ["grammarChecked", "answerVerified", "explanationVerified", "difficultyAppropriate",
+      "distractorQuality", "naeshinFit", "suneungFit", "duplicateChecked"],
+    reading: ["passageQuestionLink", "answerClarity", "distractorQuality", "evidenceClarity",
+      "difficultyAppropriate", "gradeAppropriate", "examTypeFit", "notRoteMemory",
+      "discrimination", "explanationValue"],
+  };
+
+  function blankReview(schemaKey) {
+    const fields = REVIEW_SCHEMAS[schemaKey] || REVIEW_SCHEMAS.grammar;
+    const out = {};
+    fields.forEach((f) => { out[f] = null; });
+    out.reviewNote = "";
+    out.reviewedBy = null;
+    out.reviewedAt = null;
+    return out;
   }
 
   // input: { grade, difficulty, mainCategory, subCategory, questionType, questionText, choices,
   //          answer, explanation, wrongChoiceExplanations, tags, source }
   // Always created as DRAFT (§11), version 1, usageCount 0 — status only ever advances via setStatus.
-  async function createQuestion(collectionName, input) {
+  //
+  // `opts` (Phase 6, ARCHITECTURE.md §12.9) — both optional, so every Phase 5 grammar call site is
+  // unchanged. Reading questions carry fields grammar has no concept of (passageId/examType/
+  // targetSkill/evidenceLocation); without `extraFields` the fixed doc literal below would silently
+  // drop them.
+  //   opts.extraFields — extra columns merged into the stored doc
+  //   opts.reviewSchema — which REVIEW_SCHEMAS list to blank out ("grammar" default)
+  async function createQuestion(collectionName, input, opts) {
+    opts = opts || {};
     const now = Date.now();
     const choices = Array.isArray(input.choices) ? input.choices.filter((c) => c != null && c !== "") : [];
     const doc = {
@@ -274,8 +295,9 @@ window.SarahServices = window.SarahServices || {};
       wrongChoiceExplanations: Array.isArray(input.wrongChoiceExplanations) ? input.wrongChoiceExplanations : [],
       tags: Array.isArray(input.tags) ? input.tags : [],
       source: { type: (input.source && input.source.type) || "TEACHER_CREATED", note: (input.source && input.source.note) || "" },
+      ...(opts.extraFields || {}),
       status: "DRAFT",
-      review: blankReview(),
+      review: blankReview(opts.reviewSchema),
       fingerprint: computeFingerprint(input.questionText),
       usageCount: 0,
       version: 1,
@@ -294,20 +316,30 @@ window.SarahServices = window.SarahServices || {};
   // reset to DRAFT since edited content is unreviewed again, usageCount 0), and the old doc is
   // marked ARCHIVED + replacedBy so past exam results (which reference the old id) keep meaning
   // exactly what they meant when the exam was given.
-  async function updateQuestion(collectionName, existingDoc, patch) {
-    const touchesContent = Object.keys(patch).some((k) => CONTENT_FIELDS.includes(k));
+  //
+  // `opts` (Phase 6, §12.9), both optional — grammar call sites pass nothing and behave identically:
+  //   opts.extraContentFields — additional fields that count as "content" for fork purposes
+  //     (reading: passageId/examType — repointing a question to another passage, or reclassifying
+  //      which exam it belongs to, must not silently rewrite history on an already-used question)
+  //   opts.reviewSchema — which checklist the forked copy starts blank with
+  // Shared copy-on-write engine (Phase 6, ARCHITECTURE.md §12.8/§12.9) — the safety-critical part
+  // (fork-vs-in-place decision, archiving the old doc with replacedBy, fingerprinting) written once
+  // and reused by both updateQuestion and updatePassage rather than copy-pasted per bank.
+  // `deriveFields(merged)` lets each caller compute its own bank-specific derived columns
+  // (choices/answerFormat/answer for questions; wordCount/estimatedReadingTime for passages)
+  // without touching the fork/archive logic itself. `fingerprintField` names which field the
+  // fingerprint is computed from (questionText vs passageText).
+  async function forkOrUpdate(collectionName, existingDoc, patch, contentFields, opts, fingerprintField, deriveFields) {
+    opts = opts || {};
+    const touchesContent = Object.keys(patch).some((k) => contentFields.includes(k));
     const now = Date.now();
     if ((existingDoc.usageCount || 0) > 0 && touchesContent) {
-      const merged = { ...existingDoc, ...patch };
-      const choices = Array.isArray(merged.choices) ? merged.choices.filter((c) => c != null && c !== "") : [];
+      const merged = { ...existingDoc, ...patch, ...(deriveFields ? deriveFields({ ...existingDoc, ...patch }) : {}) };
       const forked = {
         ...merged,
-        choices,
-        answerFormat: choices.length > 0 ? "mc" : "subjective",
-        answer: choices.length > 0 ? Number(merged.answer) : String(merged.answer || ""),
         status: "DRAFT",
-        review: blankReview(),
-        fingerprint: computeFingerprint(merged.questionText),
+        review: blankReview(opts.reviewSchema),
+        fingerprint: computeFingerprint(merged[fingerprintField]),
         usageCount: 0,
         version: (existingDoc.version || 1) + 1,
         supersedesId: existingDoc.id,
@@ -321,17 +353,25 @@ window.SarahServices = window.SarahServices || {};
       return { forked: true, newId, oldId: existingDoc.id, doc: { id: newId, ...forked } };
     }
     const patchOut = { ...patch, updatedAt: now };
-    if (touchesContent && patch.questionText !== undefined) patchOut.fingerprint = computeFingerprint(patch.questionText);
-    if (patch.choices !== undefined || patch.answer !== undefined) {
-      const choices = Array.isArray(patch.choices !== undefined ? patch.choices : existingDoc.choices) || [];
-      const cleanChoices = choices.filter((c) => c != null && c !== "");
-      patchOut.choices = cleanChoices;
-      patchOut.answerFormat = cleanChoices.length > 0 ? "mc" : "subjective";
-      const rawAnswer = patch.answer !== undefined ? patch.answer : existingDoc.answer;
-      patchOut.answer = cleanChoices.length > 0 ? Number(rawAnswer) : String(rawAnswer || "");
-    }
+    if (deriveFields) Object.assign(patchOut, deriveFields({ ...existingDoc, ...patch }));
+    if (patch[fingerprintField] !== undefined) patchOut.fingerprint = computeFingerprint(patch[fingerprintField]);
     await setDocAt(collectionName, existingDoc.id, patchOut, { merge: true });
     return { forked: false, doc: { ...existingDoc, ...patchOut } };
+  }
+
+  function deriveQuestionFields(merged) {
+    const choices = Array.isArray(merged.choices) ? merged.choices.filter((c) => c != null && c !== "") : [];
+    return {
+      choices,
+      answerFormat: choices.length > 0 ? "mc" : "subjective",
+      answer: choices.length > 0 ? Number(merged.answer) : String(merged.answer || ""),
+    };
+  }
+
+  async function updateQuestion(collectionName, existingDoc, patch, opts) {
+    opts = opts || {};
+    const contentFields = CONTENT_FIELDS.concat(opts.extraContentFields || []);
+    return forkOrUpdate(collectionName, existingDoc, patch, contentFields, opts, "questionText", deriveQuestionFields);
   }
 
   async function setStatus(collectionName, existingDoc, nextStatus, reviewPatch) {
@@ -364,6 +404,12 @@ window.SarahServices = window.SarahServices || {};
   // collection (readingLibrary etc.) already filters client-side after a full fetch, so this stays
   // consistent rather than introducing a new access pattern for one collection.
   // ---------------------------------------------------------------------------------------------
+  // Generic over any bank's doc shape — grammar (mainCategory/subCategory) and reading
+  // (examType/passageId/targetSkill, Phase 6 §12.9) filters below are just equality checks that
+  // no-op when the field isn't on the doc or the filter isn't passed, so this one function serves
+  // both without a bank-specific branch. Also doubles as the Passage list filter (§12.10) — a
+  // passage doc has grade/difficulty/examType/status/tags/source but no questionType/mainCategory,
+  // so those filters simply never match anything unless passed.
   function queryQuestions(list, filters) {
     filters = filters || {};
     return (list || []).filter((q) => {
@@ -372,12 +418,18 @@ window.SarahServices = window.SarahServices || {};
       if (filters.mainCategory && q.mainCategory !== filters.mainCategory) return false;
       if (filters.subCategory && q.subCategory !== filters.subCategory) return false;
       if (filters.questionType && q.questionType !== filters.questionType) return false;
+      if (filters.examType && q.examType !== filters.examType) return false;
+      if (filters.passageType && q.passageType !== filters.passageType) return false;
+      if (filters.passageId && q.passageId !== filters.passageId) return false;
+      if (filters.targetSkill && q.targetSkill !== filters.targetSkill) return false;
       if (filters.source && (q.source && q.source.type) !== filters.source) return false;
       if (filters.status && filters.status.length && !filters.status.includes(q.status)) return false;
       if (filters.tags && filters.tags.length && !filters.tags.every((t) => (q.tags || []).includes(t))) return false;
       if (filters.search) {
         const needle = filters.search.toLowerCase();
-        const haystack = `${q.questionText} ${(q.tags || []).join(" ")}`.toLowerCase();
+        // title/passageText only exist on Passage docs, topic only on Passage — harmless no-ops on
+        // Question docs. Lets one search box cover "지문 제목/지문 본문/문제 본문/태그" (§12 spec §17).
+        const haystack = `${q.questionText || ""} ${q.title || ""} ${q.passageText || ""} ${q.topic || ""} ${(q.tags || []).join(" ")}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
       return true;
@@ -394,9 +446,168 @@ window.SarahServices = window.SarahServices || {};
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Grammar-specific bound API — the only part wired into UI this phase.
+  // Grammar-specific bound API — Phase 5.
   // ---------------------------------------------------------------------------------------------
   const GRAMMAR_COLLECTION = "grammarQuestions";
+
+  // ---------------------------------------------------------------------------------------------
+  // Reading Question Bank (Phase 6, ARCHITECTURE.md §12) — Passage + Question, two collections.
+  // No AI API calls anywhere below: wordCount/estimatedReadingTime are plain string math, not a
+  // model call (CLAUDE.md "API cost policy").
+  // ---------------------------------------------------------------------------------------------
+  const READING_PASSAGE_COLLECTION = "readingPassages";
+  const READING_QUESTION_COLLECTION = "readingQuestions";
+
+  // §12.6 — exam/usage purpose, deliberately open-ended so INTERNATIONAL_SCHOOL/TOEFL/etc. can be
+  // appended later without touching UI/filter code that iterates this array.
+  const READING_EXAM_TYPES = [
+    { key: "MIDDLE_SCHOOL_INTERNAL", label: "중학교 내신" },
+    { key: "HIGH_SCHOOL_INTERNAL", label: "고등학교 내신" },
+    { key: "MOCK_EXAM", label: "모의고사" },
+    { key: "CSAT_STYLE", label: "수능형" },
+    { key: "TEACHER_CREATED", label: "자체 제작" },
+    { key: "PRACTICE", label: "연습용" },
+  ];
+
+  const PASSAGE_TYPES = [
+    { key: "argumentative", label: "논설문" },
+    { key: "expository", label: "설명문" },
+    { key: "narrative", label: "서사문" },
+    { key: "descriptive", label: "묘사문" },
+    { key: "letterEmail", label: "편지·이메일" },
+    { key: "dialogue", label: "대화문" },
+    { key: "adNotice", label: "광고·안내문" },
+    { key: "chartGraph", label: "도표·그래프" },
+    { key: "literature", label: "문학" },
+    { key: "textbook", label: "교과서 본문" },
+    { key: "article", label: "기사" },
+  ];
+
+  // §12.7 — questionType and examType are independent axes; group here is a UI hint only, not an
+  // enforced mapping. Group A/B/C don't repeat a type that already exists in another group (e.g.
+  // "빈칸"/"서술형"/"어휘"/"순서"/"문장 삽입"/"요약" are Group A or B types reused via examType, not
+  // redefined per group) — see ARCHITECTURE.md §12.7 for why duplicating would fragment stats.
+  const READING_QUESTION_TYPES = [
+    // Group A — 수능/모의고사형 (19)
+    { key: "topic", label: "주제", group: "A" },
+    { key: "title", label: "제목", group: "A" },
+    { key: "mainIdea", label: "요지", group: "A" },
+    { key: "claim", label: "주장", group: "A" },
+    { key: "purpose", label: "목적", group: "A" },
+    { key: "contentMatch", label: "내용 일치", group: "A" },
+    { key: "contentMismatch", label: "내용 불일치", group: "A" },
+    { key: "blank", label: "빈칸", group: "A" },
+    { key: "sentenceInsertion", label: "문장 삽입", group: "A" },
+    { key: "order", label: "글의 순서", group: "A" },
+    { key: "irrelevantSentence", label: "무관한 문장", group: "A" },
+    { key: "summaryCompletion", label: "요약문 완성", group: "A" },
+    { key: "vocabulary", label: "어휘", group: "A" },
+    { key: "contextualMeaning", label: "문맥상 의미", group: "A" },
+    { key: "referentInference", label: "지칭 추론", group: "A" },
+    { key: "inference", label: "추론", group: "A" },
+    { key: "authorAttitude", label: "필자의 태도", group: "A" },
+    { key: "longPassage", label: "장문 독해", group: "A" },
+    { key: "complex", label: "복합 문항", group: "A" },
+    // Group B — 중학교 내신 (교과서 본문 기반, 9)
+    { key: "textComprehension", label: "본문 내용 이해", group: "B" },
+    { key: "detail", label: "세부 내용", group: "B" },
+    { key: "englishDefinition", label: "영영풀이", group: "B" },
+    { key: "vocabTransform", label: "어휘 변형", group: "B" },
+    { key: "sentenceTransform", label: "문장 변형", group: "B" },
+    { key: "shortAnswer", label: "서술형", group: "B" },
+    { key: "textBlank", label: "본문 빈칸", group: "B" },
+    { key: "textGrammar", label: "본문 어법", group: "B" },
+    { key: "textOrder", label: "본문 순서", group: "B" },
+    // Group C — 고등학교 내신 추가 (4; A/B와 겹치는 유형은 제외)
+    { key: "textVariation", label: "본문 변형", group: "C" },
+    { key: "grammarInContext", label: "어법", group: "C" },
+    { key: "hardInference", label: "고난도 추론", group: "C" },
+    { key: "summary", label: "요약", group: "C" },
+  ];
+
+  // §12.5/§12.10 — merged from the spec's two near-duplicate "skill"/"targetSkill" lists into one.
+  const TARGET_SKILLS = [
+    { key: "MAIN_IDEA", label: "주제 파악" },
+    { key: "DETAIL_RETRIEVAL", label: "세부사항 확인" },
+    { key: "INFERENCE", label: "추론" },
+    { key: "VOCABULARY_IN_CONTEXT", label: "문맥상 어휘" },
+    { key: "LOGIC", label: "논리 구조" },
+    { key: "STRUCTURE", label: "글의 구조" },
+  ];
+
+  // §12.4 — wordCount/estimatedReadingTime are derived, never hand-entered (same principle as
+  // answerFormat being derived from choices.length, §11.2). WPM figures are rough L2-reading-speed
+  // heuristics, not calibrated data — good enough for a teacher-facing estimate, not a claim of
+  // precision.
+  const WPM_BY_GRADE = { "중1": 80, "중2": 90, "중3": 100, "고1": 110, "고2": 120, "고3": 130 };
+  const DEFAULT_WPM = 100;
+  function countWords(text) {
+    return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+  }
+  function estimateReadingTimeMin(wordCount, grade) {
+    if (!wordCount) return 0;
+    const wpm = WPM_BY_GRADE[grade] || DEFAULT_WPM;
+    return Math.max(1, Math.round(wordCount / wpm));
+  }
+  function derivePassageFields(merged) {
+    const wordCount = countWords(merged.passageText);
+    return { wordCount, estimatedReadingTime: estimateReadingTimeMin(wordCount, merged.grade) };
+  }
+
+  const PASSAGE_CONTENT_FIELDS = ["title", "passageText", "grade", "difficulty", "passageType", "examType"];
+
+  // input: { title, passageText, grade, difficulty, passageType, examType, topic, keywords, tags, source }
+  async function createPassage(input) {
+    const now = Date.now();
+    const passageText = input.passageText || "";
+    const wordCount = countWords(passageText);
+    const doc = {
+      title: input.title || "",
+      passageText,
+      grade: input.grade || "",
+      difficulty: input.difficulty || "BASIC",
+      passageType: input.passageType || "",
+      examType: input.examType || "",
+      topic: input.topic || "",
+      keywords: Array.isArray(input.keywords) ? input.keywords : [],
+      wordCount,
+      estimatedReadingTime: estimateReadingTimeMin(wordCount, input.grade),
+      source: { type: (input.source && input.source.type) || "TEACHER_CREATED", note: (input.source && input.source.note) || "" },
+      tags: Array.isArray(input.tags) ? input.tags : [],
+      status: "DRAFT",
+      review: blankReview("reading"),
+      fingerprint: computeFingerprint(passageText),
+      usageCount: 0,
+      version: 1,
+      supersedesId: null,
+      replacedBy: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "teacher",
+    };
+    const id = await addDocTo(READING_PASSAGE_COLLECTION, doc);
+    return { id, ...doc };
+  }
+
+  // §12.8 — a fork here deliberately does NOT cascade to the passage's existing questions; they
+  // keep pointing at the archived original so past exam results stay meaningful. See ARCHITECTURE.md
+  // §12.8 for why auto-copying questions to the new version is an explicit future action, not this.
+  async function updatePassage(existingDoc, patch) {
+    return forkOrUpdate(READING_PASSAGE_COLLECTION, existingDoc, patch, PASSAGE_CONTENT_FIELDS, { reviewSchema: "reading" }, "passageText", derivePassageFields);
+  }
+
+  // §12.8 — a passage with any linked question (regardless of that question's own status) can never
+  // be hard-deleted, so a delete can't orphan a question's passageId reference.
+  function canDeletePassage(doc, allReadingQuestions) {
+    if (!canHardDelete(doc)) return false;
+    return !(allReadingQuestions || []).some((q) => q.passageId === doc.id);
+  }
+  async function hardDeletePassage(doc, allReadingQuestions) {
+    if (!canDeletePassage(doc, allReadingQuestions)) {
+      throw new Error("초안(DRAFT) 상태이고 사용된 적 없으며 연결된 문제가 없는 지문만 완전히 삭제할 수 있어요.");
+    }
+    await deleteDocAt(READING_PASSAGE_COLLECTION, doc.id);
+  }
 
   window.SarahServices.questionBankService = {
     GRADES, DIFFICULTIES, GRAMMAR_TAXONOMY, QUESTION_TYPES, SOURCE_TYPES, STATUS_FLOW,
@@ -409,5 +620,26 @@ window.SarahServices = window.SarahServices || {};
     updateGrammarQuestion: (doc, patch) => updateQuestion(GRAMMAR_COLLECTION, doc, patch),
     setGrammarQuestionStatus: (doc, nextStatus, reviewPatch) => setStatus(GRAMMAR_COLLECTION, doc, nextStatus, reviewPatch),
     hardDeleteGrammarQuestion: (doc) => hardDeleteQuestion(GRAMMAR_COLLECTION, doc),
+
+    // Reading Question Bank (Phase 6)
+    READING_PASSAGE_COLLECTION, READING_QUESTION_COLLECTION,
+    READING_EXAM_TYPES, PASSAGE_TYPES, READING_QUESTION_TYPES, TARGET_SKILLS,
+    listReadingPassages: () => listQuestions(READING_PASSAGE_COLLECTION),
+    createReadingPassage: (input) => createPassage(input),
+    updateReadingPassage: (doc, patch) => updatePassage(doc, patch),
+    setReadingPassageStatus: (doc, nextStatus, reviewPatch) => setStatus(READING_PASSAGE_COLLECTION, doc, nextStatus, reviewPatch),
+    canDeleteReadingPassage: canDeletePassage,
+    hardDeleteReadingPassage: (doc, allReadingQuestions) => hardDeletePassage(doc, allReadingQuestions),
+    listReadingQuestions: () => listQuestions(READING_QUESTION_COLLECTION),
+    createReadingQuestion: (input, passageId) => createQuestion(READING_QUESTION_COLLECTION, input, {
+      extraFields: { passageId, examType: input.examType || "", targetSkill: input.targetSkill || "", evidenceLocation: input.evidenceLocation || "" },
+      reviewSchema: "reading",
+    }),
+    updateReadingQuestion: (doc, patch) => updateQuestion(READING_QUESTION_COLLECTION, doc, patch, {
+      extraContentFields: ["passageId", "examType"],
+      reviewSchema: "reading",
+    }),
+    setReadingQuestionStatus: (doc, nextStatus, reviewPatch) => setStatus(READING_QUESTION_COLLECTION, doc, nextStatus, reviewPatch),
+    hardDeleteReadingQuestion: (doc) => hardDeleteQuestion(READING_QUESTION_COLLECTION, doc),
   };
 })();

@@ -481,7 +481,7 @@ New UI                          ← Teacher Center, Exam Studio 등 신규 화�
 | 3 | Daily Report + Monthly Report | **완료** — `DailyReportGenerator`에 구조화된 "오늘 학습 기록" 카드(Homework/Vocab/Exam/Reading 자동연결, 평가, status) 추가(기존 메시지 초안 카드 보존) + `ReportsSection`에 "월간 분석" 탭(`MonthlyReportDashboard`) 신설 + Parent 화면에 자동집계 요약 노출. §2.7 참고 |
 | 4 | Reading Log + Reading Analytics | **완료** — 신규 `readingActivity` 컬렉션(§8.1)으로 실제 읽기 상태/시간 추적 추가, `reading-library.html`에 Teacher Reading Dashboard 신설, Daily/Monthly/Parent Report에 연결 |
 | 5 | Grammar Question Bank | **완료** — Question Bank Core(`services/questionBankService.js`) + `grammarQuestions` 컬렉션 + Teacher UI(`QuestionBankSection`). §11 참고 |
-| 6 | Reading Passage/Question Bank | 완전 신규 (`readingLibrary`와는 별개 — §8 참고) |
+| 6 | Reading Passage/Question Bank | **완료** — Question Bank Core 확장(§12.9) + `readingPassages`/`readingQuestions` 컬렉션 + Teacher UI(`ReadingQuestionBankView`). §12 참고. `readingLibrary`와는 완전히 별개(§12.1) |
 | 7 | Sarah's Original + 품질관리 | 완전 신규 |
 | 8 | Exam Studio | `examTests`/`mockExams`/`examKeyLibrary`/`ExamKeyLibrarySection`(AI vision 파싱 이미 구현) 재배치 위주 |
 | 9 | Vocabulary/Mock Exam 통합 | 이미 대부분 구현됨 — Daily/Monthly Report 자동조인에 연결하는 게 남은 일 |
@@ -697,3 +697,209 @@ versioning이 이 구조의 전제다: 문제를 수정해도 과거 응시가 �
 | `questionType`으로 채점 방식 결정 | `answerFormat`을 `choices.length`에서 파생 | 교사가 "빈칸"+객관식 보기를 입력하는 조합이 자연스럽게 발생 |
 | status에 `REVISION` | 넣지 않음 | "한 칸 뒤로" 전이가 반려를 표현하므로 별도 상태 불필요 |
 | §8의 `curriculum`/`schoolLevel`/`distractorAnalysis`/`correctRate` | 넣지 않음 | `grade`로 충분(schoolLevel 파생 가능), `wrongChoiceExplanations`가 distractorAnalysis 역할, `correctRate`는 응시 데이터가 없어 항상 null이 될 필드 — Phase 10에서 실제 데이터가 생길 때 추가 |
+
+---
+
+## 12. Reading Question Bank (Phase 6, 2026-08-24)
+
+> **STEP 1 설계 문서.** 코드 구현 전에 작성했고, 구현 중 실제와 달라진 부분은 §12.11에 정정 기록한다(문서가 아니라 코드가 기준).
+>
+> **AI API 호출: 0건.** 지문/문제 등록·검색·필터·편집·분류·선택·Preview·통계 전부 Firestore + JS 계산이다. AI 생성 버튼도 만들지 않는다(CLAUDE.md "API cost policy").
+
+### 12.1 기존 Reading 컬렉션과의 관계 — 절대 혼동 금지
+
+| | 목적 | 사용자 | 컬렉션 | 소유 파일 |
+|---|---|---|---|---|
+| **기존** Reading Library | 학생이 **읽는** 자료실 | 학생 | `readingLibrary` / `readingActivity` / `readingJournal` / `readingVocab` | `reading-library.html` |
+| **신규** Reading Question Bank | 교사가 **출제하는** 시험 문제은행 | 교사 | `readingPassages` / `readingQuestions` | `index.html` (`QuestionBankSection`) |
+
+**데이터를 서로 복제하지 않는다.** 같은 영어 지문이 양쪽에 있을 수 있지만 이번 Phase에서 강제 통합하지 않는다 — 목적·수명주기·상태머신이 전부 다르다(읽기 자료는 status가 없고, 문제은행은 DRAFT→PUBLISHED 검수 파이프라인을 갖는다). 향후 "이 읽기자료로 문제 만들기" 연결이 필요해지면 `readingPassages.sourceLibraryId` 같은 **참조 필드 한 개**로 잇는다(TODO, 이번 Phase 미구현).
+
+### 12.2 Passage / Question 분리 — 이번 Phase의 핵심 구조
+
+문법은 문제 1개가 독립적이지만, 독해는 **지문 1개 : 문제 N개**다.
+
+```
+readingPassages/P001  ("The future of ...")
+   ├── readingQuestions/Q001  passageId=P001  주제
+   ├── readingQuestions/Q002  passageId=P001  빈칸
+   ├── readingQuestions/Q003  passageId=P001  내용 일치
+   ├── readingQuestions/Q004  passageId=P001  글의 순서
+   └── readingQuestions/Q005  passageId=P001  어휘
+```
+
+**왜 서브컬렉션(`readingPassages/{id}/questions/{id}`)이 아니라 최상위 2개 컬렉션인가:**
+1. Exam Builder는 "고1 + MOCK_EXAM + 빈칸 + Advanced 3문제"처럼 **지문을 가로질러** 문제를 뽑아야 한다. 서브컬렉션이면 `collectionGroup` 쿼리가 필요한데, 이 repo는 Firestore 인덱스 설정을 관리하지 않는다(§1.3 — `firebase.json`에 firestore 키 없음, 규칙도 Console 관리).
+2. 이 repo의 모든 콘텐츠 컬렉션(`readingLibrary`/`materialsLibrary`/`passageArchive`/`grammarQuestions`)이 이미 **플랫 최상위 + 클라이언트 필터** 패턴이다. 한 컬렉션만 다른 접근 패턴을 쓰면 일관성이 깨진다.
+3. 지문 없이 존재하는 문제(향후 독립 어휘문항 등)를 나중에 허용하기 쉽다.
+
+**지문을 지문 문서에 문제 배열로 넣지 않는 이유**: 지문 본문 자체가 길고(수능 지문 ~150 words, 장문 ~350 words), 문제 5~10개를 배열로 안으면 1MB 캡(§2.2)과 별개로 "문제 1개 수정 = 지문 문서 전체 재작성"이 되어 버저닝이 지문 단위로 오염된다.
+
+### 12.3 Firestore collections
+
+| 컬렉션 | 문서 단위 | 비고 |
+|---|---|---|
+| `readingPassages` | 지문 1개 = 문서 1개 | 13번째 컬렉션 |
+| `readingQuestions` | 문제 1개 = 문서 1개, `passageId`로 지문 참조 | 14번째 컬렉션 |
+
+둘 다 `services/backupService.js` export에 추가한다(version "1.2").
+
+### 12.4 Passage schema — `readingPassages/{autoId}`
+
+```js
+{
+  title,
+  passageText,
+  grade,              // "중1".."고3" (Phase 5 GRADES 재사용)
+  difficulty,         // BASIC | INTERMEDIATE | ADVANCED | KILLER (Phase 5 재사용)
+  passageType,        // PASSAGE_TYPES — 논설문/설명문/서사/도표/교과서 본문 등 (§12.6)
+  examType,           // READING_EXAM_TYPES — 중등내신/고등내신/모의고사/수능형/자체제작/연습 (§12.6)
+  topic,              // 자유 텍스트 주제 (예: "기후변화와 도시계획")
+  keywords: [],       // 핵심어
+  wordCount,          // passageText에서 자동 계산 (수기 입력 아님)
+  estimatedReadingTime, // wordCount 기반 자동 계산(분). 학년별 WPM 상수 사용, AI 아님
+  source: { type, note },   // Phase 5 SOURCE_TYPES 재사용
+  tags: [],
+  status,             // Phase 5 STATUS_FLOW 그대로 재사용 (§12.8)
+  review: {...},      // Reading 전용 10항목 (§12.9)
+  fingerprint,        // passageText 정규화 해시
+  usageCount, version, supersedesId, replacedBy,
+  createdAt, updatedAt, createdBy,
+}
+```
+
+`wordCount`/`estimatedReadingTime`은 **파생 필드**다. 저장 시점에 `passageText`에서 계산하며 교사가 입력하지 않는다 — Phase 5에서 `answerFormat`을 `choices.length`에서 파생시킨 것과 같은 원칙(수기 입력한 메타데이터는 본문과 어긋난다).
+
+### 12.5 Question schema — `readingQuestions/{autoId}`
+
+Phase 5 Question schema를 기반으로 하되 독해 전용 필드를 더한다.
+
+```js
+{
+  passageId,          // ★ readingPassages 문서 id — 이 값이 Reading Bank의 핵심 연결고리
+  grade, difficulty,  // 보통 지문에서 상속되지만 문항별 override 가능
+  questionType,       // READING_QUESTION_TYPES (§12.7) — 32종
+  examType,           // ★ 문제 유형과 분리된 별도 축 (§12.7)
+  questionText, choices, answerFormat, answer,
+  explanation,        // = spec의 answerExplanation (Phase 5 필드명 유지)
+  wrongChoiceExplanations: [],
+  targetSkill,        // ★ MAIN_IDEA | DETAIL_RETRIEVAL | INFERENCE | VOCABULARY_IN_CONTEXT | LOGIC | STRUCTURE
+  evidenceLocation,   // ★ 지문에서 정답 근거 위치 (자유 텍스트, 예: "3rd paragraph, 2nd sentence")
+  source, tags, status, review, fingerprint,
+  usageCount, version, supersedesId, replacedBy,
+  createdAt, updatedAt, createdBy,
+}
+```
+
+`targetSkill`/`evidenceLocation`은 **스키마에 자리를 잡되 이번 UI에서 필수 입력이 아니다**(선택 입력). 향후 §12.10 취약점 분석의 집계 축이 된다.
+
+**스펙의 `skill`과 `targetSkill` 두 목록은 하나로 합쳤다** — 각각 `[MAIN_IDEA, DETAIL, INFERENCE, VOCABULARY, LOGIC, STRUCTURE]`와 `[MAIN_IDEA, DETAIL_RETRIEVAL, INFERENCE, VOCABULARY_IN_CONTEXT, PARAGRAPH_STRUCTURE]`로 사실상 같은 개념의 다른 명명이라, 필드 2개를 두면 어느 쪽에 넣을지 모호해지고 집계가 갈라진다. `targetSkill` 하나에 6값으로 통일한다.
+
+### 12.6 Passage 분류 — 지문 유형 / 시험 목적
+
+**`READING_EXAM_TYPES` (시험·사용 목적, 6종)** — 확장 가능 구조. 향후 `INTERNATIONAL_SCHOOL`/`TOEFL`/`TEPS` 등을 이 배열에 추가하기만 하면 UI·필터·쿼리가 자동으로 따라온다.
+
+| key | 라벨 |
+|---|---|
+| `MIDDLE_SCHOOL_INTERNAL` | 중학교 내신 |
+| `HIGH_SCHOOL_INTERNAL` | 고등학교 내신 |
+| `MOCK_EXAM` | 모의고사 |
+| `CSAT_STYLE` | 수능형 |
+| `TEACHER_CREATED` | 자체 제작 |
+| `PRACTICE` | 연습용 |
+
+**`PASSAGE_TYPES` (지문 유형, 11종)**: 논설문 / 설명문 / 서사문 / 묘사문 / 편지·이메일 / 대화문 / 광고·안내문 / 도표·그래프 / 문학 / 교과서 본문 / 기사
+
+### 12.7 독해 문제 유형 taxonomy (32종) — 문제 유형과 시험 목적의 분리
+
+**핵심 원칙: `questionType`(무엇을 묻는가)과 `examType`(어느 시험용인가)은 완전히 독립된 두 축이다.** 강제 매핑하지 않는다 — 아래 group은 "주로 쓰이는 곳" 힌트일 뿐, 교사가 자유롭게 조합할 수 있다.
+
+```
+빈칸 + MOCK_EXAM                    ← 수능형 빈칸추론
+빈칸 + HIGH_SCHOOL_INTERNAL         ← 고등 내신 변형 빈칸
+본문 빈칸 + MIDDLE_SCHOOL_INTERNAL   ← 교과서 본문 빈칸
+```
+셋 다 서로 다른 조합이며 각각 저장·조회된다.
+
+**Group A — 수능/모의고사형 (19종)**
+주제 · 제목 · 요지 · 주장 · 목적 · 내용 일치 · 내용 불일치 · 빈칸 · 문장 삽입 · 글의 순서 · 무관한 문장 · 요약문 완성 · 어휘 · 문맥상 의미 · 지칭 추론 · 추론 · 필자의 태도 · 장문 독해 · 복합 문항
+
+**Group B — 중학교 내신 (교과서 본문 기반, 9종)**
+본문 내용 이해 · 세부 내용 · 영영풀이 · 어휘 변형 · 문장 변형 · 서술형 · 본문 빈칸 · 본문 어법 · 본문 순서
+
+**Group C — 고등학교 내신 추가 (4종)**
+본문 변형 · 어법 · 고난도 추론 · 요약
+
+> 스펙 §12의 고등 내신 목록(본문 변형/빈칸/어법/순서/문장 삽입/어휘/요약/서술형/고난도 추론) 중 빈칸·순서·문장 삽입·어휘는 Group A와, 서술형은 Group B와 **완전히 같은 유형**이라 중복 정의하지 않는다. 같은 유형을 group마다 복제하면 "빈칸"이 3개의 다른 key로 갈라져 통계가 쪼개진다. Group C에는 A·B에 없는 4개만 넣고, 조합은 `examType`이 표현한다.
+
+### 12.8 status / review / versioning — Phase 5 재사용
+
+**status**: Phase 5 `STATUS_FLOW` / `canTransition`을 **그대로** 쓴다.
+`DRAFT → AI_REVIEW → TEACHER_REVIEW → APPROVED → PUBLISHED (+ARCHIVED)`, PUBLISHED는 APPROVED에서만, ARCHIVED 탈출은 DRAFT만. Passage와 Question 둘 다 같은 파이프라인을 탄다.
+
+**versioning**: Phase 5 copy-on-write를 Passage/Question 양쪽에 적용한다.
+- Question content fields: `passageId`, `grade`, `difficulty`, `questionType`, `examType`, `questionText`, `choices`, `answer`
+- Passage content fields: `title`, `passageText`, `grade`, `difficulty`, `passageType`, `examType`
+
+**지문 fork는 문제로 cascade하지 않는다 (중요한 결정).** 출제된 지문 P1을 수정하면 P1은 ARCHIVED(내용 그대로 보존), P2가 새 DRAFT로 생긴다. 기존 문제 Q1~Q5는 **계속 P1을 가리킨다** — 과거 시험이 참조하는 지문 내용이 불변이어야 하기 때문. 결과적으로 P2는 문제가 0개인 상태로 시작한다.
+→ UI에서 이 사실을 명시적으로 안내한다. "P2로 문제도 복사" 액션은 **이번 Phase 미구현(TODO)** — 자동 복사는 fingerprint 중복 경고를 대량 유발하고 usageCount 의미가 모호해져서, 교사가 의도적으로 선택하는 별도 기능이어야 한다.
+
+**삭제 정책**: Phase 5와 동일(DRAFT+미사용만 완전 삭제, 그 외 ARCHIVED). 추가로 **문제가 1개 이상 연결된 지문은 삭제 불가** — 고아 문제(orphan)가 생기지 않도록 가드한다(§6-N-9의 orphan 학생문서와 같은 실수를 반복하지 않는다).
+
+**review**: Reading 전용 10항목 (스펙 §11).
+
+| 필드 | 기준 |
+|---|---|
+| `passageQuestionLink` | ① 지문과 문제의 논리적 연결 |
+| `answerClarity` | ② 정답의 명확성 |
+| `distractorQuality` | ③ 오답의 매력도 |
+| `evidenceClarity` | ④ 지문 근거의 명확성 |
+| `difficultyAppropriate` | ⑤ 난이도 |
+| `gradeAppropriate` | ⑥ 학년 적합성 |
+| `examTypeFit` | ⑦ 시험 유형 적합성 |
+| `notRoteMemory` | ⑧ 단순 암기 문제 여부 |
+| `discrimination` | ⑨ 문제 변별력 |
+| `explanationValue` | ⑩ 해설의 교육적 가치 |
+
+Phase 5와 같은 3-state(`null` 미확인 / `true` PASS / `false` FAIL) + `reviewNote`/`reviewedBy`/`reviewedAt`. 스펙의 `UNCHECKED/PASS/FAIL`이 이 3-state와 정확히 대응하므로 별도 문자열 enum을 만들지 않는다.
+
+### 12.9 Question Bank Core 확장 (기존 Grammar를 깨뜨리지 않는 범위)
+
+Phase 5 Core는 `collectionName` 파라미터화가 이미 돼 있지만, 실제로 Reading을 얹어보니 **3곳이 Grammar 전용으로 굳어 있었다.** 최소 확장한다.
+
+| Core 요소 | 현재 (Phase 5) | Phase 6 확장 |
+|---|---|---|
+| `createQuestion()` | 고정 doc 리터럴 — `passageId`/`examType`/`targetSkill` 같은 미지 필드를 **버린다** | 세 번째 인자 `extraFields`를 받아 merge (Grammar 호출부는 인자 미전달 → 동작 불변) |
+| `updateQuestion()` | `CONTENT_FIELDS` 상수 하나에 고정 | 네 번째 인자로 추가 content field 목록을 받아 fork 판정에 합류 |
+| `queryQuestions()` | grade/difficulty/mainCategory/subCategory/questionType/source/status/tags/search 고정 | `examType`/`passageId`/`targetSkill` 등 **범용 equality 필터**로 일반화 |
+| `blankReview()` | Grammar 8항목 고정 | schema key를 받아 Grammar 8 / Reading 10을 반환 (Grammar 기본값 유지) |
+| Passage CRUD | 없음 | `createPassage`/`updatePassage` 추가. status·fork·fingerprint·delete-guard 로직은 **공용 내부 함수로 추출해 재사용**(중복 구현 금지) |
+
+**Grammar 회귀 방지**: 위 확장은 전부 optional 파라미터/기본값 방식이라 기존 `createGrammarQuestion`/`updateGrammarQuestion`/`queryQuestions` 호출부는 한 글자도 바뀌지 않는다. Phase 6 regression에서 Grammar Bank를 반드시 재확인한다.
+
+### 12.10 Exam Builder query + 향후 취약점 분석
+
+이번 Phase도 **완전한 Exam Builder는 만들지 않는다.** Phase 5의 `pickQuestionsForExam`(status PUBLISHED 강제)에 Reading 필터가 통하도록만 만들고, Preview UI로 실제 동작을 확인한다.
+
+```js
+pickQuestionsForExam(list, { grade:"고1", examType:"MOCK_EXAM", questionType:"blank", difficulty:"ADVANCED" }, 3)
+pickQuestionsForExam(list, { grade:"중3", examType:"HIGH_SCHOOL_INTERNAL", questionType:"contentMatch", difficulty:"INTERMEDIATE" }, 5)
+pickQuestionsForExam(list, { grade:"중2", examType:"MIDDLE_SCHOOL_INTERNAL", questionType:"textBlank", difficulty:"BASIC" }, 10)
+```
+
+**향후 학생 독해 취약점 분석 (Phase 10)** — 응시 결과에 `questionId`를 저장해두면:
+```
+student → exam → questionId → 정/오
+                    ↓ (readingQuestions 조인)
+          questionType / targetSkill / examType / difficulty
+                    ↓ (집계)
+   "빈칸추론 54% · 내용일치 88% · 순서 61% · 어휘 79%"
+   "MAIN_IDEA 82% · INFERENCE 51% · VOCABULARY_IN_CONTEXT 73%"
+```
+`targetSkill`을 별도 축으로 둔 이유가 여기 있다 — 문제 유형별 정답률은 "무슨 문제를 틀리나"를, skill별 정답률은 "어떤 능력이 부족한가"를 말해준다. 둘은 다른 처방으로 이어진다.
+
+### 12.11 구현 후 정정 기록
+
+- **`services/questionBankService.js` 내부 리팩터링**: `updateQuestion`의 fork-or-merge 로직을 `forkOrUpdate(collectionName, existingDoc, patch, contentFields, opts, fingerprintField, deriveFields)` 공용 함수로 추출했다(§12.9에서 예고한 "공용 내부 함수로 추출해 재사용"의 실제 형태). `updateQuestion`/`updatePassage` 둘 다 이 함수를 얇게 감싼다 — `deriveFields`가 은행별 파생 필드(문법은 `choices`/`answerFormat`/`answer`, 리딩 지문은 `wordCount`/`estimatedReadingTime`)만 계산하고, fork/archive/fingerprint 로직 자체는 완전히 공유된다.
+- **삭제 정책 문구 보강**: 사용자가 승인 메시지에서 "REVIEW/APPROVED/PUBLISHED는 삭제 불가 → ARCHIVED"를 재확인 요청함에 따라, `canHardDelete`(Phase 5부터 이미 `status === "DRAFT" && usageCount === 0`로 이 규칙을 만족)가 Passage/Question 양쪽에 동일 적용됨을 실제 브라우저에서 재검증했다(§13 regression 결과 참고). 코드 변경 없음, 기존 Phase 5 가드가 이미 스펙을 만족.
+- **`estimatedReadingTime`의 학년별 WPM**은 실측 데이터가 아니라 휴리스틱 추정치임을 코드 주석에 명시했다(`중1:80 ~ 고3:130`, L2 독해 속도의 대략적 근사) — 향후 실제 학생 읽기시간 데이터(Phase 4 `readingActivity.readingTimeSec`)가 쌓이면 보정할 수 있는 자리로만 존재한다.
