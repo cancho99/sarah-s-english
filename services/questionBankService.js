@@ -397,6 +397,18 @@ window.SarahServices = window.SarahServices || {};
     await deleteDocAt(collectionName, doc.id);
   }
 
+  // Phase 7 (Exam Builder, ARCHITECTURE.md §13.8) — the moment a question/passage gets referenced
+  // by a FINALIZED exam paper, its usageCount must go up so the copy-on-write versioning guard
+  // (usageCount > 0 forks instead of mutating, §11.8/§12.8) kicks in and locks its content forever.
+  // Deliberately NOT in CONTENT_FIELDS / not routed through updateQuestion — usageCount itself is
+  // metadata about usage, not question content, so bumping it must never trigger a fork of the
+  // question it's counting.
+  async function incrementUsageCount(collectionName, doc) {
+    const next = (doc.usageCount || 0) + 1;
+    await setDocAt(collectionName, doc.id, { usageCount: next, updatedAt: Date.now() }, { merge: true });
+    return { ...doc, usageCount: next };
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Query / exam-builder foundation (§13). Client-side filtering over listQuestions() — this repo
   // has no firestore.rules/index config to audit (ARCHITECTURE.md §1.3), so compound server-side
@@ -613,7 +625,7 @@ window.SarahServices = window.SarahServices || {};
     GRADES, DIFFICULTIES, GRAMMAR_TAXONOMY, QUESTION_TYPES, SOURCE_TYPES, STATUS_FLOW,
     canTransition, computeFingerprint, findDuplicates,
     listQuestions, createQuestion, updateQuestion, setStatus, canHardDelete, hardDeleteQuestion,
-    queryQuestions, pickQuestionsForExam,
+    queryQuestions, pickQuestionsForExam, incrementUsageCount,
     GRAMMAR_COLLECTION,
     listGrammarQuestions: () => listQuestions(GRAMMAR_COLLECTION),
     createGrammarQuestion: (input) => createQuestion(GRAMMAR_COLLECTION, input),

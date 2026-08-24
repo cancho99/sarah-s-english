@@ -903,3 +903,177 @@ student → exam → questionId → 정/오
 - **`services/questionBankService.js` 내부 리팩터링**: `updateQuestion`의 fork-or-merge 로직을 `forkOrUpdate(collectionName, existingDoc, patch, contentFields, opts, fingerprintField, deriveFields)` 공용 함수로 추출했다(§12.9에서 예고한 "공용 내부 함수로 추출해 재사용"의 실제 형태). `updateQuestion`/`updatePassage` 둘 다 이 함수를 얇게 감싼다 — `deriveFields`가 은행별 파생 필드(문법은 `choices`/`answerFormat`/`answer`, 리딩 지문은 `wordCount`/`estimatedReadingTime`)만 계산하고, fork/archive/fingerprint 로직 자체는 완전히 공유된다.
 - **삭제 정책 문구 보강**: 사용자가 승인 메시지에서 "REVIEW/APPROVED/PUBLISHED는 삭제 불가 → ARCHIVED"를 재확인 요청함에 따라, `canHardDelete`(Phase 5부터 이미 `status === "DRAFT" && usageCount === 0`로 이 규칙을 만족)가 Passage/Question 양쪽에 동일 적용됨을 실제 브라우저에서 재검증했다(§13 regression 결과 참고). 코드 변경 없음, 기존 Phase 5 가드가 이미 스펙을 만족.
 - **`estimatedReadingTime`의 학년별 WPM**은 실측 데이터가 아니라 휴리스틱 추정치임을 코드 주석에 명시했다(`중1:80 ~ 고3:130`, L2 독해 속도의 대략적 근사) — 향후 실제 학생 읽기시간 데이터(Phase 4 `readingActivity.readingTimeSec`)가 쌓이면 보정할 수 있는 자리로만 존재한다.
+
+---
+
+## 13. Exam Builder (Phase 7 설계, 2026-08-24)
+
+> **이 절은 설계 문서다 — 코드 미구현.** 사용자 승인 후 별도 Phase로 착수한다. Phase 5(`grammarQuestions`)와 Phase 6(`readingPassages`/`readingQuestions`)이 이미 구현·커밋된 상태(`7f31d7c`, `520db22`)를 전제로 설계했다. **AI API 호출 0건**, **기존 데이터 migration 없음**, **기존 시험 기능 삭제/대체 없음** — 전부 additive.
+
+### 13.1 기존 시험 시스템과의 관계 — 대체가 아니라 새 계층 하나 추가
+
+이 repo에는 이미 4개의 서로 다른 "시험" 개념이 공존한다(§2.4). Exam Builder는 이들을 **지우거나 통합하지 않는다** — 그 위에 "문제은행에서 시험지를 조립한다"는 다섯 번째 계층을 additive하게 얹는다.
+
+| 기존 시스템 | 정체 | Exam Builder와의 관계 |
+|---|---|---|
+| `examTests[]`/`examResults[]` | 교사가 손으로 만든 즉석 시험 (학생 문서 내 배열) | 그대로 유지. Exam Builder로 만든 시험지는 여기 쓰지 않고 새 컬렉션에 별도로 쌓인다 |
+| `mockExams[]`/`mockExamResults[]` | 공식 모의고사 정답지 + 온라인 응시 결과 | 그대로 유지. 구조(온라인 응시·자동채점)는 향후 §13.10의 참고 모델이지만 지금 통합하지 않는다 |
+| `regularExams[]` | 내신/모의고사/교재성취평가 **성적 기록부** (진짜 성적표) | 그대로 유지. Exam Builder로 만든 시험을 실제로 치른 뒤 "몇 점 받았다"를 여기 남기는 연결은 향후 어댑터로 미룬다(§13.10) |
+| `examKeyLibrary` | **스캔된 외부 시험지**의 정답표를 AI-vision으로 읽어 등록 | 완전히 다른 기능이다 — Exam Builder는 **이 repo 문제은행에서 직접 조립**한 시험지를 다루고, `examKeyLibrary`는 **외부에서 이미 존재하는 시험지**의 정답만 디지털화한다. 서로 겹치지 않는다 |
+
+즉 Exam Builder의 결과물(가칭 `examPapers`)은 **6번째 컬렉션으로 새로 추가**되며, 위 4개 중 어느 것도 읽기 전용 조회 이상으로 건드리지 않는다.
+
+### 13.2 왜 지금 이게 가능해졌는가 — Versioning이 선행 투자였던 이유
+
+Phase 5/6에서 만든 copy-on-write versioning(§11.8/§12.8)은 당시엔 "미래를 위한 안전장치"였지만, Exam Builder가 그 미래다. **시험지는 문제의 내용을 복제 저장하지 않고 `questionId`만 참조한다** — 나중에 교사가 그 문제를 수정해도:
+- `usageCount > 0`이 되는 순간부터는 내용 수정이 자동으로 fork(새 버전)를 만들고 원본은 ARCHIVED로 내용이 고정된다(§11.8/§12.8).
+- 즉 시험지가 참조하는 `questionId`의 문제 내용·정답은 **그 시험지가 만들어진 순간부터 영원히 그대로**다 — Exam Builder가 스냅샷을 따로 저장할 필요가 없다.
+
+이 원칙이 §13.4 스키마 설계(내용 복제 없이 참조만 저장)의 근거다.
+
+### 13.3 Firestore 컬렉션 — `examPapers` (신규, 6번째... 아니 15번째 전체 컬렉션)
+
+```
+examPapers/{autoId}
+```
+
+기존 컬렉션과 마찬가지로 최상위 플랫 컬렉션(서브컬렉션 아님) — Grammar/Reading Bank와 같은 이유(§12.2): 인덱스 미관리 repo에서 collectionGroup 쿼리를 피하고, 기존 콘텐츠 컬렉션과 접근 패턴을 통일한다.
+
+`services/backupService.js` export에도 추가한다(구현 시 version bump).
+
+### 13.4 ExamPaper schema
+
+```js
+{
+  id,
+  title,                    // "2026 2학기 중간고사 대비 문법 모의고사 A형"
+  grade,                     // optional, 참고용 라벨(브라우징/검색 편의) — 섹션별 grade를 강제 통일하지 않음
+  examType,                  // optional, 참고용 대표 시험 목적(READING_EXAM_TYPES 재사용) — 사용자 결정 §13.12-3: 강제 아님, section/question의 examType을 덮어쓰지 않음
+  status,                    // DRAFT | FINALIZED | ARCHIVED — §13.8
+  sections: [
+    {
+      id,                          // section 내부 id (uid)
+      label,                       // "SECTION 1. GRAMMAR", "SECTION 2. READING" 등 자유 텍스트 — 사용자 결정 §13.12-2: 한 시험지에 grammar/reading 섹션 혼합 허용
+      bank,                        // "grammar" | "reading"
+      // reading 섹션은 지문 단위로 묶인다 — 하나의 section이 passage 1개 + 그 지문에 딸린 문제 N개.
+      // grammar 섹션은 지문이 없으므로 questionId 배열만 가진다.
+      passageId,                   // bank==="reading"일 때만. readingPassages 문서 참조
+      shuffleQuestions: false,     // 이 섹션 내 문제 순서를 무작위화할지 (§13.6) — DRAFT 동안의 의도, FINALIZE 시점에 실행되고 그 결과가 questionRefs[].order에 고정됨
+      shuffleChoices: false,       // 객관식 보기 순서를 무작위화할지 (§13.6) — 위와 동일하게 FINALIZE 시점에 실행·고정
+      questionRefs: [
+        {
+          questionId,              // 내용 복제 없음 — grammarQuestions 또는 readingQuestions 문서 id만 참조
+          order,                   // 이 섹션 안에서의 최종 표시 순서(0-based). DRAFT 동안은 교사가 배치한 순서, FINALIZE 시점에 shuffleQuestions=true면 무작위 재배치 후 이 값으로 고정 — 사용자 결정 §추가요구사항5
+          choiceDisplayOrder,      // number[] | null. 원본 choices 배열의 index를 "표시 순서"로 나열한 순열. mc가 아니거나 셔플 안 함이면 null(=원본 순서 그대로). FINALIZE 시점 1회만 계산·고정 — §13.6
+        },
+      ],
+    },
+  ],
+  totalQuestionCount,       // 파생값, sections를 순회해 계산 (저장은 하되 매번 재계산해 덮어씀 — 진짜 소스는 sections)
+  createdAt, updatedAt, createdBy,
+  finalizedAt,              // FINALIZED로 전환된 시점 — 이 시점에 참조된 모든 questionId의 usageCount를 +1 (§13.8), 동시에 order/choiceDisplayOrder가 이 시점 값으로 고정됨
+}
+```
+
+**지문(Passage)이 시험지 안에서 어떻게 표현되는가**: `passageId`만 저장하고 본문은 복제하지 않는다(readingLibrary/readingQuestions의 "복제 저장 금지" 원칙, §8.1/§12.2와 동일). Preview/인쇄 시점에 `readingPassages`에서 조인해 렌더링한다.
+
+**재현성(사용자 결정 §추가요구사항6)**: `choiceDisplayOrder`/`order`가 examPaper 자체에 값으로 저장되므로(seed 아님, 결과값 자체), 셔플 알고리즘이 나중에 바뀌어도 과거 FINALIZED 시험지의 렌더링은 영향받지 않는다. 원본 문제가 이후 `usageCount>0` 상태에서 수정되면 copy-on-write(§11.8/§12.8)에 의해 **새 id로 fork**되고 원본 id의 내용은 그대로 보존되므로, examPaper가 참조하는 `questionId`는 fork 여부와 무관하게 항상 FINALIZE 당시의 정확한 버전을 가리킨다 — 시험지 쪽에서 별도 버전 필드를 저장할 필요가 없다.
+
+### 13.5 선택 모드 — 자동 / 수동 / 혼합
+
+Phase 5/6에서 이미 만든 `pickQuestionsForExam(list, filters, count)`(PUBLISHED 강제)를 그대로 확장 지점으로 쓴다. 세 모드는 배타적이지 않고 **교사가 섞어 쓸 수 있는 하나의 작업 흐름**이다.
+
+**자동 선택**: "요구사항 행(requirement row)"의 배열을 입력받아 각 행마다 `pickQuestionsForExam`을 호출하고 결과를 섹션에 채운다.
+```js
+requirements: [
+  { bank: "grammar", filters: { grade:"중3", mainCategory:"tense", questionType:"blank", difficulty:"INTERMEDIATE" }, count: 5 },
+  { bank: "reading",  filters: { grade:"고1", examType:"MOCK_EXAM", questionType:"blank", difficulty:"ADVANCED" }, count: 3 },
+]
+```
+Reading은 `pickQuestionsForExam`이 **문제**를 반환하므로, 자동 선택 시 같은 지문(`passageId`)에 속한 문제들을 자동으로 하나의 section으로 묶는 로직이 필요하다(문제만 뽑고 지문을 안 뽑으면 렌더링이 불가능하므로) — 이번 설계에서 명시해두는 구현 시 유의점.
+
+**수동 선택**: 기존 `QuestionBankSection`의 목록/필터 UI를 재사용해 교사가 직접 문제(또는 지문+문제 세트)를 골라 "시험지에 추가" — 새 컴포넌트를 만들기보다 기존 목록 뷰에 "선택 모드" 토글을 얹는 방식이 재사용에 가깝다.
+
+**혼합**: 자동으로 초안을 채운 뒤 개별 문제를 수동으로 빼고 넣는 것 — 실무적으로 가장 많이 쓰일 흐름이라고 예상되며, 자동/수동이 같은 `sections` 상태를 다루는 한 자연스럽게 지원된다(별도 모드 전환 상태가 필요 없다).
+
+**PUBLISHED 강제는 그대로 유지**: 자동이든 수동이든 DRAFT/REVIEW 상태의 문제는 시험지에 들어갈 수 없다 — 이미 `pickQuestionsForExam`이 강제하고 있고, 수동 선택 UI도 목록에서 PUBLISHED가 아닌 문제는 "추가" 액션을 비활성화해야 한다(신규 가드, 구현 시 필요).
+
+### 13.6 셔플 — 순서 무작위화와 정답 무결성
+
+가장 실수하기 쉬운 지점이라 명시적으로 설계한다.
+
+**사용자 결정(§추가요구사항1/5): 셔플 인스턴스는 저장한다.** 매 렌더링마다 새로 무작위화하지 않고, **FINALIZE 시점에 한 번** 순서를 확정해 `examPaper.sections[].questionRefs[].order`/`choiceDisplayOrder`에 값으로 저장한다. 이후 그 시험지는 항상 동일한 순서로 렌더링된다("A형/B형 여러 종" 같은 변형 인쇄는 이번 Phase 범위 밖 — §13.11).
+
+- **문제 순서 셔플**: `shuffleQuestions=true`면 FINALIZE 시점에 섹션 내 `questionRefs`를 무작위로 재배열하고 그 결과 순서를 `order`로 고정한다. 각 문제 자체의 `answer`는 무관하므로 위험 요소 없음.
+- **보기(choices) 순서 셔플**: 원본 문서의 `choices`/`answer`는 **절대** 건드리지 않는다(공유 문제은행이라 여러 시험지가 같은 문제를 참조할 수 있고, 원본을 섞으면 전부 깨진다). 대신 FINALIZE 시점에 순수 함수로 순열을 1회 계산해 그 결과(`choiceDisplayOrder`, 원본 index들의 배열)만 `examPaper`에 저장한다.
+  - 렌더링 시 `resolveQuestionForDisplay(questionDoc, choiceDisplayOrder)`가 `{ displayChoices, displayAnswerIndex }`를 반환 — `displayChoices = choiceDisplayOrder.map(i => questionDoc.choices[i])`, `displayAnswerIndex = choiceDisplayOrder.indexOf(Number(questionDoc.answer))`. 원본 문서는 읽기만 하고 쓰지 않는다.
+  - `choiceDisplayOrder`가 `null`이면(셔플 안 함, 또는 mc 아님) 원본 순서를 그대로 쓴다.
+  - seed 기반이 아니라 **결과값 자체를 저장**하므로, 셔플 알고리즘이 나중에 바뀌어도 과거 시험지 재현에 영향이 없다(§추가요구사항6, 위 §13.4 참고).
+
+### 13.7 시험지 Preview
+
+지문·문제·보기를 실시간 조인해서 화면에 렌더링하되 **아무것도 저장하지 않는다**. 기존 4곳의 "새 창 인쇄" 패턴(§6-M-1, `wordtest.html`의 가장 견고한 구현을 표준으로 삼는다고 이미 §6에 기록돼 있음)을 그대로 재사용 — 다섯 번째 구현을 새로 만들지 않고 기존 패턴을 호출하는 방향으로 구현 Phase에서 검토한다.
+
+### 13.8 저장 / 상태 — DRAFT → FINALIZED → ARCHIVED
+
+Question Bank의 6단계 파이프라인(DRAFT→AI_REVIEW→...→PUBLISHED)을 그대로 재사용하지 않는다 — **시험지 자체는 "검수 대상 콘텐츠"가 아니라 "문제들의 조합"**이라 성격이 다르다. 대신 3단계로 단순화한다.
+
+| 상태 | 의미 |
+|---|---|
+| `DRAFT` | 조립 중, 언제든 문제 추가/삭제/교체 가능 |
+| `FINALIZED` | 교사가 "이 조합으로 확정" — 이 시점에 참조된 모든 `questionId`의 `usageCount`를 +1 한다. **usageCount가 올라간 순간부터 그 문제들은 Question Bank의 copy-on-write 규칙(§11.8/§12.8)에 의해 내용이 사실상 고정**된다(수정하면 원본은 그대로 두고 fork됨) — 이게 이 설계 전체의 핵심 안전장치다 |
+| `ARCHIVED` | 더 이상 쓰지 않지만 이력(어떤 학생이 이 시험을 봤는지, 향후 §13.10)을 위해 보존 |
+
+**FINALIZED를 되돌리는 경로는 만들지 않는다(DRAFT로 되돌리기 없음)** — Question Bank의 PUBLISHED처럼 "여기서부터는 실제로 쓰였다"는 경계선이며, 되돌리면 이미 증가시킨 `usageCount`를 다시 낮춰야 하는데 그 사이에 그 문제가 다른 시험지에도 쓰였다면 이중 계산 문제가 생긴다. 시험지를 고치고 싶으면 ARCHIVED 처리 후 새 시험지를 만든다(Question Bank의 fork 원칙과 대칭적인 설계).
+
+### 13.9 향후 학생 배정 / 응시 / 채점 연결 (이번 Phase 미구현 — 스키마 훅만)
+
+`mockExams`/`mockExamResults`가 이미 이 repo에 존재하는 참고 모델이다(온라인 응시, `startedAt`/`submittedAt`, 클라이언트 채점 — 단 `FIRESTORE_SECURITY_PLAN.md` §7이 이미 "시험 정답이 클라이언트에서 채점되는 구조"를 문제로 지적하고 Exam Studio Phase로 미뤄둔 상태임을 유의). Exam Builder가 만든 `examPapers`를 향후 이 패턴으로 확장할 때 필요할 스키마 훅만 미리 명시해둔다(구현 안 함):
+
+```
+examPapers/{id}.assignedTo: [studentId]        // 향후, 지금은 없음
+examAttempts/{id}                               // 향후 신규 컬렉션(가칭). examPaperId + studentId + answers[] + score
+                                                 // mockExamResults와 같은 패턴, 단 questionId 기반이라
+                                                 // 문항별 채점/정오답 기록이 세밀해짐 — §13.10-a
+```
+
+**§13.10-a — Student Weakness Analytics로의 연결(§11.9/§12.10에서 이미 설계한 것과 동일한 조인)**: `examAttempts`가 `questionId`별 정오답을 기록하면
+```
+student → examAttempt → questionId → 정/오
+             ↓ (grammarQuestions 또는 readingQuestions 조인)
+   mainCategory/subCategory/questionType(문법) 또는 examType/questionType/targetSkill(독해)
+             ↓ (집계)
+   학생별 취약 유형/영역 통계
+```
+`regularExams`(현재 성적 기록부)와의 관계는 **병존**이다 — `regularExams`는 교사가 수기로 남기는 성적 요약, `examAttempts`는 향후 문항 단위 자동 기록. 하나가 다른 하나를 대체하지 않는다(§6.1의 "Historical Snapshot vs Live Analytics" 원칙과 같은 구도가 될 가능성이 높다 — 실제 구현 Phase에서 다시 확인).
+
+### 13.10 API 비용 정책 재확인
+
+시험지 생성/검색/조합의 모든 단계(자동 선택 쿼리, 수동 검색/필터, 셔플 계산, Preview 렌더링, 저장) — **AI API 호출 0건**. `pickQuestionsForExam`/`queryQuestions`는 이미 순수 Firestore-read + JS 계산이고(§11.9/§12.10), 이번 설계에서 추가하는 셔플 함수·섹션 조립 로직도 전부 클라이언트 JS 계산이다. AI 관련 기능(예: "AI로 유사 난이도 문제 자동 보충")은 이번 설계에 포함하지 않았고, 향후 필요해지면 CLAUDE.md의 API 비용 정책에 따라 `questionGenerationService.js`류의 완전히 분리된 모듈로만 추가한다.
+
+### 13.11 이번 Phase 설계에서 명시적으로 제외한 것 (§13.9와 별개로, 아예 다루지 않은 것)
+
+- 실제 학생 응시 UI(온라인 시험 화면)
+- 자동 채점 로직
+- 문항별 통계/취약점 분석 대시보드
+- A형/B형처럼 같은 시험지의 셔플 변형을 몇 종 인쇄할지에 대한 정책 UI
+- `regularExams`와 `examAttempts`를 하나로 합치는 마이그레이션(영구히 안 할 수도 있음 — §6.1과 같은 병존 원칙 후보)
+
+### 13.12 결정 사항 (사용자 승인, 2026-08-24)
+
+이전 버전의 이 절은 3개의 미해결 질문이었다. 사용자가 다음과 같이 확정했다 — 구현은 이 결정을 그대로 따른다.
+
+1. **셔플 인스턴스 저장: YES.** FINALIZE 시점에 순서를 1회 확정해 값으로 저장한다(매 렌더링 재계산 아님). `examPaperVariants` 같은 별도 컬렉션은 만들지 않고, 확정된 순서를 `examPapers` 문서 자체(`questionRefs[].order`/`choiceDisplayOrder`)에 저장한다 — §13.4/§13.6에 반영 완료.
+2. **Grammar + Reading 혼합: YES.** 한 시험지 안에 grammar 섹션과 reading 섹션을 자유롭게 섞을 수 있다. section 단위로 명확히 구분되며(`bank` 필드), reading section은 passage + 그 문제들을 항상 함께 유지한다 — §13.4에 반영 완료.
+3. **`examType` 전체 통일: NO.** 시험지 전체에 examType을 강제하지 않는다. `examPapers.examType`은 optional 대표 라벨(브라우징 편의용)일 뿐, section/question 각각의 examType을 덮어쓰거나 검증하지 않는다 — §13.4에 반영 완료.
+
+**추가 요구사항 (사용자 승인, 2026-08-24)**:
+4. examPaper는 문제 내용을 복제 저장하지 않고 `questionId` 참조 중심으로만 저장한다 (§13.2/§13.4 기존 설계 그대로 유지).
+5. FINALIZE 시점의 최종 question order/choice display order는 examPaper에 값으로 저장한다 (§13.4/§13.6에 반영 완료).
+6. **과거 시험 재현성이 최우선.** 원본 Question이 이후 versioning되더라도 과거 FINALIZED examPaper는 당시 문제 버전을 그대로 재현해야 한다 — copy-on-write가 이미 이를 보장함을 §13.4에 명시(별도 버전 필드 불필요).
+7. 학생 배정/응시/채점은 이번 Phase에서 구현하지 않는다. §13.9의 스키마 훅 설명만 유지하고, 실제 필드(`assignedTo` 등)는 이번 구현에 추가하지 않는다.
+8. AI API 호출 0회 — §13.10 그대로 유지.
+9. 기존 단어시험/모의고사/Exam 시스템(`examTests`/`mockExams`/`regularExams`/`examKeyLibrary`)은 수정·대체하지 않는다 — §13.1 그대로 유지.
+10. `examPapers` 컬렉션은 additive로만 추가한다.
+
+**다음 단계**: 구현 착수. 구현 후 불필요한 screenshot/전체 regression 대신 DOM/JS 기반 최소 테스트로 검증한다.

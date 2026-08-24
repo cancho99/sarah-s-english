@@ -10,16 +10,17 @@ window.SarahServices = window.SarahServices || {};
   const { getAllDocs } = window.SarahServices.firebaseClient;
 
   async function buildFullBackup() {
-    const [meta, students, grammarQuestions, readingPassages, readingQuestions] = await Promise.all([
+    const [meta, students, grammarQuestions, readingPassages, readingQuestions, examPapers] = await Promise.all([
       getMeta(),
       getAllStudentDocs(),
       getAllDocs("grammarQuestions"), // Phase 5 — first Question Bank collection, see questionBankService.js
       getAllDocs("readingPassages"), // Phase 6 — ARCHITECTURE.md §12.3
       getAllDocs("readingQuestions"), // Phase 6 — ARCHITECTURE.md §12.3
+      getAllDocs("examPapers"), // Phase 7 — Exam Builder, ARCHITECTURE.md §13.3
     ]);
     return {
       exportedAt: new Date().toISOString(),
-      version: "1.2",
+      version: "1.3",
       source: "Sarah's English — services/backupService.js",
       // sarahsEnglishMeta/main as-is: roster (incl. student/parent login codes, schedule,
       // FCM tokens), teacherAuth, levelTestBookings, announcement, examKeyLibrary, teacherTodos,
@@ -41,6 +42,9 @@ window.SarahServices = window.SarahServices || {};
       // collections (those are already inside `students` and unaffected by this bank).
       readingPassages: readingPassages || {},
       readingQuestions: readingQuestions || {},
+      // examPapers/<id> as-is (Phase 7, ARCHITECTURE.md §13.3) — Exam Builder papers, references
+      // questionId/passageId only (no duplicated question/passage content, §13.2/§13.4).
+      examPapers: examPapers || {},
     };
   }
 

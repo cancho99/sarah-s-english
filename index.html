@@ -118,6 +118,7 @@
 <script src="services/revenueService.js" defer></script>
 <script src="services/aiService.js" defer></script>
 <script src="services/questionBankService.js" defer></script>
+<script src="services/examPaperService.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -5195,6 +5196,322 @@ function GrammarBankView() {
 
 // Phase 6 — top-level router: owns the bank-switch tab, delegates everything else to
 // GrammarBankView (Phase 5, unchanged) / ReadingQuestionBankView (Phase 6, new).
+// ---------- Exam Builder (Phase 7, ARCHITECTURE.md §13) ----------
+// Composes exam papers FROM the Grammar/Reading Question Banks — never duplicates question/passage
+// content (questionId/passageId references only). AI API calls: 0. Does not touch examTests/
+// mockExams/regularExams/examKeyLibrary (§13.1) — examPapers is a new, separate, additive collection.
+const EXAM_PAPER_STATUS_LABEL = { DRAFT: "초안", FINALIZED: "확정됨", ARCHIVED: "보관됨" };
+const EXAM_PAPER_STATUS_STYLE = { DRAFT: { bg: "#EFEAE0", color: C.slate }, FINALIZED: { bg: "#E1EEE4", color: "#2E6B44" }, ARCHIVED: { bg: "#F1F1F1", color: C.slate } };
+function ExamPaperBadge({ status }) {
+  const style = EXAM_PAPER_STATUS_STYLE[status] || { bg: "#eee", color: C.ink };
+  return html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: style.bg, color: style.color, whiteSpace: "nowrap" }}>${EXAM_PAPER_STATUS_LABEL[status] || status}</span>`;
+}
+
+function ExamPaperQuestionLine({ EP, QB, questionDoc, qref, index, onMove, onRemove, canEdit }) {
+  if (!questionDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
+  const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(questionDoc, qref.choiceDisplayOrder);
+  const typeLabel = questionDoc.mainCategory
+    ? (() => { const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, questionDoc.mainCategory, questionDoc.subCategory); return `${main} → ${sub}`; })()
+    : (QB.READING_QUESTION_TYPES.find((t) => t.key === questionDoc.questionType) || {}).label || questionDoc.questionType;
+  return html`
+    <div style=${{ padding: "8px 10px", borderBottom: `1px dashed ${C.line}` }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+        <div style=${{ minWidth: 0, flex: 1 }}>
+          <div style=${{ fontSize: 11, color: C.slate }}>${index + 1}. ${typeLabel}${qref.choiceDisplayOrder ? " · 보기 순서 섞임" : ""}</div>
+          <div style=${{ fontSize: 12.5, color: C.ink }}>${questionDoc.questionText.slice(0, 70)}${questionDoc.questionText.length > 70 ? "..." : ""}</div>
+          ${displayChoices.length > 0 && html`
+            <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>
+              ${displayChoices.map((c, i) => html`<span key=${i} style=${{ marginRight: 8, fontWeight: i === displayAnswerIndex ? 700 : 400, color: i === displayAnswerIndex ? "#2E6B44" : C.slate }}>${i + 1}. ${c}${i === displayAnswerIndex ? " ✓" : ""}</span>`)}
+            </div>
+          `}
+        </div>
+        ${canEdit && html`
+          <div style=${{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <button type="button" onClick=${() => onMove(-1)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>↑</button>
+            <button type="button" onClick=${() => onMove(1)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>↓</button>
+            <button type="button" onClick=${onRemove} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11 }}>삭제</button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, canEdit, onChange, onRemoveSection }) {
+  function moveQuestion(i, dir) {
+    const refs = [...section.questionRefs];
+    const j = i + dir;
+    if (j < 0 || j >= refs.length) return;
+    [refs[i], refs[j]] = [refs[j], refs[i]];
+    onChange({ ...section, questionRefs: refs });
+  }
+  function removeQuestion(i) {
+    onChange({ ...section, questionRefs: section.questionRefs.filter((_, idx) => idx !== i) });
+  }
+  const passage = section.bank === "reading" && section.passageId ? passagesById[section.passageId] : null;
+  return html`
+    <${Card} style=${{ marginBottom: 12 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        ${canEdit
+          ? html`<input style=${{ ...inputStyle, marginBottom: 0, fontWeight: 700, fontSize: 13 }} value=${section.label} onChange=${(e) => onChange({ ...section, label: e.target.value })} />`
+          : html`<div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${section.label}</div>`}
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: section.bank === "reading" ? "#E7ECF3" : "#EFEAE0", color: C.navy, marginLeft: 8, whiteSpace: "nowrap" }}>${section.bank === "reading" ? "📖 READING" : "📐 GRAMMAR"}</span>
+      </div>
+      ${passage && html`<div style=${{ fontSize: 12, color: C.slate, background: C.ivory, borderRadius: 3, padding: "8px 10px", marginBottom: 8, whiteSpace: "pre-wrap", maxHeight: 100, overflowY: "auto" }}>${passage.title} — ${passage.passageText.slice(0, 200)}${passage.passageText.length > 200 ? "..." : ""}</div>`}
+      ${canEdit && html`
+        <div style=${{ display: "flex", gap: 14, marginBottom: 8, fontSize: 11.5 }}>
+          <label style=${{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked=${section.shuffleQuestions} onChange=${(e) => onChange({ ...section, shuffleQuestions: e.target.checked })} style=${{ width: 14, height: 14, appearance: "auto" }} /> 문제 순서 섞기 (확정 시 1회)</label>
+          <label style=${{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked=${section.shuffleChoices} onChange=${(e) => onChange({ ...section, shuffleChoices: e.target.checked })} style=${{ width: 14, height: 14, appearance: "auto" }} /> 보기 순서 섞기 (확정 시 1회)</label>
+        </div>
+      `}
+      ${section.questionRefs.length === 0
+        ? html`<div style=${{ fontSize: 11.5, color: C.slate }}>문제가 없어요.</div>`
+        : section.questionRefs.map((qr, i) => html`
+            <${ExamPaperQuestionLine} key=${qr.questionId + i} EP=${EP} QB=${QB} questionDoc=${questionsById[qr.questionId]} qref=${qr} index=${i}
+              canEdit=${canEdit} onMove=${(dir) => moveQuestion(i, dir)} onRemove=${() => removeQuestion(i)} />
+          `)}
+      ${canEdit && html`<button type="button" onClick=${onRemoveSection} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11.5, cursor: "pointer", marginTop: 8, padding: 0 }}>섹션 삭제</button>`}
+    <//>
+  `;
+}
+
+function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, onAddSections }) {
+  const [bank, setBank] = useState("grammar");
+  const [grade, setGrade] = useState("");
+  const [mainCategory, setMainCategory] = useState("");
+  const [questionType, setQuestionType] = useState("");
+  const [examType, setExamType] = useState("");
+  const [difficulty, setDifficulty] = useState("");
+  const [count, setCount] = useState(5);
+  const [msg, setMsg] = useState("");
+
+  function run() {
+    const filters = {};
+    if (grade) filters.grade = grade;
+    if (difficulty) filters.difficulty = difficulty;
+    if (bank === "grammar") {
+      if (mainCategory) filters.mainCategory = mainCategory;
+      if (questionType) filters.questionType = questionType;
+      const { section, pickedCount } = EP.autoSelectGrammarSection("SECTION. GRAMMAR", grammarQuestions, filters, Number(count) || undefined);
+      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 문법 문제가 없어요."); return; }
+      onAddSections([section]);
+      setMsg(`문법 문제 ${pickedCount}개를 섹션으로 추가했어요.`);
+    } else {
+      if (examType) filters.examType = examType;
+      if (questionType) filters.questionType = questionType;
+      const { sections, pickedCount } = EP.autoSelectReadingSections("SECTION. READING", readingQuestions, filters, Number(count) || undefined, readingPassagesById);
+      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 독해 문제가 없어요."); return; }
+      onAddSections(sections);
+      setMsg(`독해 문제 ${pickedCount}개를 지문별 섹션 ${sections.length}개로 추가했어요.`);
+    }
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 14 }}>
+      <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>자동 선택으로 섹션 추가</div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <${Button} variant=${bank === "grammar" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setBank("grammar")}>📐 문법<//>
+        <${Button} variant=${bank === "reading" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setBank("reading")}>📖 독해<//>
+      </div>
+      <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <select style=${{ ...inputStyle, width: "auto" }} value=${grade} onChange=${(e) => setGrade(e.target.value)}><option value="">학년 전체</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
+        ${bank === "grammar"
+          ? html`
+            <select style=${{ ...inputStyle, width: "auto" }} value=${mainCategory} onChange=${(e) => setMainCategory(e.target.value)}><option value="">대주제 전체</option>${QB.GRAMMAR_TAXONOMY.map((c) => html`<option key=${c.key} value=${c.key}>${c.label}</option>`)}</select>
+            <select style=${{ ...inputStyle, width: "auto" }} value=${questionType} onChange=${(e) => setQuestionType(e.target.value)}><option value="">유형 전체</option>${QB.QUESTION_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
+          `
+          : html`
+            <select style=${{ ...inputStyle, width: "auto" }} value=${examType} onChange=${(e) => setExamType(e.target.value)}><option value="">시험 유형 전체</option>${QB.READING_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
+            <select style=${{ ...inputStyle, width: "auto" }} value=${questionType} onChange=${(e) => setQuestionType(e.target.value)}><option value="">유형 전체</option>${QB.READING_QUESTION_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
+          `}
+        <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}><option value="">난이도 전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+        <input type="number" style=${{ ...inputStyle, width: 70 }} value=${count} onChange=${(e) => setCount(e.target.value)} min="1" />
+        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${run}>+ 추가<//>
+      </div>
+      ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 6 }}>${msg}</div>`}
+    <//>
+  `;
+}
+
+function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, readingPassagesById, questionsById, onSaved, onFinalized, onCancel }) {
+  const [title, setTitle] = useState(paper.title);
+  const [grade, setGrade] = useState(paper.grade || "");
+  const [examType, setExamType] = useState(paper.examType || "");
+  const [sections, setSections] = useState(paper.sections);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      const res = await EP.updateExamPaper(paper, { title, grade, examType, sections });
+      onSaved(res);
+    } catch (e) { setErr("저장 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  async function finalize() {
+    if (!confirm("이 시험지를 확정할까요? 확정 후에는 문제 구성/순서를 다시 바꿀 수 없어요 (사용된 문제는 수정 시 새 버전으로 분리돼요).")) return;
+    setSaving(true); setErr("");
+    try {
+      const saved = await EP.updateExamPaper(paper, { title, grade, examType, sections });
+      const finalized = await EP.finalizeExamPaper(saved, questionsById);
+      onFinalized(finalized);
+    } catch (e) { setErr("확정 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  function updateSectionAt(i, next) { setSections((ss) => ss.map((s, idx) => (idx === i ? next : s))); }
+  function removeSectionAt(i) { setSections((ss) => ss.filter((_, idx) => idx !== i)); }
+  const total = EP.totalQuestionCount(sections);
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onCancel} />
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 14 }}>시험지 만들기 (초안)</div>
+      <div style=${{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style=${{ flex: "2 1 260px" }}><${Field} label="시험지 제목"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} /><//></div>
+        <div style=${{ flex: "1 1 140px" }}><${Field} label="학년 (선택, 참고용)"><select style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)}><option value="">선택 안 함</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select><//></div>
+        <div style=${{ flex: "1 1 180px" }}><${Field} label="대표 시험 목적 (선택, 참고용)"><select style=${inputStyle} value=${examType} onChange=${(e) => setExamType(e.target.value)}><option value="">선택 안 함</option>${QB.READING_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select><//></div>
+      </div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>총 ${sections.length}개 섹션 · ${total}문제. 대표 시험 목적은 참고용 라벨일 뿐 섹션/문제 각각의 시험 유형을 덮어쓰지 않아요.</div>
+
+      <${ExamPaperAutoSelectPanel} EP=${EP} QB=${QB} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById}
+        onAddSections=${(newSections) => setSections((ss) => [...ss, ...newSections])} />
+
+      ${sections.length === 0
+        ? html`<${Empty} text="아직 섹션이 없어요. 위에서 자동 선택으로 섹션을 추가해 주세요." />`
+        : sections.map((s, i) => html`
+            <${ExamPaperSectionCard} key=${s.id} EP=${EP} QB=${QB} section=${s} questionsById=${questionsById} passagesById=${readingPassagesById} canEdit=${true}
+              onChange=${(next) => updateSectionAt(i, next)} onRemoveSection=${() => removeSectionAt(i)} />
+          `)}
+
+      ${err && html`<div style=${{ color: C.danger, fontSize: 12.5, marginBottom: 10 }}>${err}</div>`}
+      <div style=${{ display: "flex", gap: 10 }}>
+        <${Button} variant="ghost" onClick=${save} disabled=${saving}>${saving ? "저장 중..." : "초안 저장"}<//>
+        <${Button} variant="gold" onClick=${finalize} disabled=${saving || total === 0}>확정 (FINALIZE)<//>
+      </div>
+    </div>
+  `;
+}
+
+function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, onBack, onEdit, onChanged }) {
+  const [msg, setMsg] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function handleArchive() {
+    if (!confirm("이 시험지를 보관(Archive) 처리할까요?")) return;
+    setSaving(true);
+    try { const updated = await EP.archiveExamPaper(paper); onChanged(updated); } catch (e) { setMsg("보관 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  async function handleDelete() {
+    if (!confirm("이 초안 시험지를 완전히 삭제할까요?")) return;
+    try { await EP.hardDeleteExamPaper(paper); onBack(true); } catch (e) { setMsg("삭제 실패: " + String(e.message || e)); }
+  }
+  return html`
+    <div>
+      <${BackBtn} onClick=${() => onBack(false)} />
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div>
+          <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+            <${ExamPaperBadge} status=${paper.status} />
+            <span style=${{ fontSize: 11.5, color: C.slate }}>${paper.grade || "학년 미지정"} · ${paper.totalQuestionCount}문제${paper.finalizedAt ? " · 확정 " + fmtDateTime(paper.finalizedAt) : ""}</span>
+          </div>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16 }}>${paper.title}</div>
+        </div>
+        ${paper.status === "DRAFT" && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>편집<//>`}
+      </div>
+      ${paper.sections.map((s) => html`<${ExamPaperSectionCard} key=${s.id} EP=${EP} QB=${QB} section=${s} questionsById=${questionsById} passagesById=${passagesById} canEdit=${false} onChange=${() => {}} onRemoveSection=${() => {}} />`)}
+      <div style=${{ display: "flex", gap: 10, alignItems: "center" }}>
+        ${EP.canArchiveExamPaper(paper) && html`<${Button} variant="danger" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleArchive} disabled=${saving}>보관 처리<//>`}
+        ${EP.canHardDeleteExamPaper(paper) && html`<button onClick=${handleDelete} style=${{ background: "none", border: "none", color: C.danger, fontSize: 12, cursor: "pointer", padding: 0 }}>완전히 삭제 (초안만)</button>`}
+      </div>
+      ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+    </div>
+  `;
+}
+
+function ExamBuilderView() {
+  const EP = window.SarahServices.examPaperService;
+  const QB = window.SarahServices.questionBankService;
+  const [papers, setPapers] = useState(null);
+  const [grammarQuestions, setGrammarQuestions] = useState([]);
+  const [readingQuestions, setReadingQuestions] = useState([]);
+  const [readingPassages, setReadingPassages] = useState([]);
+  const [err, setErr] = useState("");
+  const [view, setView] = useState("list"); // list | newForm | builder | detail
+  const [selectedId, setSelectedId] = useState(null);
+  const [newTitle, setNewTitle] = useState("");
+
+  async function load() {
+    try {
+      const [p, g, rq, rp] = await Promise.all([EP.listExamPapers(), QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages()]);
+      setPapers(p); setGrammarQuestions(g); setReadingQuestions(rq); setReadingPassages(rp);
+    } catch (e) { setErr("불러오지 못했어요: " + String(e.message || e)); }
+  }
+  useEffect(() => { load(); }, []);
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (papers === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  const questionsById = {};
+  grammarQuestions.forEach((q) => { questionsById[q.id] = q; });
+  readingQuestions.forEach((q) => { questionsById[q.id] = q; });
+  const readingPassagesById = {};
+  readingPassages.forEach((p) => { readingPassagesById[p.id] = p; });
+
+  const selected = papers.find((p) => p.id === selectedId);
+
+  if (view === "newForm") {
+    return html`
+      <div>
+        <${BackBtn} onClick=${() => setView("list")} />
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 14 }}>새 시험지</div>
+        <${Field} label="시험지 제목"><input style=${inputStyle} value=${newTitle} onChange=${(e) => setNewTitle(e.target.value)} /><//>
+        <${Button} disabled=${!newTitle.trim()} onClick=${async () => {
+          const doc = await EP.createExamPaper({ title: newTitle.trim() });
+          setPapers((ps) => [doc, ...ps]); setSelectedId(doc.id); setNewTitle(""); setView("builder");
+        }}>만들기<//>
+      </div>
+    `;
+  }
+  if (view === "builder" && selected) {
+    return html`<${ExamPaperBuilder} EP=${EP} QB=${QB} paper=${selected} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById} questionsById=${questionsById}
+      onSaved=${(doc) => { setPapers((ps) => ps.map((p) => (p.id === doc.id ? doc : p))); setView("detail"); }}
+      onFinalized=${(doc) => {
+        setPapers((ps) => ps.map((p) => (p.id === doc.id ? doc : p)));
+        setGrammarQuestions((qs) => qs.map((q) => (questionsById[q.id] && doc.sections.some((s) => s.questionRefs.some((r) => r.questionId === q.id))) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q));
+        setReadingQuestions((qs) => qs.map((q) => (doc.sections.some((s) => s.questionRefs.some((r) => r.questionId === q.id))) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q));
+        setView("detail");
+      }}
+      onCancel=${() => setView("detail")} />`;
+  }
+  if (view === "detail" && selected) {
+    return html`<${ExamPaperDetail} EP=${EP} QB=${QB} paper=${selected} questionsById=${questionsById} passagesById=${readingPassagesById}
+      onBack=${(deleted) => { if (deleted) { setPapers((ps) => ps.filter((p) => p.id !== selected.id)); setSelectedId(null); } setView("list"); }}
+      onEdit=${() => setView("builder")}
+      onChanged=${(doc) => setPapers((ps) => ps.map((p) => (p.id === doc.id ? doc : p)))} />`;
+  }
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style=${{ fontSize: 12, color: C.slate }}>총 ${papers.length}개 시험지</div>
+        <${Button} onClick=${() => setView("newForm")}>+ 새 시험지<//>
+      </div>
+      ${papers.length === 0
+        ? html`<${Empty} text="아직 만든 시험지가 없어요." />`
+        : papers.map((p) => html`
+          <${Card} key=${p.id} onClick=${() => { setSelectedId(p.id); setView("detail"); }} style=${{ cursor: "pointer" }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+              <div style=${{ minWidth: 0, flex: 1 }}>
+                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${p.grade || "학년 미지정"}${p.examType ? " · " + ((QB.READING_EXAM_TYPES.find((t) => t.key === p.examType) || {}).label || p.examType) : ""}</div>
+                <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>${p.title}</div>
+                <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>섹션 ${p.sections.length}개 · 문제 ${p.totalQuestionCount}개</div>
+              </div>
+              <${ExamPaperBadge} status=${p.status} />
+            </div>
+          <//>
+        `)}
+    </div>
+  `;
+}
+
 function QuestionBankSection() {
   const [bank, setBank] = useState("grammar");
   return html`
@@ -5202,11 +5519,13 @@ function QuestionBankSection() {
       <${Tabs} tabs=${[
         { key: "grammar", icon: "📐", label: "문법 문제은행" },
         { key: "reading", icon: "📖", label: "리딩 문제은행" },
+        { key: "examBuilder", icon: "🧪", label: "시험지 생성" },
         { key: "mock", icon: "📝", label: "모의고사 (준비 중)" },
         { key: "original", icon: "✨", label: "Sarah's Original (준비 중)" },
-      ]} active=${bank} onChange=${(key) => { if (key === "grammar" || key === "reading") setBank(key); }} />
+      ]} active=${bank} onChange=${(key) => { if (key === "grammar" || key === "reading" || key === "examBuilder") setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankView} />`}
       ${bank === "reading" && html`<${ReadingQuestionBankView} />`}
+      ${bank === "examBuilder" && html`<${ExamBuilderView} />`}
     </div>
   `;
 }
