@@ -90,21 +90,27 @@ const SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수�
 const TRANSFORM_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 시험 대비 학습 자료를 만드는 전문 교육 평가 개발자입니다.
 이 요청은 정식 학교 시험 대비 학습 자료(원문 대조 학습용 변형 지문)를 만들기 위한 것입니다. 주어진 지문을 바탕으로, 표준 평가 문항 제작 관행에 따라 어법·어휘 학습 포인트가 되는 지점을 선정해 지문의 변형판을 만듭니다. 학생은 이 변형판과 원문을 비교하며 어느 부분이 왜 달라졌는지 학습합니다.
 
+[작업 순서 — 반드시 이 순서로 판단하세요]
+1) 지문을 먼저 분석하세요: 장르(설명문/서사문/논설문 등), 주제, 문장 구조의 복잡도, 그리고 아래 [난이도]가 요구하는 수준.
+2) 변형 지점을 고를 때마다 "이 지점이 정확히 어떤 문법/어휘 개념을 평가하는가"를 먼저 구체적으로 짚으세요. "수 일치"처럼 뭉뚱그리지 말고 "단수 주어에 복수 동사를 쓰는 실수"처럼, "어휘"라고만 하지 말고 "문맥상 반의어로 바뀌어 문장의 의미가 반대가 되는 지점"처럼 구체적으로 정하세요.
+3) 그 변형이 문장을 문법적으로 아예 말이 안 되게 만들거나, 지문 전체의 논리·의미를 왜곡하지 않는지 확인하세요. 변형된 지점은 원문과 비교했을 때 "명백히 틀렸거나 명백히 달라진 것"이어야지, 둘 다 맞는 것처럼 애매하면 안 됩니다.
+4) 어휘를 바꿀 때는 [난이도]에 맞는 수준을 쓰세요 — "중1~2 수준"이면 쉽고 직접적인 단어(예: easy, important, help, change 정도), "중3~고1 수준"이면 한 단계 위(예: essential, contribute, affect, approach 정도), "고2~수능 수준"이면 수능 지문에 자주 나오는 추상적 어휘(예: considerable, foster, undermine, implication, profound, prevalent 정도)를 우선 쓰세요. 무조건 어려운 단어를 쓰는 게 목적이 아니라, 문맥에 자연스럽게 들어맞아야 합니다.
+5) 변형 지점을 모두 고른 뒤 각각 다시 검토하세요: 이 변경이 실제로 학생이 배워야 할 문법/어휘 포인트를 정확히 짚고 있는가? 원문과 비교했을 때 "무엇이, 왜" 달라졌는지 학생이 명확히 이해할 수 있는가? 이 검토에서 탈락한 지점은 "changes"에 그 흔적을 남기지 말고(예: "이 지점은 변형하지 않았습니다" 같은 항목을 넣지 마세요) 아예 다른 지점으로 교체해서, 최종적으로 "changes"에 남는 항목은 전부 실제로 적용된 변경사항이어야 합니다.
+6) 최종 출력 직전에 한 번만 대조하세요: "changes" 배열의 각 "changed" 값이 "transformed_html" 안에 실제로 들어간 <span class="chg">...</span> 텍스트와 대응되는가? 대응되지 않는 항목만 고치고, 나머지는 그대로 두세요. 이 대조 때문에 변형 지점 자체를 지나치게 줄이거나 아예 없애지는 마세요 — 위 4~8곳 기준은 그대로 유지하세요.
+
 [중요 규칙]
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
-- 지문 전체 문장을 그대로 유지하되, 다음 기준으로 학습 포인트가 될 지점(문장당 최대 1~2곳, 지문 전체에서 총 4~8곳 정도)을 골라 변형판을 만드세요:
-  (어법 학습 포인트) 수 일치, 능동/수동태, 시제, 관계대명사/관계부사, 분사구문, 병렬구조, to부정사 vs 동명사, 접속사 등 학생들이 자주 헷갈리는 문법 포인트
-  (어휘 학습 포인트) 문맥상 정확한 뜻이 중요한 핵심 단어를 유의어 또는 반의어로 바꾼 학습 포인트
+- 지문 전체 문장을 그대로 유지하되, 위 순서대로 학습 포인트가 될 지점(문장당 최대 1~2곳, 지문 전체에서 총 4~8곳 정도)을 골라 변형판을 만드세요.
 - 무작위로 아무 곳이나 고르지 말고, 실제 학교 시험에서 다뤄질 만한 학습 가치가 높은 지점을 우선 선택하세요.
-- "transformed_html" 필드에는 지문 전체 텍스트를 포함하되, 변형한 부분만 <span class="chg">변형된 표현</span> 으로 감싸세요. 나머지 텍스트는 그대로 둡니다.
-- "changes" 배열에는 각 변형 지점마다 원래 표현(original), 변형된 표현(changed), 유형(type: "어법" 또는 "어휘"), 이유(explanation, 한국어)를 담으세요.
+- "transformed_html" 필드에는 지문 전체 텍스트를 포함하되, 변형한 부분만 <span class="chg">변형된 표현</span> 으로 감싸세요. 나머지 텍스트는 그대로 둡니다. <span class="chg">로 감싼 텍스트는 반드시 원문과 다른, 실제로 변형된 표현이어야 합니다.
+- "changes" 배열에는 각 변형 지점마다 원래 표현(original), 변형된 표현(changed), 유형(type: "어법" 또는 "어휘"), 이유(explanation, 한국어 — 2번에서 짚은 구체적인 문법/어휘 개념을 반드시 포함)를 담으세요. "changes" 배열의 길이는 "transformed_html" 안의 <span class="chg"> 개수와 정확히 같아야 합니다.
 
 [JSON 스키마]
 {
   "title": "영어 제목",
   "title_kr": "한글 번역 제목",
   "transformed_html": "지문 전체 텍스트, 변형 지점은 <span class=\\"chg\\">...</span>로 표시",
-  "changes": [ { "type": "어법|어휘", "original": "원래 표현", "changed": "변형된 표현", "explanation": "왜 이 지점을 변형했는지, 무엇이 바뀌었는지 한국어로 설명" } ]
+  "changes": [ { "type": "어법|어휘", "original": "원래 표현", "changed": "변형된 표현", "explanation": "구체적인 문법/어휘 개념 + 왜 이 지점을 변형했는지 한국어로 설명" } ]
 }`;
 
 function buildTransformPrompt({ passage, level }) {
@@ -113,7 +119,7 @@ ${passage}
 
 [난이도] ${level || "중3~고1 수준"}
 
-지문 전체에서 어법·어휘 변형 지점을 스스로 골라 위 규칙대로 변형하고, JSON 스키마 형식으로만 답하세요.`;
+위 순서대로 지문을 먼저 분석하고, 어법·어휘 변형 지점을 스스로 골라 위 규칙대로 변형한 뒤, JSON 스키마 형식으로만 답하세요.`;
 }
 
 function buildPrompt({ passage, includeAnalysis, questionTypes, level, countPerType }) {
@@ -133,6 +139,54 @@ ${includeAnalysis ? "1) 지문 분석(sentences, summary, flow, vocab)을 포함
 ${typeLines || "(선택된 유형 없음 — questions는 빈 배열로 반환)"}
 
 JSON 스키마 형식으로만 답하세요.`;
+}
+
+// 오답노트 "변형 문제" 생성 — 학생이 틀린 추가시험 문항 하나를 원본으로 받아, 같은 문법/어휘
+// 포인트를 다른 문장으로 다시 연습할 수 있는 새 문항을 여러 개 만든다. index.html의
+// examTests[].questions[] 항목({q, type, choices?, answer})과 같은 모양으로 바로 저장 가능한
+// 형태를 요청한다 — 교사가 검토 화면에서 그대로 편집/저장할 수 있도록.
+const VARIANT_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 시험 문제를 만드는 전문 교육 평가 개발자입니다.
+학생이 이미 한 번 틀린 문제 하나가 주어집니다. **원본 문제의 세부 문법/어휘 유형을 다른 유형으로 바꾸는 것이 가장 흔하고 치명적인 실수이니, 이것부터 절대 금지합니다.**
+
+[작업 순서 — 반드시 이 순서로 판단하세요]
+1) 먼저 원본 문제가 정확히 어떤 "세부" 유형인지 판별하세요. "시제"처럼 뭉뚱그리지 말고 "현재완료 vs 과거시제 구별", "분사구문", "동명사의 의미상 주어", "관계대명사의 격 판단"처럼 최대한 구체적으로 짚으세요.
+2) 그 세부 유형을 절대 벗어나지 않는 범위 안에서만 새 문제를 만드세요. 예를 들어 원본이 "현재완료 vs 과거시제 구별"이면 변형 문제도 반드시 그것을 물어야 합니다 — 분사, 관계대명사, to부정사 등 다른 문법 개념으로 슬쩍 바뀌면 절대 안 됩니다. (원본이 동명사 문제인데 to부정사 문제로 바뀌는 것도 같은 실수입니다.)
+3) 문장·주어·소재·상황·어휘·보기 구성은 자유롭게 바꾸되, "무엇을 묻는 문제인가"만은 원본과 완전히 동일하게 유지하세요. 원본 문장을 그대로 재사용하지 마세요.
+4) 문제를 만든 뒤 각각 스스로 재검토하세요: 보기 중 정답이 정확히 하나뿐인가? 다른 보기가 은근히 문법적으로도 말이 되지는 않는가? 이 검토를 통과한 문제만 최종 출력하세요.
+
+[난이도]
+원본 문제와 같은 학년/난이도 수준을 유지하세요. 원본보다 쉽거나 어렵게 만들지 마세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- 원본과 같은 유형(객관식/서술형)을 유지하세요.
+- 객관식이면 보기 5개(정답 1개 + 오답 4개)를 만드세요. 오답도 실제 내신 시험처럼 그럴듯하게 헷갈리도록 만드세요. "answer"는 choices 배열의 정답 인덱스(0부터 시작)입니다.
+- 서술형이면 보기 없이, 학생이 직접 답을 입력했을 때 채점 기준이 되는 모범 답안 텍스트 하나만 "answer"에 담으세요.
+- 요청받은 개수만큼 정확히 만드세요. 문제끼리 서로 겹치지 않게 다양한 문장으로 만드세요.
+
+[JSON 스키마] (배열)
+[
+  {
+    "type": "mc 또는 subjective",
+    "q": "문제 지시문 + 문제 문장 (원본과 같은 형식)",
+    "choices": ["보기1", "보기2", "보기3", "보기4", "보기5"],
+    "answer": 0
+  }
+]
+(type이 subjective이면 "choices"는 빈 배열로, "answer"에는 정답 텍스트를 문자열로 담으세요.)`;
+
+function buildVariantPrompt({ sourceQuestion, count, grade }) {
+  const isSubjective = sourceQuestion.type === "subjective";
+  const answerDisplay = isSubjective ? sourceQuestion.answer : (sourceQuestion.choices || [])[sourceQuestion.answer];
+  const choicesLine = !isSubjective
+    ? `보기: ${(sourceQuestion.choices || []).map((c, i) => `${i + 1}) ${c}`).join(" / ")}\n`
+    : "";
+  return `[학생이 틀린 원본 문제]
+유형: ${isSubjective ? "서술형(주관식)" : "객관식"}
+${grade ? `학생 학년: ${grade}\n` : ""}문제: ${sourceQuestion.q}
+${choicesLine}정답: ${answerDisplay}
+
+위 순서대로 이 문제의 세부 문법/어휘 유형을 먼저 판별한 뒤, 그 유형을 절대 벗어나지 않는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
 }
 
 // NELT 성적표 분석에 쓰는 모델.
@@ -276,6 +330,34 @@ function extractLastJsonArray(text) {
   return null;
 }
 
+// Prompt wording alone can't fully guarantee the model's "changes" list stays in sync with what
+// it actually marked inside transformed_html — testing found cases where a "changes" entry
+// described a swap (e.g. build → develop) that the <span class="chg"> in the passage never
+// applied (still just wrapped the original word), and one case where original === changed
+// entirely (a leftover from the model second-guessing itself mid-generation). Rather than keep
+// tuning prose to try to prevent every variant of this, cross-check deterministically: only keep
+// a "changes" entry if its "changed" text actually corresponds to one of the real <span class="chg">
+// contents in the passage. This can only make the list more accurate (it drops entries, never
+// invents ones), so it's safe to apply unconditionally in transform mode.
+function extractChgSpanTexts(html) {
+  const re = /<span class="chg">([\s\S]*?)<\/span>/g;
+  const out = [];
+  let m;
+  while ((m = re.exec(html || ""))) out.push(m[1]);
+  return out;
+}
+
+function sanitizeTransformResult(parsed) {
+  if (!parsed || typeof parsed.transformed_html !== "string") return parsed;
+  const spanTexts = extractChgSpanTexts(parsed.transformed_html);
+  const changes = Array.isArray(parsed.changes) ? parsed.changes : [];
+  const clean = changes.filter((c) => {
+    if (!c || !c.changed || !c.original || c.original === c.changed) return false;
+    return spanTexts.some((s) => s && (c.changed.includes(s) || s.includes(c.changed)));
+  });
+  return { ...parsed, changes: clean };
+}
+
 exports.aiWorker = onRequest(
   { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 300 },
   async (req, res) => {
@@ -331,11 +413,12 @@ exports.aiWorker = onRequest(
     }
 
     const body = req.body || {};
-    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough } = body;
+    const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
     const isExamKey = mode === "examkey";
+    const isExamVariant = mode === "examVariant";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -449,6 +532,53 @@ exports.aiWorker = onRequest(
       return;
     }
 
+    if (isExamVariant) {
+      if (!sourceQuestion || !sourceQuestion.q) {
+        res.status(400).json({ error: "원본 문제가 없습니다." });
+        return;
+      }
+      const n = Math.max(1, Math.min(20, Number(count) || 5));
+      let varRes;
+      try {
+        varRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: VARIANT_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildVariantPrompt({ sourceQuestion, count: n, grade }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!varRes.ok) {
+        const errText = await varRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const varData = await varRes.json();
+      const varText = (varData.content || []).map((b) => b.text || "").join("");
+      let varParsed;
+      try {
+        varParsed = JSON.parse(stripFences(varText));
+      } catch {
+        varParsed = extractLastJsonArray(stripFences(varText));
+      }
+      if (!Array.isArray(varParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: varText });
+        return;
+      }
+      res.status(200).json(varParsed);
+      return;
+    }
+
     if (isNelt) {
       if (!pdfBase64) {
         res.status(400).json({ error: "PDF 파일이 없습니다." });
@@ -546,7 +676,7 @@ exports.aiWorker = onRequest(
       return;
     }
 
-    res.status(200).json(parsed);
+    res.status(200).json(isTransform ? sanitizeTransformResult(parsed) : parsed);
   }
 );
 
