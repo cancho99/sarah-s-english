@@ -4,3 +4,10 @@ firebase-debug.*.log
 .firebase/
 handoff.md
 CLAUDE.local.md
+
+# Never commit — local secrets (2026-08-24 security cleanup)
+API KEY.rtf
+token.rtf
+
+# OS junk files, anywhere in the tree
+.DS_Store
