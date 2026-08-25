@@ -30,6 +30,22 @@ window.SarahServices = window.SarahServices || {};
     return out;
   }
 
+  // Phase 9-D bugfix — a plain getAllDocs() (unconstrained getDocs over the whole collection)
+  // fails with permission-denied under a Firestore Rule that depends on a per-document field
+  // (e.g. examAssignments' "own studentId only" rule) when called by a non-teacher token: Firestore
+  // rejects list queries it can't statically prove the rule holds for across the whole potential
+  // result set. Adding a matching where() clause lets Firestore verify the rule against the query
+  // itself instead, so this works for both teacher (rule's isTeacher() branch is data-independent,
+  // already worked either way) and student/parent (now actually query-provable) callers.
+  async function getDocsWhere(collectionName, field, value) {
+    const snap = await window.__getDocs(window.__query(window.__collection(db(), collectionName), window.__where(field, "==", value)));
+    const out = {};
+    snap.forEach((docSnap) => {
+      out[docSnap.id] = docSnap.data();
+    });
+    return out;
+  }
+
   // Same byte-size measure index.html's StorageCleanupPanel uses for the 1MB-doc-cap check.
   function docSizeBytes(data) {
     return new Blob([JSON.stringify(data)]).size;
@@ -52,5 +68,5 @@ window.SarahServices = window.SarahServices || {};
     await window.__deleteDoc(window.__doc(db(), collectionName, id));
   }
 
-  window.SarahServices.firebaseClient = { getDoc, getAllDocs, docSizeBytes, addDocTo, setDocAt, deleteDocAt };
+  window.SarahServices.firebaseClient = { getDoc, getAllDocs, getDocsWhere, docSizeBytes, addDocTo, setDocAt, deleteDocAt };
 })();

@@ -111,6 +111,34 @@ window.SarahServices = window.SarahServices || {};
     return { section, skippedCount: questionDocs.length - publishedOnly.length };
   }
 
+  // Phase 8 prep — duplicate an existing paper (any status, incl. FINALIZED) as a fresh editable
+  // DRAFT. Deep-copies `sections` (so the copy's questionRefs are independent arrays the teacher can
+  // reorder without mutating the original) but keeps every questionId reference as-is — no question
+  // content is touched or copied, and no usageCount bump here (that only ever happens in
+  // finalizeExamPaper, unchanged below). If the source was FINALIZED, its locked order/
+  // choiceDisplayOrder carries over as a starting point but the copy is DRAFT so it's fully editable.
+  async function duplicateExamPaper(existingDoc) {
+    const now = Date.now();
+    const sections = (existingDoc.sections || []).map((s) => ({
+      ...s,
+      questionRefs: (s.questionRefs || []).map((r) => ({ ...r })),
+    }));
+    const doc = {
+      title: "[복사본] " + (existingDoc.title || ""),
+      grade: existingDoc.grade || "",
+      examType: existingDoc.examType || "",
+      status: "DRAFT",
+      sections,
+      totalQuestionCount: totalQuestionCount(sections),
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "teacher",
+      finalizedAt: null,
+    };
+    const id = await addDocTo(EXAM_PAPER_COLLECTION, doc);
+    return { id, ...doc };
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Finalize — §13.8. The one-time, one-way transition: locks order/choice-display-order into the
   // document and bumps usageCount on every referenced question (which is what makes the Question
@@ -219,7 +247,7 @@ window.SarahServices = window.SarahServices || {};
 
   window.SarahServices.examPaperService = {
     EXAM_PAPER_COLLECTION,
-    listExamPapers, createExamPaper, updateExamPaper,
+    listExamPapers, createExamPaper, updateExamPaper, duplicateExamPaper,
     blankSection, autoSelectGrammarSection, autoSelectReadingSections, manualSection,
     finalizeExamPaper, computeFinalizedSections,
     canArchiveExamPaper, archiveExamPaper,

@@ -120,10 +120,17 @@
 <script src="services/questionBankService.js" defer></script>
 <script src="services/examPaperService.js" defer></script>
 <script src="services/questionGenerationService.js" defer></script>
+<!-- Phase 8-A (Student Exam Runtime) — examAssignmentService before examAttemptService, both after
+     examPaperService (getQuestionUsageHistory reads it). No UI wired to these yet. -->
+<script src="services/examAssignmentService.js" defer></script>
+<script src="services/examAttemptService.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+  // Phase 9-A — Teacher 로그인 백그라운드 Auth 세션용. 기존 passcode 로그인 흐름/Student·Parent
+  // 로그인은 전혀 참조하지 않는다(syncTeacherFirebaseAuth에서만 사용).
+  import { getAuth, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
     authDomain: "sarah-s-english.firebaseapp.com",
@@ -147,6 +154,14 @@
   window.__query = query;
   window.__where = where;
   window.__serverTimestamp = serverTimestamp;
+  // Phase 9-A — 실패해도 앱 나머지는 그대로 동작해야 하므로 Messaging과 동일하게 fail-soft.
+  // syncTeacherFirebaseAuth()가 이 값들이 없으면 그냥 조용히 아무것도 안 하도록 되어 있다.
+  try {
+    window.__auth = getAuth(firebaseApp);
+    window.__signInWithCustomToken = signInWithCustomToken;
+  } catch (e) {
+    console.warn("Firebase Auth unavailable:", e);
+  }
   // Messaging isn't supported in every browser/context (needs a secure origin + service worker
   // support) — fail soft so the rest of the app still works where push notifications can't.
   try {
@@ -280,6 +295,17 @@ const NELT_WORKER_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/
 const NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notifyTeacher";
 const NOTIFY_STUDENT_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/notifyStudent";
 const TEST_NOTIFY_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/sendTestNotification";
+// Phase 9-A — Teacher 로그인 성공 후 백그라운드로 Firebase Auth 세션도 붙이는 배관용 URL.
+// 이 호출이 실패해도 기존 passcode 로그인 자체는 이미 성공한 뒤이므로 영향 없다(§syncTeacherFirebaseAuth).
+const TEACHER_LOGIN_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/teacherLogin";
+// Phase 9-C — Student/Parent 로그인용, 같은 배관 패턴.
+const STUDENT_LOGIN_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/studentLogin";
+// Phase 9-D — Question Bank 보안. StudentExamRuntime/StudentExamListSection이 grammarQuestions/
+// readingQuestions/readingPassages/examPapers를 직접 읽던 자리를 대체한다(firestore.rules가 이
+// 컬렉션들의 student/parent 직접 read를 막으므로, 이 세 함수가 유일한 접근 경로다).
+const GET_EXAM_QUESTIONS_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/getExamQuestionsForAttempt";
+const GET_EXAM_ANSWERS_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/getExamAnswersForGrading";
+const GET_MY_EXAM_PAPER_SUMMARIES_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/getMyExamPaperSummaries";
 const FCM_VAPID_KEY = "BKXGKOsQBe0e0TLKdjkmtuDTR9iy9o7qSCZu1UmP8x7xvRuG7x1uRu1FgYCoF7YsGSwfIQ_dvutD39uV_nMhJG4";
 // 자료실의 구글 드라이브 폴더 파일 목록을 읽기 전용으로 보여주기 위한 Drive API v3 키.
 // Google Cloud Console에서 프로젝트 생성 → "Google Drive API" 활성화 → API 키 발급 → 이 사이트
@@ -323,6 +349,67 @@ if (window.__onFcmMessage && window.__messaging) {
     }
     new Notification(title, { body: body || "" });
   });
+}
+
+// Phase 9-A — 기존 passcode 로그인 흐름은 전혀 바꾸지 않고, 로그인이 이미 성공한 뒤에만 호출되는
+// 순수 배관 함수. teacherLogin Cloud Function이 같은 passcode를 서버(Admin SDK)에서 다시 검증하고
+// { role: "teacher" } 클레임이 실린 Firebase Custom Token을 돌려주면 그걸로 signInWithCustomToken까지
+// 실행한다. 네트워크 실패/함수 오류/Auth SDK 미가용 등 무엇이 잘못되든 전부 여기서 삼키고 콘솔
+// 경고만 남긴다 — 절대로 실제 Teacher 로그인(App()의 setScreen("teacherDash") 등)을 막지 않는다.
+// Firestore Rules는 이 Phase에서 아직 그대로 열려 있으므로, 이 함수가 실제로 데이터 접근을 하나도
+// 바꾸지 않는다 — Auth 세션이 하나 생기는 것 외에는 관찰 가능한 효과가 없다(9-B에서 Rules가 이걸 근거로 잠긴다).
+async function syncTeacherFirebaseAuth(passcode) {
+  try {
+    if (!window.__auth || !window.__signInWithCustomToken) return;
+    const res = await fetch(TEACHER_LOGIN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ passcode }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.token) { console.warn("syncTeacherFirebaseAuth: no token", json.error || ""); return; }
+    await window.__signInWithCustomToken(window.__auth, json.token);
+  } catch (e) {
+    console.warn("syncTeacherFirebaseAuth failed (기존 로그인에는 영향 없음):", e && e.code, e && e.message);
+  }
+}
+
+// Phase 9-C — syncTeacherFirebaseAuth와 정확히 같은 패턴. 기존 studentCode/parentCode 로그인이
+// 이미 성공한 뒤에만 호출되고, studentLogin Cloud Function이 같은 코드를 서버에서 roster와 다시
+// 대조해 role("student" 또는 "parent")과 studentId가 담긴 Custom Token을 돌려주면 그걸로 로그인만
+// 추가한다. 어떤 이유로 실패하든 기존 StudentDash/ParentDash 진입에는 영향이 없다.
+async function syncStudentFirebaseAuth(code) {
+  try {
+    if (!window.__auth || !window.__signInWithCustomToken) return;
+    const res = await fetch(STUDENT_LOGIN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.token) { console.warn("syncStudentFirebaseAuth: no token", json.error || ""); return; }
+    await window.__signInWithCustomToken(window.__auth, json.token);
+  } catch (e) {
+    console.warn("syncStudentFirebaseAuth failed (기존 로그인에는 영향 없음):", e && e.code, e && e.message);
+  }
+}
+
+// Phase 9-D — getExamQuestionsForAttempt/getExamAnswersForGrading/getMyExamPaperSummaries 호출용
+// 공통 헬퍼. syncStudentFirebaseAuth가 이미 붙여둔 window.__auth.currentUser의 ID Token을 그대로
+// Authorization 헤더에 실어 보낸다 — 별도 세션 관리 없이 기존 Firebase Auth 세션에 얹는다.
+async function fetchWithStudentAuth(url, body) {
+  if (!window.__auth || !window.__auth.currentUser) {
+    throw new Error("로그인 세션을 확인할 수 없어요. 다시 로그인해 주세요.");
+  }
+  const idToken = await window.__auth.currentUser.getIdToken();
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer " + idToken },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "요청이 실패했어요.");
+  return json;
 }
 
 async function notifyTeacher(studentName, kind, detail) {
@@ -1515,7 +1602,7 @@ function App() {
         ${screen === "levelTest" && html`<${LevelTestBooking} onBack=${() => setScreen("home")} onSubmit=${async (b) => { await addBooking(b); }} />`}
         ${screen === "teacherLogin" && html`<${TeacherLogin} teacherAuth=${teacherAuth} onBack=${() => setScreen("home")}
           onSetPass=${async (p) => { const ta = { passcode: p }; await saveTeacherAuthGlobal(ta); const s = { role: "teacher" }; saveSessionToStorage(s); setSession(s); setScreen("teacherDash"); }}
-          onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { const s = { role: "teacher" }; saveSessionToStorage(s); setSession(s); setScreen("teacherDash"); } else setErr("비밀번호가 맞지 않아요."); }}
+          onLogin=${(p) => { if (teacherAuth && p === teacherAuth.passcode) { const s = { role: "teacher" }; saveSessionToStorage(s); setSession(s); setScreen("teacherDash"); syncTeacherFirebaseAuth(p); } else setErr("비밀번호가 맞지 않아요."); }}
           err=${err} />`}
         ${screen === "studentLogin" && html`<${StudentParentLogin} mode="student" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
@@ -1523,12 +1610,14 @@ function App() {
             // Fire-and-forget: recording the login time shouldn't block or fail the login itself.
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastStudentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "student_login");
+            syncStudentFirebaseAuth(s.studentCode);
           }} />`}
         ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
             const sess = { role: "parent", student: s }; saveSessionToStorage(sess); setSession(sess); setScreen("parentDash");
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastParentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "parent_login");
+            syncStudentFirebaseAuth(s.parentCode);
           }} />`}
       <//>`}
     </div>
@@ -2896,6 +2985,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     { key: "examkeys", label: "정답표 라이브러리", icon: "📑" },
     { key: "readingLibrary", label: "읽기 자료실 관리", icon: "📚" },
     { key: "questionBank", label: "문제은행", icon: "🧩" },
+    { key: "examAssignments", label: "시험 배정 관리", icon: "📝" },
     { key: "reports", label: "리포트 작성", icon: "📊" },
     { key: "revenue", label: "매출", icon: "💰" },
     { key: "settings", label: "설정", icon: "⚙️" },
@@ -2925,7 +3015,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "readingLibrary") {
     body = html`<${ReadingLibraryAdminSection} />`;
   } else if (section === "questionBank") {
-    body = html`<${QuestionBankSection} />`;
+    body = html`<${QuestionBankSection} roster=${roster} />`;
+  } else if (section === "examAssignments") {
+    body = html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`;
   } else if (section === "reports") {
     body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialTarget=${reportsTarget} />`;
   } else if (section === "revenue") {
@@ -3555,6 +3647,14 @@ function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
 // to do per student here, unlike 학생 관리's category-first flow) — also owns add/delete-student.
 function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, updateData, dataCache, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
+  // Phase 8-G §3/§8 — 학생 상세를 열 때마다 examSummary를 재계산해 반영(멱등 — 몇 번 열어도 안전).
+  // 여기서도 App()의 기존 updateData()만 쓴다; examAssignmentService.js/examAttemptService.js는
+  // 이 학생 문서를 전혀 모른다.
+  useEffect(() => {
+    if (!selected) return;
+    syncStudentExamSummary(selected.id, updateData).catch(() => {});
+    /* eslint-disable-next-line */
+  }, [selected && selected.id]);
   function handleDelete() {
     if (confirm(`${selected.name} 학생을 삭제할까요? 모든 기록이 함께 삭제되며 되돌릴 수 없어요.`)) {
       removeStudent(selected.id);
@@ -3573,6 +3673,18 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
         <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>${selected.name} 학생 정보</div>
         <${StudentInfoEditor} student=${selected} saveRosterList=${saveRosterList} roster=${roster} />
         <${ScheduleGoalEditor} student=${selected} updateStudentRosterEntry=${updateStudentRosterEntry} />
+        ${data.examSummary && html`
+          <${Card}>
+            <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>📊 시험 성적</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 6, columnGap: 14, fontSize: 12.5 }}>
+              <div style=${{ color: C.slate }}>누적 시험</div><div style=${{ color: C.ink }}>${data.examSummary.totalExams}회</div>
+              <div style=${{ color: C.slate }}>평균 정답률</div><div style=${{ color: C.ink }}>${data.examSummary.averagePercentage}%</div>
+              <div style=${{ color: C.slate }}>최근 시험</div><div style=${{ color: C.ink }}>${data.examSummary.latestExamTitle}</div>
+              <div style=${{ color: C.slate }}>최근 점수</div><div style=${{ color: C.ink }}>${data.examSummary.latestScore} / ${data.examSummary.latestTotal}</div>
+              <div style=${{ color: C.slate }}>최근 정답률</div><div style=${{ color: C.ink }}>${data.examSummary.latestPercentage}%</div>
+            </div>
+          <//>
+        `}
         <${TuitionEditor} key=${selected.id} student=${selected} data=${data} updateData=${boundUpdateData} />
         <${RoadmapEditor} key=${selected.id} student=${selected} data=${data} updateData=${boundUpdateData} />
       </div>
@@ -4421,7 +4533,7 @@ function GrammarQuestionForm({ QB, questions, existingDoc, onSaved, onCancel }) 
   `;
 }
 
-function GrammarQuestionDetail({ QB, doc, onBack, onEdit, onChanged }) {
+function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged }) {
   const [review, setReview] = useState(doc.review || {});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -4524,6 +4636,8 @@ function GrammarQuestionDetail({ QB, doc, onBack, onEdit, onChanged }) {
         `}
         <div style=${{ marginTop: 10, fontSize: 11, color: C.slate }}>출처: ${(QB.SOURCE_TYPES.find((s) => s.key === (doc.source || {}).type) || {}).label}${doc.source?.note ? ` — ${doc.source.note}` : ""}</div>
       <//>
+
+      <${QuestionUsageHistoryPanel} questionId=${doc.id} roster=${roster} />
 
       <${Card}>
         <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>문제 검수</div>
@@ -4831,7 +4945,7 @@ function StatusChangeCard({ QB, doc, onChange, saving }) {
   `;
 }
 
-function ReadingQuestionDetail({ QB, doc, passage, onBack, onEdit, onChanged }) {
+function ReadingQuestionDetail({ QB, doc, passage, roster, onBack, onEdit, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   async function saveReview(draft) {
@@ -4880,6 +4994,7 @@ function ReadingQuestionDetail({ QB, doc, passage, onBack, onEdit, onChanged }) 
         ${doc.explanation && html`<div style=${{ marginTop: 10, fontSize: 12.5, color: C.slate, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}><b>해설</b> — ${doc.explanation}</div>`}
         ${(doc.tags || []).length > 0 && html`<div style=${{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>${doc.tags.map((t) => html`<span key=${t} style=${{ fontSize: 11, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 20, padding: "2px 9px", color: C.navy }}>#${t}</span>`)}</div>`}
       <//>
+      <${QuestionUsageHistoryPanel} questionId=${doc.id} roster=${roster} />
       <${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving} />
       <${StatusChangeCard} QB=${QB} doc=${doc} onChange=${changeStatus} saving=${saving} />
       ${QB.canHardDelete(doc) && html`<div style=${{ marginBottom: 12 }}><button onClick=${handleDelete} style=${{ background: "none", border: "none", color: C.danger, fontSize: 12, cursor: "pointer", padding: 0 }}>완전히 삭제 (초안 · 미사용)</button></div>`}
@@ -4989,7 +5104,7 @@ function ReadingExamBuilderPreview({ QB, questions }) {
   `;
 }
 
-function ReadingQuestionBankView({ initialSelectedId }) {
+function ReadingQuestionBankView({ initialSelectedId, roster }) {
   const QB = window.SarahServices.questionBankService;
   const [passages, setPassages] = useState(null);
   const [questions, setQuestions] = useState(null);
@@ -5045,7 +5160,7 @@ function ReadingQuestionBankView({ initialSelectedId }) {
       onCancel=${() => setView("questionDetail")} />`;
   }
   if (view === "questionDetail" && selectedQuestion) {
-    return html`<${ReadingQuestionDetail} QB=${QB} doc=${selectedQuestion} passage=${passages.find((p) => p.id === selectedQuestion.passageId)}
+    return html`<${ReadingQuestionDetail} QB=${QB} doc=${selectedQuestion} passage=${passages.find((p) => p.id === selectedQuestion.passageId)} roster=${roster}
       onBack=${(deleted) => { if (deleted) { setQuestions((qs) => qs.filter((q) => q.id !== selectedQuestion.id)); setSelectedQuestionId(null); } setView("passageDetail"); }}
       onEdit=${() => setView("questionEdit")}
       onChanged=${(doc) => setQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))} />`;
@@ -5257,9 +5372,10 @@ function ReviewQueueView({ onSelect }) {
   `;
 }
 
-function GrammarBankView({ initialSelectedId }) {
+function GrammarBankView({ initialSelectedId, roster }) {
   const QB = window.SarahServices.questionBankService;
   const [questions, setQuestions] = useState(null); // null = loading
+  const [latestAssignedById, setLatestAssignedById] = useState({});
   const [err, setErr] = useState("");
   const [view, setView] = useState("list"); // list | detail | create | edit
   const [selectedId, setSelectedId] = useState(null);
@@ -5269,6 +5385,8 @@ function GrammarBankView({ initialSelectedId }) {
     try {
       const list = await QB.listGrammarQuestions();
       setQuestions(list);
+      // §2 — 목록의 "최근 출제일" 표시용, 실패해도 목록 자체는 그대로 보여준다(부가 정보라 목록을 막지 않음).
+      computeLatestAssignedAtByQuestionId().then(setLatestAssignedById).catch(() => {});
     } catch (e) {
       setErr("문제 목록을 불러오지 못했어요: " + String(e.message || e));
     }
@@ -5308,7 +5426,7 @@ function GrammarBankView({ initialSelectedId }) {
       onCancel=${() => setView("detail")} />`;
   }
   if (view === "detail" && selectedDoc) {
-    return html`<${GrammarQuestionDetail} QB=${QB} doc=${selectedDoc}
+    return html`<${GrammarQuestionDetail} QB=${QB} doc=${selectedDoc} roster=${roster}
       onBack=${(deleted) => { if (deleted) { setQuestions((qs) => qs.filter((q) => q.id !== selectedDoc.id)); setSelectedId(null); } setView("list"); }}
       onEdit=${() => setView("edit")}
       onChanged=${(doc) => setQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))} />`;
@@ -5343,7 +5461,7 @@ function GrammarBankView({ initialSelectedId }) {
                   <div style=${{ minWidth: 0, flex: 1 }}>
                     <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>#${i + 1} · ${q.grade} · ${main} → ${sub} · ${(QB.QUESTION_TYPES.find((t) => t.key === q.questionType) || {}).label}</div>
                     <div style=${{ fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${q.questionText}</div>
-                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${(QB.DIFFICULTIES.find((d) => d.key === q.difficulty) || {}).label} · ${(QB.SOURCE_TYPES.find((s) => s.key === (q.source || {}).type) || {}).label} · 사용 ${q.usageCount || 0}회</div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${(QB.DIFFICULTIES.find((d) => d.key === q.difficulty) || {}).label} · ${(QB.SOURCE_TYPES.find((s) => s.key === (q.source || {}).type) || {}).label} · 사용 ${q.usageCount || 0}회${latestAssignedById[q.id] ? " · 최근 출제 " + fmtDateTime(latestAssignedById[q.id]) : ""}</div>
                   </div>
                   <${QbBadge} status=${q.status} />
                 </div>
@@ -5436,7 +5554,7 @@ function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, ca
   `;
 }
 
-function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, onAddSections }) {
+function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, existingQuestionIds, onAddSections }) {
   const [bank, setBank] = useState("grammar");
   const [grade, setGrade] = useState("");
   const [mainCategory, setMainCategory] = useState("");
@@ -5446,24 +5564,27 @@ function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, 
   const [count, setCount] = useState(5);
   const [msg, setMsg] = useState("");
 
+  // Phase 8 prep — 이미 이 시험지에 들어간 questionId는 자동 선택 풀에서 아예 제외한다(§1 요구사항).
+  // 서로 다른 섹션에 있어도 같은 questionId면 동일하게 제외 대상 — existingQuestionIds가 그 값을
+  // ExamPaperBuilder에서 sections 전체를 훑어 이미 계산해 넘겨준다.
   function run() {
-    const filters = {};
+    const filters = { excludeIds: existingQuestionIds || [] };
     if (grade) filters.grade = grade;
     if (difficulty) filters.difficulty = difficulty;
     if (bank === "grammar") {
       if (mainCategory) filters.mainCategory = mainCategory;
       if (questionType) filters.questionType = questionType;
       const { section, pickedCount } = EP.autoSelectGrammarSection("SECTION. GRAMMAR", grammarQuestions, filters, Number(count) || undefined);
-      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 문법 문제가 없어요."); return; }
+      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 문법 문제가 없어요 (이미 추가된 문제는 제외돼요)."); return; }
       onAddSections([section]);
-      setMsg(`문법 문제 ${pickedCount}개를 섹션으로 추가했어요.`);
+      setMsg(`문법 문제 ${pickedCount}개를 섹션으로 추가했어요 (중복 제외).`);
     } else {
       if (examType) filters.examType = examType;
       if (questionType) filters.questionType = questionType;
       const { sections, pickedCount } = EP.autoSelectReadingSections("SECTION. READING", readingQuestions, filters, Number(count) || undefined, readingPassagesById);
-      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 독해 문제가 없어요."); return; }
+      if (pickedCount === 0) { setMsg("조건에 맞는 PUBLISHED 독해 문제가 없어요 (이미 추가된 문제는 제외돼요)."); return; }
       onAddSections(sections);
-      setMsg(`독해 문제 ${pickedCount}개를 지문별 섹션 ${sections.length}개로 추가했어요.`);
+      setMsg(`독해 문제 ${pickedCount}개를 지문별 섹션 ${sections.length}개로 추가했어요 (중복 제외).`);
     }
   }
 
@@ -5490,6 +5611,121 @@ function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, 
         <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${run}>+ 추가<//>
       </div>
       ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 6 }}>${msg}</div>`}
+    <//>
+  `;
+}
+
+// Phase 8 prep §2 — 문제은행에서 특정 문제를 직접 골라 시험지에 추가. examPaperService.js의
+// manualSection()은 이미 있었지만 지금까지 어느 UI에서도 호출되지 않던 죽은 코드였다(감사 결과
+// H-2) — 이 패널이 그 유일한 호출부. 새 Firestore 컬렉션 없이 기존 questionRefs 구조만 씀.
+function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, existingQuestionIds, onAddSections }) {
+  const [open, setOpen] = useState(false);
+  const [bank, setBank] = useState("grammar");
+  const [search, setSearch] = useState("");
+  const [grade, setGrade] = useState("");
+  const [difficulty, setDifficulty] = useState("");
+  const [mainCategory, setMainCategory] = useState("");
+  const [examType, setExamType] = useState("");
+  const [questionType, setQuestionType] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [msg, setMsg] = useState("");
+
+  const sourceList = bank === "grammar" ? grammarQuestions : readingQuestions;
+  const filters = { status: ["PUBLISHED"] };
+  if (grade) filters.grade = grade;
+  if (difficulty) filters.difficulty = difficulty;
+  if (search.trim()) filters.search = search.trim();
+  if (bank === "grammar" && mainCategory) filters.mainCategory = mainCategory;
+  if (bank === "reading" && examType) filters.examType = examType;
+  if (questionType) filters.questionType = questionType;
+  const filtered = QB.queryQuestions(sourceList, filters);
+
+  function toggle(id) {
+    setSelectedIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  }
+
+  // Reading은 지문별로 섹션을 나눠 추가한다 — ExamPaperSectionCard가 section.passageId 하나로만
+  // 지문 본문을 보여주는 렌더링 전제(§12.2)를 그대로 지키기 위해, 자동 선택(autoSelectReadingSections)
+  // 과 동일한 규칙을 수동 선택에도 적용한다.
+  function addSelected() {
+    const docs = filtered.filter((q) => selectedIds.includes(q.id));
+    if (docs.length === 0) { setMsg("선택된 문제가 없어요."); return; }
+    if (bank === "grammar") {
+      const { section, skippedCount } = EP.manualSection("grammar", "SECTION. GRAMMAR (직접 선택)", docs);
+      onAddSections([section]);
+      setMsg(`문법 문제 ${section.questionRefs.length}개를 추가했어요.${skippedCount ? ` (PUBLISHED 아님 ${skippedCount}개 제외됨)` : ""}`);
+    } else {
+      const byPassage = {};
+      docs.forEach((q) => { (byPassage[q.passageId] = byPassage[q.passageId] || []).push(q); });
+      const newSections = [];
+      let totalAdded = 0, totalSkipped = 0;
+      Object.entries(byPassage).forEach(([passageId, qs]) => {
+        const passageTitle = readingPassagesById[passageId] ? readingPassagesById[passageId].title : passageId;
+        const res = EP.manualSection("reading", `SECTION. READING (직접 선택) — ${passageTitle}`, qs, passageId);
+        newSections.push(res.section);
+        totalAdded += res.section.questionRefs.length;
+        totalSkipped += res.skippedCount;
+      });
+      onAddSections(newSections);
+      setMsg(`독해 문제 ${totalAdded}개를 지문별 섹션 ${newSections.length}개로 추가했어요.${totalSkipped ? ` (PUBLISHED 아님 ${totalSkipped}개 제외됨)` : ""}`);
+    }
+    setSelectedIds([]);
+  }
+
+  const cat = bank === "grammar" ? QB.GRAMMAR_TAXONOMY.find((c) => c.key === mainCategory) : null;
+
+  return html`
+    <${Card} style=${{ marginBottom: 14 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>🔎 문제 직접 선택</div>
+        <span style=${{ fontSize: 11, color: C.slate }}>${open ? "▾ 접기" : "▸ 펼치기"}</span>
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 10 }}>
+          <div style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <${Button} variant=${bank === "grammar" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setBank("grammar"); setSelectedIds([]); }}>📐 문법<//>
+            <${Button} variant=${bank === "reading" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setBank("reading"); setSelectedIds([]); }}>📖 독해<//>
+          </div>
+          <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <input style=${{ ...inputStyle, flex: "1 1 160px" }} placeholder="검색 (본문/태그)" value=${search} onChange=${(e) => setSearch(e.target.value)} />
+            <select style=${{ ...inputStyle, width: "auto" }} value=${grade} onChange=${(e) => setGrade(e.target.value)}><option value="">학년 전체</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
+            <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}><option value="">난이도 전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+            ${bank === "grammar"
+              ? html`<select style=${{ ...inputStyle, width: "auto" }} value=${mainCategory} onChange=${(e) => setMainCategory(e.target.value)}><option value="">대주제 전체</option>${QB.GRAMMAR_TAXONOMY.map((c) => html`<option key=${c.key} value=${c.key}>${c.label}</option>`)}</select>`
+              : html`<select style=${{ ...inputStyle, width: "auto" }} value=${examType} onChange=${(e) => setExamType(e.target.value)}><option value="">시험 유형 전체</option>${QB.READING_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>`}
+            <select style=${{ ...inputStyle, width: "auto" }} value=${questionType} onChange=${(e) => setQuestionType(e.target.value)}>
+              <option value="">유형 전체</option>
+              ${(bank === "grammar" ? QB.QUESTION_TYPES : QB.READING_QUESTION_TYPES).map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}
+            <//>
+          </div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>PUBLISHED ${filtered.length}개 중 ${selectedIds.length}개 선택됨</div>
+          <div style=${{ maxHeight: 320, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            ${filtered.length === 0
+              ? html`<div style=${{ padding: 14, fontSize: 12, color: C.slate }}>조건에 맞는 PUBLISHED 문제가 없어요.</div>`
+              : filtered.map((q) => {
+                  const already = (existingQuestionIds || []).includes(q.id);
+                  const typeLabel = q.mainCategory
+                    ? (() => { const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, q.mainCategory, q.subCategory); return `${main} → ${sub}`; })()
+                    : (QB.READING_QUESTION_TYPES.find((t) => t.key === q.questionType) || {}).label || q.questionType;
+                  return html`
+                    <label key=${q.id} style=${{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 10px", borderBottom: `1px dashed ${C.line}`, cursor: already ? "default" : "pointer", opacity: already ? 0.55 : 1 }}>
+                      <input type="checkbox" style=${{ marginTop: 3, width: 14, height: 14, appearance: "auto", flexShrink: 0 }}
+                        checked=${already || selectedIds.includes(q.id)} disabled=${already}
+                        onChange=${() => toggle(q.id)} />
+                      <div style=${{ minWidth: 0, flex: 1 }}>
+                        <div style=${{ fontSize: 10.5, color: C.slate }}>${q.grade} · ${typeLabel}${already ? " · ✔ 이미 추가됨" : ""}</div>
+                        <div style=${{ fontSize: 12.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${q.questionText}</div>
+                      </div>
+                    <//>
+                  `;
+                })}
+          </div>
+          <div style=${{ marginTop: 10 }}>
+            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${addSelected} disabled=${selectedIds.length === 0}>선택한 ${selectedIds.length}개 시험지에 추가<//>
+          </div>
+          ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+        </div>
+      `}
     <//>
   `;
 }
@@ -5521,6 +5757,9 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
   function updateSectionAt(i, next) { setSections((ss) => ss.map((s, idx) => (idx === i ? next : s))); }
   function removeSectionAt(i) { setSections((ss) => ss.filter((_, idx) => idx !== i)); }
   const total = EP.totalQuestionCount(sections);
+  // Phase 8 prep §1 — 자동 선택/수동 선택 둘 다 이 목록으로 중복을 걸러낸다. 섹션이 다르더라도
+  // 같은 questionId면 동일하게 제외 대상(요구사항 그대로).
+  const existingQuestionIds = sections.flatMap((s) => (s.questionRefs || []).map((r) => r.questionId));
 
   return html`
     <div>
@@ -5533,7 +5772,9 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
       </div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>총 ${sections.length}개 섹션 · ${total}문제. 대표 시험 목적은 참고용 라벨일 뿐 섹션/문제 각각의 시험 유형을 덮어쓰지 않아요.</div>
 
-      <${ExamPaperAutoSelectPanel} EP=${EP} QB=${QB} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById}
+      <${ExamPaperAutoSelectPanel} EP=${EP} QB=${QB} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById} existingQuestionIds=${existingQuestionIds}
+        onAddSections=${(newSections) => setSections((ss) => [...ss, ...newSections])} />
+      <${ManualQuestionPickerPanel} EP=${EP} QB=${QB} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById} existingQuestionIds=${existingQuestionIds}
         onAddSections=${(newSections) => setSections((ss) => [...ss, ...newSections])} />
 
       ${sections.length === 0
@@ -5552,9 +5793,80 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
   `;
 }
 
-function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, onBack, onEdit, onChanged }) {
+// Phase 8-B — "학생에게 배정" 모달. AS.createAssignment()만 호출하고 그 외 어떤 Firestore write도
+// 하지 않는다(중복 배정 방어는 전적으로 examAssignmentService의 기존 가드에 위임 — 여기서 우회하는
+//별도 write를 만들지 않는다, §2). FINALIZED가 아니게 된 시험지로는 배정할 수 없도록 제출 시점에
+// paper.status를 다시 한번 확인한다 — examAssignmentService.createAssignment() 자체는 examPaperId
+// 문자열만 받고 그 시험지의 상태를 모르므로(examPaperService를 모르는 8-A의 의도된 설계), 이 검증은
+// UI 레이어의 책임으로 둔다.
+function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
+  function defaultDueDateStr() {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const [studentId, setStudentId] = useState((roster && roster[0] && roster[0].id) || "");
+  // 숙제 등록 폼(HomeworkEditor)의 dueDate 관례 그대로 — 항상 기본값이 채워진 상태로 시작해서
+  // 빈 값을 별도로 막을 필요가 없게 한다(§ "필수값으로 할지" 결정: 기본 +7일로 채워두고, 교사가
+  // 원하면 직접 바꾸는 방식 — 빈 값 자체를 허용하지 않음).
+  const [dueDate, setDueDate] = useState(defaultDueDateStr());
+  const [dueTime, setDueTime] = useState("23:59");
+  const [resultsVisible, setResultsVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function handleAssign() {
+    if (paper.status !== "FINALIZED") { setMsg("확정(FINALIZED)된 시험지만 배정할 수 있어요."); return; }
+    if (!studentId) { setMsg("학생을 선택해 주세요."); return; }
+    setSaving(true); setMsg("");
+    try {
+      const dueAt = new Date(`${dueDate}T${dueTime}:00`).getTime();
+      const doc = await AS.createAssignment({
+        examPaperId: paper.id,
+        studentId,
+        title: paper.title,
+        dueAt,
+        resultsVisibleToStudent: resultsVisible,
+      });
+      onAssigned(doc);
+    } catch (e) {
+      // AS.createAssignment()가 이미 "이미 배정되어 진행 중인 같은 시험지가 있어요" 형태로 던짐 — 그대로 노출.
+      setMsg(String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return html`
+    <${Modal} onClose=${onClose}>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 14 }}>학생에게 배정</div>
+      <${Card} style=${{ marginBottom: 14, background: C.ivory }}>
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${paper.title}</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${paper.grade || "학년 미지정"} · 문제 ${paper.totalQuestionCount}개</div>
+      <//>
+      ${(!roster || roster.length === 0)
+        ? html`<div style=${{ fontSize: 12.5, color: C.danger, marginBottom: 12 }}>등록된 학생이 없어요. 먼저 학생을 등록해 주세요.</div>`
+        : html`<${Field} label="학생"><select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}</select><//>`}
+      <${Field} label="응시 기한">
+        <div style=${{ display: "flex", gap: 8 }}>
+          <div style=${{ flex: 1 }}><${DateField} value=${dueDate} onChange=${setDueDate} /><//>
+          <${TimeField} value=${dueTime} onChange=${setDueTime} />
+        </div>
+      <//>
+      <label style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.navy, margin: "6px 0 14px", cursor: "pointer" }}>
+        <input type="checkbox" checked=${resultsVisible} onChange=${(e) => setResultsVisible(e.target.checked)} style=${{ width: 15, height: 15, appearance: "auto" }} />
+        학생에게 시험 결과 공개 (정답/해설 포함, 기본은 비공개)
+      <//>
+      ${msg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${msg}</div>`}
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${handleAssign} disabled=${saving || !roster || roster.length === 0}>${saving ? "배정 중..." : "배정하기"}<//>
+    <//>
+  `;
+}
+
+function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, onBack, onEdit, onChanged, onDuplicated }) {
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
   async function handleArchive() {
     if (!confirm("이 시험지를 보관(Archive) 처리할까요?")) return;
     setSaving(true);
@@ -5563,6 +5875,88 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, onBack, o
   async function handleDelete() {
     if (!confirm("이 초안 시험지를 완전히 삭제할까요?")) return;
     try { await EP.hardDeleteExamPaper(paper); onBack(true); } catch (e) { setMsg("삭제 실패: " + String(e.message || e)); }
+  }
+  // Phase 8 prep §4 — 원본은 건드리지 않고 questionId 참조 구조 그대로 새 DRAFT 문서를 만든다.
+  // usageCount는 여기서 절대 올리지 않음(그건 finalizeExamPaper만의 몫, examPaperService.js 그대로 유지).
+  async function handleDuplicate() {
+    setSaving(true); setMsg("");
+    try {
+      const doc = await EP.duplicateExamPaper(paper);
+      onDuplicated(doc);
+    } catch (e) { setMsg("복제 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  // Phase 8 prep §3 — 학생에게 그대로 나눠줄 수 있는 인쇄용 창. 기존 printReport()/printInvoice()와
+  // 같은 패턴(새 top-level 창 + window.print(), 별도 PDF 라이브러리 없음, 자체 print 전용 CSS).
+  // qDoc.answer/qDoc.explanation은 아래 어디에서도 참조하지 않는다 — questionText와
+  // resolveQuestionForDisplay()가 돌려주는 displayChoices(정답 표시 없는 버전)만 사용.
+  function printExamPaper() {
+    const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    let qNum = 0;
+    const sectionsHtml = (paper.sections || []).map((s) => {
+      const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
+      const passageHtml = passage
+        ? `<div class="passage"><div class="passage-title">${esc(passage.title)}</div><div class="passage-text">${esc(passage.passageText)}</div></div>`
+        : "";
+      const questionsHtml = (s.questionRefs || []).map((qr) => {
+        const qDoc = questionsById[qr.questionId];
+        if (!qDoc) return "";
+        qNum += 1;
+        const { displayChoices } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
+        const choicesHtml = displayChoices.length > 0
+          ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
+          : `<div class="answer-line">답: ______________________</div>`;
+        return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
+      }).join("");
+      return `<div class="section"><div class="section-title">${esc(s.label)}</div>${passageHtml}${questionsHtml}</div>`;
+    }).join("");
+
+    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(paper.title)}</title>
+      <style>
+        @page { size: A4; margin: 18mm 16mm; }
+        body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
+        .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;z-index:100;flex-wrap:wrap;}
+        .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;flex-shrink:0;}
+        .sheet{padding:20px 6px;max-width:760px;margin:0 auto;}
+        .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:14px;margin-bottom:16px;}
+        .hd h1{font-size:19px;color:#1C2B4A;margin:0 0 10px;}
+        .meta{display:flex;justify-content:center;gap:22px;font-size:12px;flex-wrap:wrap;}
+        .meta .field{display:flex;align-items:center;gap:6px;}
+        .meta .field label{color:#5B6270;}
+        .meta .field input{border:none;border-bottom:1px solid #1B2A3D;padding:2px 4px;font-size:12px;width:110px;}
+        .section-title{font-size:13.5px;font-weight:700;color:#fff;background:#1C2B4A;padding:6px 10px;border-radius:3px;margin:20px 0 12px;page-break-after:avoid;}
+        .passage{background:#F7F5EE;border:1px solid #D8D2BE;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid;}
+        .passage-title{font-weight:700;margin-bottom:6px;font-size:12.5px;}
+        .passage-text{white-space:pre-wrap;font-size:12px;line-height:1.7;}
+        .question{margin-bottom:14px;page-break-inside:avoid;}
+        .q-text{font-size:12.5px;line-height:1.7;}
+        .q-num{font-weight:700;margin-right:4px;}
+        .choices{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;padding-left:18px;font-size:12px;}
+        .choice{white-space:nowrap;}
+        .answer-line{margin-top:8px;padding-left:18px;font-size:12px;}
+        @media print{ .toolbar{display:none !important;} }
+      </style></head><body>
+      <div class="toolbar">
+        <span>학생용 인쇄 미리보기 — 정답/해설은 표시되지 않아요.</span>
+        <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+      </div>
+      <div class="sheet">
+        <div class="hd">
+          <h1>${esc(paper.title)}</h1>
+          <div class="meta">
+            <div class="field"><label>이름</label><input type="text" /></div>
+            <div class="field"><label>학년/반</label><input type="text" /></div>
+            <div class="field"><label>날짜</label><input type="text" /></div>
+          </div>
+        </div>
+        ${sectionsHtml}
+      </div>
+      </body></html>`;
+    const win = window.open("", "_blank");
+    if (!win) { setMsg("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
+    win.document.write(html_);
+    win.document.close();
+    win.focus();
   }
   return html`
     <div>
@@ -5575,7 +5969,12 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, onBack, o
           </div>
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16 }}>${paper.title}</div>
         </div>
-        ${paper.status === "DRAFT" && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>편집<//>`}
+        <div style=${{ display: "flex", gap: 8 }}>
+          ${paper.status === "FINALIZED" && html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setShowAssign(true)}>👩‍🎓 학생에게 배정<//>`}
+          ${paper.status === "FINALIZED" && html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${printExamPaper}>🖨 시험지 인쇄<//>`}
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleDuplicate} disabled=${saving}>복제<//>
+          ${paper.status === "DRAFT" && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>편집<//>`}
+        </div>
       </div>
       ${paper.sections.map((s) => html`<${ExamPaperSectionCard} key=${s.id} EP=${EP} QB=${QB} section=${s} questionsById=${questionsById} passagesById=${passagesById} canEdit=${false} onChange=${() => {}} onRemoveSection=${() => {}} />`)}
       <div style=${{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -5583,11 +5982,14 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, onBack, o
         ${EP.canHardDeleteExamPaper(paper) && html`<button onClick=${handleDelete} style=${{ background: "none", border: "none", color: C.danger, fontSize: 12, cursor: "pointer", padding: 0 }}>완전히 삭제 (초안만)</button>`}
       </div>
       ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+      ${showAssign && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${paper} roster=${roster || []}
+        onClose=${() => setShowAssign(false)}
+        onAssigned=${() => { setShowAssign(false); setMsg("학생에게 배정했어요."); }} />`}
     </div>
   `;
 }
 
-function ExamBuilderView() {
+function ExamBuilderView({ roster }) {
   const EP = window.SarahServices.examPaperService;
   const QB = window.SarahServices.questionBankService;
   const [papers, setPapers] = useState(null);
@@ -5643,10 +6045,11 @@ function ExamBuilderView() {
       onCancel=${() => setView("detail")} />`;
   }
   if (view === "detail" && selected) {
-    return html`<${ExamPaperDetail} EP=${EP} QB=${QB} paper=${selected} questionsById=${questionsById} passagesById=${readingPassagesById}
+    return html`<${ExamPaperDetail} EP=${EP} QB=${QB} paper=${selected} questionsById=${questionsById} passagesById=${readingPassagesById} roster=${roster}
       onBack=${(deleted) => { if (deleted) { setPapers((ps) => ps.filter((p) => p.id !== selected.id)); setSelectedId(null); } setView("list"); }}
       onEdit=${() => setView("builder")}
-      onChanged=${(doc) => setPapers((ps) => ps.map((p) => (p.id === doc.id ? doc : p)))} />`;
+      onChanged=${(doc) => setPapers((ps) => ps.map((p) => (p.id === doc.id ? doc : p)))}
+      onDuplicated=${(doc) => { setPapers((ps) => [doc, ...ps]); setSelectedId(doc.id); setView("detail"); }} />`;
   }
 
   return html`
@@ -5673,7 +6076,420 @@ function ExamBuilderView() {
   `;
 }
 
-function QuestionBankSection() {
+// Phase 8-B — 배정 현황 관리. examAssignments만 다루고 sarahsEnglishStudents/<id>는 절대 쓰지
+// 않는다(§7) — 학생 요약 필드 반영은 8-G에서 App()의 기존 updateData()를 통해서만 처리될 예정.
+const ASSIGNMENT_STATUS_LABEL = { ASSIGNED: "배정됨", IN_PROGRESS: "응시중", SUBMITTED: "제출", GRADED: "채점완료" };
+const ASSIGNMENT_STATUS_ICON = { ASSIGNED: "🟡", IN_PROGRESS: "🔵", SUBMITTED: "🟢", GRADED: "🟣" };
+function AssignmentStatusBadge({ status }) {
+  return html`<span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: C.ivory, border: `1px solid ${C.line}`, color: C.navy, whiteSpace: "nowrap" }}>${ASSIGNMENT_STATUS_ICON[status] || ""} ${ASSIGNMENT_STATUS_LABEL[status] || status}</span>`;
+}
+
+// Phase 8-G §3/§5/§6 — 학생의 GRADED 시험 요약(sarahsEnglishStudents/<id>.examSummary)을 처음부터
+// 통째로 재계산해서 덮어쓴다(증분 +1 아님) — 같은 attempt를 몇 번 처리해도 중복 집계되지 않고,
+// GRADED가 아닌 attempt는애초에 필터로 걸러진다. examAssignmentService.js/examAttemptService.js는
+// 이 함수를 전혀 모른다 — 이 함수도 그 두 서비스의 읽기 전용 함수만 호출하고, 학생 문서 쓰기는
+// 인자로 받은 App()의 기존 updateData()로만 한다(§3, 서비스가 직접 쓰지 않음).
+// score는 시험마다 totalQuestions가 다를 수 있어 원점수 평균이 아니라 시험별 정답률(%)의 평균을
+// 쓴다(§5 — "기존 score 원점수 관례와 충돌하지 않도록 명확히 분리"). subjective 미채점 문항은
+// 그 시험의 정답률 분모에서 제외(기존 ExamResultDetail의 정답률 공식과 동일).
+async function syncStudentExamSummary(studentId, updateData) {
+  const AS = window.SarahServices.examAssignmentService;
+  const AT = window.SarahServices.examAttemptService;
+  const EP = window.SarahServices.examPaperService;
+  const [assignments, attempts, papers] = await Promise.all([
+    AS.listStudentAssignments(studentId), AT.listStudentAttempts(studentId), EP.listExamPapers(),
+  ]);
+  const paperTitleById = {};
+  papers.forEach((p) => { paperTitleById[p.id] = p.title; });
+  const attemptById = {};
+  attempts.forEach((a) => { attemptById[a.id] = a; });
+
+  const gradedPairs = assignments
+    .filter((a) => a.status === "GRADED" && a.attemptId)
+    .map((a) => ({ assignment: a, attempt: attemptById[a.attemptId] }))
+    .filter((x) => x.attempt && x.attempt.status === "GRADED");
+
+  if (gradedPairs.length === 0) {
+    await updateData(studentId, (d) => ({ ...d, examSummary: null }));
+    return null;
+  }
+
+  function pct(attempt) {
+    const denom = (attempt.totalQuestions || 0) - (attempt.ungradedCount || 0);
+    return denom > 0 ? (attempt.correctCount / denom) * 100 : 0;
+  }
+
+  const percentages = gradedPairs.map(({ attempt }) => pct(attempt));
+  const averagePercentage = Math.round(percentages.reduce((a, b) => a + b, 0) / percentages.length);
+  const latest = gradedPairs.reduce((best, cur) => ((cur.attempt.submittedAt || 0) > (best.attempt.submittedAt || 0) ? cur : best));
+
+  const summary = {
+    totalExams: gradedPairs.length,
+    averagePercentage,
+    latestScore: latest.attempt.correctCount,
+    latestTotal: latest.attempt.totalQuestions,
+    latestPercentage: Math.round(pct(latest.attempt)),
+    latestExamTitle: paperTitleById[latest.assignment.examPaperId] || latest.assignment.title,
+    latestExamAt: latest.attempt.submittedAt,
+  };
+  await updateData(studentId, (d) => ({ ...d, examSummary: summary }));
+  return summary;
+}
+
+// §2 — Question Bank 목록의 "최근 출제일"용 가벼운 조회. usageCount는 기존 필드를 그대로 쓰고
+// (새 필드 없음), 여기서는 assignedAt 최댓값만 계산 — getQuestionUsageHistory()처럼 attempts까지
+// 읽을 필요가 없어서 더 가볍다.
+async function computeLatestAssignedAtByQuestionId() {
+  const EP = window.SarahServices.examPaperService;
+  const AS = window.SarahServices.examAssignmentService;
+  const [papers, assignments] = await Promise.all([EP.listExamPapers(), AS.listAssignments()]);
+  const questionIdsByPaperId = {};
+  papers.forEach((p) => {
+    const ids = [];
+    (p.sections || []).forEach((s) => (s.questionRefs || []).forEach((r) => ids.push(r.questionId)));
+    questionIdsByPaperId[p.id] = ids;
+  });
+  const latest = {};
+  assignments.forEach((a) => {
+    (questionIdsByPaperId[a.examPaperId] || []).forEach((qId) => {
+      if (!latest[qId] || a.assignedAt > latest[qId]) latest[qId] = a.assignedAt;
+    });
+  });
+  return latest;
+}
+
+// §1/§7 — 문제 상세 화면의 "📊 출제 이력" 패널. examAttemptService.getQuestionUsageHistory()를
+// 그대로 호출만 하고, examPapers/examAssignments/examAttempts 외 새 컬렉션은 전혀 만들지 않는다.
+function QuestionUsageHistoryPanel({ questionId, roster }) {
+  const AT = window.SarahServices.examAttemptService;
+  const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState(null);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!open || history !== null) return;
+    (async () => {
+      try {
+        setHistory(await AT.getQuestionUsageHistory(questionId));
+      } catch (e) {
+        setErr("출제 이력을 불러오지 못했어요: " + String(e.message || e));
+      }
+    })();
+    /* eslint-disable-next-line */
+  }, [open]);
+
+  const studentNameById = {};
+  (roster || []).forEach((s) => { studentNameById[s.id] = s.name; });
+
+  function resultLabel(h) {
+    if (!h.attemptStatus || h.attemptStatus === "IN_PROGRESS") return "응시중 (아직 제출 전)";
+    if (h.attemptStatus === "SUBMITTED") return "채점 대기";
+    if (h.correct === true) return "✓ 정답";
+    if (h.correct === false) return "✕ 오답";
+    return "🟡 미채점 (주관식)";
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 14 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>📊 출제 이력</div>
+        <span style=${{ fontSize: 11, color: C.slate }}>${open ? "▾ 접기" : "▸ 펼치기"}</span>
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 10 }}>
+          ${err && html`<div style=${{ fontSize: 12, color: C.danger }}>${err}</div>`}
+          ${history === null && !err && html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>`}
+          ${history && history.length === 0 && html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 시험에 출제된 적이 없습니다.</div>`}
+          ${history && history.length > 0 && html`
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>총 ${history.length}회 출제</div>
+            ${[...history].sort((a, b) => (b.assignedAt || 0) - (a.assignedAt || 0)).map((h, i) => html`
+              <div key=${i} style=${{ padding: "8px 0", borderTop: i > 0 ? `1px dashed ${C.line}` : "none" }}>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 12.5 }}>${h.examPaperTitle}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>학생: ${studentNameById[h.studentId] || h.studentId}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate }}>
+                  배정: ${fmtDateTime(h.assignedAt)}${h.startedAt ? " · 응시 " + fmtDateTime(h.startedAt) : ""}${h.submittedAt ? " · 제출 " + fmtDateTime(h.submittedAt) : ""}
+                </div>
+                <div style=${{ fontSize: 11.5, marginTop: 2, color: C.ink }}>결과: ${resultLabel(h)}</div>
+              </div>
+            `)}
+          `}
+        </div>
+      `}
+    <//>
+  `;
+}
+
+// §5 — 배정 상세. 문제별 결과 상세는 8-F 범위라 여기서는 만들지 않는다(요약 점수/정답/오답/미채점
+// 개수까지만).
+function ExamAssignmentDetail({ assignment, studentName, paperTitle, attempt, onBack, onViewResult }) {
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <${AssignmentStatusBadge} status=${assignment.status} />
+        ${(assignment.status === "SUBMITTED" || assignment.status === "GRADED") && html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onViewResult}>📊 결과 보기<//>`}
+      </div>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 14 }}>${paperTitle}</div>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 8, columnGap: 14, fontSize: 12.5 }}>
+          <div style=${{ color: C.slate }}>학생</div><div style=${{ color: C.ink }}>${studentName}</div>
+          <div style=${{ color: C.slate }}>시험지</div><div style=${{ color: C.ink }}>${paperTitle}</div>
+          <div style=${{ color: C.slate }}>배정일</div><div style=${{ color: C.ink }}>${fmtDateTime(assignment.assignedAt)}</div>
+          <div style=${{ color: C.slate }}>마감일</div><div style=${{ color: C.ink }}>${assignment.dueAt ? fmtDateTime(assignment.dueAt) : "미지정"}</div>
+          <div style=${{ color: C.slate }}>결과 공개</div><div style=${{ color: C.ink }}>${assignment.resultsVisibleToStudent ? "학생에게 공개" : "비공개"}</div>
+          ${attempt && html`
+            <div style=${{ color: C.slate }}>응시 시작</div><div style=${{ color: C.ink }}>${fmtDateTime(attempt.startedAt)}</div>
+          `}
+          ${attempt && attempt.submittedAt && html`
+            <div style=${{ color: C.slate }}>제출 시간</div><div style=${{ color: C.ink }}>${fmtDateTime(attempt.submittedAt)}</div>
+          `}
+        </div>
+      <//>
+      ${assignment.status === "GRADED" && attempt && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 8 }}>채점 결과</div>
+          <div style=${{ fontSize: 22, ...serif, color: C.gold, marginBottom: 6 }}>${attempt.score} <span style=${{ fontSize: 14, color: C.slate }}>/ ${attempt.totalQuestions}</span></div>
+          <div style=${{ fontSize: 12, color: C.slate }}>정답 ${attempt.correctCount} · 오답 ${attempt.wrongCount}${attempt.ungradedCount ? ` · 미채점(주관식) ${attempt.ungradedCount}` : ""}</div>
+        <//>
+      `}
+      ${!attempt && (assignment.status === "ASSIGNED") && html`<div style=${{ fontSize: 12, color: C.slate }}>아직 응시를 시작하지 않았어요.</div>`}
+    </div>
+  `;
+}
+
+// Phase 8-F — Teacher 전용 결과 상세. 학생 화면(StudentDash/StudentExamRuntime)에는 이 컴포넌트를
+// 절대 연결하지 않는다(§9/§11 — sanitizeQuestionForStudent()는 그대로 두고 여기서는 안 씀, 원본
+// question 문서의 answer/explanation을 그대로 읽어서 교사에게만 보여준다). examAttempts에는
+// questionText/choices/explanation을 복제하지 않고 questionBank에서 매번 조인해서만 표시(§7).
+const RESULT_CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+
+function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
+  if (!qDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
+  const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
+  const isMc = qDoc.answerFormat === "mc";
+  const hasAnswer = result && result.selectedAnswer !== null && result.selectedAnswer !== undefined && result.selectedAnswer !== "";
+  const studentDisplayIdx = isMc && hasAnswer ? originalToDisplayIndex(qref.choiceDisplayOrder, result.selectedAnswer) : -1;
+
+  let resultBadge;
+  if (!isMc) {
+    resultBadge = html`<span style=${{ color: "#8A6414", fontWeight: 700 }}>🟡 미채점</span>`;
+  } else if (!hasAnswer) {
+    resultBadge = html`<span style=${{ color: C.slate, fontWeight: 700 }}>미응답</span>`;
+  } else if (result.correct) {
+    resultBadge = html`<span style=${{ color: "#2E6B44", fontWeight: 700 }}>✓ 정답</span>`;
+  } else {
+    resultBadge = html`<span style=${{ color: C.danger, fontWeight: 700 }}>✕ 오답</span>`;
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 12 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 12.5 }}>문제 ${index + 1}</div>
+        ${resultBadge}
+      </div>
+      <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.7, marginBottom: 10 }}>${qDoc.questionText}</div>
+      ${isMc && html`
+        <div style=${{ marginBottom: 10 }}>
+          ${displayChoices.map((c, i) => html`<div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "3px 0" }}>${RESULT_CIRCLED[i] || i + 1 + ")"} ${c}</div>`)}
+        </div>
+        <div style=${{ display: "flex", gap: 24, fontSize: 12.5, marginBottom: 8 }}>
+          <div><span style=${{ color: C.slate }}>학생의 답: </span><b style=${{ color: C.ink }}>${hasAnswer ? RESULT_CIRCLED[studentDisplayIdx] || (studentDisplayIdx + 1) : "미응답"}</b></div>
+          <div><span style=${{ color: C.slate }}>정답: </span><b style=${{ color: C.ink }}>${RESULT_CIRCLED[displayAnswerIndex] || (displayAnswerIndex + 1)}</b></div>
+        </div>
+      `}
+      ${!isMc && html`
+        <div style=${{ marginBottom: 8 }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>학생의 답</div>
+          <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap", background: C.ivory, borderRadius: 4, padding: "8px 10px", marginBottom: 8 }}>${hasAnswer ? result.selectedAnswer : "미응답"}</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>정답</div>
+          <div style=${{ fontSize: 12.5, color: C.slate }}>교사 채점 필요</div>
+        </div>
+      `}
+      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>
+        <b style=${{ color: C.navy }}>해설</b><br />
+        ${qDoc.explanation || "해설이 등록되지 않았습니다."}
+      </div>
+    <//>
+  `;
+}
+
+function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questionsById, passagesById, onBack }) {
+  const total = attempt.totalQuestions || 0;
+  const gradedDenominator = total - (attempt.ungradedCount || 0);
+  const accuracy = gradedDenominator > 0 ? Math.round(((attempt.correctCount || 0) / gradedDenominator) * 100) : 0;
+
+  let qNum = 0;
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+        <${AssignmentStatusBadge} status=${assignment.status} />
+      </div>
+      <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 2 }}>${studentName}</div>
+      <div style=${{ fontSize: 13.5, color: C.ink, marginBottom: 16 }}>${paper.title}</div>
+
+      <${Card} style=${{ marginBottom: 16 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 7, columnGap: 14, fontSize: 12.5, marginBottom: 14 }}>
+          <div style=${{ color: C.slate }}>학년</div><div style=${{ color: C.ink }}>${paper.grade || "미지정"}</div>
+          <div style=${{ color: C.slate }}>배정일</div><div style=${{ color: C.ink }}>${fmtDateTime(assignment.assignedAt)}</div>
+          <div style=${{ color: C.slate }}>응시 시작</div><div style=${{ color: C.ink }}>${attempt.startedAt ? fmtDateTime(attempt.startedAt) : "-"}</div>
+          <div style=${{ color: C.slate }}>제출일</div><div style=${{ color: C.ink }}>${attempt.submittedAt ? fmtDateTime(attempt.submittedAt) : "-"}</div>
+        </div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10, textAlign: "center", borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+          <div><div style=${{ fontSize: 22, ...serif, color: C.gold }}>${attempt.score}<span style=${{ fontSize: 13, color: C.slate }}> / ${total}</span></div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>점수</div></div>
+          <div><div style=${{ fontSize: 22, ...serif, color: C.navy }}>${accuracy}%</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>정답률</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#2E6B44" }}>${attempt.correctCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>정답</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: C.danger }}>${attempt.wrongCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>오답</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#8A6414" }}>${attempt.ungradedCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>미채점</div></div>
+        </div>
+      <//>
+
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 10 }}>문제별 결과</div>
+      ${(paper.sections || []).map((s) => {
+        const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
+        return html`
+          <div key=${s.id} style=${{ marginBottom: 16 }}>
+            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate, marginBottom: 8 }}>${s.label}</div>
+            ${passage && html`
+              <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
+                <div style=${{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.7, color: C.ink }}>${passage.passageText}</div>
+              <//>
+            `}
+            ${(s.questionRefs || []).map((ref) => {
+              const displayIndex = qNum;
+              qNum += 1;
+              return html`<${ExamResultQuestionCard} key=${ref.questionId + displayIndex} EP=${EP} index=${displayIndex} qDoc=${questionsById[ref.questionId]} qref=${ref} result=${(attempt.results || {})[ref.questionId]} />`;
+            })}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
+// §3/§4 — 전체 배정 목록 + 학생/시험지/상태 필터. 기존 getAllDocs 전체읽기+클라이언트 필터 관례
+// 그대로(Grammar/Reading Bank 화면과 같은 패턴) — Firestore 스키마/쿼리 방식을 새로 만들지 않는다.
+function ExamAssignmentManager({ roster, updateData }) {
+  const AS = window.SarahServices.examAssignmentService;
+  const AT = window.SarahServices.examAttemptService;
+  const EP = window.SarahServices.examPaperService;
+  const QB = window.SarahServices.questionBankService;
+  const [assignments, setAssignments] = useState(null);
+  const [papers, setPapers] = useState([]);
+  const [attempts, setAttempts] = useState([]);
+  const [questionsById, setQuestionsById] = useState({});
+  const [passagesById, setPassagesById] = useState({});
+  const [err, setErr] = useState("");
+  const [view, setView] = useState("list"); // list | detail | result
+  const [selectedId, setSelectedId] = useState(null);
+  const [filters, setFilters] = useState({ studentId: "", examPaperId: "", status: "" });
+
+  async function load() {
+    try {
+      // Phase 8-F — 결과 화면이 문제별로 questionBank에서 매번 조인해서 보여줄 수 있도록 grammar/
+      // reading 문제와 지문도 한 번에 불러온다(examAttempts에는 questionText/explanation을 복제하지
+      // 않으므로, 결과를 보여줄 때마다 이 목록에서 조인해야 함, §7).
+      const [a, p, att, gq, rq, rp] = await Promise.all([
+        AS.listAssignments(), EP.listExamPapers(), AT.listAttempts(),
+        QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages(),
+      ]);
+      setAssignments(a); setPapers(p); setAttempts(att);
+      const qById = {};
+      gq.forEach((q) => { qById[q.id] = q; });
+      rq.forEach((q) => { qById[q.id] = q; });
+      setQuestionsById(qById);
+      const pById = {};
+      rp.forEach((p2) => { pById[p2.id] = p2; });
+      setPassagesById(pById);
+    } catch (e) {
+      setErr("불러오지 못했어요: " + String(e.message || e));
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (assignments === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  const studentNameById = {};
+  roster.forEach((s) => { studentNameById[s.id] = s.name; });
+  const paperById = {};
+  papers.forEach((p) => { paperById[p.id] = p; });
+  const attemptById = {};
+  attempts.forEach((a) => { attemptById[a.id] = a; });
+
+  const filtered = assignments
+    .filter((a) => (!filters.studentId || a.studentId === filters.studentId) && (!filters.examPaperId || a.examPaperId === filters.examPaperId) && (!filters.status || a.status === filters.status))
+    .sort((a, b) => (b.assignedAt || 0) - (a.assignedAt || 0));
+
+  const selected = assignments.find((a) => a.id === selectedId);
+  const selectedAttempt = selected && selected.attemptId ? attemptById[selected.attemptId] : null;
+
+  if (view === "result" && selected && selectedAttempt) {
+    return html`<${ExamResultDetail} EP=${EP} assignment=${selected} paper=${paperById[selected.examPaperId]}
+      attempt=${selectedAttempt} studentName=${studentNameById[selected.studentId] || selected.studentId}
+      questionsById=${questionsById} passagesById=${passagesById}
+      onBack=${() => setView("detail")} />`;
+  }
+
+  if (view === "detail" && selected) {
+    return html`<${ExamAssignmentDetail} assignment=${selected}
+      studentName=${studentNameById[selected.studentId] || selected.studentId}
+      paperTitle=${paperById[selected.examPaperId] ? paperById[selected.examPaperId].title : selected.title}
+      attempt=${selectedAttempt}
+      onBack=${() => setView("list")}
+      onViewResult=${() => {
+        // §3/§5 — 교사가 실제로 결과를 확인하는 시점에 학생 시험 요약을 재계산해 반영한다. 여기서도
+        // App()의 기존 updateData()만 사용하고(§3 원칙), 실패해도 결과 화면 자체는 그대로 연다.
+        if (selected.status === "GRADED") syncStudentExamSummary(selected.studentId, updateData).catch(() => {});
+        setView("result");
+      }} />`;
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>총 ${assignments.length}건 · 조건에 맞는 배정 ${filtered.length}건</div>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${filters.studentId} onChange=${(e) => setFilters((f) => ({ ...f, studentId: e.target.value }))}>
+            <option value="">학생 전체</option>
+            ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
+          <//>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${filters.examPaperId} onChange=${(e) => setFilters((f) => ({ ...f, examPaperId: e.target.value }))}>
+            <option value="">시험지 전체</option>
+            ${papers.map((p) => html`<option key=${p.id} value=${p.id}>${p.title}</option>`)}
+          <//>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${filters.status} onChange=${(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
+            <option value="">상태 전체</option>
+            ${Object.entries(ASSIGNMENT_STATUS_LABEL).map(([k, l]) => html`<option key=${k} value=${k}>${l}</option>`)}
+          <//>
+        </div>
+      <//>
+      ${filtered.length === 0
+        ? html`<${Empty} text="조건에 맞는 배정이 없어요." />`
+        : filtered.map((a) => {
+            const attempt = a.attemptId ? attemptById[a.attemptId] : null;
+            const startedLabel = attempt ? "시작함" : "시작 전";
+            const submittedLabel = attempt && attempt.submittedAt ? "제출함" : "미제출";
+            const scoreLabel = a.status === "GRADED" && attempt ? `${attempt.score} / ${attempt.totalQuestions}` : "-";
+            return html`
+              <${Card} key=${a.id} onClick=${() => { setSelectedId(a.id); setView("detail"); }} style=${{ cursor: "pointer", marginBottom: 10 }}>
+                <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style=${{ minWidth: 0, flex: 1 }}>
+                    <div style=${{ fontSize: 13, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${paperById[a.examPaperId] ? paperById[a.examPaperId].title : a.title}</div>
+                    <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>${studentNameById[a.studentId] || a.studentId} · 배정 ${fmtDateTime(a.assignedAt)}${a.dueAt ? " · 마감 " + fmtDateTime(a.dueAt) : ""}</div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>응시 ${startedLabel} · ${submittedLabel} · 점수 ${scoreLabel}</div>
+                  </div>
+                  <${AssignmentStatusBadge} status=${a.status} />
+                </div>
+              <//>
+            `;
+          })}
+    </div>
+  `;
+}
+
+function QuestionBankSection({ roster }) {
   const [bank, setBank] = useState("grammar");
   // 검수 대기 큐에서 항목을 클릭하면 해당 은행 탭으로 전환 + 그 문제 상세로 바로 진입한다(§14.9).
   const [pendingSelection, setPendingSelection] = useState(null); // { bank, id } | null
@@ -5690,9 +6506,9 @@ function QuestionBankSection() {
         { key: "review", icon: "🔍", label: "검수 대기" },
         { key: "mock", icon: "📝", label: "모의고사 (준비 중)" },
       ]} active=${bank} onChange=${(key) => { if (key === "grammar" || key === "reading" || key === "examBuilder" || key === "review") setBank(key); }} />
-      ${bank === "grammar" && html`<${GrammarBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "grammar" ? pendingSelection.id : null} />`}
-      ${bank === "reading" && html`<${ReadingQuestionBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "reading" ? pendingSelection.id : null} />`}
-      ${bank === "examBuilder" && html`<${ExamBuilderView} />`}
+      ${bank === "grammar" && html`<${GrammarBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "grammar" ? pendingSelection.id : null} roster=${roster} />`}
+      ${bank === "reading" && html`<${ReadingQuestionBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "reading" ? pendingSelection.id : null} roster=${roster} />`}
+      ${bank === "examBuilder" && html`<${ExamBuilderView} roster=${roster} />`}
       ${bank === "review" && html`<${ReviewQueueView} onSelect=${jumpTo} />`}
     </div>
   `;
@@ -9772,7 +10588,311 @@ const STUDENT_HOME_ACTIONS = [
   { key: "examTests", label: "추가시험", icon: "📋", bg: "#FDF0E3" },
   { key: "schedule", label: "이번달 시간표", icon: "🗓", bg: "#FDEDE9" },
   { key: "studyTimer", label: "공부 시간 기록", icon: "⏱", bg: "#EAF6F6" },
+  // Phase 8-C — examAssignments 목록만 보여준다. 실제 응시 화면(문제 렌더링/답안저장/채점)은 8-D 범위.
+  { key: "exams", label: "시험", icon: "📝", bg: "#F4EEF9" },
 ];
+
+// Phase 8-C — 배정된 시험 목록 카드 하나. 상태별 버튼 라벨만 연결하고, 실제 응시 화면은 아직 없다
+// (8-D에서 붙는다) — 그때까지는 안내 메시지만 띄운다.
+function StudentExamStatusButton({ status, onClick }) {
+  const label = status === "ASSIGNED" ? "시험 시작" : status === "IN_PROGRESS" ? "시험 계속하기" : "결과 보기"; // SUBMITTED, GRADED 둘 다 "결과 보기"
+  return html`<${Button} variant="gold" style=${{ padding: "7px 16px", fontSize: 12 }} onClick=${onClick}>${label}<//>`;
+}
+
+function StudentExamCard({ assignment, paper, onAction }) {
+  return html`
+    <${Card} style=${{ marginBottom: 10 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+        <div style=${{ minWidth: 0, flex: 1 }}>
+          <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>${assignment.title || (paper && paper.title) || "시험"}</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>문제 ${paper ? paper.totalQuestionCount : "-"}개</div>
+          <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>배정 ${fmtDateTime(assignment.assignedAt)}${assignment.dueAt ? " · 마감 " + fmtDateTime(assignment.dueAt) : ""}</div>
+        </div>
+        <${AssignmentStatusBadge} status=${assignment.status} />
+      </div>
+      <div style=${{ marginTop: 10 }}><${StudentExamStatusButton} status=${assignment.status} onClick=${() => onAction(assignment)} /><//>
+    <//>
+  `;
+}
+
+// AS.listStudentAssignments(student.id) 하나만으로 목록을 채운다(§3) — examPapers는 "문제 수"
+// 표시에만 조인용으로 읽는다. 실제 시험 응시/답안/채점 로직은 여기 없음(8-D 범위).
+// Phase 8-D — 실제 시험 응시 런타임. examPaper/question 문서는 절대 수정하지 않고(읽기만),
+// examAttempts.answers/results만 기존 examAttemptService 경로로 갱신한다.
+//
+// Phase 9-D — 이전에는 여기서 QB.listGrammarQuestions()/listReadingQuestions()로 전체 문제은행을
+// 그대로 읽어와 클라이언트에서 골라 썼다(sanitize는 했지만, answer/explanation을 포함한 원본
+// 문서 자체는 이미 브라우저에 와 있었다 — 아래에서 언급하던 "네트워크 트래픽에 원본 문서가 실리는
+// 구조적 문제"). 지금은 getExamQuestionsForAttempt Cloud Function(functions/index.js)이 서버에서
+// assignment 소유권(studentId)을 검증한 뒤 이 시험지가 참조하는 문제만, 그것도 이미 sanitize된
+// 형태로 돌려준다 — answer/explanation은 응시 도중 어떤 경로로도 클라이언트에 오지 않는다. 정답은
+// 제출(SUBMITTED) 이후 getExamAnswersForGrading을 통해서만, 그것도 본인 attempt에 한해 받아온다
+// (handleSubmit 참고) — 채점 자체(computeGrading)는 이번 Phase에서도 여전히 클라이언트에서
+// 실행된다(examAttemptService는 손대지 않음, §9-D 승인 범위).
+function displayIndexToOriginal(choiceDisplayOrder, displayIdx) {
+  return choiceDisplayOrder ? choiceDisplayOrder[displayIdx] : displayIdx;
+}
+function originalToDisplayIndex(choiceDisplayOrder, originalIdx) {
+  if (originalIdx === undefined || originalIdx === null || originalIdx === "") return -1;
+  return choiceDisplayOrder ? choiceDisplayOrder.indexOf(Number(originalIdx)) : Number(originalIdx);
+}
+
+function StudentExamRuntime({ assignment, onExit }) {
+  const AS = window.SarahServices.examAssignmentService;
+  const AT = window.SarahServices.examAttemptService;
+  const EP = window.SarahServices.examPaperService;
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [paper, setPaper] = useState(null);
+  const [flatQuestions, setFlatQuestions] = useState([]); // [{ questionId, bank, passageId, choiceDisplayOrder }]
+  const [sanitizedQuestionsById, setSanitizedQuestionsById] = useState({});
+  const [passagesById, setPassagesById] = useState({});
+  const [attempt, setAttempt] = useState(null);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [savingAnswer, setSavingAnswer] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const subjectiveTimerRef = useRef(null);
+
+  async function load() {
+    setLoading(true); setErr("");
+    try {
+      const freshAssignment = (await AS.getAssignment(assignment.id)) || assignment;
+      // getExamQuestionsForAttempt가 서버에서 assignment.studentId 소유권을 검증하고, FINALIZED
+      // 여부 확인/questionsById sanitize까지 마친 뒤 돌려준다 — 이전에 여기 있던 "시험지를 찾을 수
+      // 없거나 확정되지 않았어요" 체크는 이제 서버 쪽 404 응답으로 대체된다(동일한 문구는 아니지만
+      // catch에서 err로 그대로 표시됨).
+      const { paper: foundPaper, questionsById: sanitizedById, passagesById: pById } =
+        await fetchWithStudentAuth(GET_EXAM_QUESTIONS_URL, { assignmentId: freshAssignment.id });
+
+      const flat = [];
+      (foundPaper.sections || []).forEach((s) => {
+        (s.questionRefs || []).forEach((r) => {
+          flat.push({ questionId: r.questionId, bank: s.bank, passageId: s.passageId || null, choiceDisplayOrder: r.choiceDisplayOrder || null });
+        });
+      });
+
+      const startedAttempt = await AT.startAttempt(freshAssignment, foundPaper);
+
+      setPaper(foundPaper);
+      setFlatQuestions(flat);
+      setSanitizedQuestionsById(sanitizedById);
+      setPassagesById(pById);
+      setAttempt(startedAttempt);
+    } catch (e) {
+      setErr(String(e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [assignment.id]);
+  useEffect(() => () => { if (subjectiveTimerRef.current) clearTimeout(subjectiveTimerRef.current); }, []);
+
+  if (loading) return html`<${Empty} text="불러오는 중..." />`;
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}<div style=${{ marginTop: 10 }}><${BackBtn} onClick=${onExit} /></div></div>`;
+
+  const readOnly = attempt.status !== "IN_PROGRESS";
+  const total = flatQuestions.length;
+  const cur = flatQuestions[currentIndex];
+  const curQ = cur ? sanitizedQuestionsById[cur.questionId] : null;
+  const curPassage = cur && cur.bank === "reading" && cur.passageId ? passagesById[cur.passageId] : null;
+  const answers = attempt.answers || {};
+  const unansweredCount = flatQuestions.filter((q) => {
+    const v = answers[q.questionId];
+    return v === undefined || v === null || v === "";
+  }).length;
+
+  async function persistAnswer(questionId, value) {
+    setSavingAnswer(true); setSaveError("");
+    try {
+      const updated = await AT.saveAnswer(attempt, questionId, value);
+      setAttempt(updated);
+    } catch (e) {
+      setSaveError("답안 저장에 실패했어요: " + String(e.message || e));
+    } finally {
+      setSavingAnswer(false);
+    }
+  }
+
+  function pickMc(displayIdx) {
+    if (readOnly || !cur) return;
+    const original = displayIndexToOriginal(cur.choiceDisplayOrder, displayIdx);
+    // optimistic local update so the click feels instant, then persist
+    setAttempt((a) => ({ ...a, answers: { ...a.answers, [cur.questionId]: original } }));
+    persistAnswer(cur.questionId, original);
+  }
+
+  function typeSubjective(text) {
+    if (readOnly || !cur) return;
+    const questionId = cur.questionId;
+    setAttempt((a) => ({ ...a, answers: { ...a.answers, [questionId]: text } }));
+    if (subjectiveTimerRef.current) clearTimeout(subjectiveTimerRef.current);
+    subjectiveTimerRef.current = setTimeout(() => persistAnswer(questionId, text), 600);
+  }
+
+  async function handleSubmit() {
+    setSubmitting(true); setSaveError("");
+    try {
+      const submittedAttempt = await AT.submitAttempt(attempt);
+      // 정답은 제출(SUBMITTED)된 뒤에만, 그것도 본인 attempt에 한해 받아온다(getExamAnswersForGrading이
+      // 서버에서 강제) — 응시 도중에는 이 요청 자체가 존재하지 않는다.
+      const { questionsById: rawById } = await fetchWithStudentAuth(GET_EXAM_ANSWERS_URL, { attemptId: submittedAttempt.id });
+      const graded = await AT.gradeAttempt(submittedAttempt, rawById);
+      setAttempt(graded);
+      setSubmitted(true);
+    } catch (e) {
+      setSaveError("제출에 실패했어요: " + String(e.message || e));
+    } finally {
+      setSubmitting(false);
+      setShowSubmitConfirm(false);
+    }
+  }
+
+  if (submitted) {
+    return html`
+      <div>
+        <${Card} style=${{ textAlign: "center", padding: 28 }}>
+          <div style=${{ fontSize: 30, marginBottom: 10 }}>✅</div>
+          <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 8 }}>시험이 제출되었습니다.</div>
+          <div style=${{ fontSize: 12.5, color: C.slate }}>결과는 선생님이 확인한 뒤 알려드려요.</div>
+        <//>
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${onExit}>목록으로<//>
+      </div>
+    `;
+  }
+
+  if (!cur) return html`<div style=${{ fontSize: 13, color: C.slate }}>문제가 없는 시험지예요.<${BackBtn} onClick=${onExit} /></div>`;
+
+  const { displayChoices } = EP.resolveQuestionForDisplay(curQ, cur.choiceDisplayOrder);
+  const selectedOriginal = answers[cur.questionId];
+  const selectedDisplayIdx = curQ.answerFormat === "mc" ? originalToDisplayIndex(cur.choiceDisplayOrder, selectedOriginal) : -1;
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onExit} />
+      ${readOnly && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>이미 제출된 시험이에요. 답을 바꿀 수 없어요.</div>`}
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+        <div style=${{ ...serif, fontSize: 16, color: C.navy }}>${paper.title}</div>
+        <div style=${{ fontSize: 12, color: C.slate }}>${currentIndex + 1} / ${total}</div>
+      </div>
+
+      ${curPassage && html`
+        <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${curPassage.title}</div>
+          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${curPassage.passageText}</div>
+        <//>
+      `}
+
+      <${Card}>
+        <div style=${{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, marginBottom: 12 }}>${currentIndex + 1}. ${curQ.questionText}</div>
+        ${curQ.answerFormat === "mc"
+          ? html`
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+              ${displayChoices.map((c, i) => html`
+                <button key=${i} type="button" disabled=${readOnly} onClick=${() => pickMc(i)}
+                  style=${{
+                    textAlign: "left", padding: "10px 12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer",
+                    border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
+                    background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
+                    fontSize: 12.5, color: C.ink,
+                  }}>${i + 1}. ${c}<//>
+              `)}
+            </div>
+          `
+          : html`<textarea style=${{ ...inputStyle, minHeight: 90 }} disabled=${readOnly} value=${selectedOriginal || ""} onChange=${(e) => typeSubjective(e.target.value)} placeholder="답을 입력하세요" />`}
+      <//>
+      ${savingAnswer && html`<div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>저장 중...</div>`}
+      ${saveError && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${saveError}</div>`}
+
+      <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+        ${flatQuestions.map((q, i) => html`
+          <button key=${q.questionId + i} type="button" onClick=${() => setCurrentIndex(i)}
+            style=${{
+              width: 30, height: 30, borderRadius: "50%", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+              border: i === currentIndex ? `2px solid ${C.navy}` : `1px solid ${C.line}`,
+              background: (answers[q.questionId] !== undefined && answers[q.questionId] !== null && answers[q.questionId] !== "") ? "#E1EEE4" : C.white,
+              color: C.ink,
+            }}>${i + 1}<//>
+        `)}
+      </div>
+
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <${Button} variant="ghost" onClick=${() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled=${currentIndex === 0}>◀ 이전<//>
+        ${currentIndex < total - 1
+          ? html`<${Button} variant="ghost" onClick=${() => setCurrentIndex((i) => Math.min(total - 1, i + 1))}>다음 ▶<//>`
+          : html`<${Button} variant="gold" onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>시험 제출<//>`}
+      </div>
+
+      ${showSubmitConfirm && html`
+        <${Modal} onClose=${() => !submitting && setShowSubmitConfirm(false)}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 10 }}>시험을 제출할까요?</div>
+          <div style=${{ fontSize: 12.5, color: C.ink, marginBottom: 16, lineHeight: 1.6 }}>
+            ${unansweredCount > 0
+              ? `아직 답하지 않은 문제가 ${unansweredCount}개 있습니다. 그래도 제출하시겠습니까?`
+              : "시험을 제출하면 답안을 수정할 수 없습니다. 제출하시겠습니까?"}
+          </div>
+          <div style=${{ display: "flex", gap: 8 }}>
+            <${Button} variant="ghost" style=${{ flex: 1, justifyContent: "center" }} onClick=${() => setShowSubmitConfirm(false)} disabled=${submitting}>취소<//>
+            <${Button} variant="gold" style=${{ flex: 1, justifyContent: "center" }} onClick=${handleSubmit} disabled=${submitting}>${submitting ? "제출 중..." : "제출하기"}<//>
+          </div>
+        <//>
+      `}
+    </div>
+  `;
+}
+
+// Phase 9-D — 이전에는 EP.listExamPapers()로 전체 시험지를 직접 읽어와 "문제 N개" 표시용으로만
+// 조인했다. examPapers는 이제 student/parent에게 직접 read 권한이 없으므로(firestore.rules),
+// getMyExamPaperSummaries Cloud Function이 이 학생에게 실제 배정된 시험지들의 title/
+// totalQuestionCount만(문제 본문/정답 없이) 서버에서 골라 돌려준다.
+function StudentExamListSection({ student }) {
+  const AS = window.SarahServices.examAssignmentService;
+  const [assignments, setAssignments] = useState(null);
+  const [papers, setPapers] = useState([]);
+  const [err, setErr] = useState("");
+  const [activeAssignment, setActiveAssignment] = useState(null);
+
+  async function load() {
+    try {
+      const [a, summaries] = await Promise.all([AS.listStudentAssignments(student.id), fetchWithStudentAuth(GET_MY_EXAM_PAPER_SUMMARIES_URL, {})]);
+      setAssignments([...a].sort((x, y) => (y.assignedAt || 0) - (x.assignedAt || 0)));
+      setPapers(Object.values(summaries.papers || {}));
+    } catch (e) {
+      setErr("불러오지 못했어요: " + String(e.message || e));
+    }
+  }
+  useEffect(() => { load(); }, [student.id]);
+
+  if (activeAssignment) {
+    return html`<${StudentExamRuntime} assignment=${activeAssignment} onExit=${() => { setActiveAssignment(null); load(); }} />`;
+  }
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (assignments === null) return html`<${Empty} text="불러오는 중..." />`;
+  if (assignments.length === 0) return html`<${Empty} text="배정된 시험이 없어요." />`;
+
+  const paperById = {};
+  papers.forEach((p) => { paperById[p.id] = p; });
+
+  // ASSIGNED/IN_PROGRESS만 실제 응시 런타임으로 연결한다(§1/§2). SUBMITTED/GRADED의 "결과 보기"는
+  // 8-F 범위라 아직 안내만 띄운다 — 존재하지 않는 화면으로 이동시키지 않는다.
+  function handleAction(assignment) {
+    if (assignment.status === "ASSIGNED" || assignment.status === "IN_PROGRESS") {
+      setActiveAssignment(assignment);
+    } else {
+      alert("결과 상세 화면은 다음 업데이트에서 제공될 예정이에요.");
+    }
+  }
+
+  return html`
+    <div>
+      ${assignments.map((a) => html`<${StudentExamCard} key=${a.id} assignment=${a} paper=${paperById[a.examPaperId]} onAction=${handleAction} />`)}
+    </div>
+  `;
+}
 
 function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData, dataCache, onLogout, sharedDriveFolderLink }) {
   const [tab, setTab] = useState(null); // null = home (icon grid); otherwise one of STUDENT_HOME_ACTIONS' keys
@@ -10157,6 +11277,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
+      ${tab === "exams" && html`<${StudentExamListSection} student=${student} />`}
     </div>
   `;
 }

@@ -382,7 +382,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   };
 }
 
@@ -976,6 +976,302 @@ exports.sendTestNotification = onRequest(
       res.status(200).json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: "테스트 알림 전송 중 오류가 발생했습니다.", detail: String(e) });
+    }
+  }
+);
+
+// ── Phase 9-A: Teacher 로그인에 Firebase Auth 세션을 백그라운드로 붙이기 위한 배관 ──
+// 기존 passcode 로그인(index.html의 TeacherLogin, sarahsEnglishMeta/main.teacherAuth.passcode를
+// 클라이언트가 직접 비교) 방식은 그대로 둔다 — 이 함수는 그 로그인을 대체하지 않고, 로그인이
+// 이미 성공한 뒤에 클라이언트가 추가로 호출해서 같은 passcode를 서버(Admin SDK)에서 한 번 더
+// 검증하고, 맞으면 { role: "teacher" } 커스텀 클레임이 실린 Firebase Custom Token을 돌려준다.
+// 이 함수가 실패해도(네트워크, 이 함수 자체 오류 등) 클라이언트 쪽 기존 로그인은 이미 끝난
+// 뒤라 전혀 영향받지 않는다(index.html의 syncTeacherFirebaseAuth 참고).
+// Firestore Rules는 이 Phase에서 아직 그대로 열려 있다 — 이 함수 하나만으로는 어떤 데이터
+// 접근도 새로 막거나 열지 않는다. teacher 역할은 교사가 한 명뿐인 현재 구조를 그대로 반영해
+// 고정 UID를 쓴다(다중 교사 계정은 이 구조의 범위 밖).
+const TEACHER_AUTH_UID = "teacher";
+exports.teacherLogin = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { passcode } = req.body || {};
+    if (!passcode) { res.status(400).json({ error: "passcode가 필요합니다." }); return; }
+
+    try {
+      const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+      const stored = metaSnap.exists ? (metaSnap.data().teacherAuth || {}).passcode : null;
+      if (!stored || passcode !== stored) {
+        res.status(401).json({ error: "비밀번호가 맞지 않습니다." });
+        return;
+      }
+      const token = await admin.auth().createCustomToken(TEACHER_AUTH_UID, { role: "teacher" });
+      res.status(200).json({ token });
+    } catch (e) {
+      // 비밀번호/토큰 값은 절대 로그에 남기지 않는다 — 에러 코드/메시지만.
+      console.error("teacherLogin error:", e && e.code, e && e.message);
+      res.status(500).json({ error: "인증 토큰 발급 중 오류가 발생했습니다." });
+    }
+  }
+);
+
+// ── Phase 9-C: Student/Parent 로그인에도 teacherLogin과 동일한 배관을 붙인다 ──
+// 기존 studentCode/parentCode 문자열 비교 로그인(index.html의 StudentParentLogin, roster를
+// 클라이언트가 이미 들고 있는 방식)은 절대 바꾸지 않는다 — 이 함수는 그 로그인이 이미 성공한
+// 뒤에 클라이언트가 추가로 호출해서 같은 코드를 서버(Admin SDK)에서 roster와 다시 대조하고,
+// studentCode로 맞으면 role:"student", parentCode로 맞으면 role:"parent"인 Custom Token을
+// 돌려준다. 두 역할이 같은 studentId를 공유하더라도 UID는 role별로 분리한다("student_"/
+// "parent_" 접두사) — 학생과 학부모는 서로 다른 세션/기기로 로그인하는 별개의 신원이라, 같은
+// UID를 공유시키면 나중에(9-D) "이 학생 본인만" 같은 규칙을 규칙 하나로 표현하기 어려워진다.
+// 이 함수가 실패해도 기존 로그인은 이미 끝난 뒤라 전혀 영향받지 않는다(§9-A와 동일한 원칙,
+// index.html의 syncStudentFirebaseAuth 참고). Firestore Rules는 이 Phase에서 손대지 않는다.
+exports.studentLogin = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { code } = req.body || {};
+    if (!code) { res.status(400).json({ error: "code가 필요합니다." }); return; }
+
+    try {
+      const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+      const roster = metaSnap.exists ? (metaSnap.data().roster || []) : [];
+      const asStudent = roster.find((r) => r.studentCode === code);
+      const asParent = !asStudent ? roster.find((r) => r.parentCode === code) : null;
+      if (!asStudent && !asParent) {
+        res.status(401).json({ error: "코드가 맞지 않습니다." });
+        return;
+      }
+      const role = asStudent ? "student" : "parent";
+      const studentId = (asStudent || asParent).id;
+      const uid = (role === "student" ? "student_" : "parent_") + studentId;
+      const token = await admin.auth().createCustomToken(uid, { role, studentId });
+      res.status(200).json({ token });
+    } catch (e) {
+      // 코드/토큰 값은 절대 로그에 남기지 않는다 — 에러 코드/메시지만.
+      console.error("studentLogin error:", e && e.code, e && e.message);
+      res.status(500).json({ error: "인증 토큰 발급 중 오류가 발생했습니다." });
+    }
+  }
+);
+
+// ── Phase 9-D: Question Bank 보안 ──
+// StudentExamRuntime/StudentExamListSection이 grammarQuestions/readingQuestions/readingPassages/
+// examPapers를 통째로 직접 읽던 기존 구조(QB.listGrammarQuestions() 등, 전체 문제은행이 그대로
+// 브라우저에 내려감)를 걷어내고, 이 세 함수로 좁힌다. firestore.rules는 이 네 컬렉션에 대한
+// student/parent 직접 read를 전부 막으므로(아래 Rules 변경 참고), 클라이언트가 필요한 문제만
+// 얻을 수 있는 유일한 경로가 이 함수들이다 — Admin SDK는 Rules를 우회하지만, 그 대신 여기서
+// request.auth(ID Token)와 studentId 소유권을 직접 검증한다(이게 유일한 방어선).
+//
+// 정답(answer)/해설(explanation) 등 채점 관련 정보는 시험 응시 중에는 절대 내려주지 않는다 —
+// getExamQuestionsForAttempt는 항상 sanitize된 필드만 반환한다. examAttemptService의 채점 로직은
+// 이번 Phase에서 서버로 옮기지 않으므로(§9-D 승인 범위 — Phase 10 후보), 채점 자체는 여전히
+// 클라이언트에서 일어난다. 다만 정답이 필요한 시점(제출 후 즉시 자동채점)까지는 늦춰
+// getExamAnswersForGrading을 별도로 두고, 그 함수는 "이 학생 본인의 attempt"이면서 "이미
+// SUBMITTED된 attempt"에 대해서만 정답을 내준다 — 응시 도중에는 어떤 경로로도 정답이 클라이언트에
+// 닿지 않는다(기존 8-D 구현의 알려진 한계 — 전체 문제은행 raw 문서가 로드 시점에 이미 브라우저에
+// 와 있던 것 — 를 실제로 해소한다).
+async function verifyStudentOrParent(req) {
+  const authHeader = req.headers.authorization || "";
+  const m = /^Bearer (.+)$/.exec(authHeader);
+  if (!m) {
+    const err = new Error("인증 토큰이 없습니다.");
+    err.status = 401;
+    throw err;
+  }
+  let decoded;
+  try {
+    decoded = await admin.auth().verifyIdToken(m[1]);
+  } catch (e) {
+    const err = new Error("인증 토큰이 유효하지 않습니다.");
+    err.status = 401;
+    throw err;
+  }
+  if (!decoded.studentId || (decoded.role !== "student" && decoded.role !== "parent")) {
+    const err = new Error("학생/학부모 권한이 필요합니다.");
+    err.status = 403;
+    throw err;
+  }
+  return { uid: decoded.uid, role: decoded.role, studentId: decoded.studentId };
+}
+
+// index.html의 sanitizeQuestionForStudent()와 동일한 화이트리스트를 서버에서 한 번 더 강제한다 —
+// 클라이언트 쪽 sanitize는 신뢰 경계가 아니다(이 함수가 유일한 신뢰 경계).
+function sanitizeQuestionForStudentServer(qDoc) {
+  return {
+    id: qDoc.id,
+    questionText: qDoc.questionText || "",
+    choices: qDoc.choices || [],
+    answerFormat: qDoc.answerFormat || "subjective",
+    questionType: qDoc.questionType || "",
+  };
+}
+
+// input: { assignmentId } — attemptId가 아니라 assignmentId로 키를 잡는다. 이유: 시험을 처음
+// 시작할 때는 아직 attempt 문서 자체가 없고(examAttemptService.startAttempt가 클라이언트에서
+// 만든다, 이번 Phase에서 손대지 않음), attempt를 만들려면 paper.sections(문제 개수 계산용)가
+// 먼저 있어야 한다 — attemptId를 요구하면 최초 진입 시 순환 참조가 생긴다. assignmentId는 항상
+// 이미 알고 있고(학생이 여는 배정 그 자체), 소유권 검증 기준도 동일하게 명확하다.
+exports.getExamQuestionsForAttempt = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { assignmentId } = req.body || {};
+    if (!assignmentId) { res.status(400).json({ error: "assignmentId가 필요합니다." }); return; }
+
+    try {
+      const caller = await verifyStudentOrParent(req);
+
+      const assignSnap = await db.collection("examAssignments").doc(assignmentId).get();
+      if (!assignSnap.exists) { res.status(404).json({ error: "배정을 찾을 수 없습니다." }); return; }
+      const assignment = assignSnap.data();
+      if (assignment.studentId !== caller.studentId) {
+        res.status(403).json({ error: "본인에게 배정된 시험만 조회할 수 있습니다." });
+        return;
+      }
+
+      const paperSnap = await db.collection("examPapers").doc(assignment.examPaperId).get();
+      if (!paperSnap.exists || paperSnap.data().status !== "FINALIZED") {
+        res.status(404).json({ error: "시험지를 찾을 수 없거나 아직 확정(FINALIZED)되지 않았어요." });
+        return;
+      }
+      const paper = paperSnap.data();
+      const sections = paper.sections || [];
+
+      const questionIds = new Set();
+      const passageIds = new Set();
+      sections.forEach((s) => {
+        (s.questionRefs || []).forEach((r) => questionIds.add(r.questionId));
+        if (s.bank === "reading" && s.passageId) passageIds.add(s.passageId);
+      });
+
+      const [grammarSnaps, readingSnaps, passageSnaps] = await Promise.all([
+        Promise.all([...questionIds].map((id) => db.collection("grammarQuestions").doc(id).get())),
+        Promise.all([...questionIds].map((id) => db.collection("readingQuestions").doc(id).get())),
+        Promise.all([...passageIds].map((id) => db.collection("readingPassages").doc(id).get())),
+      ]);
+
+      const questionsById = {};
+      grammarSnaps.forEach((snap) => { if (snap.exists) questionsById[snap.id] = sanitizeQuestionForStudentServer({ id: snap.id, ...snap.data() }); });
+      readingSnaps.forEach((snap) => { if (snap.exists) questionsById[snap.id] = sanitizeQuestionForStudentServer({ id: snap.id, ...snap.data() }); });
+
+      const passagesById = {};
+      passageSnaps.forEach((snap) => {
+        if (!snap.exists) return;
+        const d = snap.data();
+        passagesById[snap.id] = { id: snap.id, title: d.title || "", passageText: d.passageText || "" };
+      });
+
+      res.status(200).json({
+        paper: { id: paperSnap.id, title: paper.title || "", sections },
+        questionsById,
+        passagesById,
+      });
+    } catch (e) {
+      const status = e.status || 500;
+      if (status === 500) console.error("getExamQuestionsForAttempt error:", e && e.code, e && e.message);
+      res.status(status).json({ error: status === 500 ? "문제를 불러오는 중 오류가 발생했습니다." : e.message });
+    }
+  }
+);
+
+// input: { attemptId } — attempt가 "본인 것"이면서 이미 "SUBMITTED"(또는 그 이후 GRADED) 상태일
+// 때만 정답을 내준다. 응시 도중(IN_PROGRESS)에는 어떤 요청을 보내도 거부된다 — 정답을 미리 훔쳐볼
+// 수 없게 하는 것이 이 함수의 핵심 목적. computeGrading()이 실제로 쓰는 필드(answerFormat, answer)
+// 만 반환하고 explanation/wrongChoiceExplanations 등은 애초에 포함하지 않는다(학생 화면에는 어차피
+// 노출되지 않는 필드 — ExamResultDetail은 Teacher 전용, StudentDash/StudentExamRuntime에서 재사용
+// 안 함).
+exports.getExamAnswersForGrading = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    const { attemptId } = req.body || {};
+    if (!attemptId) { res.status(400).json({ error: "attemptId가 필요합니다." }); return; }
+
+    try {
+      const caller = await verifyStudentOrParent(req);
+
+      const attemptSnap = await db.collection("examAttempts").doc(attemptId).get();
+      if (!attemptSnap.exists) { res.status(404).json({ error: "응시 기록을 찾을 수 없습니다." }); return; }
+      const attempt = attemptSnap.data();
+      if (attempt.studentId !== caller.studentId) {
+        res.status(403).json({ error: "본인의 시험만 조회할 수 있습니다." });
+        return;
+      }
+      if (attempt.status === "IN_PROGRESS") {
+        res.status(403).json({ error: "제출 전에는 정답을 조회할 수 없습니다." });
+        return;
+      }
+
+      const paperSnap = await db.collection("examPapers").doc(attempt.examPaperId).get();
+      const sections = paperSnap.exists ? (paperSnap.data().sections || []) : [];
+      const questionIds = new Set();
+      sections.forEach((s) => (s.questionRefs || []).forEach((r) => questionIds.add(r.questionId)));
+
+      const [grammarSnaps, readingSnaps] = await Promise.all([
+        Promise.all([...questionIds].map((id) => db.collection("grammarQuestions").doc(id).get())),
+        Promise.all([...questionIds].map((id) => db.collection("readingQuestions").doc(id).get())),
+      ]);
+
+      const questionsById = {};
+      grammarSnaps.forEach((snap) => { if (snap.exists) questionsById[snap.id] = { id: snap.id, answerFormat: snap.data().answerFormat, answer: snap.data().answer }; });
+      readingSnaps.forEach((snap) => { if (snap.exists) questionsById[snap.id] = { id: snap.id, answerFormat: snap.data().answerFormat, answer: snap.data().answer }; });
+
+      res.status(200).json({ questionsById });
+    } catch (e) {
+      const status = e.status || 500;
+      if (status === 500) console.error("getExamAnswersForGrading error:", e && e.code, e && e.message);
+      res.status(status).json({ error: status === 500 ? "채점 정보를 불러오는 중 오류가 발생했습니다." : e.message });
+    }
+  }
+);
+
+// StudentExamListSection의 "문제 N개" 표시용 — examPapers 전체가 아니라, 이 학생에게 실제로
+// 배정된 examAssignments가 참조하는 시험지들의 title/totalQuestionCount만 골라서 반환한다.
+// 문제 본문/정답은 이 함수에 전혀 포함되지 않는다(그건 위 두 함수만의 몫).
+exports.getMyExamPaperSummaries = onRequest(
+  { region: "us-central1", cors: false },
+  async (req, res) => {
+    const headers = corsHeaders(req.headers.origin);
+    Object.entries(headers).forEach(([k, v]) => res.set(k, v));
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+
+    try {
+      const caller = await verifyStudentOrParent(req);
+
+      const assignSnap = await db.collection("examAssignments").where("studentId", "==", caller.studentId).get();
+      const paperIds = new Set();
+      assignSnap.forEach((doc) => { const d = doc.data(); if (d.examPaperId) paperIds.add(d.examPaperId); });
+
+      const paperSnaps = await Promise.all([...paperIds].map((id) => db.collection("examPapers").doc(id).get()));
+      const papers = {};
+      paperSnaps.forEach((snap) => {
+        if (!snap.exists) return;
+        const d = snap.data();
+        papers[snap.id] = { id: snap.id, title: d.title || "", totalQuestionCount: d.totalQuestionCount || 0 };
+      });
+
+      res.status(200).json({ papers });
+    } catch (e) {
+      const status = e.status || 500;
+      if (status === 500) console.error("getMyExamPaperSummaries error:", e && e.code, e && e.message);
+      res.status(status).json({ error: status === 500 ? "시험지 정보를 불러오는 중 오류가 발생했습니다." : e.message });
     }
   }
 );

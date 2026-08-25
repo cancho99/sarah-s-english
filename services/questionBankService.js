@@ -437,6 +437,9 @@ window.SarahServices = window.SarahServices || {};
       if (filters.source && (q.source && q.source.type) !== filters.source) return false;
       if (filters.status && filters.status.length && !filters.status.includes(q.status)) return false;
       if (filters.tags && filters.tags.length && !filters.tags.every((t) => (q.tags || []).includes(t))) return false;
+      // Exam Builder dedup (Phase 8 prep) — lets auto-select and the manual picker exclude questionIds
+      // already referenced by the exam paper being built. No-op for every other caller that doesn't pass it.
+      if (filters.excludeIds && filters.excludeIds.length && filters.excludeIds.includes(q.id)) return false;
       if (filters.search) {
         const needle = filters.search.toLowerCase();
         // title/passageText only exist on Passage docs, topic only on Passage — harmless no-ops on

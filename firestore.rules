@@ -1,0 +1,126 @@
+// Phase 9-B (2026-08-25) — Teacher-only 쓰기 잠금의 첫 단계. Phase 9-D(2026-08-25)에서 시험
+// 응시 경로(examAssignments/examAttempts/Question Bank 4종)를 실제 소유권 기반으로 좁혔다 —
+// 아래 각 섹션의 주석에 Phase 표기.
+//
+// 원칙:
+// - request.auth.token.role/studentId는 teacherLogin/studentLogin Cloud Function(functions/
+//   index.js)이 발급한 Custom Token을 통해서만 생긴다(services 레이어와 무관 — Rules는 오직 이
+//   토큰 클레임만 본다). teacher 토큰은 role만, student/parent 토큰은 role+studentId를 갖는다.
+// - sarahsEnglishMeta/sarahsEnglishStudents 등 이번에도 다루지 않는 나머지 컬렉션은 기존과 동일
+//   하게 완전 개방 상태를 유지한다 — 와일드카드(match /{document=**})를 쓰지 않고 하나하나
+//   나열한 이유: Firestore Rules는 "이 경로에 매치되는 규칙 중 하나라도 allow하면 허용"이므로,
+//   와일드카드 catch-all을 함께 두면 위의 제한들이 전부 무력화된다.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTeacher() {
+      return request.auth != null && request.auth.token.role == "teacher";
+    }
+    function isOwnStudent() {
+      return request.auth != null
+        && (request.auth.token.role == "student" || request.auth.token.role == "parent")
+        && request.auth.token.studentId != null;
+    }
+
+    // ── Phase 9-D: Question Bank 4종 — student/parent 직접 read 전면 차단 ──
+    // StudentExamRuntime/StudentExamListSection은 더 이상 이 컬렉션들을 직접 읽지 않는다
+    // (functions/index.js의 getExamQuestionsForAttempt/getExamAnswersForGrading/
+    // getMyExamPaperSummaries가 Admin SDK로 대신 읽어 sanitize한 뒤 돌려준다 — Admin SDK는
+    // 이 Rules 자체를 우회하므로 여기서 막아도 그 세 함수는 영향받지 않는다). teacher만 읽고
+    // 쓸 수 있다 — 9-B의 "읽기는 열어둔다"는 그 경로가 아직 있을 때의 임시 조치였고, 이제는
+    // 그 경로 자체가 없다.
+    match /grammarQuestions/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /readingQuestions/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /readingPassages/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /examPapers/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+
+    // ── Phase 9-D: examAssignments — 본인 배정만 read, 상태 전이만 update ──
+    // create/delete는 teacher만(9-B와 동일, 변화 없음). update는 teacher 전체 허용 + 학생 본인
+    // 소유(studentId 일치) 배정에 한해 "정확히 examAssignmentService.STATUS_ORDER가 이미
+    // 허용하는 세 전이"(ASSIGNED→IN_PROGRESS: startAttempt, IN_PROGRESS→SUBMITTED:
+    // submitAttempt, SUBMITTED→GRADED: gradeAttempt — 셋 다 학생 세션에서 직접 호출되는 기존
+    // 8-A/8-B 로직, 손대지 않음)만 허용하고, studentId/examPaperId 등 다른 필드 변경이나 임의
+    // 상태 값 전이는 전부 거부한다("학생/학부모의 임의 create/update/delete는 차단"의 의미를
+    // "기존 응시 흐름이 실제로 쓰는 전이 세 가지 외에는 전부 거부"로 구현).
+    match /examAssignments/{id} {
+      allow read: if isTeacher() || (isOwnStudent() && request.auth.token.studentId == resource.data.studentId);
+      allow create: if isTeacher();
+      allow update: if isTeacher() || (
+        isOwnStudent() &&
+        request.auth.token.studentId == resource.data.studentId &&
+        request.resource.data.studentId == resource.data.studentId &&
+        request.resource.data.examPaperId == resource.data.examPaperId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "attemptId", "updatedAt"]) &&
+        (
+          (resource.data.status == "ASSIGNED" && request.resource.data.status == "IN_PROGRESS") ||
+          (resource.data.status == "IN_PROGRESS" && request.resource.data.status == "SUBMITTED") ||
+          (resource.data.status == "SUBMITTED" && request.resource.data.status == "GRADED")
+        )
+      );
+      allow delete: if isTeacher();
+    }
+
+    // ── Phase 9-D: examAttempts — 본인 것만 read, IN_PROGRESS 동안만 답안 저장, 제출 후
+    // answers 불변, delete는 아무도 못 함(영구 기록) ──
+    // saveAnswer(IN_PROGRESS 유지, answers만 변경) / submitAttempt(IN_PROGRESS→SUBMITTED,
+    // answers 불변) / gradeAttempt(SUBMITTED→GRADED, answers 불변, results/score 등은 이 세
+    // 전이 각각에서 자유롭게 채워짐)만 허용 — "SUBMITTED 이후 학생의 직접 수정은 Rules 레벨에서
+    // 차단"의 실제 보안 목표는 "제출된 답안(answers)이 다시는 바뀌지 않는다"이므로, 그 필드만
+    // 불변으로 강제하고, 제출 직후 클라이언트가 스스로 채점해 GRADED로 넘기는 기존 8-A 흐름
+    // (examAttemptService.gradeAttempt, 손대지 않음)은 그대로 허용한다.
+    match /examAttempts/{id} {
+      allow read: if isTeacher() || (isOwnStudent() && request.auth.token.studentId == resource.data.studentId);
+      allow create: if isTeacher() || (
+        request.auth != null && request.auth.token.role == "student" &&
+        request.resource.data.studentId == request.auth.token.studentId
+      );
+      allow update: if isTeacher() || (
+        isOwnStudent() &&
+        request.auth.token.studentId == resource.data.studentId &&
+        (
+          (resource.data.status == "IN_PROGRESS" && request.resource.data.status == "IN_PROGRESS") ||
+          (resource.data.status == "IN_PROGRESS" && request.resource.data.status == "SUBMITTED" &&
+           request.resource.data.answers == resource.data.answers) ||
+          (resource.data.status == "SUBMITTED" && request.resource.data.status == "GRADED" &&
+           request.resource.data.answers == resource.data.answers)
+        )
+      );
+      allow delete: if false;
+    }
+
+    // ── Phase 9-D: sarahsEnglishStudents — 본인 문서만 read/write, 타 학생 문서는 전면 거부 ──
+    // teacher는 전체 접근(기존과 동일). student/parent는 studentId가 문서 ID와 일치할 때만
+    // read/write 둘 다 허용한다("student/parent는 자신의 studentId 문서만 접근" — read/write를
+    // 구분하지 않았으므로 둘 다 열어둔다, ParentDash도 실제로 updateData()를 호출하는 흐름이
+    // 있을 수 있어 write를 막으면 기존 기능 회귀 위험이 있다). 위험 요소: 이 컬렉션은 숙제/단어
+    // /자료/로드맵/수업료 등 거의 모든 학생 기능이 거쳐가는 핵심 경로이고, syncStudentFirebaseAuth
+    // (9-C)는 "실패해도 기존 로그인은 막지 않는다"는 fire-and-forget 설계다 — 즉 어떤 이유로든
+    // 백그라운드 Auth 동기화가 실패하면 이 Rule 때문에 학생 기능 자체가 막힐 수 있다. 9-C에서 teacher/
+    // 실제 학생·학부모 로그인 모두 Auth 세션이 정상적으로 붙는 것을 이미 실측 확인했지만, 완전히 새로운
+    // 실패 모드(네트워크 불안정, 브라우저의 서드파티 스토리지 차단 등)까지 배제하지는 못한다 — 배포 직후
+    // 실제 학생 세션에서의 회귀 확인이 특히 중요한 이유.
+    match /sarahsEnglishStudents/{studentId} {
+      allow read, write: if isTeacher() || (isOwnStudent() && request.auth.token.studentId == studentId);
+    }
+
+    // ── 이번 Phase에서 손대지 않는 나머지 컬렉션 — 기존과 동일하게 완전 개방 유지 ──
+    match /sarahsEnglishMeta/{id} { allow read, write: if true; }
+    match /sarahsEnglishWordbank/{id} { allow read, write: if true; }
+    match /passageArchive/{id} { allow read, write: if true; }
+    match /readingLibrary/{id} { allow read, write: if true; }
+    match /readingVocab/{id} { allow read, write: if true; }
+    match /readingJournal/{id} { allow read, write: if true; }
+    match /materialsLibrary/{id} { allow read, write: if true; }
+    match /sharedMaterialsLibrary/{id} { allow read, write: if true; }
+    match /materialDownloadLog/{id} { allow read, write: if true; }
+  }
+}
