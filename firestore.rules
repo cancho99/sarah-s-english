@@ -119,6 +119,10 @@ service cloud.firestore {
     match /readingLibrary/{id} { allow read, write: if true; }
     match /readingVocab/{id} { allow read, write: if true; }
     match /readingJournal/{id} { allow read, write: if true; }
+    // Teacher OS 세션 7(2026-08-25) 버그 수정 — readingActivity(Phase 4, reading-library.html이
+    // 소유)만 이 "완전 개방" 목록에서 누락돼 있었다. 형제 컬렉션(readingLibrary/readingVocab/
+    // readingJournal)과 똑같이 취급한다 — 다른 규칙/컬렉션은 건드리지 않음.
+    match /readingActivity/{id} { allow read, write: if true; }
     match /materialsLibrary/{id} { allow read, write: if true; }
     match /sharedMaterialsLibrary/{id} { allow read, write: if true; }
     match /materialDownloadLog/{id} { allow read, write: if true; }
