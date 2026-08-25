@@ -649,6 +649,12 @@ function fmtDate(d) {
     return `${dt.getFullYear()}.${String(dt.getMonth() + 1).padStart(2, "0")}.${String(dt.getDate()).padStart(2, "0")}`;
   } catch { return d; }
 }
+// Teacher OS STEP 13 — "score/total" 표시가 여러 카드에서 반복되는데, regularExams(내신 등
+// 수기 기록)는 total이 없는 자유서식 점수(예: "92점/1등급")라 total이 null일 수 있다. 이 경우
+// "92/null"처럼 깨지지 않도록 total이 있을 때만 분수로, 없으면 score 그대로 보여준다.
+function fmtScoreDisplay(r) {
+  return r.total != null ? `${r.score}/${r.total}` : r.score;
+}
 function fmtDateDay(d) {
   try {
     const dt = new Date(d + "T00:00:00");
@@ -2945,6 +2951,14 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   // Phase 3: seeds ReportsSection's student/tab when Teacher Center's "미작성 Daily Report"
   // card's [작성] button is clicked — see ReportsSection's `initialTarget` prop.
   const [reportsTarget, setReportsTarget] = useState(null);
+  // Teacher OS STEP 9 — Learning → Reading의 "View Growth Report" 버튼이 ReadingAreaSection의
+  // Growth 탭에 학생을 미리 선택해서 넘길 때 쓴다. reportsTarget과 완전히 같은 패턴.
+  const [readingTarget, setReadingTarget] = useState(null);
+  // Teacher OS STEP 10 — Reading → Growth Report의 "View Vocabulary" 버튼이 학생 상세의
+  // Learning → Reading(Vocabulary)까지 딥링크할 때 쓴다. { studentId, tab: "study",
+  // studySub: "reading", nonce } — StudentDetailSection/StudentStudyTab 참고. 이 경로 하나만
+  // "학생 선택 시 항상 Overview부터" 규칙의 예외다(다른 모든 진입 경로는 기존 그대로).
+  const [studentDeepTarget, setStudentDeepTarget] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
@@ -3039,7 +3053,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       category=${studentCategory} setCategory=${setStudentCategory} teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink}
       showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
-      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
+      addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent}
+      onViewGrowthReport=${(id) => { setReadingTarget({ studentId: id, nonce: Date.now() }); setSection("readingArea"); }}
+      deepTarget=${studentDeepTarget} onConsumeDeepTarget=${() => setStudentDeepTarget(null)} />`;
   } else if (section === "lessonArea") {
     body = html`<${LessonAreaSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); }} />`;
@@ -3054,7 +3070,12 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "examHub") {
     body = html`<${ExamHubSection} roster=${roster} updateData=${updateData} />`;
   } else if (section === "readingArea") {
-    body = html`<${ReadingAreaSection} />`;
+    body = html`<${ReadingAreaSection} roster=${roster} initialTarget=${readingTarget}
+      onOpenStudentVocabulary=${(id) => {
+        setStudentDeepTarget({ studentId: id, tab: "study", studySub: "reading", nonce: Date.now() });
+        setSelectedStudentId(id);
+        setSection("studentArea");
+      }} />`;
   } else if (section === "homeworkMgmt") {
     body = html`<${TeacherCenterSection} key="tc-board" roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialView="board"
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
@@ -3066,12 +3087,12 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "examBuilder") {
     body = html`<${QuestionBankSection} key="qb-examBuilder" roster=${roster} initialBank="examBuilder" />`;
   } else if (section === "sarahsOriginal") {
-    // Teacher OS STEP 4 — "Sarah's Original" 최상위 메뉴, 뼈대 단계. ARCHITECTURE.md §14: 별도
-    // 컬렉션이 아니라 기존 grammarQuestions/readingQuestions의 source/status 필터일 뿐이라,
-    // 지금은 기존 "검수 대기"(review) 탭으로 진입시킨다 — Original Questions/Passages/Exams/
-    // Publishing History(필터 프리셋)는 계획서 §8, 별도 STEP에서 추가.
-    body = html`<${QuestionBankSection} key="qb-review" roster=${roster} initialBank="review"
-      examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} updateData=${updateData} />`;
+    // Teacher OS STEP 7 — "Sarah's Original" = Create/Review/My Questions 3탭짜리 Teacher Library.
+    // ARCHITECTURE.md §14: 별도 컬렉션이 아니라 기존 grammarQuestions/readingQuestions의
+    // source/status 필터일 뿐이다(SarahsOriginalSection 정의부 참고). "Add to Exam"은 기존
+    // Exam Builder(= section "examBuilder", QuestionBankSection의 examBuilder 탭)로 이동만
+    // 시킨다 — Exam Builder 자체는 무수정.
+    body = html`<${SarahsOriginalSection} roster=${roster} onNavigateToExamBuilder=${() => setSection("examBuilder")} />`;
   } else if (section === "teacherCenter") {
     body = html`<${TeacherCenterSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
@@ -3096,15 +3117,18 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "examAssignments") {
     body = html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`;
   } else if (section === "reports") {
-    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialTarget=${reportsTarget} />`;
+    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialTarget=${reportsTarget}
+      onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); }} />`;
   } else if (section === "revenue") {
     body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
   } else if (section === "settingsHub") {
-    // Teacher OS STEP 4 — "Settings" 최상위 메뉴, 뼈대 단계(Profile/Business만). Announcements/
-    // Data(공지사항, 저장공간 일괄정리 — 지금 Main Page/mainpage 안에만 있음)는 계획서 §6·§10,
-    // Main Page를 걷어내는 별도 STEP에서 옮긴다 — 지금 옮기면 그 기능이 잠깐이라도 두 자리에
-    // 동시에 존재하게 돼(Main Page가 아직 nav에서만 빠졌지 코드는 안 지웠으므로) 오히려 헷갈린다.
-    body = html`<${SettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
+    // Teacher OS STEP 11 — Announcements/Data 탭 추가. TeacherOverview(Main Page, nav에서 이미
+    // 제거돼 사실상 도달 불가능한 상태로 남아있던 화면)에만 있던 공지사항 편집·저장공간 일괄정리
+    // 로직을 그대로 옮겨왔다(계획서 §6·§10에서 예고됐던 이관을 이제 실행) — 로직 자체는 무수정,
+    // 위치만 옮김.
+    body = html`<${SettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} roster=${roster} ensureData=${ensureData} dataCache=${dataCache}
+      updateData=${updateData} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+      onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); }} />`;
   } else if (section === "settings") {
     body = html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`;
   } else if (section === "schedule") {
@@ -3183,22 +3207,99 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   `;
 }
 
-// Teacher OS STEP 4 — "Settings" 최상위 메뉴. 뼈대 단계라 Profile/Business 2개 탭만(둘 다 기존
-// 컴포넌트 무수정 재사용). Announcements(공지사항)/Data(저장공간 일괄정리)는 지금 TeacherOverview
-// (Main Page) 안에만 있는 기능이라, Main Page를 실제로 걷어내는 별도 STEP에서 그 코드를 그대로
-// 옮겨와 탭 2개를 더 추가할 예정 — 계획서 §6·§10 참고.
+// Teacher OS STEP 11 — Profile/Business/Announcements/Data 4개 탭. Announcements/Data는
+// TeacherOverview(Main Page, nav에서 이미 빠져 사실상 도달 불가능했던 화면)에 있던 로직을 그대로
+// 옮겨왔다 — 새 계산/새 필드 없음, 기존 announcement/saveAnnouncement, sizeInfo 계산,
+// bulkClearOldPhotos()를 그대로 재사용.
 const SETTINGS_SUBTABS = [
   { key: "profile", icon: "👤", label: "Profile" },
   { key: "business", icon: "💰", label: "Business" },
+  { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "data", icon: "🗄", label: "Data" },
 ];
-function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache }) {
+function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache, updateData, announcement, saveAnnouncement, onSelectStudent }) {
   const [tab, setTab] = useState("profile");
   return html`
     <div>
       <${Tabs} tabs=${SETTINGS_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "profile" && html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`}
       ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
+      ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
+      ${tab === "data" && html`<${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
     </div>
+  `;
+}
+
+// TeacherOverview의 공지사항 편집 UI를 그대로 옮김 — annText/submitAnnouncement 로직 무수정.
+function SettingsAnnouncementsPanel({ announcement, saveAnnouncement }) {
+  const [annText, setAnnText] = useState(announcement ? announcement.text : "");
+  const [annSaved, setAnnSaved] = useState(false);
+  useEffect(() => { setAnnText(announcement ? announcement.text : ""); }, [announcement]);
+  async function submitAnnouncement() {
+    await saveAnnouncement(annText.trim());
+    setAnnSaved(true);
+    setTimeout(() => setAnnSaved(false), 2500);
+  }
+  return html`
+    <${Card}>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📢 공지사항</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>여기에 적으신 내용은 학생·학부모 홈 화면 상단에도 표시돼요.</div>
+      <textarea style=${{ ...inputStyle, minHeight: 100 }} value=${annText} onChange=${(e) => setAnnText(e.target.value)} placeholder="예: 8/1~8/3 방학 특강 일정 안내" />
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${submitAnnouncement}>저장<//>
+        ${annSaved && html`<span style=${{ fontSize: 12, color: C.navy }}>저장됐어요.</span>`}
+      </div>
+    <//>
+  `;
+}
+
+// TeacherOverview의 저장공간 일괄정리(sizeInfo 계산 + bulkClearOldPhotos) UI를 그대로 옮김.
+function SettingsDataPanel({ roster, ensureData, dataCache, updateData, onSelectStudent }) {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const LIMIT_KB = 1000;
+  const sizeInfo = roster.map((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const kb = Math.round(new Blob([JSON.stringify(d)]).size / 1024);
+    return { student: s, kb, pct: Math.min(100, Math.round((kb / LIMIT_KB) * 100)) };
+  }).filter((x) => x.pct >= 60).sort((a, b) => b.pct - a.pct);
+
+  async function bulkClearOldPhotos() {
+    if (!confirm("용량이 많이 찬 학생들의 예전 방식(용량이 큰) 사진을 한꺼번에 정리할까요? 숙제 내용과 완료 표시는 그대로 남고, 최근에 올라간 사진(용량이 작은 방식)은 그대로 유지돼요.")) return;
+    for (const { student } of sizeInfo) {
+      const d = dataCache[student.id] || emptyData();
+      const next = {
+        ...d,
+        homework: (d.homework || []).map((h) => {
+          const photos = (h.photos || (h.photo ? [h.photo] : [])).filter((p) => p && photoUrl(p).length < 120000);
+          return { ...withoutLegacyPhoto(h), photos };
+        }),
+      };
+      await updateData(student.id, () => next);
+    }
+  }
+
+  return html`
+    <${Card}>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🗄 저장 공간 관리</div>
+      ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : sizeInfo.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>용량이 많이 찬 학생이 없어요(전체 학생이 ${LIMIT_KB}KB 중 60% 미만).</div>` : html`
+        ${sizeInfo.map((x) => html`
+          <div key=${x.student.id} onClick=${() => onSelectStudent && onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "4px 0", cursor: onSelectStudent ? "pointer" : "default", display: "flex", justifyContent: "space-between" }}>
+            <span>${x.student.name}</span><span style=${{ color: x.pct >= 90 ? C.danger : C.gold, fontWeight: 700 }}>${x.kb}KB (${x.pct}%)</span>
+          </div>
+        `)}
+        <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} onClick=${bulkClearOldPhotos}>예전 방식 사진 한꺼번에 정리<//>
+        <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 Overview 하단 "저장 공간" 탭에서 세부적으로 정리할 수도 있어요.</div>
+      `}
+    <//>
   `;
 }
 
@@ -3850,7 +3951,7 @@ const STUDENT_DETAIL_TABS = [
   { key: "reports", icon: "📨", label: "Reports" },
 ];
 
-function StudentAreaSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary, category, setCategory, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+function StudentAreaSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary, category, setCategory, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, onViewGrowthReport, deepTarget, onConsumeDeepTarget }) {
   // 학생이 선택된 상태가 항상 우선이다 — 앱 곳곳의 onSelectStudent가 예전 습관대로 category까지
   // 같이 넘겨도(예: "homework"), 학생이 선택돼 있으면 그 category는 무시하고 무조건 Overview로
   // 보낸다("학생을 선택하면 첫 화면은 반드시 Overview" 요구사항). category만 있고 학생 선택은
@@ -3866,12 +3967,12 @@ function StudentAreaSection({ roster, saveRosterList, updateStudentRosterEntry, 
     examKeyLibrary=${examKeyLibrary} sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink}
     teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} setCategory=${setCategory}
     showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
-    addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} />`;
+    addErr=${addErr} addStudent=${addStudent} removeStudent=${removeStudent} onViewGrowthReport=${onViewGrowthReport} deepTarget=${deepTarget} onConsumeDeepTarget=${onConsumeDeepTarget} />`;
 }
 
 // 학생 목록 ↔ 학생 상세(StudentDetailSection) 전환만 담당 — 목록/추가 폼은 기존 그대로, 상세는
 // 아래 StudentDetailSection에 위임한다.
-function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, setCategory, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent }) {
+function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, setCategory, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, onViewGrowthReport, deepTarget, onConsumeDeepTarget }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
   // category도 같이 지워야 한다 — 안 지우면, onSelectStudent가 category="homework"까지 같이
   // 세팅해 넘긴 학생을 봤다가 뒤로가기를 눌렀을 때 selectedStudentId만 null이 되고 category는
@@ -3888,7 +3989,7 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
     return html`<${StudentDetailSection} key=${selected.id} student=${selected} roster=${roster} saveRosterList=${saveRosterList}
       updateStudentRosterEntry=${updateStudentRosterEntry} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
-      onBack=${backToList} onDelete=${handleDelete} />`;
+      onBack=${backToList} onDelete=${handleDelete} onViewGrowthReport=${onViewGrowthReport} deepTarget=${deepTarget} onConsumeDeepTarget=${onConsumeDeepTarget} />`;
   }
   return html`
     <div>
@@ -3918,8 +4019,24 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
 // 때문에(StudentInfoSection 참고) 학생이 바뀌면 이 컴포넌트가 통째로 새로 마운트되고, 아래 tab
 // state는 항상 "overview"로 초기화된다 — "학생을 선택하면 첫 화면은 반드시 Overview" 요구사항을
 // 별도 분기 없이 React의 기본 동작만으로 만족시킨다.
-function StudentDetailSection({ student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete }) {
-  const [tab, setTab] = useState("overview");
+function StudentDetailSection({ student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete, onViewGrowthReport, deepTarget, onConsumeDeepTarget }) {
+  // Teacher OS STEP 10 — "학생을 선택하면 항상 Overview부터"가 기본 규칙이지만, Growth Report의
+  // "View Vocabulary"처럼 명시적으로 Learning→Reading→Vocabulary까지 딥링크해야 하는 단 한
+  // 경로에서만 예외를 둔다. deepTarget이 이 학생을 가리킬 때만 tab을 오버라이드하고, 그 외
+  // 모든 진입 경로(학생 목록 클릭 등)는 기존과 동일하게 무조건 "overview"로 시작한다.
+  const myDeepTarget = deepTarget && deepTarget.studentId === student.id ? deepTarget : null;
+  const [tab, setTab] = useState((myDeepTarget && myDeepTarget.tab) || "overview");
+  useEffect(() => {
+    if (myDeepTarget && myDeepTarget.tab) setTab(myDeepTarget.tab);
+    /* eslint-disable-next-line */
+  }, [myDeepTarget && myDeepTarget.nonce]);
+  // deepTarget은 반드시 한 번만 써야 한다 — 안 지우면, 같은 학생을 딥링크로 본 다음 목록에서
+  // "그냥" 다시 클릭했을 때도 App()의 studentDeepTarget이 그대로 남아있어 또 Learning→Reading으로
+  // 튀는 버그가 생긴다(실제로 겪어서 확인 후 수정). 이 마운트에서 한 번 읽고 나면 바로 지운다.
+  useEffect(() => {
+    if (myDeepTarget && onConsumeDeepTarget) onConsumeDeepTarget();
+    /* eslint-disable-next-line */
+  }, []);
   const data = dataCache[student.id] || emptyData();
   const boundUpdateData = (updater) => updateData(student.id, updater);
 
@@ -3957,11 +4074,12 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
       ${tab === "overview" && html`<${StudentOverviewTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
         saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry} analysis=${analysis} analysisLoading=${analysisLoading}
         teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJump=${setTab} />`}
-      ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} />`}
+      ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} onViewGrowthReport=${onViewGrowthReport} deepTarget=${myDeepTarget} />`}
       ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
         analysis=${analysis} analysisLoading=${analysisLoading} />`}
-      ${tab === "classRecord" && html`<${StudentClassRecordTab} data=${data} updateData=${boundUpdateData} onJumpToReports=${() => setTab("reports")} />`}
-      ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} />`}
+      ${tab === "classRecord" && html`<${StudentClassRecordTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
+        teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJumpToReports=${() => setTab("reports")} />`}
+      ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} onSelectStudent=${() => setTab("overview")} />`}
     </div>
   `;
 }
@@ -4149,7 +4267,157 @@ function StudentReadingSummaryCard({ studentId }) {
 // 스토리 join도 DailyReportWorkspace가 이미 하는 것과 똑같은 3줄짜리 로직을 그대로 다시 쓴다(그
 // join 자체가 readingService.js 내부 전용 헬퍼라 export가 안 돼 있어서 새 서비스를 만들지 않고
 // 여기서 반복). 새 Firestore 접근 코드나 새 컬렉션은 없다.
-function StudentReadingLogTab({ studentId }) {
+// Teacher OS STEP 10 — 책(Story)별 Vocabulary 요약 카드 하나. 펼치면(단어 보기/시험 만들기 둘 다
+// 같은 패널을 연다) 검색 + 체크박스 직접 선택 + 랜덤 N개 선택 + Create Vocabulary Test가 전부
+// 이 안에 있다(Story → Words → Selected Words → Create Test, §5). 시험 저장은
+// buildVocabTestEntry()(VocabEditor.save()와 완전히 같은 정의)로 만들어 기존 updateData를 통해
+// 그대로 vocabTests[]에 넣는다 — 새 저장 로직 없음.
+function StoryVocabularyGroup({ group, updateData, studentFcmToken }) {
+  const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState({}); // word.toLowerCase() -> true
+  const [randomN, setRandomN] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [mode, setMode] = useState("mix");
+  const [retestDate, setRetestDate] = useState("");
+  const [retestTime, setRetestTime] = useState("15:00");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const label = group.story ? group.story.title : group.source;
+  const levelLabel = group.story && group.story.level != null ? ` (Lv.${group.story.level})` : "";
+
+  function openForTest() {
+    setExpanded(true);
+    setCreating(true);
+    setTitle((t) => t || label);
+    const all = {};
+    group.words.forEach((w) => { all[w.word.toLowerCase()] = true; });
+    setSelected(all);
+  }
+
+  const filtered = group.words.filter((w) => {
+    if (!search.trim()) return true;
+    const s = search.trim().toLowerCase();
+    return w.word.toLowerCase().includes(s) || (w.meaning || "").toLowerCase().includes(s);
+  });
+
+  function toggleWord(word) {
+    const key = word.toLowerCase();
+    setSelected((s) => ({ ...s, [key]: !s[key] }));
+  }
+  function selectAll() {
+    setSelected((s) => {
+      const next = { ...s };
+      filtered.forEach((w) => { next[w.word.toLowerCase()] = true; });
+      return next;
+    });
+  }
+  function clearAll() {
+    setSelected((s) => {
+      const next = { ...s };
+      filtered.forEach((w) => { delete next[w.word.toLowerCase()]; });
+      return next;
+    });
+  }
+  function pickRandom() {
+    const n = Math.max(0, Number(randomN) || 0);
+    if (n <= 0) return;
+    const picked = shuffle([...filtered]).slice(0, n);
+    const next = {};
+    picked.forEach((w) => { next[w.word.toLowerCase()] = true; });
+    setSelected(next);
+  }
+
+  const selectedWords = group.words.filter((w) => selected[w.word.toLowerCase()]);
+
+  async function createTest() {
+    const result = buildVocabTestEntry({
+      title,
+      wordsRaw: selectedWords.map((w) => ({ word: w.word, meaning: w.meaning })),
+      mode, retestDate, retestTime,
+    });
+    if (!result.ok) {
+      setMsg(result.clean.length < 2 ? "단어를 2개 이상 선택해 주세요." : "시험 제목과 재시험 예정 일시를 모두 입력해 주세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateData((d) => ({ ...d, vocabTests: [result.entry, ...(d.vocabTests || [])] }));
+      if (studentFcmToken) notifyStudent(studentFcmToken, "vocab_test_assigned", title);
+      setMsg(`"${title}" 단어 시험을 만들었어요 (${result.entry.words.length}개 단어) — Learning → Vocabulary → Quiz에서 확인할 수 있어요.`);
+      setCreating(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 8 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div style=${{ minWidth: 0, flex: 1 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${label}${levelLabel}</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>새 단어 ${group.wordCount}개 · 마지막 학습일 ${group.lastStudiedAt ? fmtDate(new Date(group.lastStudiedAt).toISOString().slice(0, 10)) : "-"}</div>
+        </div>
+        <div style=${{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setExpanded((v) => !v)}>${expanded ? "숨기기" : "단어 보기"}<//>
+          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${openForTest}>시험 만들기<//>
+        </div>
+      </div>
+      ${expanded && html`
+        <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+          <input style=${{ ...inputStyle, marginBottom: 8 }} placeholder="단어 또는 뜻으로 검색" value=${search} onChange=${(e) => setSearch(e.target.value)} />
+          <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick=${selectAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 선택</button>
+            <button type="button" onClick=${clearAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 해제</button>
+            <input type="number" min="1" style=${{ ...inputStyle, width: 70, padding: "5px 8px" }} placeholder="N개" value=${randomN} onChange=${(e) => setRandomN(e.target.value)} />
+            <button type="button" onClick=${pickRandom} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>랜덤 선택</button>
+            <div style=${{ flex: 1 }} />
+            <div style=${{ fontSize: 11.5, color: C.slate }}>선택됨 ${selectedWords.length} / ${filtered.length}</div>
+          </div>
+          <div style=${{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            ${filtered.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, padding: 10 }}>조건에 맞는 단어가 없어요.</div>` : filtered.map((w, i) => html`
+              <label key=${w.word + i} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5, cursor: "pointer" }}>
+                <input type="checkbox" checked=${!!selected[w.word.toLowerCase()]} onChange=${() => toggleWord(w.word)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+                <span style=${{ fontWeight: 700, color: C.ink, minWidth: 110 }}>${w.word}</span>
+                <span style=${{ color: C.slate, flex: 1 }}>${w.meaning || "-"}</span>
+                <span style=${{ color: C.slate, fontSize: 11 }}>${w.addedAt ? fmtDate(new Date(w.addedAt).toISOString().slice(0, 10)) : ""}</span>
+              </label>
+            `)}
+          </div>
+
+          <div style=${{ marginTop: 12 }}>
+            ${!creating ? html`
+              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} disabled=${selectedWords.length === 0} onClick=${() => { setCreating(true); setTitle((t) => t || label); }}>Create Vocabulary Test (선택 ${selectedWords.length}개)<//>
+            ` : html`
+              <div style=${{ background: C.ivory, borderRadius: 4, padding: 10 }}>
+                <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Create Vocabulary Test — 선택된 단어 ${selectedWords.length}개</div>
+                <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
+                  <input style=${inputStyle} placeholder="시험 제목" value=${title} onChange=${(e) => setTitle(e.target.value)} />
+                  <select style=${inputStyle} value=${mode} onChange=${(e) => setMode(e.target.value)}>
+                    <option value="mix">혼합 (영↔한 랜덤)</option>
+                    <option value="w2m">영단어 → 뜻만</option>
+                    <option value="m2w">뜻 → 영단어만</option>
+                  </select>
+                  <${DateField} value=${retestDate} onChange=${setRetestDate} />
+                  <${TimeField} value=${retestTime} onChange=${setRetestTime} />
+                </div>
+                <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${createTest} disabled=${saving || selectedWords.length < 2 || !title || !retestDate || !retestTime}>저장<//>
+                  <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCreating(false)}>취소<//>
+                </div>
+              </div>
+            `}
+            ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+          </div>
+        </div>
+      `}
+    <//>
+  `;
+}
+
+function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGrowthReport }) {
   const [loaded, setLoaded] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -4176,11 +4444,16 @@ function StudentReadingLogTab({ studentId }) {
     .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
   const inProgress = activities.filter((a) => a.status !== "COMPLETED").map(withStory).filter(Boolean)
     .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-  const recentVocab = [...vocab].sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)).slice(0, 40);
   const recentJournal = [...journal].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+  const vocabGroups = window.SarahServices.readingService.groupReadingVocabByStory(vocab, stories);
 
   return html`
     <div>
+      ${onViewGrowthReport && html`
+        <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onViewGrowthReport}>📈 View Growth Report →<//>
+        </div>
+      `}
       <${Card}>
         <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>📖 읽는 중 (${inProgress.length})</div>
         ${inProgress.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>읽는 중인 스토리가 없어요.</div>` : inProgress.map((a, i) => html`
@@ -4196,11 +4469,11 @@ function StudentReadingLogTab({ studentId }) {
           </div>
         `)}
       <//>
-      <${Card}>
-        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>🔤 새 단어 (${vocab.length})</div>
-        ${recentVocab.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 단어가 없어요.</div>` : html`<div style=${{ fontSize: 12.5, color: C.ink, lineHeight: 1.8 }}>${recentVocab.map((w) => w.word).join(", ")}</div>`}
-      <//>
-      <${Card}>
+      <div style=${{ fontWeight: 700, color: C.navy, margin: "14px 0 8px", fontSize: 13.5 }}>🔤 Vocabulary (${vocab.length}개 단어 · ${vocabGroups.length}개 Story)</div>
+      ${vocabGroups.length === 0 ? html`<${Card}><div style=${{ fontSize: 12.5, color: C.slate }}>등록된 단어가 없어요.</div><//>` : vocabGroups.map((g) => html`
+        <${StoryVocabularyGroup} key=${g.source} group=${g} updateData=${updateData} studentFcmToken=${studentFcmToken} />
+      `)}
+      <${Card} style=${{ marginTop: 8 }}>
         <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>📝 독서 기록 (${journal.length})</div>
         ${recentJournal.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>작성된 독서 기록이 없어요.</div>` : recentJournal.map((e, i) => html`
           <div key=${e.id || i} style=${{ padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
@@ -4222,8 +4495,12 @@ const STUDENT_STUDY_SUBTABS = [
   { key: "reading", icon: "📖", label: "Reading" },
   { key: "materials", icon: "📁", label: "Materials" },
 ];
-function StudentStudyTab({ student, data, updateData }) {
-  const [sub, setSub] = useState("homework");
+function StudentStudyTab({ student, data, updateData, onViewGrowthReport, deepTarget }) {
+  const [sub, setSub] = useState((deepTarget && deepTarget.studySub) || "homework");
+  useEffect(() => {
+    if (deepTarget && deepTarget.studySub) setSub(deepTarget.studySub);
+    /* eslint-disable-next-line */
+  }, [deepTarget && deepTarget.nonce]);
   const [vocabSub, setVocabSub] = useState("quiz");
   return html`
     <div>
@@ -4238,24 +4515,87 @@ function StudentStudyTab({ student, data, updateData }) {
       `}
       ${sub === "wrongNote" && html`<${WrongNoteSection} student=${student} data=${data} updateData=${updateData} />`}
       ${sub === "materials" && html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`}
-      ${sub === "reading" && html`<${StudentReadingLogTab} key=${student.id} studentId=${student.id} />`}
+      ${sub === "reading" && html`<${StudentReadingLogTab} key=${student.id} studentId=${student.id} studentFcmToken=${student.studentFcmToken} updateData=${updateData} onViewGrowthReport=${onViewGrowthReport ? () => onViewGrowthReport(student.id) : null} />`}
     </div>
   `;
 }
 
-// 📊 Assessment — Exams / Mock Exams / Additional Tests / Question Performance / Weak Areas.
+// 📊 Assessment — Timeline / Exams / Mock Exams / Additional Tests / Question Performance /
+// Weak Areas. Teacher OS STEP 12 §3 — "Timeline"은 신규(4계통 통합 읽기 전용 뷰), 나머지 5개는
+// 기존 그대로(입력 화면은 계통별로 계속 따로 있어야 한다 — 시험 종류마다 입력 필드가 달라서
+// 하나로 합칠 수 없다. Timeline은 "보기"만 통합한다).
 const STUDENT_ASSESSMENT_SUBTABS = [
+  { key: "timeline", icon: "📊", label: "Timeline" },
   { key: "regularExam", icon: "🏫", label: "Exams" },
   { key: "mock", icon: "📄", label: "Mock Exams" },
   { key: "examTests", icon: "📋", label: "Additional Tests" },
   { key: "questionAccuracy", icon: "🎯", label: "Question Performance" },
   { key: "weakness", icon: "⚠️", label: "Weak Areas" },
 ];
+// Teacher OS STEP 12 §3 — regularExams/mockExams+mockExamResults/examTests+examResults/
+// examAssignments+examAttempts 4계통을 하나의 목록으로 합쳐 보여주기만 하는 읽기 전용 뷰.
+// getUnifiedAssessmentTimeline()이 실제 조인/normalize를 전부 하고, 여기서는 결과를 표로
+// 그리기만 한다 — Firestore 접근은 그 함수 안에서만 일어난다.
+function AssessmentTimelineView({ student, data }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(false);
+    getUnifiedAssessmentTimeline(student.id, student.name, data)
+      .then((r) => { if (!cancelled) setRows(r); })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line */
+  }, [student.id]);
+
+  const kindColor = { regular: C.navy, mock: C.gold, examTest: C.slate, examBuilder: "#7a5cc4" };
+
+  return html`
+    <${Card}>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 4 }}>📊 전체 시험 이력</div>
+      <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>Exams·Mock Exams·Additional Tests·Exam Builder 4개 계통을 최근 날짜 순으로 합쳐서 보여줘요(입력은 각 서브탭에서).</div>
+      ${error ? html`<div style=${{ fontSize: 12.5, color: C.danger }}>불러오지 못했어요. 잠시 후 다시 시도해주세요.</div>`
+        : rows === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>`
+        : rows.length === 0 ? html`<${Empty} text="아직 기록된 시험이 없어요." />`
+        : html`
+          <div style=${{ overflowX: "auto" }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style=${{ borderBottom: `1px solid ${C.line}`, textAlign: "left", color: C.slate, fontSize: 11 }}>
+                  <th style=${{ padding: "6px 8px" }}>날짜</th>
+                  <th style=${{ padding: "6px 8px" }}>종류</th>
+                  <th style=${{ padding: "6px 8px" }}>시험명</th>
+                  <th style=${{ padding: "6px 8px" }}>점수</th>
+                  <th style=${{ padding: "6px 8px" }}>정답률</th>
+                  <th style=${{ padding: "6px 8px" }}>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map((r) => html`
+                  <tr key=${r.id} style=${{ borderBottom: `1px dotted ${C.line}` }}>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.date ? fmtDate(r.date) : "—"}</td>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap", color: kindColor[r.kind] || C.ink, fontWeight: 700 }}>${r.kindLabel}</td>
+                    <td style=${{ padding: "6px 8px" }}>${r.title}</td>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.score != null ? (r.total != null ? `${r.score}/${r.total}` : r.score) : "—"}</td>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap", fontWeight: r.percentage != null && r.percentage < 60 ? 700 : 400, color: r.percentage != null && r.percentage < 60 ? C.danger : C.ink }}>${r.percentage != null ? r.percentage + "%" : "—"}</td>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.status}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        `}
+    <//>
+  `;
+}
 function StudentAssessmentTab({ student, data, updateData, examKeyLibrary, analysis, analysisLoading }) {
-  const [sub, setSub] = useState("regularExam");
+  const [sub, setSub] = useState("timeline");
   return html`
     <div>
       <${Tabs} tabs=${STUDENT_ASSESSMENT_SUBTABS} active=${sub} onChange=${setSub} />
+      ${sub === "timeline" && html`<${AssessmentTimelineView} key=${student.id} student=${student} data=${data} />`}
       ${sub === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
       ${sub === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${sub === "examTests" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
@@ -4298,8 +4638,15 @@ const STUDENT_CLASS_RECORD_SUBTABS = [
   { key: "notes", icon: "🗒", label: "Notes & Consultations" },
   { key: "todo", icon: "✅", label: "To-Do" },
 ];
-function StudentClassRecordTab({ data, updateData, onJumpToReports }) {
+// Teacher OS STEP 12 §2 — To-Do 서브탭이 이제 teacherTodos(studentId로 이 학생에 고정, Today와
+// 완전히 같은 저장소)를 쓴다. 예전 data.todos(TodoEditor)에 실제로 있던 기록은 절대 지우지
+// 않고, "이전 방식으로 등록된 할 일" 접이식 섹션에 읽기 전용으로 그대로 남겨둔다(마이그레이션
+// 없음 — Firestore의 data.todos 필드는 손대지 않는다. TodoEditor 컴포넌트 자체도 무수정으로
+// 코드에 남아있다, 옛 카테고리 플라이아웃 화면에서는 여전히 그 컴포넌트를 그대로 쓴다).
+function StudentClassRecordTab({ student, data, updateData, roster, teacherTodos, saveTeacherTodos, onJumpToReports }) {
   const [sub, setSub] = useState("logs");
+  const todayStr = today();
+  const legacyTodos = [...(data.todos || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return html`
     <div>
       <${Card} style=${{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
@@ -4315,7 +4662,23 @@ function StudentClassRecordTab({ data, updateData, onJumpToReports }) {
           <${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />
         </div>
       `}
-      ${sub === "todo" && html`<${TodoEditor} data=${data} updateData=${updateData} />`}
+      ${sub === "todo" && html`
+        <div>
+          <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} lockedStudentId=${student.id} title="✅ 할 일" />
+          ${legacyTodos.length > 0 && html`
+            <details style=${{ marginTop: 10 }}>
+              <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>이전 방식으로 등록된 할 일 보기 (읽기 전용, ${legacyTodos.length}건)</summary>
+              <div style=${{ marginTop: 6 }}>
+                ${legacyTodos.map((t) => html`
+                  <div key=${t.id} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}`, color: t.done ? C.slate : C.ink, textDecoration: t.done ? "line-through" : "none" }}>
+                    <span style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginRight: 6 }}>${fmtDate(t.date)}</span>${t.content}
+                  </div>
+                `)}
+              </div>
+            </details>
+          `}
+        </div>
+      `}
     </div>
   `;
 }
@@ -4325,14 +4688,14 @@ function StudentClassRecordTab({ data, updateData, onJumpToReports }) {
 const STUDENT_REPORTS_SUBTABS = [
   { key: "daily", icon: "✉️", label: "Daily Report" },
   { key: "monthly", icon: "📊", label: "Monthly Report" },
-  { key: "dashboard", icon: "📈", label: "Monthly Analysis" },
+  { key: "dashboard", icon: "📈", label: "Student Progress" },
 ];
-function StudentReportsTab({ student, data, updateData }) {
+function StudentReportsTab({ student, data, updateData, onSelectStudent }) {
   const [sub, setSub] = useState("daily");
   return html`
     <div>
       <${Tabs} tabs=${STUDENT_REPORTS_SUBTABS} active=${sub} onChange=${setSub} />
-      ${sub === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+      ${sub === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${sub === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${sub === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
     </div>
@@ -4757,19 +5120,204 @@ function WordbankSection() {
 // 읽기 자료실 관리 — 별도 독립 페이지(reading-library.html)를 그대로 iframe으로 불러온다. 학생에게
 // 링크되는 기본 주소(해시 없음)는 관리 패널이 아예 안 뜨므로, 여기서는 #admin을 붙여서 연다.
 // Phase 2 STEP 1 — "📖 Reading" 상위 메뉴. reading-library.html은 완전히 무수정, 기존 iframe
-// 그대로(그 안에 Reading Log도 이미 포함돼 있음 — 별도 탭으로 분리하지 않음, 관리자 패널 자체가
-// 이야기 관리 + 학생별 독서기록 보기를 이미 함께 제공). Growth Report는 스펙(§17)에서 이번
-// 단계는 진입 위치만 만들라고 명시 — 가짜 데이터로 채우지 않고 정직하게 "준비 중"만 표시한다.
-function ReadingAreaSection() {
+// 그대로. Teacher OS STEP 9 — Library/Reading Log/Growth Report 3탭으로 확장(§5, 최상위 사이드바
+// 메뉴는 늘리지 않고 이 메뉴 안에서만 탭 추가). Reading Log(학생별 현황 요약)와 Growth Report
+// (deterministic 집계)는 기존 readingActivity/readingVocab/readingJournal/readingLibrary를
+// 읽기만 하는 readingService.js 함수로 만든다 — 새 컬렉션/필드 없음.
+function ReadingAreaSection({ roster, initialTarget, onOpenStudentVocabulary }) {
   const [tab, setTab] = useState("library");
+  useEffect(() => {
+    if (!initialTarget) return;
+    setTab("growth");
+  }, [initialTarget && initialTarget.nonce]);
   return html`
     <div>
       <${Tabs} tabs=${[
         { key: "library", icon: "📖", label: "Library" },
-        { key: "growth", icon: "📈", label: "Growth" },
+        { key: "log", icon: "📋", label: "Reading Log" },
+        { key: "growth", icon: "📈", label: "Growth Report" },
       ]} active=${tab} onChange=${setTab} />
       ${tab === "library" && html`<${ReadingLibraryAdminSection} />`}
-      ${tab === "growth" && html`<${Empty} text="Reading Growth Report는 준비 중이에요. 학생별 독서 성장 추이는 곧 이 자리에 표시될 예정이에요." />`}
+      ${tab === "log" && html`<${ReadingLogOverview} roster=${roster || []} onOpenStudentVocabulary=${onOpenStudentVocabulary} />`}
+      ${tab === "growth" && html`<${ReadingGrowthReportSection} roster=${roster || []} initialTarget=${initialTarget} onOpenStudentVocabulary=${onOpenStudentVocabulary} />`}
+    </div>
+  `;
+}
+
+// Teacher OS STEP 9 §1 — 학생별 원시 로그 대신, 학생별 요약 행 하나(최근 읽은/읽는 중인 Story ·
+// Level · 새 단어 수 · Journal 여부 · 최근 활동일)로 정리해서 최근 활동이 위로 오게 정렬한다.
+// readingLibrary(스토리 목록)는 학생 수만큼 반복 조회하지 않고 한 번만 불러와 재사용한다.
+function ReadingLogOverview({ roster, onOpenStudentVocabulary }) {
+  const [rows, setRows] = useState(null);
+  const rosterKey = roster.map((s) => s.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    const svc = window.SarahServices.readingService;
+    (async () => {
+      const stories = await svc.getAllReadingLibraryStories();
+      function withStory(a) {
+        const story = stories[a.storyId];
+        return story ? { ...a, storyTitle: story.title, level: story.level } : null;
+      }
+      const results = await Promise.all(roster.map(async (s) => {
+        try {
+          const [activities, vocabDoc, journalDoc] = await Promise.all([
+            svc.getReadingActivityForStudent(s.id),
+            svc.getReadingVocabForStudent(s.id),
+            svc.getReadingJournalForStudent(s.id),
+          ]);
+          const words = vocabDoc.words || [];
+          const entries = journalDoc.entries || [];
+          const joined = activities.map(withStory).filter(Boolean);
+          const completed = joined.filter((a) => a.status === "COMPLETED").sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+          const inProgress = joined.filter((a) => a.status !== "COMPLETED").sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+          const latest = inProgress[0] || completed[0] || null;
+          const lastActivityTs = Math.max(
+            0,
+            ...joined.map((a) => Math.max(a.startedAt || 0, a.completedAt || 0)),
+            ...words.map((w) => w.addedAt || 0),
+            ...entries.map((e) => e.submittedAt || 0),
+          ) || null;
+          return {
+            studentId: s.id, studentName: s.name,
+            currentStory: latest ? latest.storyTitle : null,
+            currentLevel: latest ? latest.level : null,
+            currentStatus: inProgress[0] ? "읽는 중" : (completed[0] ? "완료" : null),
+            newWordCount: words.length,
+            journalCount: entries.length,
+            lastActivityTs,
+          };
+        } catch (e) {
+          return { studentId: s.id, studentName: s.name, currentStory: null, currentLevel: null, currentStatus: null, newWordCount: 0, journalCount: 0, lastActivityTs: null };
+        }
+      }));
+      if (!cancelled) setRows(results);
+    })();
+    return () => { cancelled = true; };
+  }, [rosterKey]);
+
+  if (!rows) return html`<${Empty} text="불러오는 중..." />`;
+  const sorted = [...rows].sort((a, b) => (b.lastActivityTs || 0) - (a.lastActivityTs || 0));
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학생별 Reading 현황이에요 — 최근 활동이 위로 와요.</div>
+      ${sorted.length === 0 ? html`<${Empty} text="등록된 학생이 없어요." />` : sorted.map((r) => html`
+        <${Card} key=${r.studentId} style=${{ marginBottom: 8 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <div style=${{ minWidth: 0, flex: 1 }}>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${r.studentName}</div>
+              ${r.currentStory ? html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 2 }}>${r.currentStory} (Lv.${r.currentLevel}) — ${r.currentStatus}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>No activity</div>`}
+            </div>
+            <div style=${{ display: "flex", gap: 14, fontSize: 11.5, color: C.slate, flexShrink: 0, alignItems: "center" }}>
+              <div>새 단어 <b style=${{ color: C.ink }}>${r.newWordCount}</b></div>
+              <div>Journal <b style=${{ color: C.ink }}>${r.journalCount}</b></div>
+              <div>최근 활동 <b style=${{ color: C.ink }}>${r.lastActivityTs ? fmtDate(new Date(r.lastActivityTs).toISOString().slice(0, 10)) : "-"}</b></div>
+              ${onOpenStudentVocabulary && r.newWordCount > 0 && html`<a onClick=${() => onOpenStudentVocabulary(r.studentId)} style=${{ color: C.gold, cursor: "pointer", textDecoration: "underline" }}>View Vocabulary →</a>`}
+            </div>
+          </div>
+        <//>
+      `)}
+    </div>
+  `;
+}
+
+// Teacher OS STEP 9 §3 — 학생 선택(ReportsSection과 같은 패턴) + Growth Report 본문.
+// initialTarget은 Learning → Reading의 "View Growth Report" 버튼이 넘겨준다(App()의
+// readingTarget 참고).
+function ReadingGrowthReportSection({ roster, initialTarget, onOpenStudentVocabulary }) {
+  const [studentId, setStudentId] = useState(roster[0]?.id || "");
+  useEffect(() => {
+    if (!initialTarget || !initialTarget.studentId) return;
+    setStudentId(initialTarget.studentId);
+  }, [initialTarget && initialTarget.nonce]);
+  const student = roster.find((r) => r.id === studentId);
+  return html`
+    <div>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <${Field} label="학생 선택">
+          <select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
+            ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+          </select>
+        <//>
+      <//>
+      ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : html`<${ReadingGrowthReportView} key=${student.id} studentId=${student.id} studentName=${student.name} onOpenStudentVocabulary=${onOpenStudentVocabulary} />`}
+    </div>
+  `;
+}
+
+// Teacher OS STEP 9 §3/§4 — deterministic 집계(readingService.getReadingGrowthReport)만 그대로
+// 표시한다. AI 없음, 새 계산 없음(값은 서비스 레이어에서 이미 다 계산돼서 온다) — 이 컴포넌트는
+// 순수 렌더링만 담당. "성장했다"는 판단은 절대 스스로 만들지 않고 report.insights(실제 데이터가
+// 있을 때만 채워지는 문장 배열)만 그대로 보여준다.
+function ReadingGrowthReportView({ studentId, studentName, onOpenStudentVocabulary }) {
+  const [report, setReport] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setReport(null);
+    window.SarahServices.readingService.getReadingGrowthReport(studentId)
+      .then((r) => { if (!cancelled) setReport(r); })
+      .catch(() => { if (!cancelled) setReport(null); });
+    return () => { cancelled = true; };
+  }, [studentId]);
+
+  if (!report) return html`<${Empty} text="불러오는 중..." />`;
+  if (!report.hasAnyActivity) return html`<${Empty} text="${studentName} 학생의 Reading 활동 기록이 아직 없어요." />`;
+
+  const maxWeekCount = Math.max(1, ...report.weeklyTrend.map((w) => w.count));
+
+  return html`
+    <div>
+      <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 12 }}>${studentName} 학생 — Reading Growth Report</div>
+
+      ${report.insights.length > 0 && html`
+        <${Card} style=${{ marginBottom: 14, background: "#FBF6EA" }}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>📌 요약</div>
+          ${report.insights.map((line, i) => html`<div key=${i} style=${{ fontSize: 13, color: C.ink, padding: "3px 0" }}>${line}</div>`)}
+        <//>
+      `}
+
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 14 }}>
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📚 Reading Volume</div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>총 완료 Story <b>${report.totalStoriesCompleted}</b></div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>이번 달 완료 <b>${report.thisMonthCompleted}</b></div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 30일 활동 <b>${report.last30ActivityCount}</b>회</div>
+        <//>
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📖 Reading Level</div>
+          ${report.currentLevel != null ? html`<div style=${{ fontSize: 12.5, padding: "3px 0" }}>현재 읽는 중: Lv.${report.currentLevel} — ${report.currentStoryTitle}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "3px 0" }}>현재 읽는 중인 스토리가 없어요.</div>`}
+          ${report.mostRecentCompletedLevel != null ? html`<div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 완료: Lv.${report.mostRecentCompletedLevel} — ${report.mostRecentCompletedTitle}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "3px 0" }}>완료한 스토리가 없어요.</div>`}
+          ${report.levelChanged && html`<div style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>Level 변화: Lv.${report.previousCompletedLevel} → Lv.${report.mostRecentCompletedLevel}</div>`}
+        <//>
+        <${Card}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 12.5 }}>🔤 Vocabulary</div>
+            ${onOpenStudentVocabulary && html`<a onClick=${() => onOpenStudentVocabulary(studentId)} style=${{ fontSize: 11, color: C.gold, cursor: "pointer", textDecoration: "underline" }}>View Vocabulary →</a>`}
+          </div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>총 새 단어 <b>${report.totalNewWords}</b></div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 30일 <b>${report.last30NewWords}</b></div>
+        <//>
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📝 Journal</div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>총 Journal <b>${report.totalJournal}</b></div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 30일 <b>${report.last30Journal}</b></div>
+        <//>
+      </div>
+
+      <${Card}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 12.5 }}>📈 Activity Trend (최근 4주)</div>
+        <div style=${{ display: "flex", gap: 10, alignItems: "flex-end", height: 90 }}>
+          ${report.weeklyTrend.map((w, i) => html`
+            <div key=${i} style=${{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <div style=${{ fontSize: 11, color: C.slate }}>${w.count}</div>
+              <div style=${{ width: "100%", background: C.gold, borderRadius: "3px 3px 0 0", height: `${Math.max(4, (w.count / maxWeekCount) * 60)}px` }} />
+              <div style=${{ fontSize: 10.5, color: C.slate }}>${w.label}</div>
+            </div>
+          `)}
+        </div>
+      <//>
     </div>
   `;
 }
@@ -5176,7 +5724,7 @@ function GrammarQuestionForm({ QB, questions, existingDoc, onSaved, onCancel }) 
   `;
 }
 
-function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged }) {
+function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged, onAddToExam }) {
   const [review, setReview] = useState(doc.review || {});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -5247,7 +5795,10 @@ function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged }) {
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${main} → ${sub}</div>
           <div style=${{ fontSize: 12, color: C.slate }}>${(QB.QUESTION_TYPES.find((t) => t.key === doc.questionType) || {}).label}</div>
         </div>
-        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>수정<//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          ${onAddToExam && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onAddToExam}>📋 Add to Exam →<//>`}
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>수정<//>
+        </div>
       </div>
       ${(doc.supersedesId || doc.replacedBy) && html`
         <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>
@@ -5588,7 +6139,7 @@ function StatusChangeCard({ QB, doc, onChange, saving }) {
   `;
 }
 
-function ReadingQuestionDetail({ QB, doc, passage, roster, onBack, onEdit, onChanged }) {
+function ReadingQuestionDetail({ QB, doc, passage, roster, onBack, onEdit, onChanged, onAddToExam }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   async function saveReview(draft) {
@@ -5624,7 +6175,10 @@ function ReadingQuestionDetail({ QB, doc, passage, roster, onBack, onEdit, onCha
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${qTypeLabel} · ${examTypeLabel}${skillLabel ? " · " + skillLabel : ""}</div>
           ${passage && html`<div style=${{ fontSize: 12, color: C.slate }}>지문: ${passage.title}</div>`}
         </div>
-        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>수정<//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          ${onAddToExam && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onAddToExam}>📋 Add to Exam →<//>`}
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onEdit}>수정<//>
+        </div>
       </div>
       <${Card}>
         <div style=${{ whiteSpace: "pre-wrap", fontSize: 14, marginBottom: 12 }}>${doc.questionText}</div>
@@ -6011,6 +6565,208 @@ function ReviewQueueView({ onSelect }) {
             </div>
           <//>
         `)}
+    </div>
+  `;
+}
+
+// ---------- Sarah's Original — Teacher Library (Teacher OS STEP 7) ----------
+// "Sarah's Original"은 새 컬렉션/필드가 아니라 기존 grammarQuestions/readingQuestions의 source/
+// status 필터 프리셋일 뿐이다(ARCHITECTURE.md §14.1, 이번 STEP에서 범위를 AI_GENERATED +
+// TEACHER_CREATED로 사용자 확인 — QB.SARAH_ORIGINAL_SOURCE_TYPES). Create/Review는 기존
+// AiGenerateGrammarPanel/AiGenerateReadingPanel/ReviewQueueView를 그대로 재사용하고, My Questions는
+// 기존 GrammarQuestionDetail/GrammarQuestionForm/ReadingQuestionDetail/ReadingQuestionForm(리프
+// 컴포넌트)만 조합한다 — GrammarBankView/ReadingQuestionBankView 컨테이너 자체는 건드리지 않는다
+// (Question Bank 메뉴가 계속 그대로 쓴다). 문제 데이터를 별도로 복제 저장하지 않는다.
+const SARAH_ORIGINAL_TABS = [
+  { key: "create", icon: "✨", label: "Create" },
+  { key: "review", icon: "🔍", label: "Review" },
+  { key: "myQuestions", icon: "📚", label: "My Questions" },
+];
+
+function SarahsOriginalCreateTab() {
+  const QB = window.SarahServices.questionBankService;
+  const [passages, setPassages] = useState(null);
+  const [selectedPassageId, setSelectedPassageId] = useState("");
+  const [lastGenerated, setLastGenerated] = useState(null); // { bank, count } | null
+
+  useEffect(() => { QB.listReadingPassages().then(setPassages).catch(() => setPassages([])); }, []);
+
+  const publishedPassages = (passages || []).filter((p) => p.status === "PUBLISHED");
+  const selectedPassage = (passages || []).find((p) => p.id === selectedPassageId);
+
+  return html`
+    <div>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 6 }}>📐 Grammar 문제 생성</div>
+      <${AiGenerateGrammarPanel} QB=${QB} onGenerated=${(docs) => setLastGenerated({ bank: "grammar", count: docs.length })} />
+
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, margin: "18px 0 6px" }}>📖 Reading 문제 생성</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>지문 자체는 AI로 만들지 않아요 — 먼저 PUBLISHED 상태인 지문을 하나 선택하면 그 지문에 문제를 추가할 수 있어요.</div>
+      ${passages === null
+        ? html`<${Empty} text="지문 불러오는 중..." />`
+        : publishedPassages.length === 0
+        ? html`<${Empty} text="PUBLISHED 상태인 지문이 없어요. Question Bank → Reading에서 먼저 지문을 승인해 주세요." />`
+        : html`
+          <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedPassageId} onChange=${(e) => setSelectedPassageId(e.target.value)}>
+            <option value="">지문 선택...</option>
+            ${publishedPassages.map((p) => html`<option key=${p.id} value=${p.id}>${p.title} (${p.grade})</option>`)}
+          </select>
+          ${selectedPassage && html`<${AiGenerateReadingPanel} QB=${QB} passage=${selectedPassage} onGenerated=${(docs) => setLastGenerated({ bank: "reading", count: docs.length })} />`}
+        `}
+      ${lastGenerated && html`
+        <div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>
+          ✅ ${lastGenerated.bank === "grammar" ? "Grammar" : "Reading"} 문제 ${lastGenerated.count}개가 DRAFT로 저장됐어요 — 상단 "Review" 탭에서 검수해 주세요.
+        </div>
+      `}
+    </div>
+  `;
+}
+
+const SARAH_ORIGINAL_PRESETS = [
+  { key: "all", label: "All", test: () => true },
+  { key: "grammar", label: "Grammar", test: (q) => q.__bank === "grammar" },
+  { key: "reading", label: "Reading", test: (q) => q.__bank === "reading" },
+  { key: "draft", label: "Draft", test: (q) => q.status === "DRAFT" },
+  { key: "needsReview", label: "Needs Review", test: (q) => q.status === "AI_REVIEW" || q.status === "TEACHER_REVIEW" },
+  { key: "approved", label: "Approved", test: (q) => q.status === "APPROVED" },
+  { key: "recentlyUsed", label: "Recently Used", test: (q) => (q.usageCount || 0) > 0 },
+  { key: "neverUsed", label: "Never Used", test: (q) => !(q.usageCount > 0) },
+];
+
+function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam }) {
+  const QB = window.SarahServices.questionBankService;
+  const SOURCE_SCOPE = QB.SARAH_ORIGINAL_SOURCE_TYPES;
+  const [grammarQuestions, setGrammarQuestions] = useState(null);
+  const [readingQuestions, setReadingQuestions] = useState(null);
+  const [readingPassages, setReadingPassages] = useState(null);
+  const [latestAssignedById, setLatestAssignedById] = useState({});
+  const [err, setErr] = useState("");
+  const [view, setView] = useState("list"); // list | detail | edit
+  const [selection, setSelection] = useState(initialSelection || null); // { bank, id } | null
+  const [preset, setPreset] = useState("all");
+  const [filters, setFilters] = useState({ search: "", grade: "", difficulty: "" });
+
+  async function load() {
+    try {
+      const [g, r, p] = await Promise.all([QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages()]);
+      setGrammarQuestions(g); setReadingQuestions(r); setReadingPassages(p);
+      computeLatestAssignedAtByQuestionId().then(setLatestAssignedById).catch(() => {});
+    } catch (e) {
+      setErr("불러오지 못했어요: " + String(e.message || e));
+    }
+  }
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (initialSelection && grammarQuestions && readingQuestions) { setSelection(initialSelection); setView("detail"); }
+  }, [initialSelection, grammarQuestions, readingQuestions]);
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (grammarQuestions === null || readingQuestions === null || readingPassages === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  const pool = [
+    ...grammarQuestions.filter((q) => SOURCE_SCOPE.includes(q.source && q.source.type)).map((q) => ({ ...q, __bank: "grammar" })),
+    ...readingQuestions.filter((q) => SOURCE_SCOPE.includes(q.source && q.source.type)).map((q) => ({ ...q, __bank: "reading" })),
+  ];
+
+  const activePreset = SARAH_ORIGINAL_PRESETS.find((p) => p.key === preset) || SARAH_ORIGINAL_PRESETS[0];
+  let scoped = pool.filter(activePreset.test);
+  if (filters.search) {
+    const s = filters.search.toLowerCase();
+    scoped = scoped.filter((q) => (q.questionText || "").toLowerCase().includes(s) || (q.tags || []).some((t) => t.toLowerCase().includes(s)));
+  }
+  if (filters.grade) scoped = scoped.filter((q) => q.grade === filters.grade);
+  if (filters.difficulty) scoped = scoped.filter((q) => q.difficulty === filters.difficulty);
+  if (preset === "recentlyUsed") scoped = scoped.slice().sort((a, b) => (latestAssignedById[b.id] || 0) - (latestAssignedById[a.id] || 0));
+
+  const selectedDoc = selection && (selection.bank === "grammar" ? grammarQuestions : readingQuestions).find((q) => q.id === selection.id);
+  const selectedPassage = selection && selection.bank === "reading" && selectedDoc ? readingPassages.find((p) => p.id === selectedDoc.passageId) : null;
+
+  function selectQuestion(bank, id) { setSelection({ bank, id }); setView("detail"); }
+
+  if (view === "edit" && selectedDoc && selection.bank === "grammar") {
+    return html`<${GrammarQuestionForm} QB=${QB} questions=${grammarQuestions} existingDoc=${selectedDoc}
+      onSaved=${(doc, forked) => {
+        setGrammarQuestions((qs) => (forked ? [doc, ...qs.map((q) => (q.id === selectedDoc.id ? { ...q, status: "ARCHIVED", replacedBy: doc.id } : q))] : qs.map((q) => (q.id === doc.id ? doc : q))));
+        setSelection({ bank: "grammar", id: doc.id }); setView("detail");
+      }}
+      onCancel=${() => setView("detail")} />`;
+  }
+  if (view === "edit" && selectedDoc && selection.bank === "reading" && selectedPassage) {
+    return html`<${ReadingQuestionForm} QB=${QB} passage=${selectedPassage} questions=${readingQuestions.filter((q) => q.passageId === selectedPassage.id)} existingDoc=${selectedDoc}
+      onSaved=${(doc, forked) => {
+        setReadingQuestions((qs) => (forked ? [doc, ...qs.map((q) => (q.id === selectedDoc.id ? { ...q, status: "ARCHIVED", replacedBy: doc.id } : q))] : qs.map((q) => (q.id === doc.id ? doc : q))));
+        setSelection({ bank: "reading", id: doc.id }); setView("detail");
+      }}
+      onCancel=${() => setView("detail")} />`;
+  }
+  if (view === "detail" && selectedDoc && selection.bank === "grammar") {
+    return html`<${GrammarQuestionDetail} QB=${QB} doc=${selectedDoc} roster=${roster}
+      onBack=${(deleted) => { if (deleted) setGrammarQuestions((qs) => qs.filter((q) => q.id !== selectedDoc.id)); setSelection(null); setView("list"); }}
+      onEdit=${() => setView("edit")}
+      onChanged=${(doc) => setGrammarQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))}
+      onAddToExam=${onAddToExam} />`;
+  }
+  if (view === "detail" && selectedDoc && selection.bank === "reading") {
+    return html`<${ReadingQuestionDetail} QB=${QB} doc=${selectedDoc} passage=${selectedPassage} roster=${roster}
+      onBack=${(deleted) => { if (deleted) setReadingQuestions((qs) => qs.filter((q) => q.id !== selectedDoc.id)); setSelection(null); setView("list"); }}
+      onEdit=${() => setView("edit")}
+      onChanged=${(doc) => setReadingQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))}
+      onAddToExam=${onAddToExam} />`;
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>Sarah's Original(AI 생성 · 직접 작성) 문제 ${pool.length}개 중 ${scoped.length}개</div>
+      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        ${SARAH_ORIGINAL_PRESETS.map((p) => html`
+          <button key=${p.key} type="button" onClick=${() => setPreset(p.key)}
+            style=${{ fontSize: 12, padding: "5px 12px", borderRadius: 20, border: `1px solid ${p.key === preset ? C.navy : C.line}`, background: p.key === preset ? C.navy : C.white, color: p.key === preset ? C.white : C.ink, cursor: "pointer" }}>
+            ${p.label}
+          <//>
+        `)}
+      </div>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input style=${{ ...inputStyle, flex: "1 1 180px" }} placeholder="검색 (본문/태그)" value=${filters.search} onChange=${(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
+          <select style=${{ ...inputStyle, width: "auto" }} value=${filters.grade} onChange=${(e) => setFilters((f) => ({ ...f, grade: e.target.value }))}><option value="">학년 전체</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${filters.difficulty} onChange=${(e) => setFilters((f) => ({ ...f, difficulty: e.target.value }))}><option value="">난이도 전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+        </div>
+      <//>
+      ${scoped.length === 0
+        ? html`<${Empty} text="조건에 맞는 문제가 없어요." />`
+        : scoped.map((q) => {
+            const typeLabel = q.__bank === "grammar"
+              ? (() => { const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, q.mainCategory, q.subCategory); return `${main} → ${sub}`; })()
+              : (QB.READING_QUESTION_TYPES.find((t) => t.key === q.questionType) || {}).label;
+            return html`
+              <${Card} key=${q.__bank + q.id} onClick=${() => selectQuestion(q.__bank, q.id)} style=${{ cursor: "pointer" }}>
+                <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style=${{ minWidth: 0, flex: 1 }}>
+                    <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${q.__bank === "reading" ? "📖 READING" : "📐 GRAMMAR"} · ${q.grade} · ${typeLabel}</div>
+                    <div style=${{ fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${q.questionText}</div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>사용 ${q.usageCount || 0}회${latestAssignedById[q.id] ? " · 최근 출제 " + fmtDateTime(latestAssignedById[q.id]) : ""}</div>
+                  </div>
+                  <${QbBadge} status=${q.status} />
+                </div>
+              <//>
+            `;
+          })}
+    </div>
+  `;
+}
+
+function SarahsOriginalSection({ roster, onNavigateToExamBuilder }) {
+  const [tab, setTab] = useState("create");
+  const [pendingSelection, setPendingSelection] = useState(null); // { bank, id } | null
+  function jumpToMyQuestions(bank, id) {
+    setPendingSelection({ bank, id });
+    setTab("myQuestions");
+  }
+  return html`
+    <div>
+      <${Tabs} tabs=${SARAH_ORIGINAL_TABS} active=${tab} onChange=${setTab} />
+      ${tab === "create" && html`<${SarahsOriginalCreateTab} />`}
+      ${tab === "review" && html`<${ReviewQueueView} onSelect=${jumpToMyQuestions} />`}
+      ${tab === "myQuestions" && html`<${SarahsOriginalMyQuestionsTab} roster=${roster} initialSelection=${pendingSelection} onAddToExam=${onNavigateToExamBuilder} />`}
     </div>
   `;
 }
@@ -6779,6 +7535,99 @@ async function syncStudentExamSummary(studentId, updateData) {
   return summary;
 }
 
+// Teacher OS STEP 8 (Daily Report 통합) — 특정 날짜에 채점 완료된 Exam Builder 응시 결과만 뽑는다.
+// syncStudentExamSummary()와 똑같은 3개 서비스(examAssignmentService/examAttemptService/
+// examPaperService)의 읽기 전용 함수만 재사용 — examSummary는 "가장 최근 1건"만 담는 누적
+// rollup이라 특정 날짜 전체를 보여주기엔 부족해서, 같은 조인 로직을 날짜로 필터링만 다르게 한다.
+// 새 Firestore 쓰기 없음(읽기만).
+async function getTodaysGradedAssignmentResults(studentId, date) {
+  const AS = window.SarahServices.examAssignmentService;
+  const AT = window.SarahServices.examAttemptService;
+  const EP = window.SarahServices.examPaperService;
+  const [assignments, attempts, papers] = await Promise.all([
+    AS.listStudentAssignments(studentId), AT.listStudentAttempts(studentId), EP.listExamPapers(),
+  ]);
+  const paperTitleById = {};
+  papers.forEach((p) => { paperTitleById[p.id] = p.title; });
+  const attemptById = {};
+  attempts.forEach((a) => { attemptById[a.id] = a; });
+  function dateStrFromTs(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  return assignments
+    .filter((a) => a.status === "GRADED" && a.attemptId)
+    .map((a) => ({ assignment: a, attempt: attemptById[a.attemptId] }))
+    .filter(({ attempt }) => attempt && attempt.status === "GRADED" && dateStrFromTs(attempt.submittedAt) === date)
+    .map(({ assignment, attempt }) => {
+      const denom = (attempt.totalQuestions || 0) - (attempt.ungradedCount || 0);
+      const percentage = denom > 0 ? Math.round((attempt.correctCount / denom) * 100) : 0;
+      return { title: paperTitleById[assignment.examPaperId] || assignment.title, score: attempt.correctCount, total: attempt.totalQuestions, percentage };
+    });
+}
+
+// Teacher OS STEP 12 §3 — Assessment 4계통(regularExams/mockExams+mockExamResults/examTests+
+// examResults/examAssignments+examAttempts) 통합 Timeline. Firestore 컬렉션/필드는 하나도 새로
+// 만들지 않는다 — 기존 examService의 3개 조회 함수(전부 동기, studentData already in memory)와
+// getTodaysGradedAssignmentResults와 완전히 같은 조인 패턴(날짜 필터만 뺀 버전)을 합쳐서 공통
+// 모양({title,kindLabel,date,score,total,percentage,status})으로 normalize만 한다. examBuilder
+// 항목은 GRADED가 아니어도(배정됨/응시중/제출됨) 포함한다 — "지금 어떤 시험이 진행 중인지"까지
+// 한눈에 보이는 게 이 화면의 목적이라, 4계통 중 유일하게 "진행 상태"라는 개념이 있는 이 계통만
+// 골라서 숨기면 오히려 정보가 준다. Firestore 읽기는 이 함수가 호출될 때만(Assessment ▸ Timeline
+// 서브탭을 열 때만) 발생 — StudentDetailSection 마운트 시 이미 도는 syncStudentExamSummary와
+// 정확히 같은 3개 컬렉션(examAssignments/examAttempts/examPapers)을 다시 읽지만, 그 함수의
+// 결과(examSummary, "최근 1건 rollup")로는 이 화면이 필요로 하는 전체 목록을 재구성할 수 없어
+// 부득이 다시 읽는다 — 새로 쓰는 컬렉션은 없고, 쓰기는 전혀 없다(읽기 전용).
+async function getUnifiedAssessmentTimeline(studentId, studentName, studentData) {
+  const svc = window.SarahServices;
+  const regular = svc.examService.getRegularExamsForStudent(studentData).map((x) => ({
+    id: "regular_" + x.id, kind: "regular", kindLabel: x.examType || "내신/기타",
+    title: x.examDetail || x.examType || "시험", date: x.date || null,
+    score: x.score || (x.scoreNum != null ? String(x.scoreNum) : null), total: null, percentage: null,
+    status: "기록됨",
+  }));
+  const mock = svc.examService.getRecentMockResults(studentId, studentName, studentData).map((r, i) => ({
+    id: "mock_" + i, kind: "mock", kindLabel: "모의고사",
+    title: r.title, date: r.date, score: r.score, total: r.total,
+    percentage: r.total ? Math.round((r.score / r.total) * 100) : null, status: "기록됨",
+  }));
+  const examTest = svc.examService.getRecentExamResults(studentId, studentName, studentData).map((r, i) => ({
+    id: "examTest_" + i, kind: "examTest", kindLabel: "추가시험(퀴즈)",
+    title: r.title, date: r.date, score: r.score, total: r.total,
+    percentage: r.total ? Math.round((r.score / r.total) * 100) : null, status: "기록됨",
+  }));
+
+  const AS = svc.examAssignmentService, AT = svc.examAttemptService, EP = svc.examPaperService;
+  const [assignments, attempts, papers] = await Promise.all([
+    AS.listStudentAssignments(studentId), AT.listStudentAttempts(studentId), EP.listExamPapers(),
+  ]);
+  const paperTitleById = {};
+  papers.forEach((p) => { paperTitleById[p.id] = p.title; });
+  const attemptById = {};
+  attempts.forEach((a) => { attemptById[a.id] = a; });
+  function dateStrFromTs(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const examBuilder = assignments.map((a) => {
+    const attempt = a.attemptId ? attemptById[a.attemptId] : null;
+    const graded = a.status === "GRADED" && attempt && attempt.status === "GRADED";
+    const denom = graded ? (attempt.totalQuestions || 0) - (attempt.ungradedCount || 0) : 0;
+    const percentage = graded && denom > 0 ? Math.round((attempt.correctCount / denom) * 100) : null;
+    return {
+      id: "eb_" + a.id, kind: "examBuilder", kindLabel: "Exam Builder",
+      title: paperTitleById[a.examPaperId] || a.title || "시험지",
+      date: dateStrFromTs((attempt && attempt.submittedAt) || a.assignedAt),
+      score: graded ? attempt.correctCount : null, total: graded ? attempt.totalQuestions : null,
+      percentage, status: ASSIGNMENT_STATUS_LABEL[a.status] || a.status,
+    };
+  });
+
+  return [...regular, ...mock, ...examTest, ...examBuilder].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
 // §2 — Question Bank 목록의 "최근 출제일"용 가벼운 조회. usageCount는 기존 필드를 그대로 쓰고
 // (새 필드 없음), 여기서는 assignedAt 최댓값만 계산 — getQuestionUsageHistory()처럼 attempts까지
 // 읽을 필요가 없어서 더 가볍다.
@@ -7190,7 +8039,6 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "review", icon: "🔍", label: "Question Review" },
         { key: "examBuilder", icon: "🧪", label: "Exam Builder" },
-        { key: "mock", icon: "📝", label: "모의고사 (준비 중)" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "grammar" ? pendingSelection.id : null} roster=${roster} />`}
       ${bank === "reading" && html`<${ReadingQuestionBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "reading" ? pendingSelection.id : null} roster=${roster} />`}
@@ -7634,7 +8482,13 @@ const TEACHER_TODO_PRIORITIES = [
   { key: "low", label: "낮음", color: C.slate },
 ];
 
-function TeacherTodoPanel({ todos, saveTodos, roster, todayStr }) {
+// Teacher OS STEP 12 §2 — lockedStudentId(옵션)가 있으면 이 패널이 "그 학생 전용 To-Do" 모드로
+// 동작한다: 학생 선택 드롭다운을 숨기고, 새로 추가하는 항목엔 studentId를 자동으로 그 값으로
+// 채우고, 목록도 그 학생 것만 보여준다. saveTodos는 항상 todos 배열 "전체"를 인자로 받아 통째로
+// 저장하므로(teacherTodos는 메타 문서 하나에 전체 교사 할 일이 다 들어있음), 화면에 보여줄
+// pending/done만 scoped로 거르고 add/toggle/remove는 반드시 원본 todos 배열 기준으로 해야
+// 다른 학생 항목이 저장 시 사라지지 않는다 — 아래 scoped는 "표시용"에만 쓴다.
+function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId, title }) {
   const [content, setContent] = useState("");
   const [studentId, setStudentId] = useState("");
   const [type, setType] = useState("other");
@@ -7646,7 +8500,7 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr }) {
     if (!content.trim()) return;
     const item = {
       id: uid(), content: content.trim(), done: false, createdAt: today(),
-      studentId: studentId || null, type: type || null, priority: priority || null,
+      studentId: lockedStudentId || studentId || null, type: type || null, priority: priority || null,
       dueDate: dueDate || null, completedAt: null,
     };
     await saveTodos([item, ...(todos || [])]);
@@ -7660,13 +8514,14 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr }) {
   }
 
   const studentNameById = {};
-  roster.forEach((r) => { studentNameById[r.id] = r.name; });
+  (roster || []).forEach((r) => { studentNameById[r.id] = r.name; });
   const typeInfo = (key) => TEACHER_TODO_TYPES.find((t) => t.key === key) || TEACHER_TODO_TYPES[TEACHER_TODO_TYPES.length - 1];
   const priorityInfo = (key) => TEACHER_TODO_PRIORITIES.find((p) => p.key === key) || null;
   const prRank = { high: 0, medium: 1, low: 2 };
 
-  const pending = (todos || []).filter((t) => !t.done);
-  const done = (todos || []).filter((t) => t.done);
+  const scopedTodos = lockedStudentId ? (todos || []).filter((t) => t.studentId === lockedStudentId) : (todos || []);
+  const pending = scopedTodos.filter((t) => !t.done);
+  const done = scopedTodos.filter((t) => t.done);
   const rank = (t) => (t.dueDate ? (t.dueDate < todayStr ? 0 : t.dueDate === todayStr ? 1 : 2) : 3);
   pending.sort((a, b) => {
     const r = rank(a) - rank(b);
@@ -7690,7 +8545,7 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr }) {
             ${info.icon} ${t.content}
           </div>
           <div style=${{ fontSize: 10.5, color: overdue ? C.danger : C.slate, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            ${t.studentId && studentNameById[t.studentId] && html`<span>👤 ${studentNameById[t.studentId]}</span>`}
+            ${!lockedStudentId && t.studentId && studentNameById[t.studentId] && html`<span>👤 ${studentNameById[t.studentId]}</span>`}
             ${t.dueDate && html`<span>${overdue ? "⏰ 지남 · " : ""}${fmtDate(t.dueDate)}</span>`}
             ${pr && html`<span style=${{ color: pr.color, fontWeight: 700 }}>${pr.label}</span>`}
           </div>
@@ -7702,17 +8557,19 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr }) {
 
   return html`
     <${Card}>
-      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🔴 내 할 일</div>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${title || "🔴 내 할 일"}</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 6, marginBottom: 8 }}>
-        <input style=${{ ...smallInput, gridColumn: "1 / -1" }} placeholder="할 일 입력 (예: 민지 프린트 준비)" value=${content}
+        <input style=${{ ...smallInput, gridColumn: "1 / -1" }} placeholder=${lockedStudentId ? "할 일 입력 (예: 오답 영상 찍기)" : "할 일 입력 (예: 민지 프린트 준비)"} value=${content}
           onChange=${(e) => setContent(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addTodo()} />
         <select style=${smallInput} value=${type} onChange=${(e) => setType(e.target.value)}>
           ${TEACHER_TODO_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.icon} ${t.label}</option>`)}
         </select>
-        <select style=${smallInput} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
-          <option value="">학생 연결 안함</option>
-          ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
-        </select>
+        ${!lockedStudentId && html`
+          <select style=${smallInput} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
+            <option value="">학생 연결 안함</option>
+            ${(roster || []).map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+          </select>
+        `}
         <select style=${smallInput} value=${priority} onChange=${(e) => setPriority(e.target.value)}>
           <option value="">우선순위 없음</option>
           ${TEACHER_TODO_PRIORITIES.map((p) => html`<option key=${p.key} value=${p.key}>${p.label}</option>`)}
@@ -7774,14 +8631,63 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
     uncheckedByStudent[h.studentId] = (uncheckedByStudent[h.studentId] || 0) + 1;
   });
 
+  // Teacher OS STEP 11 — "기한 지난 미완료"(숙제/단어시험/모의고사). 예전엔 TeacherOverview(Main
+  // Page, nav에서 빠져 도달 불가능)에만 있던 계산이라 Today에서는 "오늘"분만 보였다 — 오늘 이전
+  // 기한이 지났는데 아직 안 끝난 것도 놓치면 안 되므로 그대로 옮겨왔다(로직 무수정).
+  const overdueHomework = [], overdueVocab = [], overdueMock = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    (d.homework || []).forEach((h) => {
+      if (!h.dueDate || h.dueDate >= todayStr || h.done || h.expired) return;
+      overdueHomework.push({ student: s, hw: h });
+    });
+    (d.vocabTests || []).forEach((t) => {
+      if (t.expired || !t.retestDate || t.retestDate >= todayStr) return;
+      const hasResult = (d.vocabResults || []).some((r) => r.testId === t.id);
+      if (hasResult) return;
+      overdueVocab.push({ student: s, test: t });
+    });
+    (d.mockExams || []).forEach((t) => {
+      if (t.expired || !t.date || t.date >= todayStr) return;
+      const hasResult = (d.mockExamResults || []).some((r) => r.testId === t.id);
+      if (hasResult) return;
+      overdueMock.push({ student: s, test: t });
+    });
+  });
+  overdueHomework.sort((a, b) => a.hw.dueDate.localeCompare(b.hw.dueDate));
+  overdueVocab.sort((a, b) => a.test.retestDate.localeCompare(b.test.retestDate));
+  overdueMock.sort((a, b) => a.test.date.localeCompare(b.test.date));
+  const overdueCheckCount = overdueHomework.length + overdueVocab.length + overdueMock.length;
+
+  // Teacher OS STEP 11 — 로드맵 지연 학생 + 학부모 상담 요청 집계. 둘 다 TeacherOverview에만
+  // 있던 계산을 그대로 옮겨왔다(로직 무수정) — 데이터가 없으면 섹션 자체를 렌더링하지 않는다.
+  const roadmapAlerts = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const rm = d.roadmap;
+    if (!rm || !(rm.phases || []).length) return;
+    const phase = rm.phases[rm.currentPhaseIndex || 0];
+    if (phase && phase.targetDate && !phase.diagnosticDone && phase.targetDate < todayStr) {
+      const overdueDays = Math.round((new Date(todayStr + "T00:00:00") - new Date(phase.targetDate + "T00:00:00")) / 86400000);
+      roadmapAlerts.push({ student: s, phase, overdueDays });
+    }
+  });
+  roadmapAlerts.sort((a, b) => b.overdueDays - a.overdueDays);
+
+  const allConsults = [];
+  roster.forEach((s) => {
+    const d = dataCache[s.id] || emptyData();
+    (d.consultRequests || []).forEach((r) => allConsults.push({ student: s, r }));
+  });
+  const pendingConsults = allConsults.filter((c) => c.r.status !== "완료");
+
   // ---- 최근 시험 (로스터 전체 최신순 8건, 기존 카드 그대로) + 오늘자만 따로 추린 것 ----
   const recentTests = [];
   roster.forEach((s) => {
     const data = dataCache[s.id];
     if (!data) return;
-    recentTests.push(...svc.vocabularyService.getRecentVocabResults(s.id, s.name, data));
-    recentTests.push(...svc.examService.getRecentMockResults(s.id, s.name, data));
-    recentTests.push(...svc.examService.getRecentExamResults(s.id, s.name, data));
+    recentTests.push(...svc.vocabularyService.getVocabActivityForStudent(s.id, s.name, data));
+    recentTests.push(...svc.examService.getAllExamResultsForStudent(s.id, s.name, data));
   });
   const paperTitleById = {};
   (examPapers || []).forEach((p) => { paperTitleById[p.id] = p.title; });
@@ -7959,7 +8865,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
               ${examResultsToday.map((r, i) => html`
                 <div key=${i} style=${{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
                   <span><span onClick=${() => onSelectStudent(r.studentId)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600 }}>${r.studentName}</span> <span style=${{ color: C.slate }}>${r.title}</span></span>
-                  <span style=${{ color: C.ink }}>${r.score}/${r.total}</span>
+                  <span style=${{ color: C.ink }}>${fmtScoreDisplay(r)}</span>
                 </div>
               `)}
             </div>
@@ -7980,7 +8886,62 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
               </div>
             `;
           })}
+
+          ${overdueCheckCount > 0 && html`
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger, marginTop: 14 }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
+            ${overdueHomework.length > 0 && html`
+              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 6 }}>숙제</div>
+              ${overdueHomework.map(({ student, hw }, i) => html`
+                <div key=${"ohw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                  <span><b>${student.name}</b> — ${hw.content}</span>
+                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>기한 ${fmtDate(hw.dueDate)}</span>
+                </div>
+              `)}
+            `}
+            ${overdueVocab.length > 0 && html`
+              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>단어시험</div>
+              ${overdueVocab.map(({ student, test }, i) => html`
+                <div key=${"ovc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                  <span><b>${student.name}</b> — ${test.title}</span>
+                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>재시험 ${fmtDate(test.retestDate)}</span>
+                </div>
+              `)}
+            `}
+            ${overdueMock.length > 0 && html`
+              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>모의고사</div>
+              ${overdueMock.map(({ student, test }, i) => html`
+                <div key=${"omk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                  <span><b>${student.name}</b> — ${test.title}</span>
+                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>응시일 ${fmtDate(test.date)}</span>
+                </div>
+              `)}
+            `}
+          `}
         <//>
+
+        ${roadmapAlerts.length > 0 && html`
+          <${Card}>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
+            ${roadmapAlerts.map((x, i) => html`
+              <div key=${x.student.id} onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                <span><b>${x.student.name}</b> — ${x.phase.title || "진행 단계"}</span>
+                <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${x.overdueDays}일 지연</span>
+              </div>
+            `)}
+          <//>
+        `}
+
+        ${pendingConsults.length > 0 && html`
+          <${Card}>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>💬 학부모 상담 요청 (${pendingConsults.length}건)</div>
+            ${pendingConsults.slice(0, 6).map((c, i) => html`
+              <div key=${c.r.id} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
+                <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
+              </div>
+            `)}
+          <//>
+        `}
 
         <${Card}>
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📚 수업 준비</div>
@@ -8061,7 +9022,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
                 <span onClick=${() => onSelectStudent(r.studentId)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${r.studentName}</span>
                 <span style=${{ fontSize: 11.5, color: C.slate, marginLeft: 6 }}>${r.title}</span>
               </div>
-              <span style=${{ fontSize: 12, color: C.slate, whiteSpace: "nowrap" }}>${r.score}/${r.total} · ${fmtDate(r.date)}</span>
+              <span style=${{ fontSize: 12, color: C.slate, whiteSpace: "nowrap" }}>${fmtScoreDisplay(r)} · ${fmtDate(r.date)}</span>
             </div>
           `)}
         <//>
@@ -8085,7 +9046,11 @@ const CLASSES_SUBTABS = [
   { key: "schedule", icon: "🗓", label: "Schedule" },
   { key: "attendance", icon: "✅", label: "Attendance" },
   { key: "homeworkReview", icon: "📝", label: "Homework Review" },
-  { key: "assessments", icon: "📋", label: "Assessments" },
+  // Teacher OS STEP 13 — 라벨을 "Assessments"에서 "Exam Assignments"로 바꿨다(key/컴포넌트는
+  // 무수정). Students → Assessment(학생 성적/약점 분석)와 이름이 거의 같아서 혼동 소지가 있다는
+  // 걸 실사용 동선 점검 중 발견 — 여긴 실제로는 배정한 시험의 진행 상태 큐(ExamAssignmentManager)
+  // 라 그 실체에 더 가까운 이름으로만 바꿨다.
+  { key: "assessments", icon: "📋", label: "Exam Assignments" },
   { key: "levelTest", icon: "🏫", label: "Level Test & Inquiries" },
 ];
 function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateData, levelTestBookings, saveBookingsList, onSelectStudent, onLogout }) {
@@ -9435,7 +10400,7 @@ function RegularExamEditor({ data, updateData }) {
 // Date.now()) each time so clicking the same student twice still re-applies the jump even if
 // studentId/kind didn't change. Purely additive — omitting the prop keeps the screen's original
 // default behavior (first student, "daily" tab) exactly as before.
-function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget }) {
+function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent }) {
   const [kind, setKind] = useState("daily");
   const [studentId, setStudentId] = useState(roster[0]?.id || "");
   const student = roster.find((r) => r.id === studentId);
@@ -9454,9 +10419,9 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
   }, [initialTarget && initialTarget.nonce]);
 
   const navItems = [
-    { key: "daily", label: "데일리 리포트", icon: "✉️" },
-    { key: "monthly", label: "월말리포트", icon: "📊" },
-    { key: "dashboard", label: "월간 분석", icon: "📈" },
+    { key: "daily", label: "Daily Report", icon: "✉️" },
+    { key: "monthly", label: "Monthly Report", icon: "📊" },
+    { key: "dashboard", label: "Student Progress", icon: "📈" },
   ];
   const data = student ? (dataCache[student.id] || emptyData()) : emptyData();
 
@@ -9468,10 +10433,11 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
             ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
           </select>
         <//>
+        ${student && onSelectStudent && html`<div style=${{ marginTop: 8 }}><a onClick=${() => onSelectStudent(student.id)} style=${{ color: C.gold, cursor: "pointer", fontSize: 12.5, textDecoration: "underline" }}>${student.name} 학생 Overview로 이동 →</a></div>`}
       <//>
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
-        ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
+        ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null} />`}
         ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
         ${kind === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
       `}
@@ -9479,18 +10445,31 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
   `;
 }
 
-function buildDailyReportText(student, data, date, hwFrom) {
+// Teacher OS STEP 8 — 기존 logs/vocabLog/homework 조합은 그대로 유지하고, Assessment(examService
+// 기존 2계통 + examAttempt 기반 Exam Builder 결과)와 Reading을 추가했다. `extra`는 선택 인자
+// ({ examAttemptResults, reading }) — 둘 다 비동기로만 구할 수 있어(Exam Builder/Reading 둘 다
+// 별도 컬렉션 조회 필요) 호출부(DailyReportGenerator)가 미리 불러와 넘겨준다. 둘 다 없어도(또는
+// 아직 로딩 전이어도) 함수는 그냥 그 섹션 없이 정상 동작한다 — AI 호출 없음, 100% 기존 데이터
+// 조합. 실제 기록이 없는 섹션은 빈 문장을 만들지 않고 통째로 생략한다.
+function buildDailyReportText(student, data, date, hwFrom, extra) {
+  const svc = window.SarahServices;
   const dt = new Date(date + "T00:00:00");
   const days = ["일", "월", "화", "수", "목", "금", "토"];
   const md = `${dt.getMonth() + 1}/${dt.getDate()}(${days[dt.getDay()]})`;
 
   const logsToday = (data.logs || []).filter((l) => l.date === date);
-  const learnedBlock = logsToday.length > 0 ? logsToday.map((l) => l.content).join("\n") : "문법:\n독해:";
+  const learnedBlock = logsToday.map((l) => l.content).join("\n");
 
-  const vocabToday = (data.vocabLog || []).filter((v) => v.date === date);
-  const vocabBlock = vocabToday.length > 0
-    ? vocabToday.map((v) => `${v.book} ${v.range}: ${v.correct}/${v.total} (${v.score}%) - ${v.passed ? "합격" : "불합격"}`).join("\n")
-    : "기록 없음";
+  // Teacher OS STEP 13 — getVocabActivityForStudent가 vocabResults(온라인 퀴즈)+vocabLog(구두
+  // 확인) 둘 다 합쳐서 준다(예전엔 vocabLog만 읽어서, 오늘 온라인 퀴즈만 봤으면 메시지 초안에
+  // 단어시험 결과가 통째로 빠졌었다). 두 종류 다 {score, total}이 원점수/총점 형태라 pct/합격
+  // 계산을 하나의 공식으로 통일한다.
+  const vocabToday = svc.vocabularyService.getVocabActivityForStudent(student.id, student.name, data).filter((v) => v.date === date);
+  const vocabBlock = vocabToday.map((v) => {
+    const pct = v.total ? Math.round((v.score / v.total) * 100) : null;
+    const pass = pct != null ? pct >= svc.vocabularyService.passThreshold(v.title) : null;
+    return `${v.title}: ${fmtScoreDisplay(v)}${pct != null ? ` (${pct}%)` : ""}${pass != null ? ` - ${pass ? "합격" : "불합격"}` : ""}`;
+  }).join("\n");
 
   const yesterday = new Date(dt); yesterday.setDate(yesterday.getDate() - 1);
   const y = yesterday.getFullYear(), m2 = String(yesterday.getMonth() + 1).padStart(2, "0"), d2 = String(yesterday.getDate()).padStart(2, "0");
@@ -9500,12 +10479,39 @@ function buildDailyReportText(student, data, date, hwFrom) {
   const hwRange = (data.homework || []).filter((h) => inRange(h.dueDate));
   const hwDone = hwRange.filter((h) => h.done);
   const hwUndone = hwRange.filter((h) => !h.done);
-  const hwBlock = hwRange.length === 0 ? "기록 없음" : [
+  const hwBlock = [
     hwDone.length > 0 ? `✅ 완료\n${hwDone.map((h) => `- ${h.content}`).join("\n")}` : "",
     hwUndone.length > 0 ? `❌ 미완료\n${hwUndone.map((h) => `- ${h.content}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
-  return `[${student.name}] ${md} 수업 안내\n📖 오늘 배운 내용\n${learnedBlock}\n✏️ 단어시험 결과\n${vocabBlock}\n📝 숙제 확인\n${hwBlock}`;
+  // Teacher OS STEP 13 — getAllExamResultsForStudent가 regularExams(내신/모의고사/교재성취평가
+  // 수기 기록)까지 mock/examTest와 합쳐서 준다(예전엔 이 셋 중 regularExams가 빠져 있어서, 오늘
+  // 중간고사 점수를 입력해도 메시지 초안엔 안 떴었다).
+  const examTodayLegacy = svc.examService.getAllExamResultsForStudent(student.id, student.name, data).filter((r) => r.date === date);
+  const examAttemptToday = (extra && extra.examAttemptResults) || [];
+  const examBlock = [
+    ...examTodayLegacy.map((r) => `${r.title}: ${fmtScoreDisplay(r)}`),
+    ...examAttemptToday.map((r) => `${r.title}: ${r.score}/${r.total} (${r.percentage}%)`),
+  ].join("\n");
+
+  const reading = extra && extra.reading;
+  const readingBlock = reading ? [
+    ...reading.completedToday.map((a) => `📖 ${a.storyTitle} (Lv.${a.level}) — 완독`),
+    ...reading.startedToday.filter((a) => a.status !== "COMPLETED").map((a) => `📖 ${a.storyTitle} (Lv.${a.level}) — 읽는 중`),
+    ...reading.journalEntries.map((e) => `📝 ${e.storyTitle} (Lv.${e.level}) — 독서기록 작성`),
+    reading.newWords.length > 0 ? `새 단어 ${reading.newWords.length}개: ${reading.newWords.map((w) => w.word).join(", ")}` : "",
+  ].filter(Boolean).join("\n") : "";
+
+  const sections = [
+    ["📖 오늘 배운 내용", learnedBlock],
+    ["✏️ Vocabulary", vocabBlock],
+    ["📝 Homework", hwBlock],
+    ["📄 Assessment", examBlock],
+    ["📚 Reading", readingBlock],
+  ].filter(([, sectionBody]) => sectionBody);
+
+  const body = sections.map(([header, sectionBody]) => `${header}\n${sectionBody}`).join("\n");
+  return `[${student.name}] ${md} 수업 안내` + (body ? `\n${body}` : "");
 }
 
 // Phase 3 (Report Center) — small 1~5 star picker used for the Daily Report's 4 rating fields.
@@ -9529,23 +10535,34 @@ function StarRating({ value, onChange }) {
 // display. Saves into the SAME dailyReports[date] object the existing "메시지 초안" card below
 // uses, additively (see the saveDraft fix above for why both sides now merge instead of
 // overwrite). This card is new; the existing 메시지 초안 card is completely unchanged below it.
-function DailyReportWorkspace({ student, data, date, updateData }) {
+// Teacher OS STEP 8 — "Today's Learning"은 이제 별도 자유서술 필드(lessonContent)가 아니라
+// data.logs(Class Record → Class Log, LogsEditor와 완전히 같은 컬렉션/모양)를 그대로 읽고 그
+// 자리에서 바로 추가한다 — "수업 기록을 Class Record에 넣고 Daily Report에 또 넣는" 이중 입력을
+// 없애기 위해서다(§3/§8). `reading`/`examAttemptResults`는 이제 부모(DailyReportGenerator)가
+// 한 번만 불러와 내려준다 — 메시지 초안(buildDailyReportText)도 같은 값을 재사용해야 해서, 이
+// 컴포넌트가 따로 fetch하던 걸 부모로 올렸다(중복 조회 제거). 옛 lessonContent가 이미 저장된
+// 날짜는(Phase 3 시절 데이터) 읽기 전용으로만 보여주고 새로 쓰지 않는다 — 과거 데이터 보존.
+function DailyReportWorkspace({ student, data, date, updateData, reading, examAttemptResults, onSelectStudent }) {
   const svc = window.SarahServices;
   const existing = svc.reportService.getDailyReport(data, date);
 
   const [status, setStatus] = useState("DRAFT");
   const [lessonInfo, setLessonInfo] = useState({});
-  const [lessonContent, setLessonContent] = useState({});
+  const [legacyLessonContent, setLegacyLessonContent] = useState({});
   const [ratings, setRatings] = useState({});
   const [teacherComment, setTeacherComment] = useState({});
   const [savedAt, setSavedAt] = useState(null);
-  const [reading, setReading] = useState(null); // { newWords, journalEntries } | null while loading
+  const [newLogContent, setNewLogContent] = useState("");
+  const [addingLog, setAddingLog] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [showStudentContext, setShowStudentContext] = useState(false);
 
   useEffect(() => {
     const e = svc.reportService.getDailyReport(data, date);
     setStatus(svc.reportService.getReportStatus(e));
     setLessonInfo((e && e.lessonInfo) || {});
-    setLessonContent((e && e.lessonContent) || {});
+    setLegacyLessonContent((e && e.lessonContent) || {});
     setRatings((e && e.ratings) || {});
     setTeacherComment((e && e.teacherComment) || {});
     setSavedAt(null);
@@ -9553,19 +10570,38 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
 
   useEffect(() => {
     let cancelled = false;
-    setReading(null);
-    svc.readingService.getReadingActivityForDate(student.id, date).then((r) => { if (!cancelled) setReading(r); });
+    setAnalysisLoading(true);
+    svc.studentAnalysisService.getStudentWeaknessAnalysis(student.id)
+      .then((result) => { if (!cancelled) setAnalysis(result); })
+      .catch(() => { if (!cancelled) setAnalysis(null); })
+      .finally(() => { if (!cancelled) setAnalysisLoading(false); });
     return () => { cancelled = true; };
-  }, [date, student.id]);
+  }, [student.id]);
 
+  const logsToday = (data.logs || []).filter((l) => l.date === date);
+  const hasLegacyLessonContent = Object.values(legacyLessonContent || {}).some((v) => v && v.trim && v.trim());
   const hwToday = svc.homeworkService.getHomeworkForStudent(student.id, student.name, data)
     .filter((h) => h.dueDate === date || h.assignedDate === date);
-  const vocabToday = svc.vocabularyService.getRecentVocabResults(student.id, student.name, data)
+  // Teacher OS STEP 13 — vocabResults+vocabLog, regularExams+mock+examTest 각각을 여기서도
+  // 병합 함수로 통일한다(buildDailyReportText와 정확히 같은 소스를 봐야 카드와 메시지 초안이
+  // 어긋나지 않는다).
+  const vocabToday = svc.vocabularyService.getVocabActivityForStudent(student.id, student.name, data)
     .filter((r) => r.date === date);
-  const examToday = [
-    ...svc.examService.getRecentMockResults(student.id, student.name, data),
-    ...svc.examService.getRecentExamResults(student.id, student.name, data),
-  ].filter((r) => r.date === date);
+  const examToday = svc.examService.getAllExamResultsForStudent(student.id, student.name, data)
+    .filter((r) => r.date === date);
+  const attemptResultsToday = examAttemptResults || [];
+  const recentNotes = [...(data.notes || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 3);
+
+  async function addLog() {
+    if (!newLogContent.trim()) return;
+    setAddingLog(true);
+    try {
+      await updateData((d) => ({ ...d, logs: [{ id: uid(), date, content: newLogContent.trim() }, ...(d.logs || [])] }));
+      setNewLogContent("");
+    } finally {
+      setAddingLog(false);
+    }
+  }
 
   async function save() {
     await updateData((d) => ({
@@ -9574,8 +10610,9 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
         ...(d.dailyReports || {}),
         // structuredUpdatedAt added after Phase 4 STEP 2's investigation found this save path had
         // no timestamp at all, unlike the text card's `updatedAt` — made tracing who/when saved a
-        // structured entry harder than it needed to be.
-        [date]: { ...(d.dailyReports || {})[date], status, lessonInfo, lessonContent, ratings, teacherComment, structuredUpdatedAt: Date.now() },
+        // structured entry harder than it needed to be. lessonContent is intentionally NOT written
+        // here anymore (STEP8) — spreading the existing entry first preserves any old value as-is.
+        [date]: { ...(d.dailyReports || {})[date], status, lessonInfo, ratings, teacherComment, structuredUpdatedAt: Date.now() },
       },
     }));
     setSavedAt(Date.now());
@@ -9587,7 +10624,10 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
   return html`
     <${Card} style=${{ marginBottom: 14 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📋 오늘 학습 기록</div>
+        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>
+          📋 오늘 학습 기록
+          ${onSelectStudent && html`<span> — <a onClick=${onSelectStudent} style=${{ color: C.gold, cursor: "pointer", textDecoration: "underline" }}>${student.name} 학생 Overview 보기 →</a></span>`}
+        </div>
         <select style=${{ ...smallInput, width: "auto", fontWeight: 700, color: status === "REVIEWED" ? C.navy : status === "COMPLETED" ? C.gold : C.slate }}
           value=${status} onChange=${(e) => setStatus(e.target.value)}>
           ${svc.reportService.DAILY_REPORT_STATUSES.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
@@ -9602,14 +10642,25 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
         <input style=${smallInput} placeholder="실제 수업 시간 (예: 105분)" value=${lessonInfo.actualDuration || ""} onChange=${(e) => setLessonInfo({ ...lessonInfo, actualDuration: e.target.value })} />
       </div>
 
-      <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>오늘 학습한 내용</div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 14 }}>
-        ${[["grammar", "문법"], ["reading", "Reading"], ["vocabulary", "Vocabulary"], ["writing", "Writing"], ["listening", "Listening"], ["other", "기타"]].map(([k, label]) => html`
-          <div key=${k}>
-            <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 3 }}>${label}</div>
-            <textarea style=${areaInput} value=${lessonContent[k] || ""} onChange=${(e) => setLessonContent({ ...lessonContent, [k]: e.target.value })} />
-          </div>
+      <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>Today's Learning <span style=${{ fontWeight: 400 }}>(Class Record · Class Log와 같은 기록이에요)</span></div>
+      <div style=${{ marginBottom: 14 }}>
+        ${logsToday.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>오늘 날짜로 등록된 수업 기록이 없어요.</div>` : logsToday.map((l) => html`
+          <div key=${l.id} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>${l.content}</div>
         `)}
+        <div style=${{ display: "flex", gap: 8, marginTop: 8 }}>
+          <textarea style=${{ ...areaInput, flex: 1 }} placeholder="오늘 배운 내용 (예: Unit 5 관계대명사 who/which 개념 설명, 워크북 12-14p 풀이)" value=${newLogContent} onChange=${(e) => setNewLogContent(e.target.value)} />
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12, alignSelf: "flex-start" }} onClick=${addLog} disabled=${addingLog}>기록 추가<//>
+        </div>
+        ${hasLegacyLessonContent && html`
+          <details style=${{ marginTop: 8 }}>
+            <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>이전 방식으로 기록된 내용 보기 (읽기 전용)</summary>
+            <div style=${{ marginTop: 6 }}>
+              ${[["grammar", "문법"], ["reading", "Reading"], ["vocabulary", "Vocabulary"], ["writing", "Writing"], ["listening", "Listening"], ["other", "기타"]]
+                .filter(([k]) => legacyLessonContent[k] && legacyLessonContent[k].trim())
+                .map(([k, label]) => html`<div key=${k} style=${{ fontSize: 12, color: C.slate, padding: "4px 0" }}><b>${label}:</b> ${legacyLessonContent[k]}</div>`)}
+            </div>
+          </details>
+        `}
       </div>
 
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>수업 평가</div>
@@ -9646,9 +10697,10 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
         </div>
         <div>
           <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>📄 시험 (자동 연결)</div>
-          ${examToday.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>오늘 응시한 시험이 없어요.</div>` : examToday.map((r, i) => html`
-            <div key=${i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>${r.title} — ${r.score}/${r.total}</div>
-          `)}
+          ${examToday.length === 0 && attemptResultsToday.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>오늘 응시한 시험이 없어요.</div>` : html`
+            ${examToday.map((r, i) => html`<div key=${"e" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>${r.title} — ${fmtScoreDisplay(r)}</div>`)}
+            ${attemptResultsToday.map((r, i) => html`<div key=${"a" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>${r.title} — ${r.score}/${r.total} (${r.percentage}%)</div>`)}
+          `}
         </div>
         <div>
           <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>📚 Reading (자동 연결)</div>
@@ -9661,9 +10713,30 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
         </div>
       </div>
 
+      <div style=${{ marginTop: 14 }}>
+        <div onClick=${() => setShowStudentContext((v) => !v)} style=${{ fontSize: 11, fontWeight: 700, color: C.slate, cursor: "pointer", userSelect: "none" }}>
+          ${showStudentContext ? "▾" : "▸"} 학생 상태 참고 (취약 유형 · 최근 시험 · 주의사항)
+        </div>
+        ${showStudentContext && html`
+          <div style=${{ marginTop: 8 }}>
+            <${StudentWeaknessAnalysisCard} loading=${analysisLoading} analysis=${analysis} logs=${data.logs} />
+            ${data.examSummary && html`
+              <${Card} style=${{ marginTop: 10 }}>
+                <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📊 최근 시험 결과 (누적)</div>
+                <div style=${{ fontSize: 12, color: C.ink }}>누적 ${data.examSummary.totalExams}회 · 평균 정답률 ${data.examSummary.averagePercentage}% · 최근 "${data.examSummary.latestExamTitle}" ${data.examSummary.latestScore}/${data.examSummary.latestTotal} (${data.examSummary.latestPercentage}%)</div>
+              <//>
+            `}
+            <${Card} style=${{ marginTop: 10 }}>
+              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>⚠️ 최근 상담/주의사항</div>
+              ${recentNotes.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>등록된 상담/메모가 없어요.</div>` : recentNotes.map((n, i) => html`<div key=${i} style=${{ fontSize: 12, padding: "3px 0" }}>${n.content}</div>`)}
+            <//>
+          </div>
+        `}
+      </div>
+
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, margin: "14px 0 6px" }}>Teacher Comment</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginBottom: 14 }}>
-        ${[["good", "잘한 점"], ["improve", "보완할 점"], ["next", "다음 수업까지 할 것"], ["note", "선생님 메모"]].map(([k, label]) => html`
+        ${[["good", "잘한 점"], ["improve", "보완할 점"], ["next", "Next Step — 다음 수업까지 할 것"], ["note", "선생님 메모"]].map(([k, label]) => html`
           <div key=${k}>
             <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 3 }}>${label}</div>
             <textarea style=${areaInput} value=${teacherComment[k] || ""} onChange=${(e) => setTeacherComment({ ...teacherComment, [k]: e.target.value })} />
@@ -9679,13 +10752,26 @@ function DailyReportWorkspace({ student, data, date, updateData }) {
   `;
 }
 
-function DailyReportGenerator({ student, data, updateData }) {
+function DailyReportGenerator({ student, data, updateData, onSelectStudent }) {
   const [date, setDate] = useState(today());
   const [hwFrom, setHwFrom] = useState(today());
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [text, setText] = useState("");
   const [published, setPublished] = useState(false);
+  // Teacher OS STEP 8 — reading/examAttemptResults는 여기서 한 번만 불러와 DailyReportWorkspace
+  // (표시용)와 buildDailyReportText(자동 초안용) 둘 다에 같은 값을 넘긴다 — 예전엔
+  // DailyReportWorkspace가 reading을 따로 불러와서 자동 초안에는 반영이 안 됐었다.
+  const [reading, setReading] = useState(null);
+  const [examAttemptResults, setExamAttemptResults] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReading(null);
+    window.SarahServices.readingService.getReadingActivityForDate(student.id, date).then((r) => { if (!cancelled) setReading(r); });
+    getTodaysGradedAssignmentResults(student.id, date).then((r) => { if (!cancelled) setExamAttemptResults(r); }).catch(() => { if (!cancelled) setExamAttemptResults([]); });
+    return () => { cancelled = true; };
+  }, [date, student.id]);
 
   useEffect(() => {
     const existing = (data.dailyReports || {})[date];
@@ -9693,14 +10779,17 @@ function DailyReportGenerator({ student, data, updateData }) {
       setText(existing.text || "");
       setPublished(existing.published || false);
     } else {
-      setText(buildDailyReportText(student, data, date, hwFrom));
+      // `data`가 dep에 있어야 한다 — Today's Learning 패널에서 로그를 바로 추가하면(§3/§8) 이
+      // 화면을 나가지 않고도 초안이 즉시 반영돼야 하는데, updateData()는 매번 새 data 객체를
+      // 만들어주므로 이 dep만으로 충분하다(별도 refetch 불필요).
+      setText(buildDailyReportText(student, data, date, hwFrom, { reading, examAttemptResults }));
       setPublished(false);
     }
     setCopied(false); setSaved(false);
-  }, [date, hwFrom, student.id]);
+  }, [date, hwFrom, student.id, reading, examAttemptResults, data]);
 
   function regenerate() {
-    setText(buildDailyReportText(student, data, date, hwFrom));
+    setText(buildDailyReportText(student, data, date, hwFrom, { reading, examAttemptResults }));
   }
 
   async function copy() {
@@ -9734,7 +10823,8 @@ function DailyReportGenerator({ student, data, updateData }) {
 
   return html`
     <div>
-      <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData} />
+      <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData}
+        reading=${reading} examAttemptResults=${examAttemptResults} onSelectStudent=${onSelectStudent} />
       <${Card}>
         <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>✉️ 학부모 메시지 초안</div>
         <div style=${{ display: "flex", gap: 12, marginBottom: 14 }}>
@@ -10182,6 +11272,10 @@ function MonthlyReportDashboard({ student, data }) {
   const [month, setMonth] = useState(today().slice(0, 7));
   const [reading, setReading] = useState(null);
   const [readingPrev, setReadingPrev] = useState(null);
+  // Teacher OS STEP 9 — Reading Growth Report의 insights를 그대로 재사용한다(새로 해석 문장을
+  // 다시 만들지 않음, §7 "복제하지 않는다"). 선택한 month와 무관하게 "지금 기준 최근 30일/이번
+  // 달" 값이라 student.id가 바뀔 때만 다시 불러온다.
+  const [readingGrowth, setReadingGrowth] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -10194,6 +11288,13 @@ function MonthlyReportDashboard({ student, data }) {
     ]).then(([r, rp]) => { if (!cancelled) { setReading(r); setReadingPrev(rp); } });
     return () => { cancelled = true; };
   }, [student.id, month]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReadingGrowth(null);
+    svc.readingService.getReadingGrowthReport(student.id).then((r) => { if (!cancelled) setReadingGrowth(r); }).catch(() => { if (!cancelled) setReadingGrowth(null); });
+    return () => { cancelled = true; };
+  }, [student.id]);
 
   const prevMonth = monthOffset(month, 1);
   const months3 = [monthOffset(month, 2), monthOffset(month, 1), month];
@@ -10347,6 +11448,12 @@ function MonthlyReportDashboard({ student, data }) {
               <div style=${{ fontSize: 12, color: C.slate }}>이번 달 완료한 레벨: ${Object.entries(reading.levelCounts).sort((a, b) => a[0] - b[0]).map(([lv, n]) => `Lv.${lv} × ${n}`).join(", ")}</div>
             `}
             <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 8 }}>* Quiz Score/이해도는 리딩 라이브러리에 퀴즈 기능이 아직 없어 데이터가 있을 때만 표시돼요.</div>
+          `}
+          ${readingGrowth && readingGrowth.insights.length > 0 && html`
+            <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.navy, marginBottom: 4 }}>📈 Reading Growth 요약 (Reading → Growth Report와 동일)</div>
+              ${readingGrowth.insights.map((line, i) => html`<div key=${i} style=${{ fontSize: 12, color: C.ink, padding: "2px 0" }}>${line}</div>`)}
+            </div>
           `}
         <//>
       <//>
@@ -10764,6 +11871,31 @@ function VocabRetestSchedule({ t, updateData }) {
   `;
 }
 
+// Teacher OS STEP 10 — VocabEditor.save()와 Reading → Vocabulary의 "Create Vocabulary Test"
+// 둘 다 이 함수 하나로 vocabTests 엔트리를 만든다(정의를 하나로 합쳐서 두 화면의 저장 형식이
+// 갈라질 위험을 없앤다). 순수 함수 — Firestore 접근 없음. `wordsRaw`는 {word, meaning, synonyms}
+// 배열(synonyms는 문자열이든 배열이든 둘 다 받는다 — VocabEditor는 콤마 구분 문자열 입력을 쓰고,
+// Reading Vocabulary 쪽은 synonyms 자체가 없으므로). 유효성 검사(제목/최소 2단어/재시험 일시)를
+// 통과 못 하면 { ok:false }만 반환하고 아무것도 만들지 않는다 — 기존 VocabEditor.save()의 무음
+// 실패(return만 하고 아무 처리 없음) 동작을 그대로 보존한다.
+function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime }) {
+  const raw = (wordsRaw || []).filter((w) => w.word && w.meaning).map((w) => ({
+    word: w.word, meaning: w.meaning,
+    synonyms: Array.isArray(w.synonyms) ? w.synonyms : (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
+  }));
+  // Final safety net regardless of how the words got here (bank import, paste, typed in by hand,
+  // or picked from Reading Vocabulary) — a saved test should never ask the same word twice.
+  const seenWords = new Set();
+  const clean = raw.filter((w) => {
+    const key = w.word.trim().toLowerCase();
+    if (seenWords.has(key)) return false;
+    seenWords.add(key);
+    return true;
+  });
+  if (!title || clean.length < 2 || !retestDate || !retestTime) return { ok: false, clean };
+  return { ok: true, entry: { id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime } };
+}
+
 function VocabEditor({ student, data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [mode, setMode] = useState("mix");
@@ -10828,21 +11960,9 @@ function VocabEditor({ student, data, updateData }) {
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
   function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
   async function save() {
-    const raw = words.filter((w) => w.word && w.meaning).map((w) => ({
-      word: w.word, meaning: w.meaning,
-      synonyms: (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
-    }));
-    // Final safety net regardless of how the words got here (bank import, paste, or typed in by
-    // hand) — a saved test should never ask the same word twice.
-    const seenWords = new Set();
-    const clean = raw.filter((w) => {
-      const key = w.word.trim().toLowerCase();
-      if (seenWords.has(key)) return false;
-      seenWords.add(key);
-      return true;
-    });
-    if (!title || clean.length < 2 || !retestDate || !retestTime) return;
-    await updateData((d) => ({ ...d, vocabTests: [{ id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime }, ...d.vocabTests] }));
+    const result = buildVocabTestEntry({ title, wordsRaw: words, mode, retestDate, retestTime });
+    if (!result.ok) return;
+    await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
     setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setCreating(false);
   }

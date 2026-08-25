@@ -67,12 +67,29 @@ window.SarahServices = window.SarahServices || {};
     return words.size;
   }
 
+  // Teacher OS STEP 13 — vocabResults(온라인 퀴즈)와 vocabLog(수업 중 구두 확인 기록) 두 계통이
+  // 각각 다른 화면에서만 보였다: Today/Daily Report의 "오늘 단어시험" 카드는 vocabResults만,
+  // Daily Report의 학부모 메시지 초안(buildDailyReportText)은 vocabLog만 읽고 있었다 — 그래서
+  // 학생이 오늘 온라인 퀴즈를 봤으면 카드엔 뜨는데 메시지 초안엔 안 뜨고, 반대로 구두 확인을
+  // 오늘 기록했으면 메시지 초안엔 뜨는데 카드엔 안 뜨는 실제 불일치가 있었다. 이 함수가 그 둘을
+  // 합쳐서 두 화면이 항상 같은 데이터를 보게 만드는 단일 창구다. 새 필드/컬렉션 없음.
+  function getVocabActivityForStudent(studentId, studentName, studentData) {
+    const quiz = getRecentVocabResults(studentId, studentName, studentData);
+    const log = getVocabLogForStudent(studentData).map((v) => ({
+      kind: "vocab", studentId, studentName,
+      title: `${v.book || ""}${v.range ? " " + v.range : ""}`.trim() || "단어시험(구두 확인)",
+      date: v.date || null, score: v.correct, total: v.total,
+    }));
+    return [...quiz, ...log];
+  }
+
   window.SarahServices.vocabularyService = {
     getVocabTestsForStudent,
     getVocabResultsForStudent,
     getVocabLogForStudent,
     passThreshold,
     getRecentVocabResults,
+    getVocabActivityForStudent,
     getMonthlyVocabStats,
     getCumulativeWordCount,
   };
