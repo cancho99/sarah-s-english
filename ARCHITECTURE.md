@@ -244,6 +244,30 @@ Homework/Vocabulary/Exam/Reading은 Daily/Monthly Report에 복제 저장하지 
   whyRoadmap: null | {diagnosis,priority,intervention,outcome},
   phases: [blankPhase(1)..blankPhase(5)],   // 생성 시 항상 5개
 }
+// phases[i]  — blankPhase()의 기존 필드(title/periodLabel/targetDate/focus/materials/detail/
+// diagnosticDone/diagnosticDate/objectives/completionCriteria/whyThisStep/materialsList)는
+// 2026-08-27 Milestone/Task 시스템 추가로도 전혀 안 바뀜. 이번에 추가된 필드는 phase.weight
+// (선택, 전체 진행률 가중 평균에 쓰임, 기본 1)와 phase.categories[]뿐 — 둘 다 없어도(기존
+// 데이터 전부 해당) phaseProgress()가 diagnosticDone 기반으로 그대로 폴백한다.
+{
+  ...(기존 필드 그대로),
+  weight?: number,          // 없으면 1 취급
+  categories?: [{           // 없으면 [] 취급 — Category
+    id, title, description, order, weight,   // weight 없으면 1
+    milestones: [{                            // Milestone
+      id, title, description, order, status, progress, target, current,
+      startDate, targetDate, completedDate, notes, relatedMaterials, evaluationCriteria, weight,
+      tasks: [{ id, title, status, progress, completedDate, score, mastery, notes, order }],  // Task
+    }],
+  }],
+}
+// status(Task/Milestone 공통): NOT_STARTED|IN_PROGRESS|PRACTICING|MASTERED|REVIEW_NEEDED.
+// progress 계산은 항상 Task→Milestone→Category→Phase→Overall 상향식(services/roadmapService.js,
+// 전부 순수 함수) — Task가 있는 Milestone은 progress를 저장하지 않고 매번 다시 계산한다(캐시
+// 없음, 그래서 새로고침 없이 항상 최신). RoadmapEditor(index.html) 안 RoadmapMilestoneBoard가
+// 유일한 소비처 — TeacherOverview/MonthlyReportView/ParentDailyReportCard/ParentRoadmapSection의
+// 기존 "phases.length 기준 progressPct" 위젯 4곳은 이번에 손대지 않아 그대로 diagnosticDone
+// 기반으로 동작한다(의도적 — 최소 변경).
 // data.consultRequests[]  — 상담 요청(요청서의 "상담/메모" 중 상담 부분)
 { id, createdAt, method, note, status:"대기", choices:[{date,time}] }  // 최대 3개 후보
 // data.notes[]  — 교사 메모(상담/메모 중 메모 부분)
