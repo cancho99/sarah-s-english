@@ -7279,6 +7279,11 @@ function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, ca
     onChange({ ...section, questionRefs: section.questionRefs.filter((_, idx) => idx !== i) });
   }
   const passage = section.bank === "reading" && section.passageId ? passagesById[section.passageId] : null;
+  // passagesById is a merged map (legacy readingPassages + readingAnalyses, Reading Analysis
+  // 재설계 Phase C) — a readingPassages doc has `passageText`, a readingAnalyses doc has
+  // `originalText` instead. Every render site below needs the fallback or it silently breaks
+  // (or crashes on .slice()) for School Exam papers.
+  const passageBody = passage ? (passage.passageText || passage.originalText || "") : "";
   return html`
     <${Card} style=${{ marginBottom: 12 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -7287,7 +7292,7 @@ function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, ca
           : html`<div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${section.label}</div>`}
         <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: section.bank === "reading" ? "#E7ECF3" : "#EFEAE0", color: C.navy, marginLeft: 8, whiteSpace: "nowrap" }}>${section.bank === "reading" ? "📖 READING" : "📐 GRAMMAR"}</span>
       </div>
-      ${passage && html`<div style=${{ fontSize: 12, color: C.slate, background: C.ivory, borderRadius: 3, padding: "8px 10px", marginBottom: 8, whiteSpace: "pre-wrap", maxHeight: 100, overflowY: "auto" }}>${passage.title} — ${passage.passageText.slice(0, 200)}${passage.passageText.length > 200 ? "..." : ""}</div>`}
+      ${passage && html`<div style=${{ fontSize: 12, color: C.slate, background: C.ivory, borderRadius: 3, padding: "8px 10px", marginBottom: 8, whiteSpace: "pre-wrap", maxHeight: 100, overflowY: "auto" }}>${passage.title} — ${passageBody.slice(0, 200)}${passageBody.length > 200 ? "..." : ""}</div>`}
       ${canEdit && html`
         <div style=${{ display: "flex", gap: 14, marginBottom: 8, fontSize: 11.5 }}>
           <label style=${{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}><input type="checkbox" checked=${section.shuffleQuestions} onChange=${(e) => onChange({ ...section, shuffleQuestions: e.target.checked })} style=${{ width: 14, height: 14, appearance: "auto" }} /> 문제 순서 섞기 (확정 시 1회)</label>
@@ -7551,7 +7556,7 @@ function SchoolExamBuilder({ EP, QB, grammarQuestions, readingAnalysisQuestions,
       const pool = selectedAnalysisIds.length > 0
         ? readingAnalysisQuestions.filter((q) => selectedAnalysisIds.includes(q.analysisId))
         : readingAnalysisQuestions;
-      const res = EP.autoDistributeReadingAnalysisSections("SECTION. READING", pool, { grade, difficulty: readingDifficulty, examType: "" }, rCount, recentlyUsedIds, usedIds, readingAnalysesById);
+      const res = EP.autoDistributeReadingAnalysisSections("SECTION. READING", pool, { grade, difficulty: readingDifficulty, examType: "", questionTypes: readingTypes }, rCount, recentlyUsedIds, usedIds, readingAnalysesById);
       sections.push(...res.sections);
       allocations.push(...res.allocations.map((a) => ({ ...a, bank: "reading" })));
       actualTotal += res.actualTotal;
@@ -7897,7 +7902,7 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
     const sectionsHtml = (paper.sections || []).map((s) => {
       const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
       const passageHtml = passage
-        ? `<div class="passage"><div class="passage-title">${esc(passage.title)}</div><div class="passage-text">${esc(passage.passageText)}</div></div>`
+        ? `<div class="passage"><div class="passage-title">${esc(passage.title)}</div><div class="passage-text">${esc(passage.passageText || passage.originalText)}</div></div>`
         : "";
       const questionsHtml = (s.questionRefs || []).map((qr) => {
         const qDoc = questionsById[qr.questionId];
@@ -8939,7 +8944,7 @@ function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questio
             ${passage && html`
               <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
                 <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
-                <div style=${{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.7, color: C.ink }}>${passage.passageText}</div>
+                <div style=${{ whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
               <//>
             `}
             ${(s.questionRefs || []).map((ref) => {
@@ -11948,7 +11953,8 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent }) {
 
       <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "20px 0 8px" }}>👨‍👩‍👧 학부모님이 보시는 화면 미리보기</div>
       ${!published && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>아직 "작성 완료"를 안 눌러서 실제로는 학부모님께 안 보여요 — 이건 지금 저장된 내용 기준 미리보기예요.</div>`}
-      <${ParentDailyReportCard} student=${student} data=${data} date=${date} sinceDate=${previewSinceDate} r=${previewR} />
+      <${ParentDailyReportCard} student=${student} data=${data} date=${date} sinceDate=${previewSinceDate} r=${previewR}
+        preloadedReading=${reading} preloadedExamAttemptResults=${examAttemptResults} />
     </div>
   `;
 }
@@ -14183,7 +14189,7 @@ function StudentExamRuntime({ assignment, onExit }) {
       ${curPassage && html`
         <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${curPassage.title}</div>
-          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${curPassage.passageText}</div>
+          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${curPassage.passageText || curPassage.originalText}</div>
         <//>
       `}
 
@@ -16008,12 +16014,17 @@ function DailyReportChip({ icon, label, tone }) {
 // 나오는 버그가 있었다(사용자가 실제로 겪음). sinceDate(부모 쪽에서 정렬된 발행 리포트 목록 중
 // 바로 이전 리포트의 날짜)가 있으면 그 다음 날부터, 없으면(첫 리포트) 이 날짜까지의 전체 기록을
 // 범위로 삼는다 — 리포트마다 겹치지 않게 해서 같은 숙제가 여러 리포트에 반복 표시되지 않는다.
-function ParentDailyReportCard({ student, data, date, sinceDate, r }) {
+// preloadedReading/preloadedExamAttemptResults: 이미 같은 날짜로 fetch를 한 번 해둔 부모
+// (DailyReportGenerator의 학부모 미리보기)가 있으면 그 값을 그대로 넘겨서 이 컴포넌트가 또
+// 같은 네트워크 요청을 중복으로 쏘지 않게 한다 — 둘 다 안 넘기면(실제 학부모 화면 목록) 지금까지처럼
+// 이 컴포넌트가 직접 불러온다.
+function ParentDailyReportCard({ student, data, date, sinceDate, r, preloadedReading, preloadedExamAttemptResults }) {
   const svc = window.SarahServices;
-  const [reading, setReading] = useState(null);
-  const [examAttemptResults, setExamAttemptResults] = useState([]);
+  const [reading, setReading] = useState(preloadedReading || null);
+  const [examAttemptResults, setExamAttemptResults] = useState(preloadedExamAttemptResults || []);
 
   useEffect(() => {
+    if (preloadedReading !== undefined && preloadedExamAttemptResults !== undefined) return;
     let cancelled = false;
     setReading(null); setExamAttemptResults([]);
     svc.readingService.getReadingActivityForDate(student.id, date).then((res) => { if (!cancelled) setReading(res); });
@@ -16341,6 +16352,11 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
   const [tab, setTab] = useState(null); // null = home (icon grid); otherwise one of PARENT_HOME_ACTIONS' keys
   const [data, setData] = useState(null);
   const [lightbox, setLightbox] = useState(null);
+  // ParentDailyReportCard fetches reading/exam data per card (each is a different date, so it
+  // can't share one prefetch) — rendering every published report at once fired that many Firestore
+  // reads simultaneously and made the tab noticeably slow to open, especially on mobile. Only
+  // render the most recent few by default; "이전 리포트 더 보기" reveals the rest on demand.
+  const [dailyReportShowCount, setDailyReportShowCount] = useState(5);
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
 
@@ -16412,7 +16428,10 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         <div>
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선생님이 작성을 완료한 리포트만 여기에 표시돼요.</div>
           ${publishedDaily.length === 0 && html`<${Empty} text="아직 공개된 데일리 리포트가 없어요." />`}
-          ${publishedDaily.map(([date, r], i) => html`<${ParentDailyReportCard} key=${date} student=${student} data=${data} date=${date} sinceDate=${(publishedDaily[i + 1] || [])[0] || null} r=${r} />`)}
+          ${publishedDaily.slice(0, dailyReportShowCount).map(([date, r], i) => html`<${ParentDailyReportCard} key=${date} student=${student} data=${data} date=${date} sinceDate=${(publishedDaily[i + 1] || [])[0] || null} r=${r} />`)}
+          ${publishedDaily.length > dailyReportShowCount && html`
+            <${Button} variant="ghost" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => setDailyReportShowCount((n) => n + 10)}>이전 리포트 더 보기 (${publishedDaily.length - dailyReportShowCount}개 남음)<//>
+          `}
         </div>
       `}
 
