@@ -288,11 +288,16 @@ const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어
 
 [절대 원칙]
 - 원문(originalText)은 절대 수정·요약·재구성·삭제하지 마세요. sentences[].originalText는 실제 지문 문장을 글자 하나 틀리지 않고 그대로 담습니다.
-- sentences[].chunks[]는 원문을 빠짐없이, 원문에 없는 단어를 추가하지 않고 순서대로 나눕니다. 한 문장의 모든 chunk의 text를 순서대로 이어 붙이면(공백 차이 제외) originalText와 정확히 일치해야 합니다. 스스로 이 대조를 반드시 확인한 뒤 답하세요 — 일치하지 않으면 이 응답 전체가 폐기됩니다.
+- sentences[].chunks[]는 원문을 빠짐없이, 원문에 없는 단어를 추가하지 않고 순서대로 나눕니다. 쉼표(,)·마침표(.) 등 문장부호도 원문에 있는 그대로 절대 빠뜨리지 마세요 — 특히 절이나 구 경계 바로 앞의 쉼표(예: "..., which"의 쉼표, "Because ..., 주어..."의 쉼표)를 그 앞 chunk의 text 끝에 반드시 포함시키세요(별도 chunk로 떼어내지도, 아예 빠뜨리지도 마세요). 한 문장의 모든 chunk의 text를 순서대로 이어 붙이면(공백 차이 제외) originalText와 문장부호까지 정확히 일치해야 합니다. 스스로 이 대조를 반드시 확인한 뒤 답하세요 — 일치하지 않으면 이 응답 전체가 폐기됩니다.
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
 
 [Chunk 분리 기준]
-문장 길이로 임의로 자르지 말고, 다음 문장 구조/의미 단위를 기준으로 나누세요: 주어, 동사, 목적어, 보어, 수식어, 절, 구, 병렬구조. 절 내부(종속절 안)도 같은 기준으로 계속 쪼개세요 — chunks 배열은 문장 전체를 통틀어 하나의 순서열이며, 종속절이라고 별도 배열에 담지 않습니다(종속절의 범위는 clauses[]가 별도로 표시).
+문장 길이로 임의로 자르지 말고, 다음 문장 구조/의미 단위를 기준으로 나누세요: 주어, 동사, 목적어, 보어, 수식어, 절, 구, 병렬구조. **절 내부(종속절/관계사절/to부정사구 등 안)도 절대 하나의 chunk로 뭉뚱그리지 말고, 그 안에서도 다시 주어/동사/목적어/보어/수식어 단위로 계속 쪼개세요.** chunks 배열은 문장 전체를 통틀어 하나의 순서열이며, 종속절이라고 별도 배열에 담지 않습니다(종속절의 범위는 clauses[]가 별도로 startChunkIdx~endChunkIdx로 표시).
+
+예시 — "You may notice that your favorite chocolate bar doesn't taste the same as before." 라는 문장이 있다면:
+chunks: [{"text":"You","role":"S","order":1}, {"text":"may notice","role":"V","order":2}, {"text":"that your favorite chocolate bar","role":"S","order":3}, {"text":"doesn't taste","role":"V","order":4}, {"text":"the same","role":"C","order":5}, {"text":"as before.","role":"M","order":6}]
+clauses: [{"type":"noun clause","text":"that your favorite chocolate bar doesn't taste the same as before","startChunkIdx":3,"endChunkIdx":6}]
+— 이렇게 종속절(that절) 안의 "your favorite chocolate bar"(주어)/"doesn't taste"(동사)/"the same"(보어)/"as before"(수식어)까지 각각 별도 chunk로 계속 쪼갠 뒤, clauses[]가 그 범위(3~6)를 절로 묶어 표시하는 것이 올바른 방식입니다. order 3 하나에 "that your favorite chocolate bar doesn't taste the same as before" 전체를 담아버리는 것은 틀린 방식입니다.
 
 [Chunk 문장성분(role) 배정 원칙 — 중요]
 - role은 "S"(주어) | "V"(동사) | "O"(목적어) | "C"(보어) | "M"(수식어) | null 중 하나만 씁니다.
@@ -305,6 +310,7 @@ const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어
 
 [Clause(절) 식별]
 문장 안에서 다음 구조가 실제로 존재할 때만 clauses[]에 담으세요(startChunkIdx/endChunkIdx는 위에서 만든 chunks 배열의 1-based order 기준 범위): 명사절 / 관계대명사절 / 관계부사절 / 부사절 / 분사구문 / to부정사구 / 동명사구 / 전치사구 / 병렬구조 / 삽입구조 / 동격 / 비교구문 / 가주어-진주어 / 가목적어-진목적어 / 5형식 구조 / 수동태. 지문에 실제로 없는 구조를 교육과정에 있다는 이유만으로 만들어내지 마세요. 한 문장에 여러 clause가 겹칠 수 있습니다(예: 관계대명사절 안에 수동태).
+각 clause를 적은 뒤, startChunkIdx~endChunkIdx가 가리키는 chunk들을 실제로 순서대로 이어 붙여 보고 그 결과가 clause의 text와 정확히 일치하는지(문장 끝 마침표/쉼표 유무 정도의 사소한 차이 제외) 스스로 다시 확인하세요 — 특히 절의 시작 지점에 그 절에 속하지 않는 앞 chunk(예: 주절의 주어)가 실수로 포함되지 않았는지, 절의 끝 지점이 실제 끝보다 한 chunk 모자라지 않는지 반드시 재확인한 뒤 답하세요.
 
 [해석 — translation]
 직역이 아니라 학생이 문장 구조(위 chunks/clauses)를 이해하면서 읽을 수 있는 자연스러운 한국어로 씁니다.
@@ -636,6 +642,15 @@ function validateReadingAnalysis(parsed) {
   function norm(s) {
     return String(s || "").replace(/\s+/g, " ").trim();
   }
+  // Phase B-3 실측(2026-08-26)에서 발견 — chunk 경계에 걸친 문장부호(,.;:!?) 앞에 공백이 끼는
+  // 경우가 실제로 나왔다(예: AI가 "gardens," 대신 "gardens"+","를 별도 chunk로 낸 경우
+  // join(" ")하면 "gardens , which"가 됨). 단어/부호 자체는 안 바뀌고 공백 위치만 다른 것이므로
+  // §2가 명시적으로 허용한 "일반적인 whitespace normalization" 범위 — 단어 삭제/추가/순서변경/
+  // 부호 자체 변경은 이걸로 절대 가려지지 않는다(부호가 아예 없어지거나 다른 부호로 바뀌는 건
+  // 여전히 그대로 잡힘).
+  function normPunctSpacing(s) {
+    return norm(s).replace(/\s+([,.;:!?])/g, "$1");
+  }
 
   const sentenceIndexSet = new Set();
 
@@ -664,14 +679,23 @@ function validateReadingAnalysis(parsed) {
       errors.push(`${label}: chunks[].order가 1~${chunks.length} 연속이 아닙니다 (받은 값: ${JSON.stringify(orders)}).`);
     }
 
-    // §2 — originalText ↔ chunks 결합: whitespace 차이만 허용, 그 외 불일치는 전부 실패
-    const joinedChunks = norm(chunks.map((c) => c && c.text).join(" "));
-    const originalNorm = norm(sent.originalText);
+    // §2 — originalText ↔ chunks 결합: whitespace(+구두점 앞 공백) 차이만 허용, 그 외 불일치는 전부 실패
+    const joinedChunks = normPunctSpacing(chunks.map((c) => c && c.text).join(" "));
+    const originalNorm = normPunctSpacing(sent.originalText);
     if (joinedChunks !== originalNorm) {
       errors.push(`${label}: chunks 결합 결과가 originalText와 다릅니다.\n    originalText: "${originalNorm}"\n    chunks 결합 : "${joinedChunks}"`);
     }
 
     // §4 — clauses index 범위 + (best-effort) text 논리적 일치
+    // 문장 끝(또는 chunk 경계)의 마침표/쉼표를 clause.text 자체에 포함시킬지는 AI마다 표기가
+    // 갈린다(예: endChunkIdx가 가리키는 chunk에 "...together."처럼 마침표가 붙어 있어도
+    // clause.text는 "...together"로 깔끔하게 적는 경우가 실측에서 흔했다) — 절 범위/내용이
+    // 실제로 맞는지가 중요하지, 마지막 부호 표기 여부는 아니므로 이 비교에서만 문장 끝 부호를
+    // 추가로 무시한다(§7 "가능한 범위에서 검증" — 원문 자체의 무결성은 위 originalText 비교가
+    // 이미 훨씬 엄격하게 담당).
+    function stripTrailingPunct(s) {
+      return s.replace(/[,.;:!?]+$/, "");
+    }
     const clauses = Array.isArray(sent.clauses) ? sent.clauses : [];
     clauses.forEach((cl, cIdx) => {
       const clLabel = `${label}.clauses[${cIdx}]`;
@@ -683,9 +707,10 @@ function validateReadingAnalysis(parsed) {
         errors.push(`${clLabel}: 범위(${cl.startChunkIdx}~${cl.endChunkIdx})가 실제 chunk 범위(1~${chunks.length})를 벗어납니다.`);
         return;
       }
-      const rangeText = norm(chunks.slice(cl.startChunkIdx - 1, cl.endChunkIdx).map((c) => c && c.text).join(" "));
-      if (norm(cl.text) !== rangeText) {
-        errors.push(`${clLabel}: text("${norm(cl.text)}")가 startChunkIdx~endChunkIdx 구간의 chunk 결합("${rangeText}")과 일치하지 않습니다.`);
+      const rangeText = normPunctSpacing(chunks.slice(cl.startChunkIdx - 1, cl.endChunkIdx).map((c) => c && c.text).join(" "));
+      const clauseTextNorm = normPunctSpacing(cl.text);
+      if (stripTrailingPunct(clauseTextNorm) !== stripTrailingPunct(rangeText)) {
+        errors.push(`${clLabel}: text("${clauseTextNorm}")가 startChunkIdx~endChunkIdx 구간의 chunk 결합("${rangeText}")과 일치하지 않습니다.`);
       }
     });
   });
