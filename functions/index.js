@@ -273,6 +273,148 @@ ${passageText}
 위 지문에 대해 조건에 맞는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
 }
 
+// ── Reading Analysis 재설계 (Phase C, 2026-08-26 설계 승인) — Passage Analysis / Question
+// Generator 2모드. 기존 SYSTEM_PROMPT(sentences/vocab/flow 구조)와 READING_GENERATE_SYSTEM_PROMPT를
+// 뼈대로 확장했을 뿐, 기존 프롬프트/핸들러는 한 글자도 건드리지 않는다. Passage Variation은 새
+// 프롬프트를 만들지 않고 기존 TRANSFORM_SYSTEM_PROMPT(mode: "transform")를 그대로 재사용한다
+// (Phase B 설계 §2 — 요구사항과 이미 일치함을 확인).
+const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신·수능 대비 지문을 분석해 학원용 "지문 분석지"를 만드는 전문 교육 평가 개발자입니다. EBS 수능특강/내신 대비 지문 분석지처럼, 문장별 해석·구조·문법·어휘부터 문단 단위 흐름, 전체 주제/요지, 출제 포인트까지 한눈에 보이는 자료를 만듭니다.
+
+[중요 규칙]
+- 원문(originalText)은 절대 수정/요약/재구성하지 마세요. 분석 대상으로만 다룹니다.
+- 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
+- "structure"/"segments"의 tag는 영어 문법 약어만 사용하세요 (예: S, V, V (passive), O, C, Prep. Phrase, To-inf, Rel. Clause, Adv. Clause). 한글을 섞지 마세요.
+- 문장은 원칙적으로 전부 분석하세요. 8문장이 넘으면 문법적으로 설명할 가치가 낮은 아주 짧은 문장은 생략할 수 있습니다.
+- 어휘(vocabulary)는 사전적 뜻이 아니라 **이 지문 문맥에서의 의미**를 우선하세요. 동의어/반의어는 문맥상 자연스럽게 바꿔 쓸 수 있는 것만 담고, 없으면 빈 배열로 두세요.
+- grammarExpressionPoints는 지문 전체에서 실제 시험에 낼 만한 문법/구문 포인트만 고르세요(시제/수동태/관계사/분사/동명사/to부정사/가정법/조동사/접속사/전치사/어법/중요구문 등).
+- examPoints는 이 지문으로 실제 내신·수능형 문제를 만든다면 어디를 어떻게 출제할 수 있는지 구체적으로 쓰세요(예: "3번째 문장의 핵심 연결어를 빈칸 처리해 추론 문제 출제 가능").
+- 모든 해석·설명은 자연스러운 한국어로 작성합니다.
+
+[JSON 스키마]
+{
+  "title": "지문 제목(영어 원제 또는 적절한 제목)",
+  "sentences": [
+    {
+      "index": 1,
+      "text": "문장 원문",
+      "translation": "자연스러운 해석",
+      "segments": [ { "text": "구간 텍스트", "tag": "S 또는 null" } ],
+      "clauseStructure": "절 구조 설명(단문/중문/복문, 종속절 종류 등)",
+      "grammarPoints": ["이 문장에서 짚을 문법 포인트"],
+      "keyExpressions": ["이 문장의 중요 구문/표현"]
+    }
+  ],
+  "vocabulary": [
+    { "word": "단어", "pos": "품사", "contextualMeaning": "문맥상 의미", "synonyms": [], "antonyms": [], "importance": "상|중|하" }
+  ],
+  "grammarExpressionPoints": [
+    { "category": "예: 관계사/수동태/분사구문 등", "description": "구체적 설명", "sentenceIndex": 1 }
+  ],
+  "paragraphs": [
+    { "index": 1, "mainContent": "핵심 내용", "developmentType": "예: 도입/전개/예시/결론", "role": "글 전체에서의 역할", "relationToAdjacent": "앞/뒤 문단과의 관계" }
+  ],
+  "core": {
+    "topic": "주제(한 줄)",
+    "mainIdea": "요지",
+    "summary": "전체 요약 2~3문장",
+    "keyMessage": "핵심 메시지",
+    "authorPurpose": "필자의 목적",
+    "logicalStructure": "글 전체의 논리 전개 구조"
+  },
+  "examPoints": [
+    { "type": "예: 빈칸/어법/어휘/순서/삽입/일치/주제·요지/서술형/영작", "description": "구체적으로 어디를 어떻게 출제할 수 있는지" }
+  ]
+}`;
+
+function buildReadingAnalyzePrompt({ passage, grade, difficulty }) {
+  return `[지문]
+${passage}
+
+[학년] ${grade || "지정 없음"}
+[난이도] ${difficulty || "지정 없음"}
+
+위 지문을 문장 단위부터 전체 구조까지 빠짐없이 분석해서, JSON 스키마 형식으로만 답하세요.`;
+}
+
+// Question Generator (Reading Analysis 재설계) — READING_GENERATE_SYSTEM_PROMPT와 거의 동일한
+// 구조지만, 지문 원문뿐 아니라 이미 만들어진 Passage Analysis 결과(문장 구조/문법포인트/어휘 등)를
+// 함께 참고 자료로 받아 더 정확한 문제를 유도한다.
+const READING_ANALYSIS_GENERATE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 독해 문제를 만드는 전문 교육 평가 개발자입니다.
+주어진 영어 지문과, 그 지문을 미리 분석해 둔 자료(문장 구조/문법 포인트/어휘/출제 포인트)를 참고해서 조건(문제 유형/난이도)에 맞는 새 문제를 만듭니다.
+
+[작업 순서]
+1) 반드시 주어진 지문 내용에 근거한 문제만 만드세요 — 지문에 없는 내용을 정답 근거로 쓰면 안 됩니다.
+2) 분석 자료의 examPoints/grammarExpressionPoints에 이미 표시된 출제 포인트가 요청된 문제 유형과 맞으면 우선적으로 활용하세요. 맞는 게 없으면 지문을 직접 다시 살펴 적절한 지점을 고르세요.
+3) 주어진 문제 유형에 맞는 형식으로 만드세요.
+4) 요청받은 난이도 수준에 맞게 만드세요.
+5) 문제를 만든 뒤 스스로 재검토하세요: 정답이 지문 근거로 명확히 하나뿐인가? 오답도 그럴듯한가?
+6) 해설(explanation)에는 지문의 어느 부분이 근거인지 짧게 밝히세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- 객관식이면 보기 4개(정답 1개 + 오답 3개)를 만드세요. "answer"는 choices 배열의 정답 인덱스(0부터 시작)입니다.
+- 서술형이면 보기 없이 모범 답안 텍스트만 "answer"에 담으세요.
+- 요청받은 개수만큼 정확히 만들고, 문제끼리 서로 겹치지 않게 만드세요.
+
+[JSON 스키마] (배열)
+[
+  {
+    "type": "mc 또는 subjective",
+    "q": "문제 지시문",
+    "choices": ["보기1", "보기2", "보기3", "보기4"],
+    "answer": 0,
+    "explanation": "지문 근거를 밝히는 해설"
+  }
+]
+(type이 subjective이면 "choices"는 빈 배열로, "answer"에는 정답 텍스트를 문자열로 담으세요.)`;
+
+function buildReadingAnalysisGeneratePrompt({ passageText, analysis, questionTypeLabel, difficultyLabel, count }) {
+  const analysisSummary = analysis
+    ? `[분석 자료 요약]
+주제: ${(analysis.core && analysis.core.topic) || "-"}
+요지: ${(analysis.core && analysis.core.mainIdea) || "-"}
+문법 포인트: ${(analysis.grammarExpressionPoints || []).map((g) => g.category).join(", ") || "-"}
+출제 포인트: ${(analysis.examPoints || []).map((e) => `${e.type}(${e.description})`).join(" / ") || "-"}
+`
+    : "";
+  return `[지문]
+${passageText}
+
+${analysisSummary}
+[생성 조건]
+문제 유형: ${questionTypeLabel || "지정 없음"}
+난이도: ${difficultyLabel || "지정 없음"}
+
+위 지문에 대해 조건에 맞는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
+}
+
+// Reading Library 단어 클릭 뜻풀이(2026-08-26) — 예전엔 프론트가 Google Translate 공개 엔드포인트를
+// 직접 두 번 불러서(문장 전체 번역 + 단어 사전 후보) 후보 뜻 중 문장 번역에 우연히 겹치는 접두 글자를
+// 찾는 휴리스틱으로 뜻을 골랐다. 활용형(studies/ran/children 등)은 사전 후보 자체가 안 나와 실패하고,
+// 다의어는 "우연히 앞 1~2글자가 겹치는 후보"를 고르다 보니 문맥과 다르거나 품사가 틀린 뜻이 잡히는 일이
+// 잦았다 — 원인이 명확한 만큼 API 하나 더 얹는 대신 통째로 교체한다. 이 문장에서 실제로 쓰인 의미를
+// AI가 한 번에 원형(lemma)·품사·문맥 의미까지 같이 판단하게 해서, 활용형/다의어/품사 문제를 같은
+// 원인(표면형만 보고 후보를 고르는 방식)에서 한꺼번에 없앤다.
+const WORD_MEANING_SYSTEM_PROMPT = `당신은 한국 중·고등학생의 영어 리딩 학습을 돕는 사전 도우미입니다. 학생이 영어 지문을 읽다가 모르는 단어를 클릭했고, 그 단어가 등장한 문장이 함께 주어집니다.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
+- "lemma"에는 그 단어의 사전 원형(기본형)을 쓰세요. 예: studies→study, ran→run, children→child, mice→mouse, better(비교급)→good.
+- "partOfSpeech"에는 주어진 문장에서 실제로 쓰인 품사를 다음 중 하나의 영어 약어로만 쓰세요: n., v., adj., adv., prep., conj., pron., interj., phrase.
+- "meaningKo"에는 그 문장 속에서 쓰인 의미에 정확히 맞는 아주 짧은 한국어 뜻만 쓰세요(사전 표제어 뜻처럼 1~6글자 안팎 — 문장 번역이 아닙니다). 그 단어가 여러 뜻을 가질 수 있어도, 반드시 주어진 문장의 문맥에 맞는 뜻 하나만 고르세요.
+- 클릭된 단어가 오탈자이거나, 고유명사이거나, 문장 안에 실제로 없거나, 뜻을 확신할 수 없는 경우: "meaningKo"를 빈 문자열("")로 두고 "confidence"를 "low"로 하세요. 모르면 모른다고 답하세요 — 확실하지 않은 뜻을 지어내지 마세요.
+- "confidence"는 "high"(문맥상 뜻이 확실함) / "medium"(대체로 확실하나 문맥 정보가 부족함) / "low"(불확실하거나 판단 불가) 중 하나입니다.
+
+[JSON 스키마]
+{ "lemma": "사전 원형", "partOfSpeech": "n.|v.|adj.|adv.|prep.|conj.|pron.|interj.|phrase", "meaningKo": "문맥에 맞는 짧은 한국어 뜻 또는 빈 문자열", "confidence": "high|medium|low" }`;
+
+function buildWordMeaningPrompt({ word, sentence }) {
+  return `단어: "${word}"
+문장(문맥): "${sentence}"
+
+위 문장에서 "${word}"가 실제로 쓰인 의미를 분석해 JSON으로만 답하세요.`;
+}
+
 // NELT 성적표 분석에 쓰는 모델.
 const NELT_MODEL = "claude-haiku-4-5-20251001";
 
@@ -498,7 +640,7 @@ exports.aiWorker = onRequest(
 
     const body = req.body || {};
     const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade,
-      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText } = body;
+      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
@@ -508,6 +650,12 @@ exports.aiWorker = onRequest(
     // 프롬프트/핸들러는 한 글자도 건드리지 않고 새 분기만 추가한다(ARCHITECTURE.md §14.9).
     const isGrammarGenerate = mode === "grammarGenerate";
     const isReadingGenerate = mode === "readingGenerate";
+    // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인) — Passage Analysis / Question
+    // Generator 2모드. Passage Variation은 새 모드 없이 기존 isTransform을 그대로 재사용한다.
+    const isReadingAnalyze = mode === "readingAnalyze";
+    const isReadingAnalysisGenerate = mode === "readingAnalysisGenerate";
+    // Reading Library 단어 클릭 뜻풀이(2026-08-26) — reading-library.html 전용, 위 8모드와 완전히 무관.
+    const isWordMeaning = mode === "wordMeaning";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -755,6 +903,149 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(rgParsed);
+      return;
+    }
+
+    if (isReadingAnalyze) {
+      if (!passage || passage.trim().length < 20) {
+        res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
+        return;
+      }
+      let raRes;
+      try {
+        raRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 8000,
+            system: READING_ANALYZE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildReadingAnalyzePrompt({ passage, grade, difficulty }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!raRes.ok) {
+        const errText = await raRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const raData = await raRes.json();
+      const raText = (raData.content || []).map((b) => b.text || "").join("");
+      let raParsed;
+      try {
+        raParsed = JSON.parse(stripFences(raText));
+      } catch {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: raText });
+        return;
+      }
+      res.status(200).json(raParsed);
+      return;
+    }
+
+    if (isReadingAnalysisGenerate) {
+      if (!passageText || passageText.trim().length < 20) {
+        res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
+        return;
+      }
+      const n = Math.max(1, Math.min(20, Number(count) || 5));
+      let ragRes;
+      try {
+        ragRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: READING_ANALYSIS_GENERATE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildReadingAnalysisGeneratePrompt({ passageText, analysis, questionTypeLabel, difficultyLabel, count: n }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!ragRes.ok) {
+        const errText = await ragRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const ragData = await ragRes.json();
+      const ragText = (ragData.content || []).map((b) => b.text || "").join("");
+      let ragParsed;
+      try {
+        ragParsed = JSON.parse(stripFences(ragText));
+      } catch {
+        ragParsed = extractLastJsonArray(stripFences(ragText));
+      }
+      if (!Array.isArray(ragParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: ragText });
+        return;
+      }
+      res.status(200).json(ragParsed);
+      return;
+    }
+
+    if (isWordMeaning) {
+      const w = (word || "").trim();
+      const s = (sentence || "").trim();
+      if (!w) {
+        res.status(400).json({ error: "단어가 없습니다." });
+        return;
+      }
+      let wmRes;
+      try {
+        wmRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 300,
+            system: WORD_MEANING_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildWordMeaningPrompt({ word: w, sentence: s || w }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!wmRes.ok) {
+        const errText = await wmRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const wmData = await wmRes.json();
+      const wmText = (wmData.content || []).map((b) => b.text || "").join("");
+      let wmParsed;
+      try {
+        wmParsed = JSON.parse(stripFences(wmText));
+      } catch {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: wmText });
+        return;
+      }
+      // 모델이 스키마를 안 지켜도(필드 누락, 이상한 타입) 프론트가 그대로 신뢰하지 않도록 여기서
+      // 한 번 걸러서 안전한 형태로만 내려보낸다 — hallucination을 막을 순 없어도, 최소한 잘못된
+      // 타입 때문에 프론트가 깨지는 일은 막는다.
+      res.status(200).json({
+        lemma: typeof wmParsed.lemma === "string" ? wmParsed.lemma.trim() : "",
+        partOfSpeech: typeof wmParsed.partOfSpeech === "string" ? wmParsed.partOfSpeech.trim() : "",
+        meaningKo: typeof wmParsed.meaningKo === "string" ? wmParsed.meaningKo.trim() : "",
+        confidence: ["high", "medium", "low"].includes(wmParsed.confidence) ? wmParsed.confidence : "low",
+      });
       return;
     }
 
