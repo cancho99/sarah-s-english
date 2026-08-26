@@ -781,9 +781,20 @@ function renderList() {
 
 // 단어(알파벳/작은따옴표로만 이뤄진 덩어리)만 클릭 가능한 span으로 감싸고, 나머지 공백·줄바꿈·문장부호는
 // 그대로 둔다 — white-space:pre-wrap이 문단 구분을 계속 살려준다. 이미 단어장에 있는 단어는 밑줄로 표시.
-function wrapWords(text) {
+// 단어의 "saved"(밑줄) 표시는 이 스토리에서 저장된 단어만 대상으로 한다 — vocabWords 전체를
+// 기준으로 하면 다른 책에서 저장한 흔한 단어(예: important)가 한 번도 안 읽은 책에서도 전부
+// 밑줄로 보여서 혼란스럽고(사용자가 실제로 발견), 더 심각하게는 클릭했을 때 그 다른 책 문맥의
+// (어쩌면 완전히 다른) 뜻을 그대로 보여줘서 문맥 기반 단어 조회 시스템의 의미가 없어진다(예:
+// "left"를 A 책에서 "왼쪽"으로 저장해뒀으면 B 책에서 "떠났다"는 뜻이어도 "왼쪽"이 뜬다).
+// addToVocab이 단어당 항상 최신 항목 하나만 남기므로(upsert), readingId(또는 이전 데이터는
+// source 제목)가 지금 보고 있는 스토리와 일치하는 것만 "이미 이 책에서 저장한 단어"로 본다.
+function wrapWords(text, storyId, storyTitle) {
   const escaped = (text || "").replace(/</g, "&lt;");
-  const saved = new Set(vocabWords.map((v) => v.word.toLowerCase()));
+  const saved = new Set(
+    vocabWords
+      .filter((v) => (v.readingId ? v.readingId === storyId : v.source === storyTitle))
+      .map((v) => v.word.toLowerCase())
+  );
   return escaped.replace(/[A-Za-z']+/g, (w) => {
     const key = w.toLowerCase();
     const cls = saved.has(key) ? "w saved" : "w";
@@ -807,7 +818,7 @@ function renderReader() {
       <div class="lv-tag">${levelLabel(it.level)}${it.genre ? " · " + it.genre : ""}${isCompleted ? ` · <span style="color:var(--gold);">✓ Reading Log 제출</span>` : ""}</div>
       <div class="rt-title">${it.title}</div>
       ${studentId ? `<div class="hint">모르는 단어를 누르면 나의 단어장에 저장돼요. 다 읽었으면 아래 Reading Log를 작성해서 제출하세요.</div>` : ""}
-      <div class="body">${wrapWords(it.text)}</div>
+      <div class="body">${wrapWords(it.text, it.id, it.title)}</div>
       <div class="src">출처: ${srcHtml}</div>
     </div>
   `;
@@ -894,25 +905,26 @@ if (studentId) {
 }
 
 // 본문 안의 단어(.w)를 클릭하면 그 자리에서 뜻을 바로 보여주고 단어장에 저장 — 문단마다 새로
-// 리스너를 달지 않도록 #view에 한 번만 위임해서 건다. 이미 저장된 단어(.saved)를 다시 누르면
-// 새로 조회하지 않고 저장된 뜻을 그대로 다시 보여준다. 뜻 찾기에 실패하면(빈 값) "saved"를 붙이지
-// 않는다 — 그래야 학생이 나중에 같은 단어를 다시 눌렀을 때 재시도가 된다(예전엔 실패해도 바로
-// saved 처리돼서 그 세션 내내 그 단어는 영영 재시도가 안 됐다).
+// 리스너를 달지 않도록 #view에 한 번만 위임해서 건다. 이미 이 스토리에서 저장된 단어(.saved,
+// wrapWords가 이미 이 스토리 기준으로만 표시한다)를 다시 누르면 새로 조회하지 않고 저장된 뜻을
+// 그대로 다시 보여준다. 뜻 찾기에 실패하면(빈 값) "saved"를 붙이지 않는다 — 그래야 학생이
+// 나중에 같은 단어를 다시 눌렀을 때 재시도가 된다(예전엔 실패해도 바로 saved 처리돼서 그 세션
+// 내내 그 단어는 영영 재시도가 안 됐다).
 const pendingWords = new Set(); // 같은 단어를 빠르게 여러 번 눌러도 조회가 중복으로 나가지 않게 막는다
 document.getElementById("view").addEventListener("click", async (e) => {
   const target = e.target.closest(".w");
   if (!target) return;
   if (!studentId) { alert("학생 홈 화면의 버튼으로 들어와야 단어장에 저장할 수 있어요."); return; }
   const word = target.dataset.word;
+  const story = items.find((x) => x.id === view.storyId);
   if (target.classList.contains("saved")) {
-    const existing = vocabWords.find((v) => v.word.toLowerCase() === word);
+    const existing = vocabWords.find((v) => v.word.toLowerCase() === word && (v.readingId ? v.readingId === (story && story.id) : v.source === (story && story.title)));
     showWordTooltip(target, existing ? displayMeaning(word, existing.meaning) : "...");
     return;
   }
   if (pendingWords.has(word)) return;
   pendingWords.add(word);
   showWordTooltip(target, "뜻 찾는 중...");
-  const story = items.find((x) => x.id === view.storyId);
   const contextPhrase = getContextPhrase(target);
   const meaning = await addToVocab(word, story ? story.title : "", contextPhrase, story ? story.id : "");
   pendingWords.delete(word);
