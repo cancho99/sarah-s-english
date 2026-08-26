@@ -3139,6 +3139,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 위치만 옮김.
     body = html`<${SettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} roster=${roster} ensureData=${ensureData} dataCache=${dataCache}
       updateData=${updateData} announcement=${announcement} saveAnnouncement=${saveAnnouncement}
+      sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink}
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); }} />`;
   } else if (section === "settings") {
     body = html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`;
@@ -3226,13 +3227,19 @@ const SETTINGS_SUBTABS = [
   { key: "profile", icon: "👤", label: "Profile" },
   { key: "business", icon: "💰", label: "Business" },
   { key: "announcements", icon: "📢", label: "Announcements" },
+  // Teacher OS STEP 4의 사이드바 재편(학생 관리 호버 플라이아웃 제거)이 그 플라이아웃을 통해서만
+  // 들어가던 StudentsSection의 "자료실 → 공유 자료실" 진입점을 사실상 도달 불가능하게 만들었다
+  // (StudentsSection/MaterialsLibrarySection shared=true 자체는 무수정, 컬렉션도 그대로 —
+  // 진입 경로만 없어졌던 것). 출결 관리는 같은 문제를 겪었다가 Classes 탭으로 이미 옮겨졌으므로,
+  // 같은 이유(전체 학생 공용, 특정 학생 소속이 아님)로 이번엔 Settings에 옮긴다.
+  { key: "materials", icon: "📁", label: "Shared Materials" },
   { key: "data", icon: "🗄", label: "Data" },
   // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §8-1) — 레거시 Reading Question Bank
   // (readingPassages/readingQuestions)를 Question Bank 탭에서는 빼고 여기 하나로만 남긴다.
   // 컴포넌트(ReadingQuestionBankView 등)와 데이터는 그대로, 진입 경로만 이동.
   { key: "legacyReading", icon: "📖", label: "Legacy Reading" },
 ];
-function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache, updateData, announcement, saveAnnouncement, onSelectStudent }) {
+function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache, updateData, announcement, saveAnnouncement, onSelectStudent, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const [tab, setTab] = useState("profile");
   return html`
     <div>
@@ -3240,6 +3247,7 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
       ${tab === "profile" && html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`}
       ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
+      ${tab === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
       ${tab === "data" && html`<${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${tab === "legacyReading" && html`
         <div>
