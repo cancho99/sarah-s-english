@@ -27,15 +27,28 @@ window.SarahServices = window.SarahServices || {};
     return Object.entries(docs).map(([id, data]) => ({ id, ...data }));
   }
 
-  // input: { title, grade?, examType?, sections? } — sections default to [] (teacher builds up the
-  // paper incrementally via addSection-style calls below, all of which just patch `sections`).
+  // input: { title, grade?, examType?, sections?, layout? } — sections default to [] (teacher builds
+  // up the paper incrementally via addSection-style calls below, all of which just patch `sections`).
+  // Exam Wizard (Phase B) — `layout` ("1col"|"2col") is an additive field, approved in the Phase A
+  // report. A paper created before this field existed simply has no `layout` key; every reader
+  // (print, detail view) treats a missing value as "1col" — see EXAM_PAPER_DEFAULT_LAYOUT below.
+  // No migration touches old docs.
   async function createExamPaper(input) {
     const now = Date.now();
     const sections = input.sections || [];
+    const isSchool = input.examCategory === "school";
     const doc = {
       title: input.title || "",
       grade: input.grade || "",
       examType: input.examType || "", // optional representative label only — §13.4, never enforced on sections/questions
+      layout: input.layout === "2col" ? "2col" : "1col",
+      // School Exam Builder (Reading Analysis 재설계 Phase C) — additive, optional. 기존 문서는
+      // 이 두 필드가 아예 없고, 모든 기존 읽기 경로는 examCategory를 안 보거나 "general" 폴백을
+      // 쓰므로 회귀 없음. schoolExamMeta는 별도 curriculum master collection 없이 교사가 그때그때
+      // 입력한 자유 텍스트를 그대로 저장한다(2026-08-26 설계 승인 §5) — 최근 사용 목록은
+      // getRecentSchoolExamValues()가 이 필드들을 훑어서 즉석 계산한다.
+      examCategory: isSchool ? "school" : "general",
+      schoolExamMeta: isSchool ? (input.schoolExamMeta || {}) : null,
       status: "DRAFT",
       sections,
       totalQuestionCount: totalQuestionCount(sections),
@@ -69,8 +82,16 @@ window.SarahServices = window.SarahServices || {};
   // teacher is drafting.
   // ---------------------------------------------------------------------------------------------
 
-  function blankSection(bank, label, passageId) {
-    return { id: uid(), label, bank, passageId: passageId || null, shuffleQuestions: false, shuffleChoices: false, questionRefs: [] };
+  // readingSource ("analysis" | undefined) — Reading Analysis 재설계(Phase C). Omitted entirely for
+  // every existing caller (기존 시험지는 필드 자체가 없음 = legacy readingQuestions 경로, 100%
+  // 하위호환). "analysis"면 passageId는 readingPassages가 아니라 readingAnalyses 문서를 가리킨다
+  // — 필드명을 그대로 재사용해서 인쇄/미리보기/응시 화면의 기존 passagesById[section.passageId]
+  // 조회 코드 ~15곳을 전혀 손대지 않고도 그대로 동작하게 한다(호출부가 legacy+analysis 병합 맵을
+  // 넘기기만 하면 됨, Phase B 설계 §5/§6).
+  function blankSection(bank, label, passageId, readingSource) {
+    const section = { id: uid(), label, bank, passageId: passageId || null, shuffleQuestions: false, shuffleChoices: false, questionRefs: [] };
+    if (readingSource) section.readingSource = readingSource;
+    return section;
   }
 
   function questionRefsFrom(questionIds) {
@@ -101,12 +122,127 @@ window.SarahServices = window.SarahServices || {};
     return { sections, pickedCount: picked.length };
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Exam Wizard (Teacher OS Exam Builder Phase B) — "총 문항 수만 지정하면 여러 Topic/유형에 걸쳐
+  // 자동으로 비례 배분하고, 부족분은 재배분한다" 오케스트레이션. autoSelectGrammarSection/
+  // autoSelectReadingSections(위, 단일 필터·단일 count 전용, 기존 평면형 빌더가 계속 쓴다)와는
+  // 별개 — 이 둘은 그대로 두고 이 아래는 전부 새로 추가된 함수다. 여전히 QB.queryQuestions/
+  // QB.distributeCounts/QB.pickQuestionsWeighted 조합일 뿐, 새 Firestore 쓰기는 없다.
+  // ---------------------------------------------------------------------------------------------
+
+  // 최근 N개의 FINALIZED 시험지(현재 만들고 있는 초안 paperId는 제외)에 쓰인 questionId 집합.
+  // "최근 사용 문제는 가능하면 피한다"는 순한 우선순위(하드 제외 아님, §3)의 입력값 — 이미
+  // ExamBuilderView가 불러온 examPapers 목록에서 계산할 뿐, 추가 Firestore 읽기가 없다.
+  function computeRecentlyUsedQuestionIds(examPapers, excludePaperId, limitPapers) {
+    const finalized = (examPapers || [])
+      .filter((p) => p.status === "FINALIZED" && p.id !== excludePaperId)
+      .sort((a, b) => (b.finalizedAt || 0) - (a.finalizedAt || 0))
+      .slice(0, limitPapers || 5);
+    const ids = new Set();
+    finalized.forEach((p) => (p.sections || []).forEach((s) => (s.questionRefs || []).forEach((r) => ids.add(r.questionId))));
+    return ids;
+  }
+
+  // opts: { grade, difficulty, topics: [mainCategoryKey, ...] }. Returns one flat "grammar" section
+  // (문법은 지문 개념이 없어 §13.5의 기존 단일-섹션 관례를 그대로 따른다) plus the per-topic
+  // allocation breakdown the Wizard's Preview step (STEP4) shows. `excludeIds`는 이미 이 시험지의
+  // 다른 섹션(예: Mixed의 Reading 쪽)에 들어간 questionId — 자동 배분 풀에서 처음부터 제외한다.
+  function autoDistributeGrammarSection(label, grammarQuestions, opts, totalRequested, recentlyUsedIds, excludeIds) {
+    const baseExclude = excludeIds || [];
+    const topics = opts.topics || [];
+    const pools = topics.map((key) => {
+      const pool = QB.queryQuestions(grammarQuestions, { status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, mainCategory: key, excludeIds: baseExclude });
+      const cat = QB.GRAMMAR_TAXONOMY.find((c) => c.key === key);
+      return { key, label: cat ? cat.label : key, available: pool.length };
+    });
+    const dist = QB.distributeCounts(pools, totalRequested);
+    const picked = [];
+    dist.allocations.forEach((a) => {
+      if (a.allocated <= 0) return;
+      const pool = QB.queryQuestions(grammarQuestions, {
+        status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, mainCategory: a.key,
+        excludeIds: [...baseExclude, ...picked.map((q) => q.id)],
+      });
+      picked.push(...QB.pickQuestionsWeighted(pool, a.allocated, recentlyUsedIds));
+    });
+    const section = blankSection("grammar", label);
+    section.questionRefs = questionRefsFrom(picked.map((q) => q.id));
+    return { section, picked, allocations: dist.allocations, actualTotal: picked.length, shortfall: totalRequested - picked.length };
+  }
+
+  // opts: { grade, difficulty, examType, questionTypes: [...] }. Picks across multiple Reading
+  // question types with the same proportional-distribution + shortage-redistribution logic, then
+  // groups the result by passageId into one section per passage (§8 — "지문 단위 → 문제 묶음", same
+  // grouping rule autoSelectReadingSections above already uses so a passage's questions always stay
+  // together in one section).
+  function autoDistributeReadingSections(labelPrefix, readingQuestions, opts, totalRequested, recentlyUsedIds, excludeIds, readingPassagesById) {
+    const baseExclude = excludeIds || [];
+    const types = opts.questionTypes || [];
+    const pools = types.map((key) => {
+      const pool = QB.queryQuestions(readingQuestions, { status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, examType: opts.examType, questionType: key, excludeIds: baseExclude });
+      const t = QB.READING_QUESTION_TYPES.find((x) => x.key === key);
+      return { key, label: t ? t.label : key, available: pool.length };
+    });
+    const dist = QB.distributeCounts(pools, totalRequested);
+    const picked = [];
+    dist.allocations.forEach((a) => {
+      if (a.allocated <= 0) return;
+      const pool = QB.queryQuestions(readingQuestions, {
+        status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, examType: opts.examType, questionType: a.key,
+        excludeIds: [...baseExclude, ...picked.map((q) => q.id)],
+      });
+      picked.push(...QB.pickQuestionsWeighted(pool, a.allocated, recentlyUsedIds));
+    });
+    const byPassage = {};
+    picked.forEach((q) => { (byPassage[q.passageId] = byPassage[q.passageId] || []).push(q); });
+    const sections = Object.entries(byPassage).map(([passageId, qs]) => {
+      const passageTitle = readingPassagesById && readingPassagesById[passageId] ? readingPassagesById[passageId].title : passageId;
+      const section = blankSection("reading", `${labelPrefix} — ${passageTitle}`, passageId);
+      section.questionRefs = questionRefsFrom(qs.map((q) => q.id));
+      return section;
+    });
+    return { sections, picked, allocations: dist.allocations, actualTotal: picked.length, shortfall: totalRequested - picked.length };
+  }
+
+  // Reading Analysis 재설계(Phase C, School Exam Builder 전용) — autoDistributeReadingSections와
+  // 완전히 같은 패턴(비례배분+부족분 재배분+우선순위 픽), 대상만 레거시 readingQuestions가 아니라
+  // 신규 readingAnalysisQuestions. section.passageId에는 analysisId를 그대로 담는다(위 blankSection
+  // 주석 참고) — 그래야 이 섹션도 기존 "지문 단위로 문제 묶기" 렌더링 규칙을 그대로 탄다.
+  function autoDistributeReadingAnalysisSections(labelPrefix, readingAnalysisQuestions, opts, totalRequested, recentlyUsedIds, excludeIds, readingAnalysesById) {
+    const baseExclude = excludeIds || [];
+    const types = opts.questionTypes || [];
+    const pools = types.map((key) => {
+      const pool = QB.queryQuestions(readingAnalysisQuestions, { status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, examType: opts.examType, questionType: key, excludeIds: baseExclude });
+      const t = QB.READING_QUESTION_TYPES.find((x) => x.key === key);
+      return { key, label: t ? t.label : key, available: pool.length };
+    });
+    const dist = QB.distributeCounts(pools, totalRequested);
+    const picked = [];
+    dist.allocations.forEach((a) => {
+      if (a.allocated <= 0) return;
+      const pool = QB.queryQuestions(readingAnalysisQuestions, {
+        status: ["PUBLISHED"], grade: opts.grade, difficulty: opts.difficulty, examType: opts.examType, questionType: a.key,
+        excludeIds: [...baseExclude, ...picked.map((q) => q.id)],
+      });
+      picked.push(...QB.pickQuestionsWeighted(pool, a.allocated, recentlyUsedIds));
+    });
+    const byAnalysis = {};
+    picked.forEach((q) => { (byAnalysis[q.analysisId] = byAnalysis[q.analysisId] || []).push(q); });
+    const sections = Object.entries(byAnalysis).map(([analysisId, qs]) => {
+      const title = readingAnalysesById && readingAnalysesById[analysisId] ? readingAnalysesById[analysisId].title : analysisId;
+      const section = blankSection("reading", `${labelPrefix} — ${title}`, analysisId, "analysis");
+      section.questionRefs = questionRefsFrom(qs.map((q) => q.id));
+      return section;
+    });
+    return { sections, picked, allocations: dist.allocations, actualTotal: picked.length, shortfall: totalRequested - picked.length };
+  }
+
   // §13.5 수동 선택 — 교사가 목록에서 고른 questionId 배열을 섹션 하나로 만든다. PUBLISHED 여부는
   // 호출부(UI)가 목록을 이미 PUBLISHED로 필터링해서 넘긴다는 전제 — 여기서도 한 번 더 걸러
   // DRAFT/미검수 문제가 섞여 들어오는 것을 막는다(이중 가드).
-  function manualSection(bank, label, questionDocs, passageId) {
+  function manualSection(bank, label, questionDocs, passageId, readingSource) {
     const publishedOnly = questionDocs.filter((q) => q.status === "PUBLISHED");
-    const section = blankSection(bank, label, passageId || null);
+    const section = blankSection(bank, label, passageId || null, readingSource);
     section.questionRefs = questionRefsFrom(publishedOnly.map((q) => q.id));
     return { section, skippedCount: questionDocs.length - publishedOnly.length };
   }
@@ -188,7 +324,12 @@ window.SarahServices = window.SarahServices || {};
     // question could in principle appear in more than one section of the same paper.
     const seen = new Set();
     for (const section of finalizedSections) {
-      const collectionName = section.bank === "reading" ? QB.READING_QUESTION_COLLECTION : QB.GRAMMAR_COLLECTION;
+      // readingSource === "analysis" (School Exam Builder, Reading Analysis 재설계 Phase C)만
+      // 신규 readingAnalysisQuestions로 간다 — 필드가 없는 모든 기존 섹션(레거시 reading 포함)은
+      // 예전과 똑같이 READING_QUESTION_COLLECTION 경로를 탄다(하위호환, 회귀 없음).
+      const collectionName = section.bank === "grammar" ? QB.GRAMMAR_COLLECTION
+        : section.readingSource === "analysis" ? QB.READING_ANALYSIS_QUESTION_COLLECTION
+        : QB.READING_QUESTION_COLLECTION;
       for (const ref of section.questionRefs) {
         const key = collectionName + ":" + ref.questionId;
         if (seen.has(key)) continue;
@@ -245,10 +386,31 @@ window.SarahServices = window.SarahServices || {};
     return { displayChoices, displayAnswerIndex };
   }
 
+  // School Exam Builder (Reading Analysis 재설계 Phase C, 2026-08-26 설계 승인 §5) — curriculum
+  // master collection을 만들지 않고, 이미 로드된 examPapers 목록에서 즉석으로 최근 사용값을
+  // 뽑는다(computeRecentlyUsedQuestionIds와 동일한 패턴 — 추가 Firestore 읽기 없음). 나중에
+  // master collection으로 승격하고 싶어지면 이 함수 내부만 바꾸면 되고, 호출부(UI)는 그대로.
+  function getRecentSchoolExamValues(examPapers, limitPapers) {
+    const schoolPapers = (examPapers || [])
+      .filter((p) => p.examCategory === "school" && p.schoolExamMeta)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, limitPapers || 30);
+    function uniq(arr) { return [...new Set(arr.filter(Boolean))]; }
+    return {
+      schools: uniq(schoolPapers.map((p) => p.schoolExamMeta.school)),
+      publishers: uniq(schoolPapers.map((p) => p.schoolExamMeta.publisher)),
+      textbooks: uniq(schoolPapers.map((p) => p.schoolExamMeta.textbook)),
+      lessons: uniq(schoolPapers.map((p) => p.schoolExamMeta.lesson)),
+      examRanges: uniq(schoolPapers.map((p) => p.schoolExamMeta.examRange)),
+    };
+  }
+
   window.SarahServices.examPaperService = {
     EXAM_PAPER_COLLECTION,
     listExamPapers, createExamPaper, updateExamPaper, duplicateExamPaper,
     blankSection, autoSelectGrammarSection, autoSelectReadingSections, manualSection,
+    computeRecentlyUsedQuestionIds, autoDistributeGrammarSection, autoDistributeReadingSections,
+    autoDistributeReadingAnalysisSections, getRecentSchoolExamValues,
     finalizeExamPaper, computeFinalizedSections,
     canArchiveExamPaper, archiveExamPaper,
     canHardDeleteExamPaper, hardDeleteExamPaper,

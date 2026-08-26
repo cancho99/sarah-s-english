@@ -10,17 +10,19 @@ window.SarahServices = window.SarahServices || {};
   const { getAllDocs } = window.SarahServices.firebaseClient;
 
   async function buildFullBackup() {
-    const [meta, students, grammarQuestions, readingPassages, readingQuestions, examPapers] = await Promise.all([
+    const [meta, students, grammarQuestions, readingPassages, readingQuestions, examPapers, readingAnalyses, readingAnalysisQuestions] = await Promise.all([
       getMeta(),
       getAllStudentDocs(),
       getAllDocs("grammarQuestions"), // Phase 5 — first Question Bank collection, see questionBankService.js
-      getAllDocs("readingPassages"), // Phase 6 — ARCHITECTURE.md §12.3
-      getAllDocs("readingQuestions"), // Phase 6 — ARCHITECTURE.md §12.3
+      getAllDocs("readingPassages"), // Phase 6 — ARCHITECTURE.md §12.3 (legacy, frozen since Reading Analysis reconstruction)
+      getAllDocs("readingQuestions"), // Phase 6 — ARCHITECTURE.md §12.3 (legacy, frozen since Reading Analysis reconstruction)
       getAllDocs("examPapers"), // Phase 7 — Exam Builder, ARCHITECTURE.md §13.3
+      getAllDocs("readingAnalyses"), // Reading Analysis 재설계 Phase C (2026-08-26) — services/readingAnalysisService.js
+      getAllDocs("readingAnalysisQuestions"), // Reading Analysis 재설계 Phase C — services/questionBankService.js
     ]);
     return {
       exportedAt: new Date().toISOString(),
-      version: "1.3",
+      version: "1.4",
       source: "Sarah's English — services/backupService.js",
       // sarahsEnglishMeta/main as-is: roster (incl. student/parent login codes, schedule,
       // FCM tokens), teacherAuth, levelTestBookings, announcement, examKeyLibrary, teacherTodos,
@@ -45,6 +47,13 @@ window.SarahServices = window.SarahServices || {};
       // examPapers/<id> as-is (Phase 7, ARCHITECTURE.md §13.3) — Exam Builder papers, references
       // questionId/passageId only (no duplicated question/passage content, §13.2/§13.4).
       examPapers: examPapers || {},
+      // readingAnalyses/<id> + readingAnalysisQuestions/<id> as-is (Reading Analysis 재설계 Phase C,
+      // 2026-08-26 설계 승인) — the NEW teacher Passage Analysis / Question Generator / Passage
+      // Variation workflow. Completely separate from readingPassages/readingQuestions above (now
+      // legacy/frozen) and from the student-facing readingLibrary/readingActivity/readingJournal/
+      // readingVocab collections (already inside `students`, unaffected by any of this).
+      readingAnalyses: readingAnalyses || {},
+      readingAnalysisQuestions: readingAnalysisQuestions || {},
     };
   }
 

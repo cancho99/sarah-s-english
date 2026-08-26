@@ -440,6 +440,7 @@ window.SarahServices = window.SarahServices || {};
       if (filters.examType && q.examType !== filters.examType) return false;
       if (filters.passageType && q.passageType !== filters.passageType) return false;
       if (filters.passageId && q.passageId !== filters.passageId) return false;
+      if (filters.analysisId && q.analysisId !== filters.analysisId) return false;
       if (filters.targetSkill && q.targetSkill !== filters.targetSkill) return false;
       if (filters.source && (q.source && q.source.type) !== filters.source) return false;
       if (filters.status && filters.status.length && !filters.status.includes(q.status)) return false;
@@ -468,6 +469,62 @@ window.SarahServices = window.SarahServices || {};
   }
 
   // ---------------------------------------------------------------------------------------------
+  // Exam Wizard (Teacher OS Exam Builder Phase B) — multi-topic proportional distribution +
+  // priority-weighted picking. Both pure functions, no Firestore access. Deliberately separate from
+  // pickQuestionsForExam above (unchanged, still used by the existing single-topic auto-select
+  // panel) — these are additive, not a replacement.
+  // ---------------------------------------------------------------------------------------------
+
+  // pools: [{ key, label, available }] where `available` is the caller-computed PUBLISHED count for
+  // that pool under whatever grade/difficulty/topic filters already apply. Round-robin allocation
+  // (1 question at a time to every pool that still has room) is what makes "부족한 Topic은 다른
+  // Topic으로 자동 재배분" fall out naturally — a pool that maxes out early just stops receiving
+  // more turns, and the loop keeps handing out remaining slots to whichever pools still have supply,
+  // without ever exceeding a pool's real `available` count (never fabricates repeats to hit target).
+  function distributeCounts(pools, totalRequested) {
+    const list = pools || [];
+    if (list.length === 0 || !totalRequested || totalRequested <= 0) {
+      return { allocations: list.map((p) => ({ key: p.key, label: p.label, allocated: 0, available: p.available })), actualTotal: 0, shortfall: totalRequested || 0 };
+    }
+    const alloc = {};
+    list.forEach((p) => { alloc[p.key] = 0; });
+    let remaining = totalRequested;
+    let progress = true;
+    while (remaining > 0 && progress) {
+      progress = false;
+      for (const p of list) {
+        if (remaining <= 0) break;
+        if (alloc[p.key] < (p.available || 0)) {
+          alloc[p.key] += 1;
+          remaining -= 1;
+          progress = true;
+        }
+      }
+    }
+    const allocations = list.map((p) => ({ key: p.key, label: p.label, allocated: alloc[p.key], available: p.available || 0 }));
+    const actualTotal = allocations.reduce((s, a) => s + a.allocated, 0);
+    return { allocations, actualTotal, shortfall: totalRequested - actualTotal };
+  }
+
+  // Picks `count` questions out of an already-filtered PUBLISHED pool, prioritizing (1) not used in
+  // recentlyUsedIds (a Set the caller computes from recent FINALIZED exam papers — see
+  // examPaperService.computeRecentlyUsedQuestionIds), then (2) lower usageCount, then random tie-
+  // break for variety. This is a SORT priority, not a hard exclude — if the pool is small, recently
+  // used questions still get picked rather than leaving the exam short (spec: "최근 사용 문제를
+  // 무조건 제외해서 문제가 부족해지는 구조도 피한다").
+  function pickQuestionsWeighted(pool, count, recentlyUsedIds) {
+    if (!count || count <= 0) return [];
+    const scored = (pool || []).map((q) => ({
+      q,
+      recentPenalty: recentlyUsedIds && recentlyUsedIds.has(q.id) ? 1 : 0,
+      usage: q.usageCount || 0,
+      rand: Math.random(),
+    }));
+    scored.sort((a, b) => (a.recentPenalty - b.recentPenalty) || (a.usage - b.usage) || (a.rand - b.rand));
+    return scored.slice(0, count).map((s) => s.q);
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Grammar-specific bound API — Phase 5.
   // ---------------------------------------------------------------------------------------------
   const GRAMMAR_COLLECTION = "grammarQuestions";
@@ -479,6 +536,9 @@ window.SarahServices = window.SarahServices || {};
   // ---------------------------------------------------------------------------------------------
   const READING_PASSAGE_COLLECTION = "readingPassages";
   const READING_QUESTION_COLLECTION = "readingQuestions";
+  // Reading Analysis 재설계(Phase C) — 레거시 readingQuestions와 분리된 신규 저장소.
+  // readingAnalyses(services/readingAnalysisService.js)에서 파생된 문제만 여기 저장된다.
+  const READING_ANALYSIS_QUESTION_COLLECTION = "readingAnalysisQuestions";
 
   // §12.6 — exam/usage purpose, deliberately open-ended so INTERNATIONAL_SCHOOL/TOEFL/etc. can be
   // appended later without touching UI/filter code that iterates this array.
@@ -637,6 +697,7 @@ window.SarahServices = window.SarahServices || {};
     canTransition, computeFingerprint, findDuplicates,
     listQuestions, createQuestion, updateQuestion, setStatus, canHardDelete, hardDeleteQuestion,
     queryQuestions, pickQuestionsForExam, incrementUsageCount,
+    distributeCounts, pickQuestionsWeighted,
     GRAMMAR_COLLECTION,
     listGrammarQuestions: () => listQuestions(GRAMMAR_COLLECTION),
     createGrammarQuestion: (input) => createQuestion(GRAMMAR_COLLECTION, input),
@@ -664,5 +725,23 @@ window.SarahServices = window.SarahServices || {};
     }),
     setReadingQuestionStatus: (doc, nextStatus, reviewPatch) => setStatus(READING_QUESTION_COLLECTION, doc, nextStatus, reviewPatch),
     hardDeleteReadingQuestion: (doc) => hardDeleteQuestion(READING_QUESTION_COLLECTION, doc),
+
+    // Reading Analysis — Question Generator (Teacher OS, Reading Analysis 재설계 Phase C)
+    // 별도 컬렉션(readingAnalysisQuestions), 레거시 readingQuestions/readingPassages와는 완전히
+    // 분리된 저장소 — 스키마 형태만 Reading Question Bank를 재사용하고(passageId 대신
+    // analysisId로 services/readingAnalysisService.js의 readingAnalyses 문서를 참조), core
+    // CRUD/버저닝/상태전이 로직은 위 제네릭 함수를 그대로 바인딩할 뿐 새로 만들지 않는다.
+    READING_ANALYSIS_QUESTION_COLLECTION,
+    listReadingAnalysisQuestions: () => listQuestions(READING_ANALYSIS_QUESTION_COLLECTION),
+    createReadingAnalysisQuestion: (input, analysisId) => createQuestion(READING_ANALYSIS_QUESTION_COLLECTION, input, {
+      extraFields: { analysisId, examType: input.examType || "", targetSkill: input.targetSkill || "", evidenceLocation: input.evidenceLocation || "" },
+      reviewSchema: "reading",
+    }),
+    updateReadingAnalysisQuestion: (doc, patch) => updateQuestion(READING_ANALYSIS_QUESTION_COLLECTION, doc, patch, {
+      extraContentFields: ["analysisId", "examType"],
+      reviewSchema: "reading",
+    }),
+    setReadingAnalysisQuestionStatus: (doc, nextStatus, reviewPatch) => setStatus(READING_ANALYSIS_QUESTION_COLLECTION, doc, nextStatus, reviewPatch),
+    hardDeleteReadingAnalysisQuestion: (doc) => hardDeleteQuestion(READING_ANALYSIS_QUESTION_COLLECTION, doc),
   };
 })();

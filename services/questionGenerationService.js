@@ -105,8 +105,39 @@ window.SarahServices = window.SarahServices || {};
     return saved;
   }
 
+  // opts: { analysis (readingAnalyses doc), questionType, difficulty, count, tags? }
+  // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인) — generateReadingQuestions와 같은 패턴,
+  // 대상 저장소만 questionBankService의 새 readingAnalysisQuestions 바인딩으로 바뀐다. 레거시
+  // readingQuestions/readingPassages는 이 함수가 절대 건드리지 않는다. originalText(원문)뿐
+  // 아니라 이미 만들어진 analysis(문장 구조/문법포인트/어휘 등)까지 함께 넘겨서 Passage
+  // Analysis 단계의 결과를 문제 생성 품질에 실제로 반영한다.
+  async function generateReadingAnalysisQuestions(opts) {
+    const qType = QB.READING_QUESTION_TYPES.find((t) => t.key === opts.questionType);
+    const diff = QB.DIFFICULTIES.find((d) => d.key === opts.difficulty);
+    const items = await callAiWorker({
+      mode: "readingAnalysisGenerate",
+      passageText: opts.analysis.originalText,
+      analysis: opts.analysis.analysis || null,
+      questionTypeLabel: qType ? qType.label : "",
+      difficultyLabel: diff ? diff.label : "",
+      count: opts.count || 5,
+    });
+    const saved = [];
+    for (const item of items) {
+      const input = toQuestionInput(item, {
+        grade: opts.analysis.grade, difficulty: opts.difficulty, questionType: opts.questionType,
+        examType: opts.analysis.examType, tags: opts.tags,
+      });
+      input.source = { type: "AI_GENERATED", note: "questionGenerationService.generateReadingAnalysisQuestions" };
+      const doc = await QB.createReadingAnalysisQuestion(input, opts.analysis.id);
+      saved.push(doc);
+    }
+    return saved;
+  }
+
   window.SarahServices.questionGenerationService = {
     generateGrammarQuestions,
     generateReadingQuestions,
+    generateReadingAnalysisQuestions,
   };
 })();

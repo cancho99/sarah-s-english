@@ -42,6 +42,15 @@ service cloud.firestore {
     match /examPapers/{id} {
       allow read, create, update, delete: if isTeacher();
     }
+    // Reading Analysis 재설계(Phase C, 2026-08-26) — 신규 컬렉션 2개, 위 4개와 완전히 같은
+    // 패턴(teacher만 read/write). 레거시 readingQuestions/readingPassages 규칙은 그대로 두고
+    // 새로 추가만 한다 — 기존 3개 규칙 블록 무수정.
+    match /readingAnalyses/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /readingAnalysisQuestions/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
 
     // ── Phase 9-D: examAssignments — 본인 배정만 read, 상태 전이만 update ──
     // create/delete는 teacher만(9-B와 동일, 변화 없음). update는 teacher 전체 허용 + 학생 본인
