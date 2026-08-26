@@ -114,6 +114,7 @@
 <script src="services/vocabularyService.js" defer></script>
 <script src="services/examService.js" defer></script>
 <script src="services/readingService.js" defer></script>
+<script src="services/readingAnalysisService.js" defer></script>
 <script src="services/reportService.js" defer></script>
 <script src="services/revenueService.js" defer></script>
 <script src="services/aiService.js" defer></script>
@@ -3022,6 +3023,11 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     { key: "studentArea", label: "Students", icon: "👩‍🎓", clickable: true },
     { key: "classes", label: "Classes", icon: "📝" },
     { key: "questionBank", label: "Question Bank", icon: "📚" },
+    // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §8-2) — Question Bank 바로 다음에
+    // 배치한다. "Sarah's Original"과 같은 이유(Question Bank과 밀접하지만 독립적인 교사 콘텐츠
+    // 제작 워크플로)로 최상위 항목을 하나 더 두되, 새 사이드바 카테고리를 임의로 늘리지 않고
+    // 기존 IA 관례(Question Bank 옆에 독립 워크플로를 두는 패턴)를 그대로 따른다.
+    { key: "readingAnalysis", label: "Reading Analysis", icon: "🔬" },
     { key: "sarahsOriginal", label: "Sarah's Original", icon: "🏆" },
     { key: "reports", label: "Reports", icon: "📊" },
     { key: "readingArea", label: "Reading", icon: "📖" },
@@ -3093,6 +3099,11 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // Exam Builder(= section "examBuilder", QuestionBankSection의 examBuilder 탭)로 이동만
     // 시킨다 — Exam Builder 자체는 무수정.
     body = html`<${SarahsOriginalSection} roster=${roster} onNavigateToExamBuilder=${() => setSection("examBuilder")} />`;
+  } else if (section === "readingAnalysis") {
+    // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인) — Passage Analysis / Question
+    // Generator / Passage Variation 3탭. readingAnalyses/readingAnalysisQuestions 신규 컬렉션만
+    // 쓰고, 레거시 readingPassages/readingQuestions와 학생용 Reading 시스템은 전혀 건드리지 않는다.
+    body = html`<${ReadingAnalysisSection} />`;
   } else if (section === "teacherCenter") {
     body = html`<${TeacherCenterSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
@@ -3216,6 +3227,10 @@ const SETTINGS_SUBTABS = [
   { key: "business", icon: "💰", label: "Business" },
   { key: "announcements", icon: "📢", label: "Announcements" },
   { key: "data", icon: "🗄", label: "Data" },
+  // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §8-1) — 레거시 Reading Question Bank
+  // (readingPassages/readingQuestions)를 Question Bank 탭에서는 빼고 여기 하나로만 남긴다.
+  // 컴포넌트(ReadingQuestionBankView 등)와 데이터는 그대로, 진입 경로만 이동.
+  { key: "legacyReading", icon: "📖", label: "Legacy Reading" },
 ];
 function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache, updateData, announcement, saveAnnouncement, onSelectStudent }) {
   const [tab, setTab] = useState("profile");
@@ -3226,6 +3241,12 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
       ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
       ${tab === "data" && html`<${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
+      ${tab === "legacyReading" && html`
+        <div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>기존 Reading Question Bank(지문·문제) 보관용 화면이에요. 새 Reading 제작은 "Reading Analysis" 메뉴를 사용하세요 — 여기 데이터는 삭제되지 않고 그대로 남아있어요.</div>
+          <${ReadingQuestionBankView} roster=${roster} />
+        </div>
+      `}
     </div>
   `;
 }
@@ -3947,7 +3968,6 @@ const STUDENT_DETAIL_TABS = [
   { key: "overview", icon: "📌", label: "Overview" },
   { key: "study", icon: "📚", label: "Learning" },
   { key: "assessment", icon: "📊", label: "Assessment" },
-  { key: "classRecord", icon: "📝", label: "Class Record" },
   { key: "reports", icon: "📨", label: "Reports" },
 ];
 
@@ -4077,8 +4097,6 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
       ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} onViewGrowthReport=${onViewGrowthReport} deepTarget=${myDeepTarget} />`}
       ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
         analysis=${analysis} analysisLoading=${analysisLoading} />`}
-      ${tab === "classRecord" && html`<${StudentClassRecordTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
-        teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJumpToReports=${() => setTab("reports")} />`}
       ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} onSelectStudent=${() => setTab("overview")} />`}
     </div>
   `;
@@ -4200,14 +4218,14 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
       `}
 
       <${StudentWeaknessAnalysisCard} loading=${analysisLoading} analysis=${analysis} logs=${data.logs} />
-      <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Class Record 탭에서 볼 수 있어요(위 카드의 "최근 학습 이력"에 최신 3건이 나와 있어요).</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Reports 탭의 데일리 리포트에서 날짜별로 볼 수 있어요(위 카드의 "최근 학습 이력"에 최신 3건이 나와 있어요).</div>
 
       <${StudentReadingSummaryCard} studentId=${student.id} />
 
       <${Card}>
         <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>⚠️ Student Alerts</div>
-          <button onClick=${() => onJump("classRecord")} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>메모 전체 보기 →</button>
+          <button onClick=${() => onJump("reports")} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>메모 전체 보기 →</button>
         </div>
         ${recentNotes.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 상담/메모가 없어요.</div>` : recentNotes.map((n, i) => html`
           <div key=${n.id} style=${{ padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
@@ -4631,65 +4649,17 @@ function StudentQuestionAccuracyPanel({ loading, analysis }) {
   `;
 }
 
-// 📝 수업 기록 — 수업 로그 / 상담·메모(+상담 신청) / 할 일. "오늘 수업 기록"은 Phase 2 STEP 2에서
-// 이미 리포트 탭의 Daily Report와 합쳐졌으므로 여기서는 그리로 가는 버튼만 둔다.
-const STUDENT_CLASS_RECORD_SUBTABS = [
-  { key: "logs", icon: "📘", label: "Class Log" },
-  { key: "notes", icon: "🗒", label: "Notes & Consultations" },
-  { key: "todo", icon: "✅", label: "To-Do" },
-];
-// Teacher OS STEP 12 §2 — To-Do 서브탭이 이제 teacherTodos(studentId로 이 학생에 고정, Today와
-// 완전히 같은 저장소)를 쓴다. 예전 data.todos(TodoEditor)에 실제로 있던 기록은 절대 지우지
-// 않고, "이전 방식으로 등록된 할 일" 접이식 섹션에 읽기 전용으로 그대로 남겨둔다(마이그레이션
-// 없음 — Firestore의 data.todos 필드는 손대지 않는다. TodoEditor 컴포넌트 자체도 무수정으로
-// 코드에 남아있다, 옛 카테고리 플라이아웃 화면에서는 여전히 그 컴포넌트를 그대로 쓴다).
-function StudentClassRecordTab({ student, data, updateData, roster, teacherTodos, saveTeacherTodos, onJumpToReports }) {
-  const [sub, setSub] = useState("logs");
-  const todayStr = today();
-  const legacyTodos = [...(data.todos || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  return html`
-    <div>
-      <${Card} style=${{ marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <div style=${{ fontSize: 12, color: C.slate }}>오늘 수업 내용·평가·학부모 메시지 초안은 리포트 탭의 데일리 리포트에서 한 번에 기록해요.</div>
-        <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${onJumpToReports}>오늘 수업 기록 작성 →<//>
-      <//>
-      <${Tabs} tabs=${STUDENT_CLASS_RECORD_SUBTABS} active=${sub} onChange=${setSub} />
-      ${sub === "logs" && html`<${LogsEditor} data=${data} updateData=${updateData} />`}
-      ${sub === "notes" && html`
-        <div>
-          <${NotesEditor} data=${data} updateData=${updateData} />
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "16px 0 8px" }}>🗓 상담 신청</div>
-          <${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />
-        </div>
-      `}
-      ${sub === "todo" && html`
-        <div>
-          <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} lockedStudentId=${student.id} title="✅ 할 일" />
-          ${legacyTodos.length > 0 && html`
-            <details style=${{ marginTop: 10 }}>
-              <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>이전 방식으로 등록된 할 일 보기 (읽기 전용, ${legacyTodos.length}건)</summary>
-              <div style=${{ marginTop: 6 }}>
-                ${legacyTodos.map((t) => html`
-                  <div key=${t.id} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}`, color: t.done ? C.slate : C.ink, textDecoration: t.done ? "line-through" : "none" }}>
-                    <span style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginRight: 6 }}>${fmtDate(t.date)}</span>${t.content}
-                  </div>
-                `)}
-              </div>
-            </details>
-          `}
-        </div>
-      `}
-    </div>
-  `;
-}
-
 // 📨 리포트 — 데일리 리포트 / 월말 리포트 / 월간 분석. ReportsSection의 kind 탭과 완전히 같은
 // 3개 컴포넌트를 그대로 재사용한다(학생 선택 드롭다운만 없음 — 이미 선택된 학생에 바로 바인딩).
 const STUDENT_REPORTS_SUBTABS = [
   { key: "daily", icon: "✉️", label: "Daily Report" },
   { key: "monthly", icon: "📊", label: "Monthly Report" },
   { key: "dashboard", icon: "📈", label: "Student Progress" },
+  { key: "notes", icon: "🗒", label: "Notes & Consultations" },
 ];
+// Notes & Consultations는 Daily Report(수업 1회의 공식 기록)와 목적이 다르다 — 상담/장기 메모용.
+// 예전 Class Record 탭의 "상담·메모" 서브탭과 완전히 같은 두 컴포넌트(NotesEditor,
+// ConsultRequestsTeacherView)를 그대로 여기로 옮겼다 — 로직 무수정, 자리만 이동.
 function StudentReportsTab({ student, data, updateData, onSelectStudent }) {
   const [sub, setSub] = useState("daily");
   return html`
@@ -4698,6 +4668,13 @@ function StudentReportsTab({ student, data, updateData, onSelectStudent }) {
       ${sub === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${sub === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${sub === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
+      ${sub === "notes" && html`
+        <div>
+          <${NotesEditor} data=${data} updateData=${updateData} />
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "16px 0 8px" }}>🗓 상담 신청</div>
+          <${ConsultRequestsTeacherView} data=${data} updateData=${updateData} />
+        </div>
+      `}
     </div>
   `;
 }
@@ -6523,17 +6500,30 @@ function AiGenerateReadingPanel({ QB, passage, onGenerated }) {
   `;
 }
 
-// 은행 교차 "검수 대기" 큐 — AI_REVIEW/TEACHER_REVIEW 상태인 문제를 Grammar/Reading 구분 없이 한 화면에서.
-function ReviewQueueView({ onSelect }) {
+// 은행 교차 "검수 대기" 큐 — AI_REVIEW/TEACHER_REVIEW 상태인 문제를 은행 구분 없이 한 화면에서.
+// Reading Analysis 재설계(Phase C) — readingAnalysisQuestions(신규)를 세 번째 소스로 추가했다.
+// 레거시 readingQuestions는 새로 쌓이지 않지만, 혹시 남아있는 검수 대기 항목을 놓치지 않도록
+// 그대로 계속 조회한다("Legacy" 라벨만 붙여 구분). `banks` prop으로 표시할 소스를 제한할 수 있다
+// — 기본은 전부(["grammar","readingAnalysis","reading"]). Sarah's Original(Grammar 전용, 2026-08-26
+// 설계 승인 §3)은 banks=["grammar"]만 넘겨서 재사용한다.
+function ReviewQueueView({ onSelect, banks }) {
   const QB = window.SarahServices.questionBankService;
+  const scope = banks || ["grammar", "readingAnalysis", "reading"];
   const [items, setItems] = useState(null);
   const [err, setErr] = useState("");
 
   async function load() {
     try {
-      const [g, r] = await Promise.all([QB.listGrammarQuestions(), QB.listReadingQuestions()]);
+      // readingAnalysis 소스만 개별 catch — 아직 Firestore 규칙이 없는 환경에서도 Grammar
+      // 검수 큐(레거시)는 절대 깨지면 안 된다(회귀 방지).
+      const [g, ra, r] = await Promise.all([
+        scope.includes("grammar") ? QB.listGrammarQuestions() : Promise.resolve([]),
+        scope.includes("readingAnalysis") ? QB.listReadingAnalysisQuestions().catch(() => []) : Promise.resolve([]),
+        scope.includes("reading") ? QB.listReadingQuestions() : Promise.resolve([]),
+      ]);
       const pending = [
         ...g.filter((q) => q.status === "AI_REVIEW" || q.status === "TEACHER_REVIEW").map((q) => ({ ...q, __bank: "grammar" })),
+        ...ra.filter((q) => q.status === "AI_REVIEW" || q.status === "TEACHER_REVIEW").map((q) => ({ ...q, __bank: "readingAnalysis" })),
         ...r.filter((q) => q.status === "AI_REVIEW" || q.status === "TEACHER_REVIEW").map((q) => ({ ...q, __bank: "reading" })),
       ].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       setItems(pending);
@@ -6541,14 +6531,16 @@ function ReviewQueueView({ onSelect }) {
       setErr("불러오지 못했어요: " + String(e.message || e));
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [scope.join(",")]);
 
   if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
   if (items === null) return html`<${Empty} text="불러오는 중..." />`;
 
+  const bankLabel = { grammar: "📐 GRAMMAR", readingAnalysis: "📘 READING ANALYSIS", reading: "📖 READING (Legacy)" };
+
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>Grammar + Reading 두 은행을 합쳐서, 검수가 필요한(AI_REVIEW/TEACHER_REVIEW) 문제만 모아 보여줘요. AI가 생성한 문제(source: AI_GENERATED)도 여기서 바로 확인할 수 있어요.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>검수가 필요한(AI_REVIEW/TEACHER_REVIEW) 문제만 모아 보여줘요. AI가 생성한 문제(source: AI_GENERATED)도 여기서 바로 확인할 수 있어요.</div>
       ${items.length === 0
         ? html`<${Empty} text="검수 대기 중인 문제가 없어요." />`
         : items.map((q) => html`
@@ -6556,7 +6548,7 @@ function ReviewQueueView({ onSelect }) {
             <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
               <div style=${{ minWidth: 0, flex: 1 }}>
                 <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>
-                  ${q.__bank === "reading" ? "📖 READING" : "📐 GRAMMAR"} · ${q.grade}
+                  ${bankLabel[q.__bank] || q.__bank} · ${q.grade}
                   ${(q.source && q.source.type === "AI_GENERATED") ? html`<span style=${{ marginLeft: 6, color: C.gold, fontWeight: 700 }}>✨ AI 생성</span>` : ""}
                 </div>
                 <div style=${{ fontSize: 13, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${q.questionText}</div>
@@ -6583,38 +6575,21 @@ const SARAH_ORIGINAL_TABS = [
   { key: "myQuestions", icon: "📚", label: "My Questions" },
 ];
 
+// Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §3) — Sarah's Original은 Grammar 전용으로
+// 좁힌다. Reading 문제 생성은 이제 Reading Analysis → Question Generator에서만 한다 (§readingAnalysis
+// 참고). 이 탭에서 Reading 관련 UI(지문 선택/AiGenerateReadingPanel)는 완전히 제거했다 — 기존
+// readingQuestions/readingPassages 데이터나 코드 자체는 그대로 남아있고(레거시), 삭제하지 않았다.
 function SarahsOriginalCreateTab() {
   const QB = window.SarahServices.questionBankService;
-  const [passages, setPassages] = useState(null);
-  const [selectedPassageId, setSelectedPassageId] = useState("");
-  const [lastGenerated, setLastGenerated] = useState(null); // { bank, count } | null
-
-  useEffect(() => { QB.listReadingPassages().then(setPassages).catch(() => setPassages([])); }, []);
-
-  const publishedPassages = (passages || []).filter((p) => p.status === "PUBLISHED");
-  const selectedPassage = (passages || []).find((p) => p.id === selectedPassageId);
+  const [lastGenerated, setLastGenerated] = useState(null); // { count } | null
 
   return html`
     <div>
       <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 6 }}>📐 Grammar 문제 생성</div>
-      <${AiGenerateGrammarPanel} QB=${QB} onGenerated=${(docs) => setLastGenerated({ bank: "grammar", count: docs.length })} />
-
-      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, margin: "18px 0 6px" }}>📖 Reading 문제 생성</div>
-      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>지문 자체는 AI로 만들지 않아요 — 먼저 PUBLISHED 상태인 지문을 하나 선택하면 그 지문에 문제를 추가할 수 있어요.</div>
-      ${passages === null
-        ? html`<${Empty} text="지문 불러오는 중..." />`
-        : publishedPassages.length === 0
-        ? html`<${Empty} text="PUBLISHED 상태인 지문이 없어요. Question Bank → Reading에서 먼저 지문을 승인해 주세요." />`
-        : html`
-          <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedPassageId} onChange=${(e) => setSelectedPassageId(e.target.value)}>
-            <option value="">지문 선택...</option>
-            ${publishedPassages.map((p) => html`<option key=${p.id} value=${p.id}>${p.title} (${p.grade})</option>`)}
-          </select>
-          ${selectedPassage && html`<${AiGenerateReadingPanel} QB=${QB} passage=${selectedPassage} onGenerated=${(docs) => setLastGenerated({ bank: "reading", count: docs.length })} />`}
-        `}
+      <${AiGenerateGrammarPanel} QB=${QB} onGenerated=${(docs) => setLastGenerated({ count: docs.length })} />
       ${lastGenerated && html`
         <div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>
-          ✅ ${lastGenerated.bank === "grammar" ? "Grammar" : "Reading"} 문제 ${lastGenerated.count}개가 DRAFT로 저장됐어요 — 상단 "Review" 탭에서 검수해 주세요.
+          ✅ Grammar 문제 ${lastGenerated.count}개가 DRAFT로 저장됐어요 — 상단 "Review" 탭에서 검수해 주세요.
         </div>
       `}
     </div>
@@ -6623,8 +6598,6 @@ function SarahsOriginalCreateTab() {
 
 const SARAH_ORIGINAL_PRESETS = [
   { key: "all", label: "All", test: () => true },
-  { key: "grammar", label: "Grammar", test: (q) => q.__bank === "grammar" },
-  { key: "reading", label: "Reading", test: (q) => q.__bank === "reading" },
   { key: "draft", label: "Draft", test: (q) => q.status === "DRAFT" },
   { key: "needsReview", label: "Needs Review", test: (q) => q.status === "AI_REVIEW" || q.status === "TEACHER_REVIEW" },
   { key: "approved", label: "Approved", test: (q) => q.status === "APPROVED" },
@@ -6632,23 +6605,24 @@ const SARAH_ORIGINAL_PRESETS = [
   { key: "neverUsed", label: "Never Used", test: (q) => !(q.usageCount > 0) },
 ];
 
+// Grammar 전용(§ Reading Analysis 재설계 Phase C) — 파라미터/state 이름의 "bank"는 앞으로 항상
+// "grammar"뿐이지만, GrammarQuestionDetail/GrammarQuestionForm 등 재사용 컴포넌트 시그니처를
+// 그대로 두기 위해 남겨뒀다(불필요한 리팩터링 금지 원칙).
 function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam }) {
   const QB = window.SarahServices.questionBankService;
   const SOURCE_SCOPE = QB.SARAH_ORIGINAL_SOURCE_TYPES;
   const [grammarQuestions, setGrammarQuestions] = useState(null);
-  const [readingQuestions, setReadingQuestions] = useState(null);
-  const [readingPassages, setReadingPassages] = useState(null);
   const [latestAssignedById, setLatestAssignedById] = useState({});
   const [err, setErr] = useState("");
   const [view, setView] = useState("list"); // list | detail | edit
-  const [selection, setSelection] = useState(initialSelection || null); // { bank, id } | null
+  const [selection, setSelection] = useState(initialSelection || null); // { bank: "grammar", id } | null
   const [preset, setPreset] = useState("all");
   const [filters, setFilters] = useState({ search: "", grade: "", difficulty: "" });
 
   async function load() {
     try {
-      const [g, r, p] = await Promise.all([QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages()]);
-      setGrammarQuestions(g); setReadingQuestions(r); setReadingPassages(p);
+      const g = await QB.listGrammarQuestions();
+      setGrammarQuestions(g);
       computeLatestAssignedAtByQuestionId().then(setLatestAssignedById).catch(() => {});
     } catch (e) {
       setErr("불러오지 못했어요: " + String(e.message || e));
@@ -6656,16 +6630,13 @@ function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam })
   }
   useEffect(() => { load(); }, []);
   useEffect(() => {
-    if (initialSelection && grammarQuestions && readingQuestions) { setSelection(initialSelection); setView("detail"); }
-  }, [initialSelection, grammarQuestions, readingQuestions]);
+    if (initialSelection && grammarQuestions) { setSelection(initialSelection); setView("detail"); }
+  }, [initialSelection, grammarQuestions]);
 
   if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
-  if (grammarQuestions === null || readingQuestions === null || readingPassages === null) return html`<${Empty} text="불러오는 중..." />`;
+  if (grammarQuestions === null) return html`<${Empty} text="불러오는 중..." />`;
 
-  const pool = [
-    ...grammarQuestions.filter((q) => SOURCE_SCOPE.includes(q.source && q.source.type)).map((q) => ({ ...q, __bank: "grammar" })),
-    ...readingQuestions.filter((q) => SOURCE_SCOPE.includes(q.source && q.source.type)).map((q) => ({ ...q, __bank: "reading" })),
-  ];
+  const pool = grammarQuestions.filter((q) => SOURCE_SCOPE.includes(q.source && q.source.type)).map((q) => ({ ...q, __bank: "grammar" }));
 
   const activePreset = SARAH_ORIGINAL_PRESETS.find((p) => p.key === preset) || SARAH_ORIGINAL_PRESETS[0];
   let scoped = pool.filter(activePreset.test);
@@ -6677,12 +6648,11 @@ function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam })
   if (filters.difficulty) scoped = scoped.filter((q) => q.difficulty === filters.difficulty);
   if (preset === "recentlyUsed") scoped = scoped.slice().sort((a, b) => (latestAssignedById[b.id] || 0) - (latestAssignedById[a.id] || 0));
 
-  const selectedDoc = selection && (selection.bank === "grammar" ? grammarQuestions : readingQuestions).find((q) => q.id === selection.id);
-  const selectedPassage = selection && selection.bank === "reading" && selectedDoc ? readingPassages.find((p) => p.id === selectedDoc.passageId) : null;
+  const selectedDoc = selection && grammarQuestions.find((q) => q.id === selection.id);
 
   function selectQuestion(bank, id) { setSelection({ bank, id }); setView("detail"); }
 
-  if (view === "edit" && selectedDoc && selection.bank === "grammar") {
+  if (view === "edit" && selectedDoc) {
     return html`<${GrammarQuestionForm} QB=${QB} questions=${grammarQuestions} existingDoc=${selectedDoc}
       onSaved=${(doc, forked) => {
         setGrammarQuestions((qs) => (forked ? [doc, ...qs.map((q) => (q.id === selectedDoc.id ? { ...q, status: "ARCHIVED", replacedBy: doc.id } : q))] : qs.map((q) => (q.id === doc.id ? doc : q))));
@@ -6690,32 +6660,17 @@ function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam })
       }}
       onCancel=${() => setView("detail")} />`;
   }
-  if (view === "edit" && selectedDoc && selection.bank === "reading" && selectedPassage) {
-    return html`<${ReadingQuestionForm} QB=${QB} passage=${selectedPassage} questions=${readingQuestions.filter((q) => q.passageId === selectedPassage.id)} existingDoc=${selectedDoc}
-      onSaved=${(doc, forked) => {
-        setReadingQuestions((qs) => (forked ? [doc, ...qs.map((q) => (q.id === selectedDoc.id ? { ...q, status: "ARCHIVED", replacedBy: doc.id } : q))] : qs.map((q) => (q.id === doc.id ? doc : q))));
-        setSelection({ bank: "reading", id: doc.id }); setView("detail");
-      }}
-      onCancel=${() => setView("detail")} />`;
-  }
-  if (view === "detail" && selectedDoc && selection.bank === "grammar") {
+  if (view === "detail" && selectedDoc) {
     return html`<${GrammarQuestionDetail} QB=${QB} doc=${selectedDoc} roster=${roster}
       onBack=${(deleted) => { if (deleted) setGrammarQuestions((qs) => qs.filter((q) => q.id !== selectedDoc.id)); setSelection(null); setView("list"); }}
       onEdit=${() => setView("edit")}
       onChanged=${(doc) => setGrammarQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))}
       onAddToExam=${onAddToExam} />`;
   }
-  if (view === "detail" && selectedDoc && selection.bank === "reading") {
-    return html`<${ReadingQuestionDetail} QB=${QB} doc=${selectedDoc} passage=${selectedPassage} roster=${roster}
-      onBack=${(deleted) => { if (deleted) setReadingQuestions((qs) => qs.filter((q) => q.id !== selectedDoc.id)); setSelection(null); setView("list"); }}
-      onEdit=${() => setView("edit")}
-      onChanged=${(doc) => setReadingQuestions((qs) => qs.map((q) => (q.id === doc.id ? doc : q)))}
-      onAddToExam=${onAddToExam} />`;
-  }
 
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>Sarah's Original(AI 생성 · 직접 작성) 문제 ${pool.length}개 중 ${scoped.length}개</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>Sarah's Original(AI 생성 · 직접 작성 Grammar 문제) ${pool.length}개 중 ${scoped.length}개</div>
       <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         ${SARAH_ORIGINAL_PRESETS.map((p) => html`
           <button key=${p.key} type="button" onClick=${() => setPreset(p.key)}
@@ -6734,14 +6689,13 @@ function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam })
       ${scoped.length === 0
         ? html`<${Empty} text="조건에 맞는 문제가 없어요." />`
         : scoped.map((q) => {
-            const typeLabel = q.__bank === "grammar"
-              ? (() => { const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, q.mainCategory, q.subCategory); return `${main} → ${sub}`; })()
-              : (QB.READING_QUESTION_TYPES.find((t) => t.key === q.questionType) || {}).label;
+            const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, q.mainCategory, q.subCategory);
+            const typeLabel = `${main} → ${sub}`;
             return html`
               <${Card} key=${q.__bank + q.id} onClick=${() => selectQuestion(q.__bank, q.id)} style=${{ cursor: "pointer" }}>
                 <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <div style=${{ minWidth: 0, flex: 1 }}>
-                    <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${q.__bank === "reading" ? "📖 READING" : "📐 GRAMMAR"} · ${q.grade} · ${typeLabel}</div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>📐 GRAMMAR · ${q.grade} · ${typeLabel}</div>
                     <div style=${{ fontSize: 13.5, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${q.questionText}</div>
                     <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>사용 ${q.usageCount || 0}회${latestAssignedById[q.id] ? " · 최근 출제 " + fmtDateTime(latestAssignedById[q.id]) : ""}</div>
                   </div>
@@ -6754,6 +6708,8 @@ function SarahsOriginalMyQuestionsTab({ roster, initialSelection, onAddToExam })
   `;
 }
 
+// Grammar 전용(2026-08-26 설계 승인 §3) — Review 탭도 banks=["grammar"]로 제한해서 Reading Analysis
+// 문제가 여기 섞이지 않게 한다(전체 은행 교차 검수는 Question Bank → Question Review에서).
 function SarahsOriginalSection({ roster, onNavigateToExamBuilder }) {
   const [tab, setTab] = useState("create");
   const [pendingSelection, setPendingSelection] = useState(null); // { bank, id } | null
@@ -6765,8 +6721,395 @@ function SarahsOriginalSection({ roster, onNavigateToExamBuilder }) {
     <div>
       <${Tabs} tabs=${SARAH_ORIGINAL_TABS} active=${tab} onChange=${setTab} />
       ${tab === "create" && html`<${SarahsOriginalCreateTab} />`}
-      ${tab === "review" && html`<${ReviewQueueView} onSelect=${jumpToMyQuestions} />`}
+      ${tab === "review" && html`<${ReviewQueueView} banks=${["grammar"]} onSelect=${jumpToMyQuestions} />`}
       ${tab === "myQuestions" && html`<${SarahsOriginalMyQuestionsTab} roster=${roster} initialSelection=${pendingSelection} onAddToExam=${onNavigateToExamBuilder} />`}
+    </div>
+  `;
+}
+
+// ---------- Reading Analysis (Teacher OS reconstruction, Phase C — 2026-08-26 설계 승인) ----------
+// Passage → Analysis → Question Generator / Passage Variation. 레거시 Reading Question Bank
+// (readingPassages/readingQuestions, Question Bank의 "Reading" 탭)와 완전히 분리된 신규 워크플로 —
+// readingAnalyses/readingAnalysisQuestions만 쓴다. 레거시 데이터/코드는 삭제하지 않고 그대로 두되
+// (Settings → Legacy Reading Bank), 이 신규 워크플로는 절대 그쪽을 읽거나 쓰지 않는다.
+const READING_ANALYSIS_TABS = [
+  { key: "analysis", icon: "🔬", label: "Passage Analysis" },
+  { key: "generator", icon: "✨", label: "Question Generator" },
+  { key: "variation", icon: "🔀", label: "Passage Variation" },
+];
+
+function PassageAnalysisCreateForm({ onCreated, onCancel }) {
+  const RA = window.SarahServices.readingAnalysisService;
+  const QB = window.SarahServices.questionBankService;
+  const [text, setText] = useState("");
+  const [grade, setGrade] = useState(QB.GRADES[0]);
+  const [difficulty, setDifficulty] = useState("BASIC");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function handleAnalyze() {
+    if (text.trim().length < 20) { setErr("지문이 너무 짧아요 (20자 이상)."); return; }
+    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n지문 하나를 문장별/어휘/문법/문단/출제포인트까지 분석합니다. 계속할까요?")) return;
+    setBusy(true); setErr("");
+    try {
+      const res = await fetch(NELT_WORKER_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "readingAnalyze", passage: text.trim(), grade, difficulty }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || "분석에 실패했어요.");
+      const doc = await RA.createAnalysis({
+        title: json.title || text.trim().slice(0, 40),
+        originalText: text.trim(),
+        grade, difficulty,
+        analysis: json,
+      });
+      onCreated(doc);
+    } catch (e) {
+      setErr("분석 실패: " + String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return html`
+    <${Card}>
+      <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>새 지문 분석</div>
+      <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회)</div>
+      <textarea style=${{ ...inputStyle, minHeight: 160 }} placeholder="영어 지문을 붙여넣으세요..." value=${text} onChange=${(e) => setText(e.target.value)} />
+      <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+        <select style=${{ ...inputStyle, width: "auto" }} value=${grade} onChange=${(e) => setGrade(e.target.value)}>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
+        <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+        <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleAnalyze} disabled=${busy}>${busy ? "분석 중..." : "AI로 분석하기"}<//>
+        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onCancel} disabled=${busy}>취소<//>
+      </div>
+      ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
+    <//>
+  `;
+}
+
+function PassageAnalysisDetail({ doc, onBack, onGoGenerator, onGoVariation }) {
+  const a = doc.analysis || {};
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+        <div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>${doc.grade} · ${doc.difficulty}</div>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16 }}>${doc.title}</div>
+        </div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onGoGenerator}>✨ 이 지문으로 문제 생성<//>
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onGoVariation}>🔀 지문 변형<//>
+        </div>
+      </div>
+      <${Card}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Original Passage</div>
+        <div style=${{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.7 }}>${doc.originalText}</div>
+      <//>
+      ${a.core && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Core Analysis</div>
+          <div style=${{ fontSize: 13, lineHeight: 1.8 }}>
+            <div><b>Topic</b> — ${a.core.topic}</div>
+            <div><b>Main Idea</b> — ${a.core.mainIdea}</div>
+            <div><b>Summary</b> — ${a.core.summary}</div>
+            <div><b>Key Message</b> — ${a.core.keyMessage}</div>
+            <div><b>Author's Purpose</b> — ${a.core.authorPurpose}</div>
+            <div><b>Logical Structure</b> — ${a.core.logicalStructure}</div>
+          </div>
+        <//>
+      `}
+      ${(a.sentences || []).length > 0 && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Sentence-by-Sentence Analysis</div>
+          ${a.sentences.map((s) => html`
+            <div key=${s.index} style=${{ padding: "8px 0", borderBottom: `1px dashed ${C.line}` }}>
+              <div style=${{ fontSize: 13, fontWeight: 700 }}>${s.index}. ${s.text}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 3 }}>${s.translation}</div>
+              ${s.clauseStructure && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 3 }}>구조: ${s.clauseStructure}</div>`}
+              ${(s.grammarPoints || []).length > 0 && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>문법: ${(s.grammarPoints || []).join(", ")}</div>`}
+              ${(s.keyExpressions || []).length > 0 && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>구문: ${(s.keyExpressions || []).join(", ")}</div>`}
+            </div>
+          `)}
+        <//>
+      `}
+      ${(a.vocabulary || []).length > 0 && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Vocabulary</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8 }}>
+            ${a.vocabulary.map((v, i) => html`
+              <div key=${i} style=${{ fontSize: 12, border: `1px solid ${C.line}`, borderRadius: 4, padding: 8 }}>
+                <div style=${{ fontWeight: 700 }}>${v.word} <span style=${{ color: C.slate, fontWeight: 400 }}>(${v.pos})</span></div>
+                <div style=${{ marginTop: 2 }}>${v.contextualMeaning}</div>
+                ${(v.synonyms || []).length > 0 && html`<div style=${{ color: C.slate, marginTop: 2 }}>유의어: ${v.synonyms.join(", ")}</div>`}
+                ${(v.antonyms || []).length > 0 && html`<div style=${{ color: C.slate }}>반의어: ${v.antonyms.join(", ")}</div>`}
+                ${v.importance && html`<div style=${{ color: C.gold, marginTop: 2 }}>중요도: ${v.importance}</div>`}
+              </div>
+            `)}
+          </div>
+        <//>
+      `}
+      ${(a.grammarExpressionPoints || []).length > 0 && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Grammar / Expression Points</div>
+          ${a.grammarExpressionPoints.map((g, i) => html`<div key=${i} style=${{ fontSize: 12.5, padding: "5px 0", borderBottom: `1px dashed ${C.line}` }}><b>${g.category}</b>${g.sentenceIndex ? ` (문장 ${g.sentenceIndex})` : ""} — ${g.description}</div>`)}
+        <//>
+      `}
+      ${(a.paragraphs || []).length > 0 && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Paragraph Analysis</div>
+          ${a.paragraphs.map((p) => html`
+            <div key=${p.index} style=${{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px dashed ${C.line}` }}>
+              <b>문단 ${p.index}</b> (${p.developmentType}) — ${p.mainContent}
+              <div style=${{ color: C.slate, marginTop: 2 }}>역할: ${p.role}${p.relationToAdjacent ? " · " + p.relationToAdjacent : ""}</div>
+            </div>
+          `)}
+        <//>
+      `}
+      ${(a.examPoints || []).length > 0 && html`
+        <${Card}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Exam Points</div>
+          <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            ${a.examPoints.map((e, i) => html`<span key=${i} style=${{ fontSize: 11.5, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>${e.type} — ${e.description}</span>`)}
+          </div>
+        <//>
+      `}
+    </div>
+  `;
+}
+
+function PassageAnalysisListTab({ selectedId, onSelect, onGoGenerator, onGoVariation }) {
+  const RA = window.SarahServices.readingAnalysisService;
+  const [analyses, setAnalyses] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState("");
+
+  function load() { RA.listAnalyses().then((list) => setAnalyses(list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)))).catch((e) => setErr(String(e.message || e))); }
+  useEffect(() => { load(); }, []);
+
+  const selectedDoc = analyses && analyses.find((a) => a.id === selectedId);
+
+  if (creating) {
+    return html`<${PassageAnalysisCreateForm} onCancel=${() => setCreating(false)} onCreated=${(doc) => { setCreating(false); load(); onSelect(doc.id); }} />`;
+  }
+  if (selectedDoc) {
+    return html`<${PassageAnalysisDetail} doc=${selectedDoc} onBack=${() => onSelect(null)} onGoGenerator=${() => onGoGenerator(selectedDoc.id)} onGoVariation=${() => onGoVariation(selectedDoc.id)} />`;
+  }
+
+  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
+  if (analyses === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style=${{ fontSize: 12, color: C.slate }}>지문 분석 ${analyses.length}개</div>
+        <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCreating(true)}>+ 새 지문 분석<//>
+      </div>
+      ${analyses.length === 0
+        ? html`<${Empty} text="아직 분석한 지문이 없어요." />`
+        : analyses.map((a) => html`
+          <${Card} key=${a.id} onClick=${() => onSelect(a.id)} style=${{ cursor: "pointer" }}>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${a.title}</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>${a.grade} · ${a.difficulty} · ${(a.originalText || "").slice(0, 60)}...</div>
+          <//>
+        `)}
+    </div>
+  `;
+}
+
+function ReadingAnalysisQuestionCard({ QB, doc, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  async function saveReview(draft) {
+    setSaving(true);
+    try {
+      const res = await QB.updateReadingAnalysisQuestion(doc, { review: { ...draft, reviewedAt: Date.now(), reviewedBy: "teacher" } });
+      onChanged(res.doc); setMsg("검토 내용을 저장했어요.");
+    } catch (e) { setMsg("저장 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  async function changeStatus(key) {
+    setSaving(true);
+    try {
+      const updated = await QB.setReadingAnalysisQuestionStatus(doc, key);
+      onChanged(updated); setMsg(`상태를 "${(QB.STATUS_FLOW.find((s) => s.key === key) || {}).label}"(으)로 변경했어요.`);
+    } catch (e) { setMsg("상태 변경 실패: " + String(e.message || e)); } finally { setSaving(false); }
+  }
+  const typeLabel = (QB.READING_QUESTION_TYPES.find((t) => t.key === doc.questionType) || {}).label || doc.questionType;
+  return html`
+    <${Card} style=${{ marginBottom: 10 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
+        <div style=${{ minWidth: 0, flex: 1 }}>
+          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${typeLabel} · ${doc.grade}</div>
+          <div style=${{ fontSize: 13, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${doc.questionText}</div>
+        </div>
+        <${QbBadge} status=${doc.status} />
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
+          ${doc.answerFormat === "mc" ? html`
+            <div>${(doc.choices || []).map((c, i) => html`<div key=${i} style=${{ padding: "4px 8px", fontSize: 12.5, background: i === Number(doc.answer) ? "#E1EEE4" : "transparent", fontWeight: i === Number(doc.answer) ? 700 : 400 }}>${i + 1}. ${c}</div>`)}</div>
+          ` : html`<div style=${{ fontSize: 12.5 }}><b>정답:</b> ${doc.answer}</div>`}
+          ${doc.explanation && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 6 }}><b>해설</b> — ${doc.explanation}</div>`}
+          <div style=${{ marginTop: 10 }}><${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving} /></div>
+          <div style=${{ marginTop: 10 }}><${StatusChangeCard} QB=${QB} doc=${doc} onChange=${changeStatus} saving=${saving} /></div>
+          ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 6 }}>${msg}</div>`}
+        </div>
+      `}
+    <//>
+  `;
+}
+
+function ReadingAnalysisQuestionGeneratorTab({ selectedId, onSelectAnalysis }) {
+  const QB = window.SarahServices.questionBankService;
+  const RA = window.SarahServices.readingAnalysisService;
+  const [analyses, setAnalyses] = useState(null);
+  const [questions, setQuestions] = useState(null);
+  const [questionType, setQuestionType] = useState(QB.READING_QUESTION_TYPES[0].key);
+  const [difficulty, setDifficulty] = useState("BASIC");
+  const [count, setCount] = useState(5);
+  const [generating, setGenerating] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => { RA.listAnalyses().then(setAnalyses).catch(() => setAnalyses([])); }, []);
+  useEffect(() => { QB.listReadingAnalysisQuestions().then(setQuestions).catch(() => setQuestions([])); }, [selectedId]);
+
+  if (analyses === null || questions === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  const selectedAnalysis = analyses.find((a) => a.id === selectedId);
+  const linked = (questions || []).filter((q) => q.analysisId === selectedId);
+
+  async function handleGenerate() {
+    const n = Math.max(1, Math.min(20, Number(count) || 5));
+    if (!confirm(`AI 사용 — API 비용이 발생해요.\n\n이 지문에 대해 1회 호출로 최대 ${n}개 문제를 생성합니다. 계속할까요?`)) return;
+    setGenerating(true); setMsg("");
+    try {
+      const QG = window.SarahServices.questionGenerationService;
+      const docs = await QG.generateReadingAnalysisQuestions({ analysis: selectedAnalysis, questionType, difficulty, count: n, tags: [] });
+      setQuestions((qs) => [...docs, ...qs]);
+      setMsg(`AI가 문제 ${docs.length}개를 생성해서 DRAFT로 저장했어요. 아래에서 바로 검수할 수 있어요.`);
+    } catch (e) {
+      setMsg("생성 실패: " + String(e.message || e));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>Passage Analysis에서 만든 지문을 골라 문제를 생성해요. 지문 자체는 AI로 다시 만들지 않아요.</div>
+      <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedId || ""} onChange=${(e) => onSelectAnalysis(e.target.value || null)}>
+        <option value="">지문 선택...</option>
+        ${(analyses || []).map((a) => html`<option key=${a.id} value=${a.id}>${a.title} (${a.grade})</option>`)}
+      </select>
+      ${!selectedAnalysis
+        ? html`<${Empty} text="지문을 먼저 선택하세요. 지문이 없으면 Passage Analysis 탭에서 먼저 만들어 주세요." />`
+        : html`
+          <${Card} style=${{ marginBottom: 14, background: "#FBF6EA" }}>
+            <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회, 결과는 항상 DRAFT로 저장돼요)</div>
+            <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select style=${{ ...inputStyle, width: "auto" }} value=${questionType} onChange=${(e) => setQuestionType(e.target.value)}>${QB.READING_QUESTION_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
+              <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+              <input type="number" style=${{ ...inputStyle, width: 70 }} value=${count} onChange=${(e) => setCount(e.target.value)} min="1" max="20" />
+              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleGenerate} disabled=${generating}>${generating ? "생성 중..." : "생성하기"}<//>
+            </div>
+            ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+          <//>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>이 지문에 연결된 문제 ${linked.length}개</div>
+          ${linked.length === 0
+            ? html`<${Empty} text="아직 생성된 문제가 없어요." />`
+            : linked.map((q) => html`<${ReadingAnalysisQuestionCard} key=${q.id} QB=${QB} doc=${q} onChanged=${(doc) => setQuestions((qs) => qs.map((x) => (x.id === doc.id ? doc : x)))} />`)}
+        `}
+    </div>
+  `;
+}
+
+function PassageVariationTab({ selectedId, onSelectAnalysis }) {
+  const RA = window.SarahServices.readingAnalysisService;
+  const [analyses, setAnalyses] = useState(null);
+  const [level, setLevel] = useState("중3~고1 수준");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => { RA.listAnalyses().then(setAnalyses).catch(() => setAnalyses([])); }, [selectedId]);
+
+  if (analyses === null) return html`<${Empty} text="불러오는 중..." />`;
+  const selectedAnalysis = analyses.find((a) => a.id === selectedId);
+
+  async function handleTransform() {
+    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n이 지문의 어휘/문장구조 난이도를 조정한 변형판을 만듭니다(내용·논리는 유지). 계속할까요?")) return;
+    setBusy(true); setErr("");
+    try {
+      const res = await fetch(NELT_WORKER_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "transform", passage: selectedAnalysis.originalText, level }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || "변형에 실패했어요.");
+      const updated = await RA.saveVariation(selectedAnalysis, { level, transformedHtml: json.transformed_html || "", changes: json.changes || [] });
+      setAnalyses((list) => list.map((a) => (a.id === updated.id ? updated : a)));
+    } catch (e) {
+      setErr("변형 실패: " + String(e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return html`
+    <div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>내용·논리·정답 근거는 그대로 유지하면서 어휘/문장구조 난이도만 조정해요.</div>
+      <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedId || ""} onChange=${(e) => onSelectAnalysis(e.target.value || null)}>
+        <option value="">지문 선택...</option>
+        ${(analyses || []).map((a) => html`<option key=${a.id} value=${a.id}>${a.title} (${a.grade})</option>`)}
+      </select>
+      ${!selectedAnalysis
+        ? html`<${Empty} text="지문을 먼저 선택하세요." />`
+        : html`
+          <${Card} style=${{ marginBottom: 14, background: "#FBF6EA" }}>
+            <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회)</div>
+            <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select style=${{ ...inputStyle, width: "auto" }} value=${level} onChange=${(e) => setLevel(e.target.value)}>
+                <option value="중1~2 수준">중1~2 수준</option>
+                <option value="중3~고1 수준">중3~고1 수준</option>
+                <option value="고2~수능 수준">고2~수능 수준</option>
+              </select>
+              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleTransform} disabled=${busy}>${busy ? "변형 중..." : "AI로 변형"}<//>
+            </div>
+            ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
+          <//>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>변형 이력 ${(selectedAnalysis.variations || []).length}개</div>
+          ${(selectedAnalysis.variations || []).length === 0
+            ? html`<${Empty} text="아직 변형 결과가 없어요." />`
+            : [...selectedAnalysis.variations].reverse().map((v) => html`
+              <${Card} key=${v.id} style=${{ marginBottom: 10 }}>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>${v.level} · ${fmtDateTime(v.createdAt)}</div>
+                <div style=${{ fontSize: 13, lineHeight: 1.7 }} dangerouslySetInnerHTML=${{ __html: (v.transformedHtml || "").replace(/<span class="chg">/g, '<span style="background:#FBEFC6;font-weight:700;">') }}></div>
+                ${(v.changes || []).length > 0 && html`
+                  <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 8 }}>
+                    ${v.changes.map((c, i) => html`<div key=${i} style=${{ fontSize: 12, marginBottom: 4 }}><b>${c.type}</b> — "${c.original}" → "${c.changed}": ${c.explanation}</div>`)}
+                  </div>
+                `}
+              <//>
+            `)}
+        `}
+    </div>
+  `;
+}
+
+function ReadingAnalysisSection() {
+  const [tab, setTab] = useState("analysis");
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState(null);
+  return html`
+    <div>
+      <${Tabs} tabs=${READING_ANALYSIS_TABS} active=${tab} onChange=${setTab} />
+      ${tab === "analysis" && html`<${PassageAnalysisListTab} selectedId=${selectedAnalysisId} onSelect=${setSelectedAnalysisId}
+        onGoGenerator=${(id) => { setSelectedAnalysisId(id); setTab("generator"); }}
+        onGoVariation=${(id) => { setSelectedAnalysisId(id); setTab("variation"); }} />`}
+      ${tab === "generator" && html`<${ReadingAnalysisQuestionGeneratorTab} selectedId=${selectedAnalysisId} onSelectAnalysis=${setSelectedAnalysisId} />`}
+      ${tab === "variation" && html`<${PassageVariationTab} selectedId=${selectedAnalysisId} onSelectAnalysis=${setSelectedAnalysisId} />`}
     </div>
   `;
 }
@@ -6885,17 +7228,22 @@ function ExamPaperBadge({ status }) {
   return html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: style.bg, color: style.color, whiteSpace: "nowrap" }}>${EXAM_PAPER_STATUS_LABEL[status] || status}</span>`;
 }
 
-function ExamPaperQuestionLine({ EP, QB, questionDoc, qref, index, onMove, onRemove, canEdit }) {
+// Teacher OS Exam Wizard (Phase B) — onReplace is optional (existing call sites that don't pass it
+// keep behaving exactly as before). When present, a "교체" button lets the Wizard's Preview step
+// (STEP4) swap just this one question without touching the rest of the section — the "Replace"
+// action from the spec, distinct from "Remove" (which just deletes the slot).
+function ExamPaperQuestionLine({ EP, QB, questionDoc, qref, index, onMove, onRemove, onReplace, canEdit }) {
   if (!questionDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
   const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(questionDoc, qref.choiceDisplayOrder);
   const typeLabel = questionDoc.mainCategory
     ? (() => { const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, questionDoc.mainCategory, questionDoc.subCategory); return `${main} → ${sub}`; })()
     : (QB.READING_QUESTION_TYPES.find((t) => t.key === questionDoc.questionType) || {}).label || questionDoc.questionType;
+  const diffLabel = (QB.DIFFICULTIES.find((d) => d.key === questionDoc.difficulty) || {}).label || questionDoc.difficulty;
   return html`
     <div style=${{ padding: "8px 10px", borderBottom: `1px dashed ${C.line}` }}>
       <div style=${{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
         <div style=${{ minWidth: 0, flex: 1 }}>
-          <div style=${{ fontSize: 11, color: C.slate }}>${index + 1}. ${typeLabel}${qref.choiceDisplayOrder ? " · 보기 순서 섞임" : ""}</div>
+          <div style=${{ fontSize: 11, color: C.slate }}>${index + 1}. ${typeLabel}${diffLabel ? " · " + diffLabel : ""}${qref.choiceDisplayOrder ? " · 보기 순서 섞임" : ""}</div>
           <div style=${{ fontSize: 12.5, color: C.ink }}>${questionDoc.questionText.slice(0, 70)}${questionDoc.questionText.length > 70 ? "..." : ""}</div>
           ${displayChoices.length > 0 && html`
             <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>
@@ -6905,6 +7253,7 @@ function ExamPaperQuestionLine({ EP, QB, questionDoc, qref, index, onMove, onRem
         </div>
         ${canEdit && html`
           <div style=${{ display: "flex", gap: 4, flexShrink: 0 }}>
+            ${onReplace && html`<button type="button" onClick=${onReplace} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, borderRadius: 3, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>교체</button>`}
             <button type="button" onClick=${() => onMove(-1)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>↑</button>
             <button type="button" onClick=${() => onMove(1)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, cursor: "pointer", fontSize: 11, padding: "2px 6px" }}>↓</button>
             <button type="button" onClick=${onRemove} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11 }}>삭제</button>
@@ -6915,7 +7264,10 @@ function ExamPaperQuestionLine({ EP, QB, questionDoc, qref, index, onMove, onRem
   `;
 }
 
-function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, canEdit, onChange, onRemoveSection }) {
+// onReplaceQuestion (optional, Phase B Wizard) — (index) => void, called when the teacher clicks
+// "교체" on one question line. Left undefined for every existing call site (old flat builder,
+// read-only ExamPaperDetail), so this is purely additive.
+function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, canEdit, onChange, onRemoveSection, onReplaceQuestion }) {
   function moveQuestion(i, dir) {
     const refs = [...section.questionRefs];
     const j = i + dir;
@@ -6946,7 +7298,8 @@ function ExamPaperSectionCard({ EP, QB, section, questionsById, passagesById, ca
         ? html`<div style=${{ fontSize: 11.5, color: C.slate }}>문제가 없어요.</div>`
         : section.questionRefs.map((qr, i) => html`
             <${ExamPaperQuestionLine} key=${qr.questionId + i} EP=${EP} QB=${QB} questionDoc=${questionsById[qr.questionId]} qref=${qr} index=${i}
-              canEdit=${canEdit} onMove=${(dir) => moveQuestion(i, dir)} onRemove=${() => removeQuestion(i)} />
+              canEdit=${canEdit} onMove=${(dir) => moveQuestion(i, dir)} onRemove=${() => removeQuestion(i)}
+              onReplace=${onReplaceQuestion ? () => onReplaceQuestion(i) : null} />
           `)}
       ${canEdit && html`<button type="button" onClick=${onRemoveSection} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11.5, cursor: "pointer", marginTop: 8, padding: 0 }}>섹션 삭제</button>`}
     <//>
@@ -7017,7 +7370,14 @@ function ExamPaperAutoSelectPanel({ EP, QB, grammarQuestions, readingQuestions, 
 // Phase 8 prep §2 — 문제은행에서 특정 문제를 직접 골라 시험지에 추가. examPaperService.js의
 // manualSection()은 이미 있었지만 지금까지 어느 UI에서도 호출되지 않던 죽은 코드였다(감사 결과
 // H-2) — 이 패널이 그 유일한 호출부. 새 Firestore 컬렉션 없이 기존 questionRefs 구조만 씀.
-function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, existingQuestionIds, onAddSections }) {
+// `title` (optional, Phase B Wizard) — lets the Wizard's Preview step relabel this as "Advanced:
+// Select Questions Manually" without forking the component; the old flat builder passes nothing and
+// keeps its original "🔎 문제 직접 선택" heading.
+// readingSource ("analysis" | undefined) — School Exam Builder(Reading Analysis 재설계 Phase C)가
+// 이 패널을 재사용할 때, 넘겨준 readingQuestions/readingPassagesById가 레거시가 아니라
+// readingAnalysisQuestions/readingAnalyses임을 표시한다. undefined면 기존 호출부와 100% 동일하게
+// 동작(레거시 readingQuestions, section.readingSource 필드 없음).
+function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions, readingPassagesById, existingQuestionIds, onAddSections, title, readingSource, readingBankLabel }) {
   const [open, setOpen] = useState(false);
   const [bank, setBank] = useState("grammar");
   const [search, setSearch] = useState("");
@@ -7054,13 +7414,15 @@ function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions,
       onAddSections([section]);
       setMsg(`문법 문제 ${section.questionRefs.length}개를 추가했어요.${skippedCount ? ` (PUBLISHED 아님 ${skippedCount}개 제외됨)` : ""}`);
     } else {
+      // readingAnalysisQuestions는 passageId 대신 analysisId를 쓴다(§ readingAnalysisService) —
+      // 필드명만 다를 뿐 "지문 단위로 섹션 묶기" 규칙은 레거시와 동일하다.
       const byPassage = {};
-      docs.forEach((q) => { (byPassage[q.passageId] = byPassage[q.passageId] || []).push(q); });
+      docs.forEach((q) => { const gid = q.passageId || q.analysisId; (byPassage[gid] = byPassage[gid] || []).push(q); });
       const newSections = [];
       let totalAdded = 0, totalSkipped = 0;
       Object.entries(byPassage).forEach(([passageId, qs]) => {
         const passageTitle = readingPassagesById[passageId] ? readingPassagesById[passageId].title : passageId;
-        const res = EP.manualSection("reading", `SECTION. READING (직접 선택) — ${passageTitle}`, qs, passageId);
+        const res = EP.manualSection("reading", `SECTION. READING (직접 선택) — ${passageTitle}`, qs, passageId, readingSource);
         newSections.push(res.section);
         totalAdded += res.section.questionRefs.length;
         totalSkipped += res.skippedCount;
@@ -7076,14 +7438,14 @@ function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions,
   return html`
     <${Card} style=${{ marginBottom: 14 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
-        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>🔎 문제 직접 선택</div>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>${title || "🔎 문제 직접 선택"}</div>
         <span style=${{ fontSize: 11, color: C.slate }}>${open ? "▾ 접기" : "▸ 펼치기"}</span>
       </div>
       ${open && html`
         <div style=${{ marginTop: 10 }}>
           <div style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
             <${Button} variant=${bank === "grammar" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setBank("grammar"); setSelectedIds([]); }}>📐 문법<//>
-            <${Button} variant=${bank === "reading" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setBank("reading"); setSelectedIds([]); }}>📖 독해<//>
+            <${Button} variant=${bank === "reading" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setBank("reading"); setSelectedIds([]); }}>📖 ${readingBankLabel || "독해"}<//>
           </div>
           <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             <input style=${{ ...inputStyle, flex: "1 1 160px" }} placeholder="검색 (본문/태그)" value=${search} onChange=${(e) => setSearch(e.target.value)} />
@@ -7129,10 +7491,236 @@ function ManualQuestionPickerPanel({ EP, QB, grammarQuestions, readingQuestions,
   `;
 }
 
+// School Exam Builder (Reading Analysis 재설계 Phase C, 2026-08-26 설계 승인 §5/§9~11) — 학교·
+// 학년·출판사·교과서·Lesson·시험범위를 먼저 입력하고, 그 범위에 쓸 Grammar(grammarQuestions,
+// 일반 Exam Builder와 동일 소스)와 Reading(readingAnalysisQuestions, 레거시 readingQuestions는
+// 절대 안 씀)을 함께 골라 하나의 examPapers 문서로 저장한다. 저장/확정/인쇄/응시는 일반 Exam
+// Builder와 완전히 같은 EP 함수를 그대로 재사용(§Phase B "공유 vs 독립" 설계) — 이 컴포넌트가
+// 새로 하는 일은 커리큘럼 입력 UI + Grammar/Reading 조합뿐이다. Curriculum master collection은
+// 만들지 않고(§5), 최근 사용값은 EP.getRecentSchoolExamValues()가 이미 로드된 examPapers에서
+// 즉석 계산한다(추가 Firestore 읽기 없음).
+function SchoolExamBuilder({ EP, QB, grammarQuestions, readingAnalysisQuestions, readingAnalyses, readingAnalysesById, examPapers, onCreated, onCancel }) {
+  const recent = EP.getRecentSchoolExamValues(examPapers, 30);
+
+  const [school, setSchool] = useState("");
+  const [grade, setGrade] = useState(QB.GRADES[0]);
+  const [publisher, setPublisher] = useState("");
+  const [textbook, setTextbook] = useState("");
+  const [lesson, setLesson] = useState("");
+  const [examRange, setExamRange] = useState("");
+  const [title, setTitle] = useState("");
+  const [layout, setLayout] = useState("1col");
+
+  const [selectedAnalysisIds, setSelectedAnalysisIds] = useState([]);
+  const [grammarTopics, setGrammarTopics] = useState([]);
+  const [grammarDifficulty, setGrammarDifficulty] = useState("");
+  const [grammarCount, setGrammarCount] = useState(20);
+  const [readingTypes, setReadingTypes] = useState([]);
+  const [readingDifficulty, setReadingDifficulty] = useState("");
+  const [readingCount, setReadingCount] = useState(10);
+
+  const [buildResult, setBuildResult] = useState(null);
+  const [buildErr, setBuildErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+
+  function toggle(list, setList, key) {
+    setList((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
+  }
+
+  function runBuild() {
+    setBuildErr("");
+    const recentlyUsedIds = EP.computeRecentlyUsedQuestionIds(examPapers, null, 5);
+    const sections = [];
+    const allocations = [];
+    let actualTotal = 0;
+    const usedIds = [];
+    const gCount = Number(grammarCount) || 0;
+    const rCount = Number(readingCount) || 0;
+
+    if (grammarTopics.length > 0 && gCount > 0) {
+      const res = EP.autoDistributeGrammarSection("SECTION. GRAMMAR", grammarQuestions, { grade, difficulty: grammarDifficulty, topics: grammarTopics }, gCount, recentlyUsedIds, usedIds);
+      if (res.actualTotal > 0) sections.push(res.section);
+      allocations.push(...res.allocations.map((a) => ({ ...a, bank: "grammar" })));
+      actualTotal += res.actualTotal;
+      usedIds.push(...res.picked.map((q) => q.id));
+    }
+    if (readingTypes.length > 0 && rCount > 0) {
+      // 시험 범위에 해당하는 지문(selectedAnalysisIds)으로만 풀을 제한한다 — 선택 안 했으면
+      // 전체 readingAnalysisQuestions 대상(교사가 범위를 아직 좁히지 않은 경우의 안전한 기본값).
+      const pool = selectedAnalysisIds.length > 0
+        ? readingAnalysisQuestions.filter((q) => selectedAnalysisIds.includes(q.analysisId))
+        : readingAnalysisQuestions;
+      const res = EP.autoDistributeReadingAnalysisSections("SECTION. READING", pool, { grade, difficulty: readingDifficulty, examType: "" }, rCount, recentlyUsedIds, usedIds, readingAnalysesById);
+      sections.push(...res.sections);
+      allocations.push(...res.allocations.map((a) => ({ ...a, bank: "reading" })));
+      actualTotal += res.actualTotal;
+    }
+
+    if (actualTotal === 0) {
+      setBuildErr("조건에 맞는 PUBLISHED 문제가 없어요. Topic/유형/학년/난이도 또는 선택한 지문을 다시 확인해 주세요.");
+      setBuildResult(null);
+      return;
+    }
+    setBuildResult({ sections, allocations, requestedTotal: gCount + rCount, actualTotal });
+  }
+
+  function addManualSections(newSections) {
+    setBuildResult((r) => {
+      const base = r || { sections: [], allocations: [], requestedTotal: 0, actualTotal: 0 };
+      const sections = [...base.sections, ...newSections];
+      return { ...base, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+    });
+  }
+  function removeSectionAt(i) {
+    setBuildResult((r) => {
+      const sections = r.sections.filter((_, idx) => idx !== i);
+      return { ...r, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+    });
+  }
+
+  async function handleSave(finalize) {
+    const finalTitle = title.trim() || [school, grade, examRange].filter(Boolean).join(" ") || "내신 예상문제";
+    if (!buildResult || buildResult.actualTotal === 0) { setSaveErr("먼저 문제 구성을 완료해 주세요 (자동 배분 또는 직접 선택)."); return; }
+    setSaving(true); setSaveErr("");
+    try {
+      const created = await EP.createExamPaper({
+        title: finalTitle, grade, layout, examCategory: "school",
+        schoolExamMeta: { school, publisher, textbook, lesson, examRange },
+      });
+      const updated = await EP.updateExamPaper(created, { sections: buildResult.sections });
+      if (finalize) {
+        const questionsById = {};
+        grammarQuestions.forEach((q) => { questionsById[q.id] = q; });
+        readingAnalysisQuestions.forEach((q) => { questionsById[q.id] = q; });
+        const finalDoc = await EP.finalizeExamPaper(updated, questionsById);
+        onCreated(finalDoc, true);
+      } else {
+        onCreated(updated, false);
+      }
+    } catch (e) {
+      setSaveErr("저장 실패: " + String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const existingQuestionIds = (buildResult ? buildResult.sections : []).flatMap((s) => s.questionRefs.map((r) => r.questionId));
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onCancel} />
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 4 }}>🏫 School Exam / 내신 예상문제</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>학교 · 학년 · 출판사 · 교과서 · 시험 범위를 먼저 정하고, Grammar + Reading을 함께 구성해요.</div>
+
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>시험 범위</div>
+        <datalist id="sx-schools">${recent.schools.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
+        <datalist id="sx-publishers">${recent.publishers.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
+        <datalist id="sx-textbooks">${recent.textbooks.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
+        <datalist id="sx-lessons">${recent.lessons.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
+        <datalist id="sx-ranges">${recent.examRanges.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input list="sx-schools" style=${{ ...inputStyle, flex: "1 1 160px" }} placeholder="학교 (예: OO중학교)" value=${school} onChange=${(e) => setSchool(e.target.value)} />
+          <select style=${{ ...inputStyle, width: "auto" }} value=${grade} onChange=${(e) => setGrade(e.target.value)}>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
+          <input list="sx-publishers" style=${{ ...inputStyle, flex: "1 1 140px" }} placeholder="출판사" value=${publisher} onChange=${(e) => setPublisher(e.target.value)} />
+          <input list="sx-textbooks" style=${{ ...inputStyle, flex: "1 1 140px" }} placeholder="교과서" value=${textbook} onChange=${(e) => setTextbook(e.target.value)} />
+          <input list="sx-lessons" style=${{ ...inputStyle, flex: "1 1 120px" }} placeholder="Lesson (예: Lesson 3)" value=${lesson} onChange=${(e) => setLesson(e.target.value)} />
+          <input list="sx-ranges" style=${{ ...inputStyle, flex: "1 1 160px" }} placeholder="시험 범위 (예: 3과~4과)" value=${examRange} onChange=${(e) => setExamRange(e.target.value)} />
+        </div>
+      <//>
+
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>📐 Grammar</div>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${grammarDifficulty} onChange=${(e) => setGrammarDifficulty(e.target.value)}><option value="">난이도 전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+          <input type="number" style=${{ ...inputStyle, width: 90 }} value=${grammarCount} onChange=${(e) => setGrammarCount(e.target.value)} min="0" placeholder="문항 수" />
+        </div>
+        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          ${QB.GRAMMAR_TAXONOMY.map((c) => html`
+            <button key=${c.key} type="button" onClick=${() => toggle(grammarTopics, setGrammarTopics, c.key)}
+              style=${{ fontSize: 11.5, padding: "4px 10px", borderRadius: 20, border: `1px solid ${grammarTopics.includes(c.key) ? C.navy : C.line}`, background: grammarTopics.includes(c.key) ? C.navy : C.white, color: grammarTopics.includes(c.key) ? C.white : C.ink, cursor: "pointer" }}>
+              ${c.label}
+            <//>
+          `)}
+        </div>
+      <//>
+
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>📖 Reading (Reading Analysis 지문만 사용, 레거시 Reading Bank 미사용)</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>이 시험 범위에 해당하는 지문을 골라주세요 (안 고르면 전체 지문 대상).</div>
+        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          ${(readingAnalyses || []).length === 0
+            ? html`<span style=${{ fontSize: 12, color: C.slate }}>Reading Analysis에서 먼저 지문을 분석해 주세요.</span>`
+            : readingAnalyses.map((a) => html`
+              <button key=${a.id} type="button" onClick=${() => toggle(selectedAnalysisIds, setSelectedAnalysisIds, a.id)}
+                style=${{ fontSize: 11.5, padding: "4px 10px", borderRadius: 20, border: `1px solid ${selectedAnalysisIds.includes(a.id) ? C.navy : C.line}`, background: selectedAnalysisIds.includes(a.id) ? C.navy : C.white, color: selectedAnalysisIds.includes(a.id) ? C.white : C.ink, cursor: "pointer" }}>
+                ${a.title}
+              <//>
+            `)}
+        </div>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <select style=${{ ...inputStyle, width: "auto" }} value=${readingDifficulty} onChange=${(e) => setReadingDifficulty(e.target.value)}><option value="">난이도 전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
+          <input type="number" style=${{ ...inputStyle, width: 90 }} value=${readingCount} onChange=${(e) => setReadingCount(e.target.value)} min="0" placeholder="문항 수" />
+        </div>
+        <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          ${QB.READING_QUESTION_TYPES.map((t) => html`
+            <button key=${t.key} type="button" onClick=${() => toggle(readingTypes, setReadingTypes, t.key)}
+              style=${{ fontSize: 11.5, padding: "4px 10px", borderRadius: 20, border: `1px solid ${readingTypes.includes(t.key) ? C.navy : C.line}`, background: readingTypes.includes(t.key) ? C.navy : C.white, color: readingTypes.includes(t.key) ? C.white : C.ink, cursor: "pointer" }}>
+              ${t.label}
+            <//>
+          `)}
+        </div>
+      <//>
+
+      <div style=${{ marginBottom: 14 }}>
+        <${Button} variant="gold" onClick=${runBuild}>자동 배분 실행 (Preview)<//>
+        ${buildErr && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${buildErr}</div>`}
+      </div>
+
+      ${buildResult && html`
+        <${Card} style=${{ marginBottom: 14 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>Preview — 문제 ${buildResult.actualTotal}개${buildResult.requestedTotal > buildResult.actualTotal ? ` (요청 ${buildResult.requestedTotal}개 중 부족분 있음)` : ""}</div>
+          <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+            ${buildResult.allocations.map((a) => html`<div key=${a.bank + a.key} style=${{ fontSize: 11.5, background: C.ivory, borderRadius: 20, padding: "4px 12px" }}>${a.bank === "reading" ? "📖" : "📐"} ${a.label} — ${a.allocated}</div>`)}
+          </div>
+          ${buildResult.sections.map((s, i) => html`
+            <div key=${s.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px dashed ${C.line}` }}>
+              <div style=${{ fontSize: 12.5 }}>${s.bank === "reading" ? "📖" : "📐"} ${s.label} — ${s.questionRefs.length}문제</div>
+              <button type="button" onClick=${() => removeSectionAt(i)} style=${{ background: "none", border: "none", color: C.danger, fontSize: 11, cursor: "pointer" }}>제거</button>
+            </div>
+          `)}
+        <//>
+      `}
+
+      <${ManualQuestionPickerPanel} EP=${EP} QB=${QB} title="🔎 직접 선택으로 추가 (Advanced)"
+        grammarQuestions=${grammarQuestions} readingQuestions=${readingAnalysisQuestions} readingPassagesById=${readingAnalysesById}
+        readingSource="analysis" readingBankLabel="Reading Analysis"
+        existingQuestionIds=${existingQuestionIds} onAddSections=${addManualSections} />
+
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>Finish</div>
+        <${Field} label="시험지 제목 (비우면 학교/학년/범위로 자동 생성)"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder=${[school, grade, examRange].filter(Boolean).join(" ") || "제목"} /><//>
+        <div style=${{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+          <span style=${{ fontSize: 12, color: C.slate }}>레이아웃</span>
+          <${Button} variant=${layout === "1col" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setLayout("1col")}>1단<//>
+          <${Button} variant=${layout === "2col" ? "primary" : "ghost"} style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setLayout("2col")}>2단<//>
+        </div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="ghost" onClick=${() => handleSave(false)} disabled=${saving}>Save as Draft<//>
+          <${Button} variant="gold" onClick=${() => handleSave(true)} disabled=${saving}>Save & Finalize<//>
+        </div>
+        ${saveErr && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${saveErr}</div>`}
+      <//>
+    </div>
+  `;
+}
+
 function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, readingPassagesById, questionsById, onSaved, onFinalized, onCancel }) {
   const [title, setTitle] = useState(paper.title);
   const [grade, setGrade] = useState(paper.grade || "");
   const [examType, setExamType] = useState(paper.examType || "");
+  const [layout, setLayout] = useState(paper.layout === "2col" ? "2col" : "1col");
   const [sections, setSections] = useState(paper.sections);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -7140,7 +7728,7 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
   async function save() {
     setSaving(true); setErr("");
     try {
-      const res = await EP.updateExamPaper(paper, { title, grade, examType, sections });
+      const res = await EP.updateExamPaper(paper, { title, grade, examType, layout, sections });
       onSaved(res);
     } catch (e) { setErr("저장 실패: " + String(e.message || e)); } finally { setSaving(false); }
   }
@@ -7148,7 +7736,7 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
     if (!confirm("이 시험지를 확정할까요? 확정 후에는 문제 구성/순서를 다시 바꿀 수 없어요 (사용된 문제는 수정 시 새 버전으로 분리돼요).")) return;
     setSaving(true); setErr("");
     try {
-      const saved = await EP.updateExamPaper(paper, { title, grade, examType, sections });
+      const saved = await EP.updateExamPaper(paper, { title, grade, examType, layout, sections });
       const finalized = await EP.finalizeExamPaper(saved, questionsById);
       onFinalized(finalized);
     } catch (e) { setErr("확정 실패: " + String(e.message || e)); } finally { setSaving(false); }
@@ -7168,6 +7756,11 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
         <div style=${{ flex: "2 1 260px" }}><${Field} label="시험지 제목"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} /><//></div>
         <div style=${{ flex: "1 1 140px" }}><${Field} label="학년 (선택, 참고용)"><select style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)}><option value="">선택 안 함</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select><//></div>
         <div style=${{ flex: "1 1 180px" }}><${Field} label="대표 시험 목적 (선택, 참고용)"><select style=${inputStyle} value=${examType} onChange=${(e) => setExamType(e.target.value)}><option value="">선택 안 함</option>${QB.READING_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select><//></div>
+      </div>
+      <div style=${{ display: "flex", gap: 16, alignItems: "center", marginBottom: 12 }}>
+        <span style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate }}>인쇄 레이아웃</span>
+        <label style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}><input type="radio" name="builderLayout" checked=${layout === "1col"} onChange=${() => setLayout("1col")} style=${{ width: 14, height: 14, appearance: "auto" }} /> 1 Column</label>
+        <label style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, cursor: "pointer" }}><input type="radio" name="builderLayout" checked=${layout === "2col"} onChange=${() => setLayout("2col")} style=${{ width: 14, height: 14, appearance: "auto" }} /> 2 Columns</label>
       </div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>총 ${sections.length}개 섹션 · ${total}문제. 대표 시험 목적은 참고용 라벨일 뿐 섹션/문제 각각의 시험 유형을 덮어쓰지 않아요.</div>
 
@@ -7286,12 +7879,21 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
   }
   // Phase 8 prep §3 — 학생에게 그대로 나눠줄 수 있는 인쇄용 창. 기존 printReport()/printInvoice()와
   // 같은 패턴(새 top-level 창 + window.print(), 별도 PDF 라이브러리 없음, 자체 print 전용 CSS).
-  // qDoc.answer/qDoc.explanation은 아래 어디에서도 참조하지 않는다 — questionText와
+  // 학생용 페이지는 여전히 qDoc.answer/qDoc.explanation을 참조하지 않는다 — questionText와
   // resolveQuestionForDisplay()가 돌려주는 displayChoices(정답 표시 없는 버전)만 사용.
+  //
+  // Teacher OS Exam Builder Phase B — 2가지 확장, 둘 다 기존 wordtest.html의 검증된 패턴을 그대로
+  // 가져온 것: (1) paper.layout==="2col"이면 지문 없는(=객관식 위주) 섹션의 문제만 CSS
+  // column-count:2로 감싼다 — 지문이 있는 Reading 섹션은 항상 전체 폭(§5/§13 스펙: "지문은
+  // full-width, 객관식은 2-column"). (2) 정답지를 별도 페이지로 추가한다(wordtest.html의
+  // `.page-break` 정답지 페이지와 동일한 관례) — 문항 번호는 학생용 페이지와 정확히 같은 카운터를
+  // 공유해서 번호가 어긋나지 않는다.
   function printExamPaper() {
     const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
     const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const layout = paper.layout === "2col" ? "2col" : "1col";
     let qNum = 0;
+    const answerRows = [];
     const sectionsHtml = (paper.sections || []).map((s) => {
       const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
       const passageHtml = passage
@@ -7301,14 +7903,25 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         const qDoc = questionsById[qr.questionId];
         if (!qDoc) return "";
         qNum += 1;
-        const { displayChoices } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
+        const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
         const choicesHtml = displayChoices.length > 0
           ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
           : `<div class="answer-line">답: ______________________</div>`;
+        answerRows.push(`<span class="a-item"><span class="a-num">${qNum}.</span>${displayChoices.length > 0 ? esc(CIRCLED[displayAnswerIndex] || String(displayAnswerIndex + 1)) : esc(qDoc.answer)}</span>`);
         return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
       }).join("");
-      return `<div class="section"><div class="section-title">${esc(s.label)}</div>${passageHtml}${questionsHtml}</div>`;
+      // 지문이 있는 섹션(Reading)은 항상 1단, 지문이 없는 섹션(Grammar 등)만 layout 설정을 따른다.
+      const bodyHtml = (!passage && layout === "2col") ? `<div class="qs-2col">${questionsHtml}</div>` : questionsHtml;
+      return `<div class="section">${passage ? '<div class="section-title full">' + esc(s.label) + '</div>' : '<div class="section-title">' + esc(s.label) + '</div>'}${passageHtml}${bodyHtml}</div>`;
     }).join("");
+
+    const answerKeyHtml = answerRows.length > 0 ? `
+      <div class="sheet page-break">
+        <div class="hd">
+          <h1>${esc(paper.title)} — 정답지</h1>
+        </div>
+        <div class="answer-box">${answerRows.join("")}</div>
+      </div>` : "";
 
     const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(paper.title)}</title>
       <style>
@@ -7317,6 +7930,7 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;z-index:100;flex-wrap:wrap;}
         .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;flex-shrink:0;}
         .sheet{padding:20px 6px;max-width:760px;margin:0 auto;}
+        .sheet.page-break{page-break-before:always;}
         .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:14px;margin-bottom:16px;}
         .hd h1{font-size:19px;color:#1C2B4A;margin:0 0 10px;}
         .meta{display:flex;justify-content:center;gap:22px;font-size:12px;flex-wrap:wrap;}
@@ -7327,16 +7941,20 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         .passage{background:#F7F5EE;border:1px solid #D8D2BE;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid;}
         .passage-title{font-weight:700;margin-bottom:6px;font-size:12.5px;}
         .passage-text{white-space:pre-wrap;font-size:12px;line-height:1.7;}
-        .question{margin-bottom:14px;page-break-inside:avoid;}
+        .qs-2col{column-count:2;column-gap:22px;}
+        .question{margin-bottom:14px;page-break-inside:avoid;break-inside:avoid;}
         .q-text{font-size:12.5px;line-height:1.7;}
         .q-num{font-weight:700;margin-right:4px;}
         .choices{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;padding-left:18px;font-size:12px;}
         .choice{white-space:nowrap;}
         .answer-line{margin-top:8px;padding-left:18px;font-size:12px;}
+        .answer-box{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:13px;}
+        .a-item{white-space:nowrap;}
+        .a-num{font-weight:700;margin-right:4px;color:#5B6270;}
         @media print{ .toolbar{display:none !important;} }
       </style></head><body>
       <div class="toolbar">
-        <span>학생용 인쇄 미리보기 — 정답/해설은 표시되지 않아요.</span>
+        <span>학생용 인쇄 미리보기 — ${layout === "2col" ? "2단 레이아웃 · " : ""}정답지는 뒤에 별도 페이지로 붙어요.</span>
         <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
       </div>
       <div class="sheet">
@@ -7350,6 +7968,7 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         </div>
         ${sectionsHtml}
       </div>
+      ${answerKeyHtml}
       </body></html>`;
     const win = window.open("", "_blank");
     if (!win) { setMsg("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
@@ -7388,22 +8007,427 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
   `;
 }
 
+// ===================================================================================================
+// Teacher OS Exam Builder — Phase B Wizard (2026-08-25). Replaces "+ 새 시험지"'s old flat entry
+// point (title form → one screen with a repeat-as-needed auto-select panel) with a STEP1~5 wizard
+// matching the approved redesign spec: 교사는 조건(영역/학년/난이도/Topic들/총 문항 수)만 지정하고,
+// 시스템이 QB.distributeCounts+QB.pickQuestionsWeighted로 자동 구성한다 — 개별 문제를 하나하나
+// 고르는 게 기본 UX가 아니다(문제 직접 선택은 STEP4의 "Advanced" 접힌 패널로만 남는다).
+//
+// 저장은 기존 EP.createExamPaper/updateExamPaper/finalizeExamPaper 그대로 호출한다 — 이 위저드가
+// 만드는 examPapers 문서는 옛 평면형 빌더가 만들던 것과 완전히 같은 모양(sections/questionRefs)
+// 이라, 저장 후에는 기존 ExamPaperDetail(인쇄/배정/보관)과 기존 ExamPaperBuilder("편집" 버튼,
+// ManualQuestionPickerPanel 포함)가 그대로 이어받는다 — 이 파일이 새로 아는 것은 "어떻게 채우는가"
+// 뿐이고, "채워진 뒤 무엇을 하는가"는 전부 기존 코드다.
+// ===================================================================================================
+function ExamWizard({ roster, grammarQuestions, readingQuestions, readingPassages, readingPassagesById, examPapers, onCreated, onCancel }) {
+  const EP = window.SarahServices.examPaperService;
+  const QB = window.SarahServices.questionBankService;
+
+  const [step, setStep] = useState(1);
+  const [title, setTitle] = useState("");
+  const [area, setArea] = useState(null); // "grammar" | "reading" | "mixed" | "vocab-info"
+  const [grade, setGrade] = useState("");
+  const [difficulty, setDifficulty] = useState("");
+  const [readingExamType, setReadingExamType] = useState("");
+  const [grammarTopics, setGrammarTopics] = useState([]);
+  const [readingTypes, setReadingTypes] = useState([]);
+  const [readingTypeGroupTab, setReadingTypeGroupTab] = useState("A");
+  const [totalQuestions, setTotalQuestions] = useState(20);
+  const [manualSplit, setManualSplit] = useState(false);
+  const [grammarCountInput, setGrammarCountInput] = useState("");
+  const [readingCountInput, setReadingCountInput] = useState("");
+  const [layout, setLayout] = useState("1col");
+  const [buildResult, setBuildResult] = useState(null); // { sections, allocations, requestedTotal, actualTotal, shortfall }
+  const [buildErr, setBuildErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
+
+  function toggleTopic(list, setList, key) {
+    setList((cur) => (cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key]));
+  }
+
+  // ---- STEP3 live availability (per-topic + running totals for the "Total Questions" hint) ----
+  function poolCount(bank, key) {
+    if (bank === "grammar") {
+      return QB.queryQuestions(grammarQuestions, { status: ["PUBLISHED"], grade, difficulty, mainCategory: key }).length;
+    }
+    return QB.queryQuestions(readingQuestions, { status: ["PUBLISHED"], grade, difficulty, examType: readingExamType, questionType: key }).length;
+  }
+  const grammarAvailableTotal = grammarTopics.reduce((s, k) => s + poolCount("grammar", k), 0);
+  const readingAvailableTotal = readingTypes.reduce((s, k) => s + poolCount("reading", k), 0);
+
+  // ---- STEP4 entry / Regenerate — the actual auto-distribution run ----
+  function runBuild() {
+    setBuildErr("");
+    const recentlyUsedIds = EP.computeRecentlyUsedQuestionIds(examPapers, null, 5);
+    let grammarReq = 0, readingReq = 0;
+    // requestedTotal은 "교사가 실제로 요청한 수"다 — Mixed·자동배분 모드에서 distributeCounts가
+    // 이미 available로 캡을 씌운 결과(grammarReq+readingReq)를 requestedTotal로 쓰면, 부족한
+    // 상황에서도 "요청한 만큼 다 찼다"고 잘못 계산돼(캡 자체가 이미 실제 가능한 수라서) 부족
+    // 안내(§2 스펙의 "30문제를 만들 수 없습니다" 문구)가 영영 안 뜨는 버그가 된다. Total
+    // Questions 입력값을 그대로 기준으로 삼아야 진짜 shortfall이 보인다. Manual split(직접
+    // 지정) 모드만 예외 — 그때는 Total Questions 입력 자체가 참고용이고, 교사가 입력한 두 값의
+    // 합이 진짜 "요청한 수"다.
+    let requestedTotal = totalQuestions;
+    if (area === "grammar") grammarReq = totalQuestions;
+    else if (area === "reading") readingReq = totalQuestions;
+    else if (area === "mixed") {
+      if (manualSplit) {
+        grammarReq = Number(grammarCountInput) || 0;
+        readingReq = Number(readingCountInput) || 0;
+        requestedTotal = grammarReq + readingReq;
+      } else {
+        const dist = QB.distributeCounts([
+          { key: "grammar", label: "Grammar", available: grammarAvailableTotal },
+          { key: "reading", label: "Reading", available: readingAvailableTotal },
+        ], totalQuestions);
+        grammarReq = (dist.allocations.find((a) => a.key === "grammar") || {}).allocated || 0;
+        readingReq = (dist.allocations.find((a) => a.key === "reading") || {}).allocated || 0;
+      }
+    }
+
+    const sections = [];
+    const allocations = [];
+    let actualTotal = 0;
+    const usedIds = [];
+
+    if (grammarTopics.length > 0 && grammarReq > 0) {
+      const res = EP.autoDistributeGrammarSection("SECTION. GRAMMAR", grammarQuestions, { grade, difficulty, topics: grammarTopics }, grammarReq, recentlyUsedIds, usedIds);
+      if (res.actualTotal > 0) sections.push(res.section);
+      allocations.push(...res.allocations.map((a) => ({ ...a, bank: "grammar" })));
+      actualTotal += res.actualTotal;
+      usedIds.push(...res.picked.map((q) => q.id));
+    }
+    if (readingTypes.length > 0 && readingReq > 0) {
+      const res = EP.autoDistributeReadingSections("SECTION. READING", readingQuestions, { grade, difficulty, examType: readingExamType, questionTypes: readingTypes }, readingReq, recentlyUsedIds, usedIds, readingPassagesById);
+      sections.push(...res.sections);
+      allocations.push(...res.allocations.map((a) => ({ ...a, bank: "reading" })));
+      actualTotal += res.actualTotal;
+    }
+
+    if (actualTotal === 0) {
+      setBuildErr("조건에 맞는 PUBLISHED 문제가 없어요. Topic·학년·난이도를 다시 확인해 주세요.");
+      setBuildResult(null);
+      return;
+    }
+    setBuildResult({ sections, allocations, requestedTotal, actualTotal, shortfall: requestedTotal - actualTotal });
+  }
+
+  useEffect(() => {
+    if (step === 4 && !buildResult) runBuild();
+    /* eslint-disable-next-line */
+  }, [step]);
+
+  const questionsById = {};
+  grammarQuestions.forEach((q) => { questionsById[q.id] = q; });
+  readingQuestions.forEach((q) => { questionsById[q.id] = q; });
+
+  function updateSectionAt(i, next) {
+    setBuildResult((r) => {
+      const sections = r.sections.map((s, idx) => (idx === i ? next : s));
+      return { ...r, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+    });
+  }
+  function removeSectionAt(i) {
+    setBuildResult((r) => {
+      const sections = r.sections.filter((_, idx) => idx !== i);
+      return { ...r, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+    });
+  }
+
+  // "교체" — 같은 축(문법이면 mainCategory, 리딩이면 questionType+passageId)의 PUBLISHED 문제 중
+  // 이 시험지에 이미 쓰인 걸 전부 제외하고 1개만 우선순위 픽. 섹션 전체를 다시 만들지 않는다(§12).
+  function replaceQuestionInSection(sIdx, qIdx) {
+    setBuildResult((r) => {
+      const section = r.sections[sIdx];
+      const ref = section.questionRefs[qIdx];
+      const oldQ = questionsById[ref.questionId];
+      if (!oldQ) return r;
+      const usedIds = r.sections.flatMap((s) => s.questionRefs.map((x) => x.questionId));
+      const filters = section.bank === "grammar"
+        ? { status: ["PUBLISHED"], grade, difficulty, mainCategory: oldQ.mainCategory, excludeIds: usedIds }
+        : { status: ["PUBLISHED"], grade, difficulty, examType: readingExamType, questionType: oldQ.questionType, passageId: oldQ.passageId, excludeIds: usedIds };
+      const pool = QB.queryQuestions(section.bank === "grammar" ? grammarQuestions : readingQuestions, filters);
+      const recentlyUsedIds = EP.computeRecentlyUsedQuestionIds(examPapers, null, 5);
+      const picked = QB.pickQuestionsWeighted(pool, 1, recentlyUsedIds);
+      if (picked.length === 0) { setBuildErr("교체할 문제가 없어요 (같은 조건의 남은 PUBLISHED 문제가 없어요)."); return r; }
+      setBuildErr("");
+      const newRefs = [...section.questionRefs];
+      newRefs[qIdx] = { questionId: picked[0].id, order: qIdx, choiceDisplayOrder: null };
+      const sections = r.sections.map((s, idx) => (idx === sIdx ? { ...s, questionRefs: newRefs } : s));
+      return { ...r, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+    });
+  }
+
+  async function handleSave(finalize) {
+    if (!title.trim()) { setSaveErr("시험지 제목을 입력해 주세요."); return; }
+    if (!buildResult || buildResult.actualTotal === 0) { setSaveErr("먼저 STEP3~4에서 문제 구성을 완료해 주세요."); return; }
+    setSaving(true); setSaveErr("");
+    try {
+      const created = await EP.createExamPaper({ title: title.trim(), grade, examType: readingExamType, layout });
+      const updated = await EP.updateExamPaper(created, { sections: buildResult.sections });
+      if (finalize) {
+        const finalDoc = await EP.finalizeExamPaper(updated, questionsById);
+        onCreated(finalDoc, true);
+      } else {
+        onCreated(updated, false);
+      }
+    } catch (e) {
+      setSaveErr("저장 실패: " + String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stepLabels = ["Exam Type", "Level", "Range / Topics", "Preview", "Finish"];
+  const canGoStep3 = title.trim() && (area === "grammar" || area === "reading" || area === "mixed");
+  const canGoStep4 = (area === "grammar" && grammarTopics.length > 0)
+    || (area === "reading" && readingTypes.length > 0)
+    || (area === "mixed" && (grammarTopics.length > 0 || readingTypes.length > 0));
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onCancel} />
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 4 }}>Create New Exam</div>
+      <div style=${{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        ${stepLabels.map((label, i) => html`
+          <div key=${i} style=${{ fontSize: 11, fontWeight: step === i + 1 ? 700 : 400, color: step === i + 1 ? C.navy : C.slate, padding: "4px 10px", borderRadius: 20, background: step === i + 1 ? C.ivory : "transparent", border: `1px solid ${step === i + 1 ? C.gold : C.line}` }}>
+            STEP ${i + 1} · ${label}
+          </div>
+        `)}
+      </div>
+
+      ${step === 1 && html`
+        <${Card} style=${{ marginBottom: 14 }}>
+          <${Field} label="시험지 제목"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 중3 문법+독해 종합 모의고사" /><//>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate, marginBottom: 8, marginTop: 10 }}>시험 영역</div>
+          <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+            ${[
+              { key: "grammar", icon: "📐", label: "Grammar" },
+              { key: "reading", icon: "📖", label: "Reading" },
+              { key: "mixed", icon: "🧩", label: "Mixed (Grammar+Reading)" },
+              { key: "vocab-info", icon: "🔤", label: "Vocabulary" },
+            ].map((a) => html`
+              <div key=${a.key} onClick=${() => setArea(a.key)} style=${{ cursor: "pointer", border: `2px solid ${area === a.key ? C.gold : C.line}`, borderRadius: 6, padding: "16px 12px", textAlign: "center", background: area === a.key ? C.ivory : "#fff" }}>
+                <div style=${{ fontSize: 22 }}>${a.icon}</div>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginTop: 6 }}>${a.label}</div>
+              </div>
+            `)}
+          </div>
+          ${area === "vocab-info" && html`
+            <div style=${{ fontSize: 12, color: C.slate, background: C.ivory, borderRadius: 4, padding: "10px 12px", marginTop: 10 }}>
+              단어시험은 Question Bank → Vocabulary(워드뱅크)에서 만들어요 — 이 Exam Builder는 문법·독해 문제은행 전용이에요.
+            </div>
+          `}
+          <div style=${{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
+            <${Button} variant="gold" disabled=${!canGoStep3} onClick=${() => setStep(2)}>다음<//>
+          </div>
+        <//>
+      `}
+
+      ${step === 2 && html`
+        <${Card} style=${{ marginBottom: 14 }}>
+          <div style=${{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div style=${{ flex: "1 1 140px" }}><${Field} label="학년"><select style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)}><option value="">전체</option>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select><//></div>
+            <div style=${{ flex: "1 1 140px" }}><${Field} label="난이도"><select style=${inputStyle} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}><option value="">전체</option>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select><//></div>
+            ${(area === "reading" || area === "mixed") && html`
+              <div style=${{ flex: "1 1 180px" }}><${Field} label="Reading 시험 목적 (선택)"><select style=${inputStyle} value=${readingExamType} onChange=${(e) => setReadingExamType(e.target.value)}><option value="">전체</option>${QB.READING_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select><//></div>
+            `}
+          </div>
+          <div style=${{ marginTop: 16, display: "flex", justifyContent: "space-between" }}>
+            <${Button} variant="ghost" onClick=${() => setStep(1)}>이전<//>
+            <${Button} variant="gold" onClick=${() => setStep(3)}>다음<//>
+          </div>
+        <//>
+      `}
+
+      ${step === 3 && html`
+        <${Card} style=${{ marginBottom: 14 }}>
+          ${(area === "grammar" || area === "mixed") && html`
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📐 Grammar Topics (여러 개 선택 가능)</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 6, marginBottom: 14 }}>
+              ${QB.GRAMMAR_TAXONOMY.map((c) => {
+                const n = poolCount("grammar", c.key);
+                const checked = grammarTopics.includes(c.key);
+                return html`
+                  <label key=${c.key} style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 8px", borderRadius: 4, background: checked ? C.ivory : "transparent", cursor: n > 0 ? "pointer" : "not-allowed", opacity: n > 0 ? 1 : 0.4 }}>
+                    <input type="checkbox" checked=${checked} disabled=${n === 0} onChange=${() => toggleTopic(grammarTopics, setGrammarTopics, c.key)} style=${{ width: 14, height: 14, appearance: "auto" }} />
+                    <span>${c.label}</span>
+                    <span style=${{ marginLeft: "auto", color: n > 0 ? C.slate : C.danger, fontSize: 10.5 }}>${n}</span>
+                  </label>
+                `;
+              })}
+            </div>
+          `}
+          ${(area === "reading" || area === "mixed") && html`
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>📖 Reading 문제 유형 (여러 개 선택 가능)</div>
+            <div style=${{ display: "flex", gap: 6, marginBottom: 8 }}>
+              ${[["A", "수능/모의고사형"], ["B", "중학 내신"], ["C", "고교 내신"]].map(([g, label]) => html`
+                <${Button} key=${g} variant=${readingTypeGroupTab === g ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11 }} onClick=${() => setReadingTypeGroupTab(g)}>${label}<//>
+              `)}
+            </div>
+            <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 6, marginBottom: 6 }}>
+              ${QB.READING_QUESTION_TYPES.filter((t) => t.group === readingTypeGroupTab).map((t) => {
+                const n = poolCount("reading", t.key);
+                const checked = readingTypes.includes(t.key);
+                return html`
+                  <label key=${t.key} style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 8px", borderRadius: 4, background: checked ? C.ivory : "transparent", cursor: n > 0 ? "pointer" : "not-allowed", opacity: n > 0 ? 1 : 0.4 }}>
+                    <input type="checkbox" checked=${checked} disabled=${n === 0} onChange=${() => toggleTopic(readingTypes, setReadingTypes, t.key)} style=${{ width: 14, height: 14, appearance: "auto" }} />
+                    <span>${t.label}</span>
+                    <span style=${{ marginLeft: "auto", color: n > 0 ? C.slate : C.danger, fontSize: 10.5 }}>${n}</span>
+                  </label>
+                `;
+              })}
+            </div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 14 }}>선택된 유형이 다른 그룹(A/B/C)에도 있으면 탭을 바꿔 계속 선택할 수 있어요 — 선택 상태는 탭을 넘어가도 유지돼요.</div>
+          `}
+
+          <div style=${{ borderTop: `1px solid ${C.line}`, paddingTop: 14, marginTop: 4 }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate, marginBottom: 4 }}>Total Questions</div>
+                <input type="number" min="1" style=${{ ...inputStyle, width: 100, fontSize: 18, fontWeight: 700, marginBottom: 0 }} value=${totalQuestions} onChange=${(e) => setTotalQuestions(Number(e.target.value) || 0)} />
+              </div>
+              <div style=${{ fontSize: 12, color: C.slate }}>
+                Available: <b style=${{ color: C.navy }}>${grammarAvailableTotal + readingAvailableTotal}</b>${area === "mixed" ? html` (Grammar ${grammarAvailableTotal} / Reading ${readingAvailableTotal})` : ""}
+              </div>
+            </div>
+            ${area === "mixed" && html`
+              <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: C.navy, marginTop: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked=${manualSplit} onChange=${(e) => setManualSplit(e.target.checked)} style=${{ width: 14, height: 14, appearance: "auto" }} />
+                Grammar/Reading 문항 수를 직접 지정 (끄면 자동 비율 배분)
+              </label>
+              ${manualSplit && html`
+                <div style=${{ display: "flex", gap: 10, marginTop: 8 }}>
+                  <div style=${{ flex: "1 1 100px" }}><${Field} label="Grammar 문항 수"><input type="number" min="0" style=${inputStyle} value=${grammarCountInput} onChange=${(e) => setGrammarCountInput(e.target.value)} /><//></div>
+                  <div style=${{ flex: "1 1 100px" }}><${Field} label="Reading 문항 수"><input type="number" min="0" style=${inputStyle} value=${readingCountInput} onChange=${(e) => setReadingCountInput(e.target.value)} /><//></div>
+                </div>
+              `}
+            `}
+          </div>
+
+          <div style=${{ marginTop: 16, display: "flex", justifyContent: "space-between" }}>
+            <${Button} variant="ghost" onClick=${() => setStep(2)}>이전<//>
+            <${Button} variant="gold" disabled=${!canGoStep4 || totalQuestions <= 0} onClick=${() => { setBuildResult(null); setStep(4); }}>자동 구성하기 →<//>
+          </div>
+        <//>
+      `}
+
+      ${step === 4 && html`
+        <div>
+          ${buildErr && html`<div style=${{ color: C.danger, fontSize: 12.5, marginBottom: 10, background: "#FBEAEA", padding: "8px 12px", borderRadius: 4 }}>${buildErr}</div>`}
+          ${!buildResult ? html`<${Empty} text="구성 중..." />` : html`
+            <${Card} style=${{ marginBottom: 14 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>Question Set</div>
+                <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${runBuild}>🔄 Regenerate<//>
+              </div>
+              ${buildResult.shortfall > 0 && html`
+                <div style=${{ fontSize: 12.5, color: C.danger, background: "#FBEAEA", padding: "8px 12px", borderRadius: 4, marginBottom: 10 }}>
+                  현재 선택한 범위에서 ${buildResult.requestedTotal}문제를 만들 수 없어요. 현재 사용 가능한 문제는 ${buildResult.actualTotal}문제예요.
+                </div>
+              `}
+              <div style=${{ fontSize: 20, fontWeight: 700, color: C.navy, marginBottom: 8 }}>
+                ${buildResult.actualTotal} Questions
+                ${buildResult.shortfall > 0 ? html`<span style=${{ fontSize: 12, fontWeight: 400, color: C.slate }}> (요청 ${buildResult.requestedTotal})</span>` : ""}
+              </div>
+              <div style=${{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                ${buildResult.allocations.filter((a) => a.allocated > 0).map((a) => html`
+                  <div key=${a.bank + a.key} style=${{ fontSize: 11.5, background: C.ivory, borderRadius: 20, padding: "4px 12px" }}>${a.bank === "reading" ? "📖" : "📐"} ${a.label} — ${a.allocated}</div>
+                `)}
+              </div>
+            <//>
+
+            ${buildResult.sections.length === 0
+              ? html`<${Empty} text="구성된 문제가 없어요." />`
+              : buildResult.sections.map((s, i) => html`
+                <${ExamPaperSectionCard} key=${s.id} EP=${EP} QB=${QB} section=${s} questionsById=${questionsById} passagesById=${readingPassagesById} canEdit=${true}
+                  onChange=${(next) => updateSectionAt(i, next)} onRemoveSection=${() => removeSectionAt(i)}
+                  onReplaceQuestion=${(qIdx) => replaceQuestionInSection(i, qIdx)} />
+              `)}
+
+            <${ManualQuestionPickerPanel} EP=${EP} QB=${QB} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassagesById=${readingPassagesById}
+              existingQuestionIds=${buildResult.sections.flatMap((s) => s.questionRefs.map((r) => r.questionId))}
+              title="⚙️ Advanced: Select Questions Manually"
+              onAddSections=${(newSections) => setBuildResult((r) => {
+                const sections = [...r.sections, ...newSections];
+                return { ...r, sections, actualTotal: sections.reduce((sum, s) => sum + s.questionRefs.length, 0) };
+              })} />
+
+            <div style=${{ marginTop: 10, display: "flex", justifyContent: "space-between" }}>
+              <${Button} variant="ghost" onClick=${() => setStep(3)}>이전<//>
+              <${Button} variant="gold" disabled=${buildResult.actualTotal === 0} onClick=${() => setStep(5)}>다음<//>
+            </div>
+          `}
+        </div>
+      `}
+
+      ${step === 5 && html`
+        <${Card} style=${{ marginBottom: 14 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14, marginBottom: 10 }}>Layout</div>
+          <div style=${{ display: "flex", gap: 16, marginBottom: 8 }}>
+            <label style=${{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="radio" name="examLayout" checked=${layout === "1col"} onChange=${() => setLayout("1col")} style=${{ width: 15, height: 15, appearance: "auto" }} /> 1 Column
+            </label>
+            <label style=${{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13 }}>
+              <input type="radio" name="examLayout" checked=${layout === "2col"} onChange=${() => setLayout("2col")} style=${{ width: 15, height: 15, appearance: "auto" }} /> 2 Columns
+            </label>
+          </div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 14 }}>Reading 지문은 레이아웃과 상관없이 항상 전체 폭으로 인쇄돼요 — 2 Columns는 지문이 없는 문제에만 적용돼요.</div>
+
+          <div style=${{ background: C.ivory, borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: 12.5 }}>
+            <div style=${{ fontWeight: 700, color: C.navy }}>${title}</div>
+            <div style=${{ color: C.slate, marginTop: 3 }}>${grade || "학년 전체"} · ${(QB.DIFFICULTIES.find((d) => d.key === difficulty) || {}).label || "난이도 전체"} · ${buildResult ? buildResult.actualTotal : 0}문제</div>
+          </div>
+
+          ${saveErr && html`<div style=${{ color: C.danger, fontSize: 12.5, marginBottom: 10 }}>${saveErr}</div>`}
+          <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <${Button} variant="ghost" onClick=${() => setStep(4)} disabled=${saving}>이전<//>
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="ghost" onClick=${() => handleSave(false)} disabled=${saving}>${saving ? "저장 중..." : "초안으로 저장"}<//>
+              <${Button} variant="gold" onClick=${() => handleSave(true)} disabled=${saving}>${saving ? "저장 중..." : "저장 + 확정 (Save & Finalize)"}<//>
+            </div>
+          </div>
+        <//>
+      `}
+    </div>
+  `;
+}
+
 function ExamBuilderView({ roster }) {
   const EP = window.SarahServices.examPaperService;
   const QB = window.SarahServices.questionBankService;
+  const RA = window.SarahServices.readingAnalysisService;
   const [papers, setPapers] = useState(null);
   const [grammarQuestions, setGrammarQuestions] = useState([]);
   const [readingQuestions, setReadingQuestions] = useState([]);
   const [readingPassages, setReadingPassages] = useState([]);
+  // School Exam Builder (Reading Analysis 재설계 Phase C) — 신규 소스 2개 추가. 레거시 로딩/상태는
+  // 한 글자도 안 건드리고 나란히 추가만 한다.
+  const [readingAnalysisQuestions, setReadingAnalysisQuestions] = useState([]);
+  const [readingAnalyses, setReadingAnalyses] = useState([]);
   const [err, setErr] = useState("");
-  const [view, setView] = useState("list"); // list | newForm | builder | detail
+  const [view, setView] = useState("list"); // list | wizard | school | newForm | builder | detail
   const [selectedId, setSelectedId] = useState(null);
   const [newTitle, setNewTitle] = useState("");
 
   async function load() {
     try {
-      const [p, g, rq, rp] = await Promise.all([EP.listExamPapers(), QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages()]);
+      // 신규 컬렉션(readingAnalysisQuestions/readingAnalyses) 로딩만 개별 catch로 감싼다 —
+      // Firestore 보안 규칙이 아직 이 두 컬렉션에 대해 설정되지 않은 환경(Console 관리, 이
+      // 저장소엔 firestore.rules가 없음)에서도 일반 Exam Builder(레거시 4개 소스)는 절대
+      // 깨지면 안 된다는 회귀 방지 원칙 — 실패하면 빈 배열로 대체하고 School Exam 쪽만
+      // "지문 없음"으로 보이게 한다.
+      const [p, g, rq, rp] = await Promise.all([
+        EP.listExamPapers(), QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages(),
+      ]);
+      const [raq, ra] = await Promise.all([
+        QB.listReadingAnalysisQuestions().catch(() => []),
+        RA.listAnalyses().catch(() => []),
+      ]);
       setPapers(p); setGrammarQuestions(g); setReadingQuestions(rq); setReadingPassages(rp);
+      setReadingAnalysisQuestions(raq); setReadingAnalyses(ra);
     } catch (e) { setErr("불러오지 못했어요: " + String(e.message || e)); }
   }
   useEffect(() => { load(); }, []);
@@ -7414,10 +8438,61 @@ function ExamBuilderView({ roster }) {
   const questionsById = {};
   grammarQuestions.forEach((q) => { questionsById[q.id] = q; });
   readingQuestions.forEach((q) => { questionsById[q.id] = q; });
+  readingAnalysisQuestions.forEach((q) => { questionsById[q.id] = q; });
+  // Phase B/C 설계의 핵심 트릭 — readingPassages(legacy)와 readingAnalyses(신규)를 같은
+  // id-키 맵에 병합한다. section.passageId가 어느 쪽 컬렉션을 가리키든(§readingSource)
+  // ExamPaperDetail/ExamWizard/학생 응시 화면의 기존 `passagesById[section.passageId]` 조회
+  // ~15곳이 전부 무수정으로 동작한다(Firestore auto-id 충돌은 현실적으로 없음).
   const readingPassagesById = {};
   readingPassages.forEach((p) => { readingPassagesById[p.id] = p; });
+  readingAnalyses.forEach((a) => { readingPassagesById[a.id] = a; });
 
   const selected = papers.find((p) => p.id === selectedId);
+
+  // School Exam 저장 후 usageCount 로컬 반영 — 기존 onCreated/onFinalized 패턴(아래 wizard 분기)과
+  // 동일, readingAnalysisQuestions까지 세 번째로 반영한다.
+  function bumpUsageLocally(doc) {
+    const usedIds = new Set();
+    (doc.sections || []).forEach((s) => (s.questionRefs || []).forEach((r) => usedIds.add(r.questionId)));
+    setGrammarQuestions((qs) => qs.map((q) => (usedIds.has(q.id) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q)));
+    setReadingQuestions((qs) => qs.map((q) => (usedIds.has(q.id) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q)));
+    setReadingAnalysisQuestions((qs) => qs.map((q) => (usedIds.has(q.id) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q)));
+  }
+
+  // Teacher OS Exam Builder Phase B — "+ New Exam"의 새 기본 진입점. 저장은 ExamWizard 내부에서
+  // 기존 EP.createExamPaper/updateExamPaper/finalizeExamPaper를 그대로 호출하므로, 여기서는
+  // 만들어진 문서를 papers 목록에 반영하고(usageCount 반영은 finalize된 경우만, 기존 "builder"
+  // 분기의 onFinalized와 완전히 같은 패턴) detail 화면으로 넘기기만 한다.
+  if (view === "wizard") {
+    return html`<${ExamWizard} roster=${roster} grammarQuestions=${grammarQuestions} readingQuestions=${readingQuestions} readingPassages=${readingPassages} readingPassagesById=${readingPassagesById} examPapers=${papers}
+      onCreated=${(doc, finalized) => {
+        setPapers((ps) => [doc, ...ps]);
+        if (finalized) {
+          setGrammarQuestions((qs) => qs.map((q) => (doc.sections.some((s) => s.questionRefs.some((r) => r.questionId === q.id))) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q));
+          setReadingQuestions((qs) => qs.map((q) => (doc.sections.some((s) => s.questionRefs.some((r) => r.questionId === q.id))) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q));
+        }
+        setSelectedId(doc.id);
+        setView("detail");
+      }}
+      onCancel=${() => setView("list")} />`;
+  }
+
+  // School Exam Builder (Reading Analysis 재설계 Phase C, 2026-08-26 설계 승인 §5) — 커리큘럼
+  // 입력(학교/학년/출판사/교과서/Lesson/시험범위) → Grammar(grammarQuestions) + Reading
+  // (readingAnalysisQuestions, 레거시 readingQuestions는 절대 안 씀) 조합 → examPapers 저장.
+  // 저장/생명주기(create/update/finalize)는 일반 Exam Builder와 100% 동일한 EP 함수를 그대로 쓴다.
+  if (view === "school") {
+    return html`<${SchoolExamBuilder} EP=${EP} QB=${QB}
+      grammarQuestions=${grammarQuestions} readingAnalysisQuestions=${readingAnalysisQuestions}
+      readingAnalyses=${readingAnalyses} readingAnalysesById=${readingPassagesById} examPapers=${papers}
+      onCreated=${(doc, finalized) => {
+        setPapers((ps) => [doc, ...ps]);
+        if (finalized) bumpUsageLocally(doc);
+        setSelectedId(doc.id);
+        setView("detail");
+      }}
+      onCancel=${() => setView("list")} />`;
+  }
 
   if (view === "newForm") {
     return html`
@@ -7453,9 +8528,15 @@ function ExamBuilderView({ roster }) {
 
   return html`
     <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <div style=${{ fontSize: 12, color: C.slate }}>총 ${papers.length}개 시험지</div>
-        <${Button} onClick=${() => setView("newForm")}>+ 새 시험지<//>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="ghost" onClick=${() => setView("school")}>🏫 School Exam<//>
+          <${Button} variant="gold" onClick=${() => setView("wizard")}>+ Create New Exam<//>
+        </div>
+      </div>
+      <div style=${{ marginBottom: 12 }}>
+        <button type="button" onClick=${() => setView("newForm")} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline" }}>빈 시험지에서 직접 만들기 (고급)</button>
       </div>
       ${papers.length === 0
         ? html`<${Empty} text="아직 만든 시험지가 없어요." />`
@@ -7463,7 +8544,7 @@ function ExamBuilderView({ roster }) {
           <${Card} key=${p.id} onClick=${() => { setSelectedId(p.id); setView("detail"); }} style=${{ cursor: "pointer" }}>
             <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
               <div style=${{ minWidth: 0, flex: 1 }}>
-                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${p.grade || "학년 미지정"}${p.examType ? " · " + ((QB.READING_EXAM_TYPES.find((t) => t.key === p.examType) || {}).label || p.examType) : ""}</div>
+                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${p.examCategory === "school" ? "🏫 School Exam · " : ""}${p.grade || "학년 미지정"}${p.examType ? " · " + ((QB.READING_EXAM_TYPES.find((t) => t.key === p.examType) || {}).label || p.examType) : ""}</div>
                 <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>${p.title}</div>
                 <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>섹션 ${p.sections.length}개 · 문제 ${p.totalQuestionCount}개</div>
               </div>
@@ -8025,23 +9106,26 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   const [bank, setBank] = useState(initialBank || "grammar");
   // 검수 대기 큐에서 항목을 클릭하면 해당 은행 탭으로 전환 + 그 문제 상세로 바로 진입한다(§14.9).
   const [pendingSelection, setPendingSelection] = useState(null); // { bank, id } | null
+  // Reading Analysis 재설계(Phase C) — Question Review 큐(아래 ReviewQueueView)는 Reading Analysis
+  // 문제도 함께 보여주지만, "readingAnalysis"는 이 컨테이너가 렌더링하는 탭이 아니다(Reading Analysis는
+  // 별도 최상위 사이드바 항목, §readingAnalysis 참고). 여기서 딥링크 가능한 건 이 컨테이너가 실제로
+  // 가진 grammar/reading(legacy) 탭뿐 — readingAnalysis 항목 클릭은 조용히 무시한다(화면 깨짐 방지).
   function jumpTo(targetBank, id) {
+    if (targetBank !== "grammar" && targetBank !== "reading") return;
     setPendingSelection({ bank: targetBank, id });
     setBank(targetBank);
   }
-  const VALID_BANKS = ["grammar", "reading", "vocabulary", "answerKeys", "review", "examBuilder"];
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "review", "examBuilder"];
   return html`
     <div>
       <${Tabs} tabs=${[
         { key: "grammar", icon: "📐", label: "Grammar" },
-        { key: "reading", icon: "📖", label: "Reading" },
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "review", icon: "🔍", label: "Question Review" },
         { key: "examBuilder", icon: "🧪", label: "Exam Builder" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "grammar" ? pendingSelection.id : null} roster=${roster} />`}
-      ${bank === "reading" && html`<${ReadingQuestionBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "reading" ? pendingSelection.id : null} roster=${roster} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
       ${bank === "examBuilder" && html`<${ExamBuilderView} roster=${roster} />`}
@@ -10547,7 +11631,6 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
   const existing = svc.reportService.getDailyReport(data, date);
 
   const [status, setStatus] = useState("DRAFT");
-  const [lessonInfo, setLessonInfo] = useState({});
   const [legacyLessonContent, setLegacyLessonContent] = useState({});
   const [ratings, setRatings] = useState({});
   const [teacherComment, setTeacherComment] = useState({});
@@ -10561,7 +11644,6 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
   useEffect(() => {
     const e = svc.reportService.getDailyReport(data, date);
     setStatus(svc.reportService.getReportStatus(e));
-    setLessonInfo((e && e.lessonInfo) || {});
     setLegacyLessonContent((e && e.lessonContent) || {});
     setRatings((e && e.ratings) || {});
     setTeacherComment((e && e.teacherComment) || {});
@@ -10610,9 +11692,10 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
         ...(d.dailyReports || {}),
         // structuredUpdatedAt added after Phase 4 STEP 2's investigation found this save path had
         // no timestamp at all, unlike the text card's `updatedAt` — made tracing who/when saved a
-        // structured entry harder than it needed to be. lessonContent is intentionally NOT written
-        // here anymore (STEP8) — spreading the existing entry first preserves any old value as-is.
-        [date]: { ...(d.dailyReports || {})[date], status, lessonInfo, ratings, teacherComment, structuredUpdatedAt: Date.now() },
+        // structured entry harder than it needed to be. lessonContent/lessonInfo are intentionally
+        // NOT written here (STEP8/사용자 요청) — spreading the existing entry first preserves any
+        // old value as-is for dates saved before either field was retired.
+        [date]: { ...(d.dailyReports || {})[date], status, ratings, teacherComment, structuredUpdatedAt: Date.now() },
       },
     }));
     setSavedAt(Date.now());
@@ -10632,14 +11715,6 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
           value=${status} onChange=${(e) => setStatus(e.target.value)}>
           ${svc.reportService.DAILY_REPORT_STATUSES.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
         </select>
-      </div>
-
-      <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>기본 정보</div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
-        <input style=${smallInput} placeholder="교재" value=${lessonInfo.textbook || ""} onChange=${(e) => setLessonInfo({ ...lessonInfo, textbook: e.target.value })} />
-        <input style=${smallInput} placeholder="Unit / Chapter" value=${lessonInfo.unit || ""} onChange=${(e) => setLessonInfo({ ...lessonInfo, unit: e.target.value })} />
-        <input style=${smallInput} placeholder="수업 시간 (예: 16:00~18:00)" value=${lessonInfo.classDuration || ""} onChange=${(e) => setLessonInfo({ ...lessonInfo, classDuration: e.target.value })} />
-        <input style=${smallInput} placeholder="실제 수업 시간 (예: 105분)" value=${lessonInfo.actualDuration || ""} onChange=${(e) => setLessonInfo({ ...lessonInfo, actualDuration: e.target.value })} />
       </div>
 
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>Today's Learning <span style=${{ fontWeight: 400 }}>(Class Record · Class Log와 같은 기록이에요)</span></div>
@@ -10775,15 +11850,20 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent }) {
 
   useEffect(() => {
     const existing = (data.dailyReports || {})[date];
-    if (existing) {
-      setText(existing.text || "");
+    // existing.text가 있을 때만 "이미 쓴 초안"으로 취급한다 — DailyReportWorkspace(Today's
+    // Learning/평가 카드)의 save()는 이 dailyReports[date] 항목을 text 없이(status/lessonInfo/
+    // ratings/teacherComment만) 먼저 만들 수 있는데, 예전엔 existing이 "있기만 하면" 그걸로
+    // 끝이라 자동 초안 생성이 영영 안 돌아서, 그 뒤 Today's Learning에 로그를 더 추가해도 메시지
+    // 초안(=학부모가 실제로 보는 r.text)이 계속 빈 채로 남는 버그가 있었다(사용자가 실제로 겪음).
+    if (existing && existing.text) {
+      setText(existing.text);
       setPublished(existing.published || false);
     } else {
       // `data`가 dep에 있어야 한다 — Today's Learning 패널에서 로그를 바로 추가하면(§3/§8) 이
       // 화면을 나가지 않고도 초안이 즉시 반영돼야 하는데, updateData()는 매번 새 data 객체를
       // 만들어주므로 이 dep만으로 충분하다(별도 refetch 불필요).
       setText(buildDailyReportText(student, data, date, hwFrom, { reading, examAttemptResults }));
-      setPublished(false);
+      setPublished((existing && existing.published) || false);
     }
     setCopied(false); setSaved(false);
   }, [date, hwFrom, student.id, reading, examAttemptResults, data]);
@@ -10821,6 +11901,17 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent }) {
   async function publish() { await saveDraft(true); }
   async function unpublish() { await saveDraft(false); }
 
+  // 👨‍👩‍👧 미리보기 — 실제로 부모 화면에서 쓰는 ParentDailyReportCard를 선생님 화면에서도 그대로
+  // 재사용한다(따로 베껴서 만들지 않음 — 그러면 두 화면이 또 어긋날 수 있다). ratings/
+  // teacherComment는 구조화 카드에서 마지막으로 저장한 값을, text는 지금 이 화면에서 편집
+  // 중인(아직 저장 전이어도) 값을 그대로 써서 "지금 이대로 공개하면 이렇게 보여요"에 최대한
+  // 가깝게 보여준다. sinceDate는 부모 화면과 동일하게 "이 날짜보다 이전 중 가장 최근 dailyReports
+  // 항목"으로 구해 숙제 범위가 실제 화면과 어긋나지 않게 한다.
+  const savedEntryForPreview = (data.dailyReports || {})[date] || {};
+  const previewR = { ...savedEntryForPreview, text };
+  const priorDailyDates = Object.keys(data.dailyReports || {}).filter((d) => d < date).sort();
+  const previewSinceDate = priorDailyDates.length ? priorDailyDates[priorDailyDates.length - 1] : null;
+
   return html`
     <div>
       <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData}
@@ -10854,6 +11945,10 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent }) {
             : html`<${Button} variant="gold" onClick=${publish}>✔ 작성 완료 (학부모께 공개)<//>`}
         </div>
       <//>
+
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "20px 0 8px" }}>👨‍👩‍👧 학부모님이 보시는 화면 미리보기</div>
+      ${!published && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>아직 "작성 완료"를 안 눌러서 실제로는 학부모님께 안 보여요 — 이건 지금 저장된 내용 기준 미리보기예요.</div>`}
+      <${ParentDailyReportCard} student=${student} data=${data} date=${date} sinceDate=${previewSinceDate} r=${previewR} />
     </div>
   `;
 }
@@ -10922,6 +12017,26 @@ function MonthlyReportView({ student, data, updateData }) {
   const scheduledCount = ((student.monthlyInstances || {})[month] || []).length;
   const attendedCount = new Set(logRows.map((l) => l.date)).size;
   const neltThisMonth = (data.neltResults || []).filter((r) => inMonth(r.test_date));
+
+  // 🗺 로드맵 진행 상황 — 완전히 계산 전용(data.roadmap을 그대로 재사용, ParentRoadmapSection과
+  // 똑같은 progressPct 공식). 새 입력 필드 없음, RoadmapEditor에서 이미 관리하는 값만 요약해서
+  // "이번 달 리포트 하나만 봐도 로드맵 어디쯤인지 보이게" 해달라는 요청에 대응한다.
+  const roadmap = data.roadmap;
+  const roadmapPhases = (roadmap && roadmap.phases) || [];
+  const roadmapInfo = roadmapPhases.length === 0 ? null : (() => {
+    const currentIdx = Math.min(roadmap.currentPhaseIndex || 0, roadmapPhases.length - 1);
+    const currentPhase = roadmapPhases[currentIdx];
+    const nextPhase = roadmapPhases[currentIdx + 1] || null;
+    const completedCount = roadmapPhases.slice(0, currentIdx).length + (currentPhase.diagnosticDone ? 1 : 0);
+    const progressPct = Math.round((completedCount / roadmapPhases.length) * 100);
+    const todayStr = today();
+    const isOverdue = !!(currentPhase.targetDate && currentPhase.targetDate < todayStr && !currentPhase.diagnosticDone);
+    return {
+      currentPhase, nextPhase, progressPct, isOverdue,
+      stepLabel: `${currentIdx + 1} / ${roadmapPhases.length}단계`,
+      objectives: phaseObjectives(currentPhase),
+    };
+  })();
 
   useEffect(() => {
     const s = (data.monthlyReports || {})[month] || {};
@@ -11073,6 +12188,19 @@ function MonthlyReportView({ student, data, updateData }) {
           ${(data.neltResults || []).length >= 2 ? `<div style="margin-top:12px;">${buildNeltTrendChartSVG(data.neltResults)}</div>` : ""}
           ${neltComment ? `<div class="content-box" contenteditable="true" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
         </div>` : ""}
+        ${roadmapInfo ? `
+        <div class="sec">
+          <div class="secttl"><span class="badge">1-2</span>로드맵 진행 상황</div>
+          <div style="font-family:'Noto Sans KR',sans-serif;font-size:12.5px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;">
+              <div><b>${roadmapInfo.stepLabel} · ${(roadmapInfo.currentPhase.title || "").replace(/</g, "&lt;")}</b></div>
+              <div style="font-size:16px;font-weight:700;color:#B8935A;">${roadmapInfo.progressPct}%</div>
+            </div>
+            ${roadmapInfo.currentPhase.targetDate ? `<div style="font-size:11px;color:${roadmapInfo.isOverdue ? "#B23A2E" : "#8A8370"};margin-top:4px;">목표일 ${fmtDate(roadmapInfo.currentPhase.targetDate)}${roadmapInfo.isOverdue ? " · 지남" : ""}</div>` : ""}
+            ${roadmapInfo.objectives.length > 0 ? `<div style="margin-top:8px;white-space:pre-wrap;">${roadmapInfo.objectives.map((o) => "• " + o.replace(/</g, "&lt;")).join("\n")}</div>` : ""}
+            ${roadmapInfo.nextPhase ? `<div style="font-size:11px;color:#8A8370;margin-top:8px;padding-top:8px;border-top:1px dashed #D8D2BE;">다음 단계: <b>${roadmapInfo.nextPhase.title.replace(/</g, "&lt;")}</b></div>` : ""}
+          </div>
+        </div>` : ""}
         <div class="sec">
           <div class="secttl"><span class="badge">2</span>영역별 성취 평가</div>
           <table><tr><th style="text-align:left;">평가 영역</th>${REPORT_RATINGS.map((r) => `<th>${r}</th>`).join("")}</tr>
@@ -11167,6 +12295,25 @@ function MonthlyReportView({ student, data, updateData }) {
         <//>
       `}
 
+      ${roadmapInfo && html`
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>1-2. 로드맵 진행 상황</div>
+        <${Card} style=${{ marginBottom: 20 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+            <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy }}>${roadmapInfo.stepLabel} · ${roadmapInfo.currentPhase.title}</div>
+            <div style=${{ fontSize: 18, fontWeight: 700, color: C.gold }}>${roadmapInfo.progressPct}%</div>
+          </div>
+          ${roadmapInfo.currentPhase.targetDate && html`
+            <div style=${{ fontSize: 11.5, color: roadmapInfo.isOverdue ? C.danger : C.slate, marginTop: 4 }}>목표일 ${fmtDate(roadmapInfo.currentPhase.targetDate)}${roadmapInfo.isOverdue ? " · 지남" : ""}</div>
+          `}
+          ${roadmapInfo.objectives.length > 0 && html`
+            <div style=${{ fontSize: 12, color: C.ink, marginTop: 8 }}>${roadmapInfo.objectives.map((o) => `• ${o}`).join("\n")}</div>
+          `}
+          ${roadmapInfo.nextPhase && html`
+            <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>다음 단계: <b style=${{ color: C.navy }}>${roadmapInfo.nextPhase.title}</b></div>
+          `}
+        <//>
+      `}
+
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>2. 영역별 성취 평가</div>
       <${Card} style=${{ marginBottom: 20, overflowX: "auto" }}>
         ${REPORT_CATEGORIES.map((c) => html`
@@ -11225,7 +12372,8 @@ function MonthlyReportView({ student, data, updateData }) {
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>6. 다음 달 학습 방향</div>
       <${Card}>
-        <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${nextMonth} onChange=${(e) => setNextMonth(e.target.value)} />
+        <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${nextMonth} onChange=${(e) => setNextMonth(e.target.value)}
+          placeholder=${roadmapInfo ? `로드맵상 다음 단계: ${roadmapInfo.nextPhase ? roadmapInfo.nextPhase.title : "현재 단계 마무리"}` : ""} />
       <//>
     </div>
   `;
@@ -14842,6 +15990,110 @@ function ParentReadingCard({ student, month }) {
   `;
 }
 
+// 부모용 Daily Report 카드 — buildDailyReportText가 만든 "text" 스냅샷에 기대지 않고, 그 날짜의
+// Homework/Vocabulary/Assessment/Reading을 항상 그 자리에서 다시 계산해서 보여준다. text는
+// reading/examAttemptResults가 비동기로 늦게 도착하기 전에 저장돼버리면 그 내용이 영영 안 보이는
+// 문제가 있었는데(교사가 실제로 겪음), 여기서는 그 타이밍과 무관하게 항상 최신 원본 데이터를
+// 직접 읽으므로 이미 발행된 옛 리포트도 이 화면에서는 자동으로 완전하게 보인다. 사용자 요청
+// "글이 긴 것보다 보기 편하게"에 맞춰 문단 대신 칩(chip)으로 구성 — 긴 글(r.text)은 접어서 원할
+// 때만 펼쳐 보게 한다.
+function DailyReportChip({ icon, label, tone }) {
+  const bg = tone === "gold" ? "#FBF4EA" : tone === "danger" ? "#F7E9E6" : C.ivory;
+  const color = tone === "gold" ? C.navy : tone === "danger" ? C.danger : C.ink;
+  return html`<span style=${{ display: "inline-flex", alignItems: "center", gap: 5, background: bg, color, fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 20, whiteSpace: "nowrap" }}>${icon} ${label}</span>`;
+}
+// 숙제는 "오늘 마감/오늘 낸 것"이 아니라 "직전에 발행된 리포트 이후 ~ 이번 리포트 날짜까지" 범위로
+// 봐야 buildDailyReportText(메시지 초안)가 원래 쓰던 것과 같은 숙제가 나온다 — 이 컴포넌트가 처음엔
+// DailyReportWorkspace의 "오늘만" 필터를 그대로 베껴 써서, 실제로 숙제가 있는데도 계속 빈 채로
+// 나오는 버그가 있었다(사용자가 실제로 겪음). sinceDate(부모 쪽에서 정렬된 발행 리포트 목록 중
+// 바로 이전 리포트의 날짜)가 있으면 그 다음 날부터, 없으면(첫 리포트) 이 날짜까지의 전체 기록을
+// 범위로 삼는다 — 리포트마다 겹치지 않게 해서 같은 숙제가 여러 리포트에 반복 표시되지 않는다.
+function ParentDailyReportCard({ student, data, date, sinceDate, r }) {
+  const svc = window.SarahServices;
+  const [reading, setReading] = useState(null);
+  const [examAttemptResults, setExamAttemptResults] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setReading(null); setExamAttemptResults([]);
+    svc.readingService.getReadingActivityForDate(student.id, date).then((res) => { if (!cancelled) setReading(res); });
+    getTodaysGradedAssignmentResults(student.id, date).then((res) => { if (!cancelled) setExamAttemptResults(res); }).catch(() => { if (!cancelled) setExamAttemptResults([]); });
+    return () => { cancelled = true; };
+  }, [student.id, date]);
+
+  const logsToday = (data.logs || []).filter((l) => l.date === date);
+  const vocabToday = svc.vocabularyService.getVocabActivityForStudent(student.id, student.name, data).filter((v) => v.date === date);
+  const examToday = svc.examService.getAllExamResultsForStudent(student.id, student.name, data).filter((x) => x.date === date);
+  const hwRange = svc.homeworkService.getHomeworkForStudent(student.id, student.name, data)
+    .filter((h) => h.dueDate && h.dueDate <= date && (!sinceDate || h.dueDate > sinceDate));
+  const hwDone = hwRange.filter((h) => h.done);
+  const hwUndone = hwRange.filter((h) => !h.done);
+
+  const chips = [];
+  vocabToday.forEach((v, i) => {
+    const pct = v.total ? Math.round((v.score / v.total) * 100) : null;
+    const pass = pct != null ? pct >= svc.vocabularyService.passThreshold(v.title) : null;
+    chips.push(html`<${DailyReportChip} key=${"v" + i} icon="✏️" label=${`${v.title} ${fmtScoreDisplay(v)}${pct != null ? ` (${pct}%)` : ""}`} tone=${pass == null ? undefined : (pass ? "gold" : "danger")} />`);
+  });
+  examToday.forEach((x, i) => {
+    chips.push(html`<${DailyReportChip} key=${"e" + i} icon="📄" label=${`${x.title}: ${fmtScoreDisplay(x)}`} />`);
+  });
+  examAttemptResults.forEach((x, i) => {
+    chips.push(html`<${DailyReportChip} key=${"ea" + i} icon="📄" label=${`${x.title}: ${x.score}/${x.total} (${x.percentage}%)`} />`);
+  });
+  if (reading) {
+    reading.completedToday.forEach((a, i) => chips.push(html`<${DailyReportChip} key=${"rc" + i} icon="📚" label=${`${a.storyTitle} (Lv.${a.level}) 완독`} tone="gold" />`));
+    reading.startedToday.filter((a) => a.status !== "COMPLETED").forEach((a, i) => chips.push(html`<${DailyReportChip} key=${"rs" + i} icon="📚" label=${`${a.storyTitle} (Lv.${a.level}) 읽는 중`} />`));
+    reading.journalEntries.forEach((e, i) => chips.push(html`<${DailyReportChip} key=${"rj" + i} icon="📝" label=${`${e.storyTitle} 독서기록`} />`));
+    if (reading.newWords.length > 0) chips.push(html`<${DailyReportChip} key="rw" icon="🆕" label=${`새 단어 ${reading.newWords.length}개`} />`);
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 10 }}>
+      <div style=${{ fontSize: 12.5, color: C.gold, fontWeight: 700 }}>${fmtDateDay(date)}</div>
+      ${logsToday.length > 0 && html`
+        <div style=${{ marginTop: 8 }}>
+          ${logsToday.map((l) => html`<div key=${l.id} style=${{ fontSize: 13, padding: "3px 0", whiteSpace: "pre-wrap" }}>📖 ${l.content}</div>`)}
+        </div>
+      `}
+      ${chips.length > 0 && html`<div style=${{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>${chips}</div>`}
+      ${hwRange.length > 0 && html`
+        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}`, fontSize: 12.5 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 4 }}>📝 숙제</div>
+          ${hwDone.length > 0 && html`
+            <div style=${{ color: C.gold, fontWeight: 700, marginTop: 4 }}>✅ 완료</div>
+            ${hwDone.map((h) => html`<div key=${h.id} style=${{ padding: "2px 0" }}>- ${h.content}</div>`)}
+          `}
+          ${hwUndone.length > 0 && html`
+            <div style=${{ color: C.danger, fontWeight: 700, marginTop: 4 }}>❌ 미완료</div>
+            ${hwUndone.map((h) => html`<div key=${h.id} style=${{ padding: "2px 0" }}>- ${h.content}</div>`)}
+          `}
+        </div>
+      `}
+      ${r.ratings && Object.keys(r.ratings).length > 0 && html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
+          ${svc.reportService.DAILY_RATING_KEYS.filter(({ key }) => r.ratings[key] != null).map(({ key, label }) => html`
+            <span key=${key} style=${{ fontSize: 11.5, background: C.ivory, padding: "3px 8px", borderRadius: 3 }}>${label} ${r.ratings[key]}/5</span>
+          `)}
+        </div>
+      `}
+      ${r.teacherComment && (r.teacherComment.good || r.teacherComment.improve || r.teacherComment.next) && html`
+        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}`, fontSize: 12.5, lineHeight: 1.7 }}>
+          ${r.teacherComment.good && html`<div><b style=${{ color: C.gold }}>잘한 점</b> ${r.teacherComment.good}</div>`}
+          ${r.teacherComment.improve && html`<div><b style=${{ color: C.gold }}>보완할 점</b> ${r.teacherComment.improve}</div>`}
+          ${r.teacherComment.next && html`<div><b style=${{ color: C.gold }}>다음 수업까지</b> ${r.teacherComment.next}</div>`}
+        </div>
+      `}
+      ${r.text && html`
+        <details style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
+          <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>선생님 메시지 전체 보기</summary>
+          <div style=${{ fontSize: 12.5, marginTop: 6, whiteSpace: "pre-wrap", color: C.ink }}>${r.text}</div>
+        </details>
+      `}
+    <//>
+  `;
+}
+
 function ParentMonthlyReportCard({ month, report, student, data }) {
   const [y, m] = month.split("-");
   const textFields = [
@@ -15160,26 +16412,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         <div>
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선생님이 작성을 완료한 리포트만 여기에 표시돼요.</div>
           ${publishedDaily.length === 0 && html`<${Empty} text="아직 공개된 데일리 리포트가 없어요." />`}
-          ${publishedDaily.map(([date, r]) => html`
-            <${Card} key=${date} style=${{ marginBottom: 10 }}>
-              <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(date)}</div>
-              <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${r.text}</div>
-              ${r.ratings && Object.keys(r.ratings).length > 0 && html`
-                <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
-                  ${window.SarahServices.reportService.DAILY_RATING_KEYS.filter(({ key }) => r.ratings[key] != null).map(({ key, label }) => html`
-                    <span key=${key} style=${{ fontSize: 11.5, background: C.ivory, padding: "3px 8px", borderRadius: 3 }}>${label} ${r.ratings[key]}/5</span>
-                  `)}
-                </div>
-              `}
-              ${r.teacherComment && (r.teacherComment.good || r.teacherComment.improve || r.teacherComment.next) && html`
-                <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${C.line}`, fontSize: 12.5, lineHeight: 1.7 }}>
-                  ${r.teacherComment.good && html`<div><b style=${{ color: C.gold }}>잘한 점</b> ${r.teacherComment.good}</div>`}
-                  ${r.teacherComment.improve && html`<div><b style=${{ color: C.gold }}>보완할 점</b> ${r.teacherComment.improve}</div>`}
-                  ${r.teacherComment.next && html`<div><b style=${{ color: C.gold }}>다음 수업까지</b> ${r.teacherComment.next}</div>`}
-                </div>
-              `}
-            <//>
-          `)}
+          ${publishedDaily.map(([date, r], i) => html`<${ParentDailyReportCard} key=${date} student=${student} data=${data} date=${date} sinceDate=${(publishedDaily[i + 1] || [])[0] || null} r=${r} />`)}
         </div>
       `}
 
