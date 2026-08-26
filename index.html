@@ -4269,9 +4269,8 @@ function StudentReadingSummaryCard({ studentId }) {
       <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>📚 이번 달 Reading 활동</div>
       ${!stats ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : html`
         <div style=${{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-          <div><div style=${{ ...serif, fontSize: 20, color: C.navy }}>${stats.storiesRead}</div><div style=${{ fontSize: 10.5, color: C.slate }}>완료 스토리</div></div>
+          <div><div style=${{ ...serif, fontSize: 20, color: C.navy }}>${stats.storiesRead}</div><div style=${{ fontSize: 10.5, color: C.slate }}>완료 Story (Reading Log)</div></div>
           <div><div style=${{ ...serif, fontSize: 20, color: C.navy }}>${stats.newWordCount}</div><div style=${{ fontSize: 10.5, color: C.slate }}>새 단어</div></div>
-          <div><div style=${{ ...serif, fontSize: 20, color: C.navy }}>${stats.journalCount}</div><div style=${{ fontSize: 10.5, color: C.slate }}>독서기록</div></div>
         </div>
         ${stats.recentStoryTitle && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8 }}>최근 완료: ${stats.recentStoryTitle} (Lv.${stats.recentLevel})</div>`}
       `}
@@ -4442,27 +4441,21 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
     setLoaded(null);
     const svc = window.SarahServices.readingService;
     Promise.all([
-      svc.getReadingActivityForStudent(studentId),
       svc.getAllReadingLibraryStories(),
       svc.getReadingVocabForStudent(studentId),
       svc.getReadingJournalForStudent(studentId),
-    ]).then(([activities, stories, vocab, journal]) => {
-      if (!cancelled) setLoaded({ activities, stories, vocab: vocab.words || [], journal: journal.entries || [] });
-    }).catch(() => { if (!cancelled) setLoaded({ activities: [], stories: {}, vocab: [], journal: [] }); });
+    ]).then(([stories, vocab, journal]) => {
+      if (!cancelled) setLoaded({ stories, vocab: vocab.words || [], journal: journal.entries || [] });
+    }).catch(() => { if (!cancelled) setLoaded({ stories: {}, vocab: [], journal: [] }); });
     return () => { cancelled = true; };
   }, [studentId]);
 
   if (!loaded) return html`<${Empty} text="불러오는 중..." />`;
-  const { activities, stories, vocab, journal } = loaded;
-  function withStory(a) {
-    const story = stories[a.storyId];
-    return story ? { ...a, storyTitle: story.title, level: story.level } : null;
-  }
-  const completed = activities.filter((a) => a.status === "COMPLETED").map(withStory).filter(Boolean)
-    .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
-  const inProgress = activities.filter((a) => a.status !== "COMPLETED").map(withStory).filter(Boolean)
-    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-  const recentJournal = [...journal].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+  const { stories, vocab, journal } = loaded;
+  // "완료"는 오직 Reading Log 제출(readingJournal)만을 뜻한다(2026-08-26) — 열람/진행중 상태는
+  // 더 이상 존재하지 않고, 이 화면에 표시하지도 않는다. journal 항목은 storyTitle/level을 제출
+  // 시점에 이미 담고 있어서 readingLibrary/readingActivity를 조인할 필요가 없다.
+  const history = [...journal].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
   const vocabGroups = window.SarahServices.readingService.groupReadingVocabByStory(vocab, stories);
 
   return html`
@@ -4473,33 +4466,43 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
         </div>
       `}
       <${Card}>
-        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>📖 읽는 중 (${inProgress.length})</div>
-        ${inProgress.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>읽는 중인 스토리가 없어요.</div>` : inProgress.map((a, i) => html`
-          <div key=${a.id || i} style=${{ padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>${a.storyTitle} (Lv.${a.level})</div>
-        `)}
-      <//>
-      <${Card}>
-        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>✅ 완료한 스토리 (${completed.length})</div>
-        ${completed.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 완료한 스토리가 없어요.</div>` : completed.map((a, i) => html`
-          <div key=${a.id || i} style=${{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
-            <span>${a.storyTitle} (Lv.${a.level})</span>
-            <span style=${{ color: C.slate }}>${a.completedAt ? fmtDate(new Date(a.completedAt).toISOString().slice(0, 10)) : ""}</span>
-          </div>
-        `)}
+        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>✅ Reading History (${history.length})</div>
+        ${history.length === 0
+          ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 완료하고 제출한 Reading Log가 없어요.</div>`
+          : history.map((e, i) => html`<${ReadingHistoryEntry} key=${e.id || i} entry=${e} first=${i === 0} />`)}
       <//>
       <div style=${{ fontWeight: 700, color: C.navy, margin: "14px 0 8px", fontSize: 13.5 }}>🔤 Vocabulary (${vocab.length}개 단어 · ${vocabGroups.length}개 Story)</div>
       ${vocabGroups.length === 0 ? html`<${Card}><div style=${{ fontSize: 12.5, color: C.slate }}>등록된 단어가 없어요.</div><//>` : vocabGroups.map((g) => html`
         <${StoryVocabularyGroup} key=${g.source} group=${g} updateData=${updateData} studentFcmToken=${studentFcmToken} />
       `)}
-      <${Card} style=${{ marginTop: 8 }}>
-        <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>📝 독서 기록 (${journal.length})</div>
-        ${recentJournal.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>작성된 독서 기록이 없어요.</div>` : recentJournal.map((e, i) => html`
-          <div key=${e.id || i} style=${{ padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
-            <div style=${{ fontSize: 12.5, color: C.ink }}>${e.storyTitle}${e.level ? ` (Lv.${e.level})` : ""}</div>
-            ${e.content && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 2, whiteSpace: "pre-wrap" }}>${e.content}</div>`}
-          </div>
-        `)}
-      <//>
+    </div>
+  `;
+}
+
+// Reading History 한 줄 — 제목/레벨/날짜/"Reading Log ✓"는 항상 보이고, 클릭하면 실제로 제출한
+// 4개 질문의 답변을 펼쳐서 보여준다(이전엔 이 자리에 e.content를 읽으려 했는데 실제 저장 필드는
+// e.answers[]라 항상 빈 화면이었다 — 2026-08-26에 같이 고쳤다, §15 "정확하게 확인할 수 있도록").
+function ReadingHistoryEntry({ entry, first }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <div style=${{ padding: "7px 0", borderTop: first ? "none" : `1px dotted ${C.line}` }}>
+      <div onClick=${() => setOpen((v) => !v)} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
+        <span style=${{ fontSize: 12.5, color: C.ink }}>${open ? "▾" : "▸"} ${entry.storyTitle}${entry.level != null ? ` (Lv.${entry.level})` : ""}</span>
+        <span style=${{ fontSize: 11.5, color: C.slate, whiteSpace: "nowrap" }}>
+          ${entry.submittedAt ? fmtDate(new Date(entry.submittedAt).toISOString().slice(0, 10)) : ""}
+          <span style=${{ color: C.gold, fontWeight: 700, marginLeft: 8 }}>Reading Log ✓</span>
+        </span>
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 8, paddingLeft: 4 }}>
+          ${(entry.answers || []).map((qa, i) => html`
+            <div key=${i} style=${{ marginBottom: 8 }}>
+              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 2 }}>${qa.q}</div>
+              <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap" }}>${qa.a || "-"}</div>
+            </div>
+          `)}
+        </div>
+      `}
     </div>
   `;
 }
@@ -5121,9 +5124,11 @@ function ReadingAreaSection({ roster, initialTarget, onOpenStudentVocabulary }) 
   `;
 }
 
-// Teacher OS STEP 9 §1 — 학생별 원시 로그 대신, 학생별 요약 행 하나(최근 읽은/읽는 중인 Story ·
-// Level · 새 단어 수 · Journal 여부 · 최근 활동일)로 정리해서 최근 활동이 위로 오게 정렬한다.
-// readingLibrary(스토리 목록)는 학생 수만큼 반복 조회하지 않고 한 번만 불러와 재사용한다.
+// Teacher OS STEP 9 §1, rewritten 2026-08-26 — 학생별 요약 행 하나(최근 완료 Story · Level ·
+// 새 단어 수 · Reading Log 제출 수 · 최근 완료일)로 정리해서 최근 완료가 위로 오게 정렬한다.
+// "완료"는 이제 오직 Reading Log 제출(readingJournal)만을 뜻한다 — 열람/진행중 개념 제거
+// (2026-08-26). readingLibrary/readingActivity는 더 이상 이 요약에 필요 없다(journal 항목이
+// storyTitle/level을 이미 담고 있음).
 function ReadingLogOverview({ roster, onOpenStudentVocabulary }) {
   const [rows, setRows] = useState(null);
   const rosterKey = roster.map((s) => s.id).join(",");
@@ -5132,41 +5137,30 @@ function ReadingLogOverview({ roster, onOpenStudentVocabulary }) {
     setRows(null);
     const svc = window.SarahServices.readingService;
     (async () => {
-      const stories = await svc.getAllReadingLibraryStories();
-      function withStory(a) {
-        const story = stories[a.storyId];
-        return story ? { ...a, storyTitle: story.title, level: story.level } : null;
-      }
       const results = await Promise.all(roster.map(async (s) => {
         try {
-          const [activities, vocabDoc, journalDoc] = await Promise.all([
-            svc.getReadingActivityForStudent(s.id),
+          const [vocabDoc, journalDoc] = await Promise.all([
             svc.getReadingVocabForStudent(s.id),
             svc.getReadingJournalForStudent(s.id),
           ]);
           const words = vocabDoc.words || [];
-          const entries = journalDoc.entries || [];
-          const joined = activities.map(withStory).filter(Boolean);
-          const completed = joined.filter((a) => a.status === "COMPLETED").sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
-          const inProgress = joined.filter((a) => a.status !== "COMPLETED").sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
-          const latest = inProgress[0] || completed[0] || null;
+          const entries = [...(journalDoc.entries || [])].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+          const latest = entries[0] || null;
           const lastActivityTs = Math.max(
             0,
-            ...joined.map((a) => Math.max(a.startedAt || 0, a.completedAt || 0)),
-            ...words.map((w) => w.addedAt || 0),
             ...entries.map((e) => e.submittedAt || 0),
+            ...words.map((w) => w.addedAt || 0),
           ) || null;
           return {
             studentId: s.id, studentName: s.name,
-            currentStory: latest ? latest.storyTitle : null,
-            currentLevel: latest ? latest.level : null,
-            currentStatus: inProgress[0] ? "읽는 중" : (completed[0] ? "완료" : null),
+            recentStory: latest ? latest.storyTitle : null,
+            recentLevel: latest ? latest.level : null,
             newWordCount: words.length,
             journalCount: entries.length,
             lastActivityTs,
           };
         } catch (e) {
-          return { studentId: s.id, studentName: s.name, currentStory: null, currentLevel: null, currentStatus: null, newWordCount: 0, journalCount: 0, lastActivityTs: null };
+          return { studentId: s.id, studentName: s.name, recentStory: null, recentLevel: null, newWordCount: 0, journalCount: 0, lastActivityTs: null };
         }
       }));
       if (!cancelled) setRows(results);
@@ -5179,18 +5173,18 @@ function ReadingLogOverview({ roster, onOpenStudentVocabulary }) {
 
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학생별 Reading 현황이에요 — 최근 활동이 위로 와요.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>학생별 Reading 현황이에요 — 최근 완료한 Reading Log가 위로 와요.</div>
       ${sorted.length === 0 ? html`<${Empty} text="등록된 학생이 없어요." />` : sorted.map((r) => html`
         <${Card} key=${r.studentId} style=${{ marginBottom: 8 }}>
           <div style=${{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <div style=${{ minWidth: 0, flex: 1 }}>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${r.studentName}</div>
-              ${r.currentStory ? html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 2 }}>${r.currentStory} (Lv.${r.currentLevel}) — ${r.currentStatus}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>No activity</div>`}
+              ${r.recentStory ? html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 2 }}>${r.recentStory} (Lv.${r.recentLevel}) — <span style=${{ color: C.gold, fontWeight: 700 }}>Reading Log ✓</span></div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>No activity</div>`}
             </div>
             <div style=${{ display: "flex", gap: 14, fontSize: 11.5, color: C.slate, flexShrink: 0, alignItems: "center" }}>
               <div>새 단어 <b style=${{ color: C.ink }}>${r.newWordCount}</b></div>
-              <div>Journal <b style=${{ color: C.ink }}>${r.journalCount}</b></div>
-              <div>최근 활동 <b style=${{ color: C.ink }}>${r.lastActivityTs ? fmtDate(new Date(r.lastActivityTs).toISOString().slice(0, 10)) : "-"}</b></div>
+              <div>Reading Log <b style=${{ color: C.ink }}>${r.journalCount}</b></div>
+              <div>최근 완료 <b style=${{ color: C.ink }}>${r.lastActivityTs ? fmtDate(new Date(r.lastActivityTs).toISOString().slice(0, 10)) : "-"}</b></div>
               ${onOpenStudentVocabulary && r.newWordCount > 0 && html`<a onClick=${() => onOpenStudentVocabulary(r.studentId)} style=${{ color: C.gold, cursor: "pointer", textDecoration: "underline" }}>View Vocabulary →</a>`}
             </div>
           </div>
@@ -5260,11 +5254,10 @@ function ReadingGrowthReportView({ studentId, studentName, onOpenStudentVocabula
           <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📚 Reading Volume</div>
           <div style=${{ fontSize: 12.5, padding: "3px 0" }}>총 완료 Story <b>${report.totalStoriesCompleted}</b></div>
           <div style=${{ fontSize: 12.5, padding: "3px 0" }}>이번 달 완료 <b>${report.thisMonthCompleted}</b></div>
-          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 30일 활동 <b>${report.last30ActivityCount}</b>회</div>
+          <div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 30일 완료 <b>${report.last30Count}</b>회</div>
         <//>
         <${Card}>
           <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📖 Reading Level</div>
-          ${report.currentLevel != null ? html`<div style=${{ fontSize: 12.5, padding: "3px 0" }}>현재 읽는 중: Lv.${report.currentLevel} — ${report.currentStoryTitle}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "3px 0" }}>현재 읽는 중인 스토리가 없어요.</div>`}
           ${report.mostRecentCompletedLevel != null ? html`<div style=${{ fontSize: 12.5, padding: "3px 0" }}>최근 완료: Lv.${report.mostRecentCompletedLevel} — ${report.mostRecentCompletedTitle}</div>` : html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "3px 0" }}>완료한 스토리가 없어요.</div>`}
           ${report.levelChanged && html`<div style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>Level 변화: Lv.${report.previousCompletedLevel} → Lv.${report.mostRecentCompletedLevel}</div>`}
         <//>
@@ -9824,7 +9817,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
   // 함수를 같은 방식으로 재사용한다) ----
   const [readingByStudent, setReadingByStudent] = useState({});
   const [readingLoaded, setReadingLoaded] = useState(false);
-  const EMPTY_READING = { newWords: [], journalEntries: [], startedToday: [], completedToday: [] };
+  const EMPTY_READING = { newWords: [], journalEntries: [] };
   const todayStudentIdsKey = todayStudentIds.join(",");
   useEffect(() => {
     let cancelled = false;
@@ -9849,7 +9842,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
   }, [todayStudentIdsKey, todayStr]);
   const readingActiveToday = todayStudentIds.filter((id) => {
     const r = readingByStudent[id];
-    return r && (r.startedToday.length || r.completedToday.length || r.newWords.length || r.journalEntries.length);
+    return r && (r.newWords.length || r.journalEntries.length);
   });
 
   // ---- 📋 오늘 수업 기록 · Daily Report — 오늘 수업 예정 학생 전원의 상태(기존엔 미작성자만
@@ -9964,10 +9957,8 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
           ${!readingLoaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : readingActiveToday.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 리딩 라이브러리 활동 기록이 없어요.</div>` : readingActiveToday.map((id, i) => {
             const r = readingByStudent[id];
             const parts = [];
-            if (r.completedToday.length) parts.push(`완료 ${r.completedToday.length}`);
-            if (r.startedToday.filter((a) => a.status !== "COMPLETED").length) parts.push(`읽는 중 ${r.startedToday.filter((a) => a.status !== "COMPLETED").length}`);
+            if (r.journalEntries.length) parts.push(`Reading Log ${r.journalEntries.length}`);
             if (r.newWords.length) parts.push(`새 단어 ${r.newWords.length}`);
-            if (r.journalEntries.length) parts.push(`독서기록 ${r.journalEntries.length}`);
             return html`
               <div key=${id} style=${{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
                 <span onClick=${() => onSelectStudent(id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600 }}>${studentNameById[id] || id}</span>
@@ -11585,9 +11576,7 @@ function buildDailyReportText(student, data, date, hwFrom, extra) {
 
   const reading = extra && extra.reading;
   const readingBlock = reading ? [
-    ...reading.completedToday.map((a) => `📖 ${a.storyTitle} (Lv.${a.level}) — 완독`),
-    ...reading.startedToday.filter((a) => a.status !== "COMPLETED").map((a) => `📖 ${a.storyTitle} (Lv.${a.level}) — 읽는 중`),
-    ...reading.journalEntries.map((e) => `📝 ${e.storyTitle} (Lv.${e.level}) — 독서기록 작성`),
+    ...reading.journalEntries.map((e) => `📝 ${e.storyTitle} (Lv.${e.level}) — Reading Log 제출`),
     reading.newWords.length > 0 ? `새 단어 ${reading.newWords.length}개: ${reading.newWords.map((w) => w.word).join(", ")}` : "",
   ].filter(Boolean).join("\n") : "";
 
@@ -11784,10 +11773,8 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
         </div>
         <div>
           <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>📚 Reading (자동 연결)</div>
-          ${!reading ? html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>` : (reading.completedToday.length === 0 && reading.startedToday.length === 0 && reading.newWords.length === 0 && reading.journalEntries.length === 0) ? html`<div style=${{ fontSize: 12, color: C.slate }}>오늘 리딩 라이브러리 활동 기록이 없어요.</div>` : html`
-            ${reading.completedToday.map((a, i) => html`<div key=${"c" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>📖 ${a.storyTitle} (Lv.${a.level}) — <span style=${{ color: C.gold, fontWeight: 700 }}>Completed</span></div>`)}
-            ${reading.startedToday.filter((a) => a.status !== "COMPLETED").map((a, i) => html`<div key=${"s" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>📖 ${a.storyTitle} (Lv.${a.level}) — 읽는 중</div>`)}
-            ${reading.journalEntries.map((e, i) => html`<div key=${"j" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>📝 ${e.storyTitle} (Lv.${e.level}) — 독서기록 작성</div>`)}
+          ${!reading ? html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>` : (reading.newWords.length === 0 && reading.journalEntries.length === 0) ? html`<div style=${{ fontSize: 12, color: C.slate }}>오늘 리딩 라이브러리 활동 기록이 없어요.</div>` : html`
+            ${reading.journalEntries.map((e, i) => html`<div key=${"j" + i} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>📝 ${e.storyTitle} (Lv.${e.level}) — <span style=${{ color: C.gold, fontWeight: 700 }}>Reading Log 제출</span></div>`)}
             ${reading.newWords.length > 0 && html`<div style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>새 단어 ${reading.newWords.length}개: ${reading.newWords.map((w) => w.word).join(", ")}</div>`}
           `}
         </div>
@@ -12583,12 +12570,10 @@ function MonthlyReportDashboard({ student, data }) {
         <${Card}>
           ${!reading ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : html`
             <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, fontSize: 12.5, marginBottom: 8 }}>
-              <div>완료한 Story<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.storiesRead}편</div>
+              <div>완료한 Story (Reading Log 제출)<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.storiesRead}편</div>
                 <div style=${{ fontSize: 10.5, color: C.slate }}>지난달 ${readingPrev ? readingPrev.storiesRead : "-"}${readingPrev ? trendArrow(readingPrev.storiesRead, reading.storiesRead) : ""}</div>
               </div>
-              <div>읽는 중<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.inProgressCount}편</div></div>
               <div>새 단어 수<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.newWordCount}</div></div>
-              <div>독서 기록(저널)<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.journalCount}건</div></div>
               ${reading.totalReadingTimeSec > 0 && html`<div>읽은 시간<div style=${{ fontSize: 16, fontWeight: 700 }}>${Math.round(reading.totalReadingTimeSec / 60)}분</div></div>`}
               ${reading.quizAvgPct != null && html`<div>Quiz 평균<div style=${{ fontSize: 16, fontWeight: 700 }}>${reading.quizAvgPct}%</div></div>`}
             </div>
@@ -16053,9 +16038,7 @@ function ParentDailyReportCard({ student, data, date, sinceDate, r, preloadedRea
     chips.push(html`<${DailyReportChip} key=${"ea" + i} icon="📄" label=${`${x.title}: ${x.score}/${x.total} (${x.percentage}%)`} />`);
   });
   if (reading) {
-    reading.completedToday.forEach((a, i) => chips.push(html`<${DailyReportChip} key=${"rc" + i} icon="📚" label=${`${a.storyTitle} (Lv.${a.level}) 완독`} tone="gold" />`));
-    reading.startedToday.filter((a) => a.status !== "COMPLETED").forEach((a, i) => chips.push(html`<${DailyReportChip} key=${"rs" + i} icon="📚" label=${`${a.storyTitle} (Lv.${a.level}) 읽는 중`} />`));
-    reading.journalEntries.forEach((e, i) => chips.push(html`<${DailyReportChip} key=${"rj" + i} icon="📝" label=${`${e.storyTitle} 독서기록`} />`));
+    reading.journalEntries.forEach((e, i) => chips.push(html`<${DailyReportChip} key=${"rj" + i} icon="📚" label=${`${e.storyTitle} (Lv.${e.level}) Reading Log 제출`} tone="gold" />`));
     if (reading.newWords.length > 0) chips.push(html`<${DailyReportChip} key="rw" icon="🆕" label=${`새 단어 ${reading.newWords.length}개`} />`);
   }
 

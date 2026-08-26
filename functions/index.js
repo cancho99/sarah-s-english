@@ -278,49 +278,84 @@ ${passageText}
 // 뼈대로 확장했을 뿐, 기존 프롬프트/핸들러는 한 글자도 건드리지 않는다. Passage Variation은 새
 // 프롬프트를 만들지 않고 기존 TRANSFORM_SYSTEM_PROMPT(mode: "transform")를 그대로 재사용한다
 // (Phase B 설계 §2 — 요구사항과 이미 일치함을 확인).
-const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신·수능 대비 지문을 분석해 학원용 "지문 분석지"를 만드는 전문 교육 평가 개발자입니다. EBS 수능특강/내신 대비 지문 분석지처럼, 문장별 해석·구조·문법·어휘부터 문단 단위 흐름, 전체 주제/요지, 출제 포인트까지 한눈에 보이는 자료를 만듭니다.
+// Reading Analysis "분석노트" 재설계(Phase B-1 설계 승인, 2026-08-26) — 이전 스키마
+// (sentences[].segments/clauseStructure/grammarPoints/keyExpressions, core)를 폐기하고
+// chunks/clauses/grammarAnnotations/vocabAnnotations/testablePoints, passageLevel로 교체.
+// paragraphs[]/vocabulary[]/examPoints[]는 필드명 그대로 유지(§1 결정사항 — 데이터 호환).
+// 응답 무결성은 프롬프트만으로 보장하지 않는다 — validateReadingAnalysis()(아래, extractLastJsonArray
+// 근처)가 저장 전 서버 측에서 실제로 검증한다(Phase B-2 §2~§5).
+const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신·수능 대비 지문을 실제 학원 수업용 "분석노트"로 변환하는 전문 교육 평가 개발자입니다. 학생이 선생님의 분석노트를 보듯 문장 구조 → 해석 → 문법 설명이 자연스럽게 이어지는 정밀한 자료를 만듭니다.
 
-[중요 규칙]
-- 원문(originalText)은 절대 수정/요약/재구성하지 마세요. 분석 대상으로만 다룹니다.
+[절대 원칙]
+- 원문(originalText)은 절대 수정·요약·재구성·삭제하지 마세요. sentences[].originalText는 실제 지문 문장을 글자 하나 틀리지 않고 그대로 담습니다.
+- sentences[].chunks[]는 원문을 빠짐없이, 원문에 없는 단어를 추가하지 않고 순서대로 나눕니다. 한 문장의 모든 chunk의 text를 순서대로 이어 붙이면(공백 차이 제외) originalText와 정확히 일치해야 합니다. 스스로 이 대조를 반드시 확인한 뒤 답하세요 — 일치하지 않으면 이 응답 전체가 폐기됩니다.
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
-- "structure"/"segments"의 tag는 영어 문법 약어만 사용하세요 (예: S, V, V (passive), O, C, Prep. Phrase, To-inf, Rel. Clause, Adv. Clause). 한글을 섞지 마세요.
-- 문장은 원칙적으로 전부 분석하세요. 8문장이 넘으면 문법적으로 설명할 가치가 낮은 아주 짧은 문장은 생략할 수 있습니다.
-- 어휘(vocabulary)는 사전적 뜻이 아니라 **이 지문 문맥에서의 의미**를 우선하세요. 동의어/반의어는 문맥상 자연스럽게 바꿔 쓸 수 있는 것만 담고, 없으면 빈 배열로 두세요.
-- grammarExpressionPoints는 지문 전체에서 실제 시험에 낼 만한 문법/구문 포인트만 고르세요(시제/수동태/관계사/분사/동명사/to부정사/가정법/조동사/접속사/전치사/어법/중요구문 등).
-- examPoints는 이 지문으로 실제 내신·수능형 문제를 만든다면 어디를 어떻게 출제할 수 있는지 구체적으로 쓰세요(예: "3번째 문장의 핵심 연결어를 빈칸 처리해 추론 문제 출제 가능").
-- 모든 해석·설명은 자연스러운 한국어로 작성합니다.
+
+[Chunk 분리 기준]
+문장 길이로 임의로 자르지 말고, 다음 문장 구조/의미 단위를 기준으로 나누세요: 주어, 동사, 목적어, 보어, 수식어, 절, 구, 병렬구조. 절 내부(종속절 안)도 같은 기준으로 계속 쪼개세요 — chunks 배열은 문장 전체를 통틀어 하나의 순서열이며, 종속절이라고 별도 배열에 담지 않습니다(종속절의 범위는 clauses[]가 별도로 표시).
+
+[Chunk 문장성분(role) 배정 원칙 — 중요]
+- role은 "S"(주어) | "V"(동사) | "O"(목적어) | "C"(보어) | "M"(수식어) | null 중 하나만 씁니다.
+- 명확하게 판단 가능한 chunk에만 role을 부여하세요. 억지로 모든 chunk에 role을 붙이지 마세요 — 문장성분으로 보기 애매한 독립적 표현(접속사만 있는 chunk, 삽입어구 등)은 null로 두세요.
+- role은 그 chunk가 속한 가장 가까운 절(주절이든 종속절이든) 안에서의 역할을 기준으로 판단하세요. 즉 종속절 안의 주어/동사/보어도 각각 S/V/C로 표시합니다(그 종속절 전체가 상위 문장에서 어떤 역할인지는 grammarAnnotations의 설명으로 별도로 다룹니다 — role 필드에 억지로 반영하지 마세요).
+- 병렬구조는 실제 구조를 그대로 보존하세요(병렬된 여러 chunk에 같은 역할을 각각 부여, 하나로 뭉개지 마세요).
+- 주어가 생략된 경우(명령문, 분사구문 등) 존재하지 않는 단어를 원문에 추가해서 만들어내지 마세요 — 그 chunk의 role은 null로 두세요.
+- 예쁘게 보이도록 태그를 만들어내지 말고, 문법적으로 정확한 분석만 하세요. 틀리게 확신하는 것보다 애매하면 null이 낫습니다.
+- 각 chunk의 "order"는 1부터 시작해 문장 안에서 끊김·중복 없이 연속되는 정수여야 합니다.
+
+[Clause(절) 식별]
+문장 안에서 다음 구조가 실제로 존재할 때만 clauses[]에 담으세요(startChunkIdx/endChunkIdx는 위에서 만든 chunks 배열의 1-based order 기준 범위): 명사절 / 관계대명사절 / 관계부사절 / 부사절 / 분사구문 / to부정사구 / 동명사구 / 전치사구 / 병렬구조 / 삽입구조 / 동격 / 비교구문 / 가주어-진주어 / 가목적어-진목적어 / 5형식 구조 / 수동태. 지문에 실제로 없는 구조를 교육과정에 있다는 이유만으로 만들어내지 마세요. 한 문장에 여러 clause가 겹칠 수 있습니다(예: 관계대명사절 안에 수동태).
+
+[해석 — translation]
+직역이 아니라 학생이 문장 구조(위 chunks/clauses)를 이해하면서 읽을 수 있는 자연스러운 한국어로 씁니다.
+
+[grammarAnnotations]
+문법 용어만 나열하지 말고, "왜 이렇게 해석되는지"와 "이 구조가 문장에서 무슨 역할을 하는지"를 학생에게 설명하듯 씁니다.
+예: { "point": "notice + that절", "explanation": "that절이 notice의 목적어 역할을 하며 '~라는 것을 알아차리다'로 해석한다." }
+문장마다 실제로 학습 가치가 있는 것만 고르세요(문장당 보통 1~3개, 억지로 채우지 마세요). 지문에 실제로 없는 문법 구조(관계대명사/수동태/분사/to부정사/동명사/가정법/도치/강조/병렬/명사절/부사절 등)를 교육과정에 있다는 이유만으로 끼워 넣지 마세요.
+
+[vocabAnnotations]
+사전적 의미가 아니라 이 문맥에서의 의미를 우선합니다. 모든 단어를 넣지 말고, 수업에서 실제로 짚어줄 가치가 있는 어휘·숙어·구문만 선별하세요.
+예: { "expression": "replace A with B", "meaning": "A를 B로 대체하다" }
+
+[testablePoints]
+grammarAnnotations/vocabAnnotations와 내용이 겹칠 수 있지만, 목적이 다릅니다 — "이 문장에서 실제 시험 문제로 만들기 좋은 포인트"만 별도로 고르세요. 없는 문장은 빈 배열로 둡니다.
+
+[Passage-level — passageLevel]
+- topicKo/topicEn: 지문 전체의 주제. 영어 topic도 가능하면 함께 제공하세요.
+- summary: 핵심만 담은 한국어 요약(불필요한 세부사항 나열 금지).
+- flow: 지문의 실제 논리 전개를 분석해서 단계별로 나누세요. 단계 수는 지문 구조에 따라 3~7개 사이에서 동적으로 정하세요 — 모든 지문을 똑같은 단계 수나 똑같은 라벨(현상/원인/결과...)로 강제하지 마세요. 그 지문에 실제로 맞는 라벨을 쓰세요.
+- levelGrammarPoints: 아래 [학년]을 기준으로, 이 지문에 실제로 나타나고 그 학년 학생에게 학습 가치가 있는 문법만 선별하세요. 같은 지문이라도 학년이 다르면 선별 결과가 달라질 수 있습니다 — 그 학년 교육과정에 없는 문법을 억지로 만들어내지 마세요. 모든 문법을 나열하지 마세요. 참고 가능한 대주제 예시: 문장의 기본 구조/품사/문장성분/시제/조동사/수동태/부정사/동명사/분사/관계사/접속사/명사절/부사절/조건문/가정법/비교/일치/도치/강조/병렬/준동사 종합. **각 항목의 sentenceIndices는 실제로 그 문법이 grammarAnnotations에 등장하는 sentences[].index와 정확히 일치해야 합니다** — 존재하지 않는 문장 번호를 넣으면 이 응답 전체가 폐기됩니다.
+
+[paragraphs / vocabulary / examPoints]
+기존과 같은 방식으로 채웁니다 — paragraphs는 문단별 핵심내용/전개방식/역할/앞뒤 관계, vocabulary는 지문 전체 핵심 어휘 사전(문맥 의미 우선), examPoints는 이 지문으로 실제 시험을 만든다면 어디를 어떻게 출제할 수 있는지.
 
 [JSON 스키마]
 {
   "title": "지문 제목(영어 원제 또는 적절한 제목)",
+  "passageLevel": {
+    "topicKo": "...", "topicEn": "...", "summary": "...",
+    "flow": [ { "step": 1, "label": "...", "description": "..." } ],
+    "levelGrammarPoints": [ { "category": "...", "description": "...", "sentenceIndices": [1, 4] } ]
+  },
+  "paragraphs": [
+    { "index": 1, "mainContent": "...", "developmentType": "예: 도입/전개/예시/결론", "role": "글 전체에서의 역할", "relationToAdjacent": "앞/뒤 문단과의 관계" }
+  ],
   "sentences": [
     {
       "index": 1,
-      "text": "문장 원문",
+      "originalText": "문장 원문 그대로",
+      "chunks": [ { "text": "구간 텍스트", "role": "S 또는 V/O/C/M/null", "order": 1 } ],
+      "clauses": [ { "type": "예: noun clause/relative clause/passive 등", "text": "해당 구간 텍스트", "startChunkIdx": 1, "endChunkIdx": 1 } ],
       "translation": "자연스러운 해석",
-      "segments": [ { "text": "구간 텍스트", "tag": "S 또는 null" } ],
-      "clauseStructure": "절 구조 설명(단문/중문/복문, 종속절 종류 등)",
-      "grammarPoints": ["이 문장에서 짚을 문법 포인트"],
-      "keyExpressions": ["이 문장의 중요 구문/표현"]
+      "grammarAnnotations": [ { "point": "...", "explanation": "..." } ],
+      "vocabAnnotations": [ { "expression": "...", "meaning": "..." } ],
+      "testablePoints": [ { "point": "...", "note": "..." } ]
     }
   ],
   "vocabulary": [
     { "word": "단어", "pos": "품사", "contextualMeaning": "문맥상 의미", "synonyms": [], "antonyms": [], "importance": "상|중|하" }
   ],
-  "grammarExpressionPoints": [
-    { "category": "예: 관계사/수동태/분사구문 등", "description": "구체적 설명", "sentenceIndex": 1 }
-  ],
-  "paragraphs": [
-    { "index": 1, "mainContent": "핵심 내용", "developmentType": "예: 도입/전개/예시/결론", "role": "글 전체에서의 역할", "relationToAdjacent": "앞/뒤 문단과의 관계" }
-  ],
-  "core": {
-    "topic": "주제(한 줄)",
-    "mainIdea": "요지",
-    "summary": "전체 요약 2~3문장",
-    "keyMessage": "핵심 메시지",
-    "authorPurpose": "필자의 목적",
-    "logicalStructure": "글 전체의 논리 전개 구조"
-  },
   "examPoints": [
     { "type": "예: 빈칸/어법/어휘/순서/삽입/일치/주제·요지/서술형/영작", "description": "구체적으로 어디를 어떻게 출제할 수 있는지" }
   ]
@@ -333,7 +368,7 @@ ${passage}
 [학년] ${grade || "지정 없음"}
 [난이도] ${difficulty || "지정 없음"}
 
-위 지문을 문장 단위부터 전체 구조까지 빠짐없이 분석해서, JSON 스키마 형식으로만 답하세요.`;
+위 지문을 문장 단위부터 전체 구조까지 빠짐없이 분석해서, JSON 스키마 형식으로만 답하세요. [학년]을 passageLevel.levelGrammarPoints 선별에 실제로 반영하세요.`;
 }
 
 // Question Generator (Reading Analysis 재설계) — READING_GENERATE_SYSTEM_PROMPT와 거의 동일한
@@ -407,6 +442,32 @@ const WORD_MEANING_SYSTEM_PROMPT = `당신은 한국 중·고등학생의 영어
 
 [JSON 스키마]
 { "lemma": "사전 원형", "partOfSpeech": "n.|v.|adj.|adv.|prep.|conj.|pron.|interj.|phrase", "meaningKo": "문맥에 맞는 짧은 한국어 뜻 또는 빈 문자열", "confidence": "high|medium|low" }`;
+
+// Reading Log(독서 기록) 제출 검증(2026-08-26) — reading-library.html 전용. "단어 나열/짧은 감상"
+// 수준의 제출을 막아야 하는데, 글자 수만 세는 방식은 "초콜릿에 대한 글이다. 재미있었다."처럼
+// 마침표가 있는 두 "문장"도 통과시켜버려 요구사항("단순 글자 수만으로 판단하지 마라")을 못
+// 지킨다. 완전한 문장 구조인지·실제 지문 내용이 담겼는지·자신의 생각이 있는지는 결국 의미
+// 판단이 필요한 일이라, wordMeaning과 같은 방식으로 AI에게 맡긴다 — 문법 오류만으로는 불합격
+// 처리하지 않도록(§13) 프롬프트에 명시했다. 정확한 불합격 안내 문구는 프론트가 레벨별로
+// 고정된 문구를 직접 보여주므로(교사가 검수한 정확한 워딩을 그대로 유지하기 위해), 여기서는
+// valid 여부만 판단해서 돌려준다.
+const JOURNAL_VALIDATE_SYSTEM_PROMPT = `당신은 한국의 영어 학원에서 학생이 제출한 "독서 기록(Reading Log)"이 충분한 성실도로 작성됐는지 판단하는 채점 보조원입니다. 이 판단은 문법 시험이 아니라, 글을 실제로 읽고 이해했는지와 자신의 생각을 담았는지를 확인하는 것이 목적입니다.
+
+[레벨별 기준]
+- level이 1~4이면 한국어로 작성된 답변을 심사합니다. 반드시 완전한 문장으로 쓰여 있어야 하고, 단어나 짧은 구절 나열(예: "초콜릿", "재미있었다"), 또는 내용이 없는 짧은 문장 나열(예: "초콜릿에 대한 글이다. 재미있었다.")은 불합격입니다. 글의 실제 내용(중요한 정보)에 대한 구체적인 설명과 학생 자신의 생각이 함께 담겨 있어야 합격입니다.
+- level이 5 이상이면 영어로 작성된 답변을 심사합니다. 전체 답변을 합쳐 최소 5~7개의 완전한 문장이어야 하고, summary(요약) + 구체적인 세부 내용 + 설명 + 자신의 생각이 모두 포함돼야 합격입니다. "I liked it. It was interesting." 처럼 내용 없는 짧은 감상이나, 지문 문장을 그대로 베낀 것으로 보이면 불합격입니다.
+
+[중요 — 하지 말아야 할 것]
+- 문법 오류가 조금 있다고 불합격시키지 마세요(특히 영어 답변). 의미가 통하고 위 기준을 충족하면 합격입니다.
+- 글자 수만으로 판단하지 마세요 — 문장 구조와 실제 내용이 담겼는지를 함께 보세요.
+
+반드시 아래 JSON 스키마로만 답하세요. 설명이나 다른 텍스트 없이 순수 JSON만 출력합니다.
+{ "valid": true 또는 false }`;
+
+function buildJournalValidatePrompt({ level, journalAnswers }) {
+  const qa = journalAnswers.map((a, i) => `Q${i + 1}. ${a.q}\nA${i + 1}. ${a.a || "(빈 답변)"}`).join("\n\n");
+  return `학생 레벨: ${level}\n\n제출한 답변:\n${qa}\n\n위 기준에 따라 이 독서 기록이 합격인지 판단해 JSON으로만 답하세요.`;
+}
 
 function buildWordMeaningPrompt({ word, sentence }) {
   return `단어: "${word}"
@@ -556,6 +617,97 @@ function extractLastJsonArray(text) {
   return null;
 }
 
+// Reading Analysis "분석노트" 재설계(Phase B-2, 2026-08-26 설계 승인) — 저장 전 서버 측(Cloud
+// Function) 무결성 검증. AI가 스키마에 맞는 JSON을 반환했다는 것과, 그 내용이 실제로 원문/구조와
+// 정확히 대응한다는 것은 별개다 — 프롬프트 지시만으로는 보장 안 되므로 여기서 결정적으로
+// 재검증한다(§2~§5, "AI가 JSON을 반환했다고 해서 그대로 저장하지 마라"). 검증 실패 시 이 함수를
+// 호출한 쪽이 재생성을 요청하거나 에러로 처리한다 — 이 함수 자체는 Firestore/네트워크를 전혀
+// 건드리지 않는 순수 함수라서 프론트(readingAnalysisService.js)에서도 재사용 가능하지만, "서버
+// 측" 요구사항이라 1차로는 aiWorker(isReadingAnalyze 핸들러)에서만 호출한다.
+function validateReadingAnalysis(parsed) {
+  const errors = [];
+  if (!parsed || typeof parsed !== "object") return { valid: false, errors: ["응답이 JSON 객체가 아닙니다."] };
+
+  const sentences = Array.isArray(parsed.sentences) ? parsed.sentences : null;
+  if (!sentences || sentences.length === 0) {
+    return { valid: false, errors: ["sentences 배열이 없거나 비어 있습니다."] };
+  }
+
+  function norm(s) {
+    return String(s || "").replace(/\s+/g, " ").trim();
+  }
+
+  const sentenceIndexSet = new Set();
+
+  sentences.forEach((sent, sIdx) => {
+    const label = `sentences[${sIdx}]` + (sent && typeof sent.index === "number" ? ` (index=${sent.index})` : "");
+
+    if (!sent || typeof sent.index !== "number") {
+      errors.push(`${label}: index가 없거나 숫자가 아닙니다.`);
+      return;
+    }
+    if (sentenceIndexSet.has(sent.index)) errors.push(`${label}: index가 다른 문장과 중복됩니다.`);
+    sentenceIndexSet.add(sent.index);
+
+    const chunks = Array.isArray(sent.chunks) ? sent.chunks : null;
+    if (!chunks || chunks.length === 0) {
+      errors.push(`${label}: chunks가 없거나 비어 있습니다.`);
+      return;
+    }
+
+    // §3 — chunks order: 1..N 연속(중복/누락/순서뒤바뀜 전부 실패)
+    const orders = chunks.map((c) => c && c.order);
+    const expectedOrders = chunks.map((_, i) => i + 1);
+    const sortedOrders = [...orders].sort((a, b) => a - b);
+    const orderOk = orders.every((o) => typeof o === "number") && JSON.stringify(sortedOrders) === JSON.stringify(expectedOrders);
+    if (!orderOk) {
+      errors.push(`${label}: chunks[].order가 1~${chunks.length} 연속이 아닙니다 (받은 값: ${JSON.stringify(orders)}).`);
+    }
+
+    // §2 — originalText ↔ chunks 결합: whitespace 차이만 허용, 그 외 불일치는 전부 실패
+    const joinedChunks = norm(chunks.map((c) => c && c.text).join(" "));
+    const originalNorm = norm(sent.originalText);
+    if (joinedChunks !== originalNorm) {
+      errors.push(`${label}: chunks 결합 결과가 originalText와 다릅니다.\n    originalText: "${originalNorm}"\n    chunks 결합 : "${joinedChunks}"`);
+    }
+
+    // §4 — clauses index 범위 + (best-effort) text 논리적 일치
+    const clauses = Array.isArray(sent.clauses) ? sent.clauses : [];
+    clauses.forEach((cl, cIdx) => {
+      const clLabel = `${label}.clauses[${cIdx}]`;
+      if (!cl || typeof cl.startChunkIdx !== "number" || typeof cl.endChunkIdx !== "number") {
+        errors.push(`${clLabel}: startChunkIdx/endChunkIdx가 없습니다.`);
+        return;
+      }
+      if (cl.startChunkIdx < 1 || cl.endChunkIdx > chunks.length || cl.startChunkIdx > cl.endChunkIdx) {
+        errors.push(`${clLabel}: 범위(${cl.startChunkIdx}~${cl.endChunkIdx})가 실제 chunk 범위(1~${chunks.length})를 벗어납니다.`);
+        return;
+      }
+      const rangeText = norm(chunks.slice(cl.startChunkIdx - 1, cl.endChunkIdx).map((c) => c && c.text).join(" "));
+      if (norm(cl.text) !== rangeText) {
+        errors.push(`${clLabel}: text("${norm(cl.text)}")가 startChunkIdx~endChunkIdx 구간의 chunk 결합("${rangeText}")과 일치하지 않습니다.`);
+      }
+    });
+  });
+
+  // §5 — passageLevel.levelGrammarPoints[].sentenceIndices가 실제 존재하는 sentences[].index만
+  // 가리키는지 검증. 존재하지 않는 인덱스가 하나라도 있으면 전체 실패("이 부분은 UI에서 클릭 →
+  // 해당 문장으로 이동하는 핵심 데이터다").
+  const levelGrammarPoints = parsed.passageLevel && Array.isArray(parsed.passageLevel.levelGrammarPoints)
+    ? parsed.passageLevel.levelGrammarPoints
+    : [];
+  levelGrammarPoints.forEach((p, pIdx) => {
+    const indices = p && Array.isArray(p.sentenceIndices) ? p.sentenceIndices : [];
+    indices.forEach((idx) => {
+      if (!sentenceIndexSet.has(idx)) {
+        errors.push(`passageLevel.levelGrammarPoints[${pIdx}] ("${p && p.category}"): 존재하지 않는 sentence index ${idx}를 가리킵니다.`);
+      }
+    });
+  });
+
+  return { valid: errors.length === 0, errors };
+}
+
 // Prompt wording alone can't fully guarantee the model's "changes" list stays in sync with what
 // it actually marked inside transformed_html — testing found cases where a "changes" entry
 // described a swap (e.g. build → develop) that the <span class="chg"> in the passage never
@@ -640,7 +792,7 @@ exports.aiWorker = onRequest(
 
     const body = req.body || {};
     const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade,
-      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence } = body;
+      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence, answers } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
@@ -656,6 +808,8 @@ exports.aiWorker = onRequest(
     const isReadingAnalysisGenerate = mode === "readingAnalysisGenerate";
     // Reading Library 단어 클릭 뜻풀이(2026-08-26) — reading-library.html 전용, 위 8모드와 완전히 무관.
     const isWordMeaning = mode === "wordMeaning";
+    // Reading Log 제출 검증(2026-08-26) — 역시 reading-library.html 전용, 완전히 별개 기능.
+    const isJournalValidate = mode === "journalValidate";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -911,9 +1065,14 @@ exports.aiWorker = onRequest(
         res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
         return;
       }
-      let raRes;
-      try {
-        raRes = await fetch("https://api.anthropic.com/v1/messages", {
+
+      // Phase B-2 §2~§5 — AI 응답을 그대로 신뢰하지 않는다. 한 번 호출해 검증하고, 실패하면
+      // 딱 한 번만 재생성을 요청한다(무한 재시도로 비용이 새지 않도록). 두 번째도 실패하면
+      // validation error로 응답하고 절대 저장 가능한 형태로 반환하지 않는다 — 호출한 쪽
+      // (readingAnalysisService.createAnalysis)이 res.ok가 아닌 응답을 받으면 Firestore에
+      // 쓰지 않는 기존 흐름을 그대로 이용한다(§2 "정상 데이터로 저장하지 마라").
+      async function callAndParseOnce() {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -922,27 +1081,46 @@ exports.aiWorker = onRequest(
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 8000,
+            max_tokens: 16000,
             system: READING_ANALYZE_SYSTEM_PROMPT,
             messages: [{ role: "user", content: buildReadingAnalyzePrompt({ passage, grade, difficulty }) }],
           }),
         });
-      } catch (e) {
-        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
-        return;
+        if (!r.ok) {
+          const errText = await r.text();
+          throw new Error("AI 응답 오류: " + errText);
+        }
+        const data = await r.json();
+        const text = (data.content || []).map((b) => b.text || "").join("");
+        let parsed;
+        try {
+          parsed = JSON.parse(stripFences(text));
+        } catch {
+          throw new Error("AI 응답을 JSON으로 해석하지 못했습니다. raw: " + text.slice(0, 500));
+        }
+        return parsed;
       }
-      if (!raRes.ok) {
-        const errText = await raRes.text();
-        res.status(502).json({ error: "AI 응답 오류", detail: errText });
-        return;
-      }
-      const raData = await raRes.json();
-      const raText = (raData.content || []).map((b) => b.text || "").join("");
+
       let raParsed;
+      let validation;
       try {
-        raParsed = JSON.parse(stripFences(raText));
-      } catch {
-        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: raText });
+        raParsed = await callAndParseOnce();
+        validation = validateReadingAnalysis(raParsed);
+        if (!validation.valid) {
+          // 재생성 1회 시도(§2 "AI에게 재생성을 요청하거나 validation error로 처리해라")
+          raParsed = await callAndParseOnce();
+          validation = validateReadingAnalysis(raParsed);
+        }
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e.message || e) });
+        return;
+      }
+      if (!validation.valid) {
+        res.status(502).json({
+          error: "AI 분석 결과가 검증을 통과하지 못했습니다(원문-chunk 불일치, chunk 순서 오류, clause 범위 오류, 또는 존재하지 않는 문장 인덱스 참조). 다시 시도해 주세요.",
+          detail: validation.errors.join(" / "),
+          raw: raParsed, // 디버깅용 — 검증 실패 원인을 실제 파싱 결과로 확인할 수 있도록(isExamKey의 기존 raw/debug 패턴과 동일)
+        });
         return;
       }
       res.status(200).json(raParsed);
@@ -1046,6 +1224,52 @@ exports.aiWorker = onRequest(
         meaningKo: typeof wmParsed.meaningKo === "string" ? wmParsed.meaningKo.trim() : "",
         confidence: ["high", "medium", "low"].includes(wmParsed.confidence) ? wmParsed.confidence : "low",
       });
+      return;
+    }
+
+    if (isJournalValidate) {
+      const lvl = Number(level) || 1;
+      const ansArr = Array.isArray(answers) ? answers : [];
+      if (!ansArr.some((a) => a && a.a && a.a.trim())) {
+        res.status(200).json({ valid: false });
+        return;
+      }
+      let jvRes;
+      try {
+        jvRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 200,
+            system: JOURNAL_VALIDATE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildJournalValidatePrompt({ level: lvl, journalAnswers: ansArr }) }],
+          }),
+        });
+      } catch (e) {
+        // AI 인프라 문제로 검증 자체가 실패했을 때는 제출을 막지 않는다(fail open) — 학생이 실제
+        // 내용을 성실히 썼는데 서버 오류 때문에 제출을 못 하게 되는 게 더 나쁜 실패다.
+        res.status(200).json({ valid: true, degraded: true });
+        return;
+      }
+      if (!jvRes.ok) {
+        res.status(200).json({ valid: true, degraded: true });
+        return;
+      }
+      const jvData = await jvRes.json();
+      const jvText = (jvData.content || []).map((b) => b.text || "").join("");
+      let jvParsed;
+      try {
+        jvParsed = JSON.parse(stripFences(jvText));
+      } catch {
+        res.status(200).json({ valid: true, degraded: true });
+        return;
+      }
+      res.status(200).json({ valid: jvParsed.valid !== false });
       return;
     }
 

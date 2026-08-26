@@ -149,15 +149,39 @@ dailyReports                      // { "YYYY-MM-DD": {text, published, updatedAt
   title, level: 1-10, category: "Fiction"|"Nonfiction"|"Informational",
   genre, source, sourceUrl, license, text,
   vocabulary: [ {word, meaning, example} | {word, pos, meaningInContext, example} ],  // 레벨에 따라 3/4필드 혼용
-  journalLevel: "1-3"|"4-6"|"7-8"|"9-10",
+  journalLevel: "1-4"|"5-10",  // 2026-08-26 이전엔 "1-3"|"4-6"|"7-8"|"9-10" 4단계 — 저장은 되지만
+  // reading-library.html은 이 저장된 값을 더 이상 읽지 않고 매번 level에서 새로 계산한다(아래 참고).
   createdAt,
 }
 // readingVocab/{studentId}
-{ words: [{ word, meaning, source, addedAt }] }
-// readingJournal/{studentId}
+{ words: [{ word, meaning, lemma, partOfSpeech, contextSentence, source, readingId, addedAt }] }
+// 2026-08-26 이전 항목은 { word, meaning, source, addedAt }뿐 — lemma/partOfSpeech/contextSentence/
+// readingId는 그 이후 저장된 항목에만 있다(마이그레이션 없음, 읽는 쪽은 undefined를 허용해야 함).
+// readingJournal/{studentId} — Reading Log. tier는 이제 "1-4"|"5-10" 둘뿐(아래 참고).
 { entries: [{ id, storyId, storyTitle, level, tier, answers: [{q,a}], submittedAt }] }
 ```
-Level 1~10 / 초3~고3 커리큘럼은 **완전히 JS 하드코딩**(`LEVELS`/`GRADE_BY_LEVEL`, `reading-library.html:359-363`)이며, 스토리의 `level` 값이 실제로 그 설계를 따르는지 강제하는 검증은 없다. "읽음/완료" 플래그 자체가 없다 — 단어를 클릭했거나 독서기록을 썼을 때만 흔적이 남는다.
+Level 1~10 / 초3~고3 커리큘럼은 **완전히 JS 하드코딩**(`LEVELS`/`GRADE_BY_LEVEL`, `reading-library.html:359-363`)이며, 스토리의 `level` 값이 실제로 그 설계를 따르는지 강제하는 검증은 없다.
+
+**"읽음/완료" 개념(2026-08-26, 같은 날 두 번 개편)**: 스토리를 여는 것 자체는 처음부터 지금까지
+쭉 Firestore에 아무것도 안 남긴다(순수 클라이언트 상태 전환) — 한때(Phase 4~그 다음 세션 사이)
+열람만으로 `readingActivity`에 `IN_PROGRESS` 레코드를 만들던 시기가 있었으나 "그냥 훑어보기만
+해도 진행중 처리된다"는 문제로 되돌렸다(1차 개편, "다 읽었어요" 버튼 신설). 같은 날 안에 다시
+한번 개편해서 그 "다 읽었어요" 버튼조차 없앴다 — **지금은 "완료"의 유일한 신호가 Reading Log
+제출(`readingJournal`에 항목이 생기는 것)이다.** Reading Log를 제출하는 순간 내부적으로
+`readingActivity`에도 `status: "COMPLETED"` 레코드가 같이 쓰이지만, 이건 읽은 시간
+(`readingTimeSec`) 을 남기기 위한 부가 데이터일 뿐 — **"완료했는가"를 판단하는 화면(Student
+Reading History, Reading Summary, Reading Growth Report, Teacher Reading Dashboard)은 전부
+`readingActivity`가 아니라 `readingJournal`만 본다.** `IN_PROGRESS`를 실제로 생성하는 코드
+경로는 이제 없다(레거시로 남아있는 기존 `IN_PROGRESS` 문서는 지우지 않았지만, 어느 화면도
+읽지 않는다).
+
+**Reading Log 작성 기준(2026-08-26)**: Level 1~4는 한국어 4문항(내용 요약/중요한 내용/기억에
+남는 내용/나의 생각), Level 5~10은 영어 4문항(Summary/Key Details/Explanation/Personal
+Response) — 딱 두 그룹으로만 나뉜다(레벨을 더 세분화하지 않음). 제출 시 `functions/index.js`의
+`aiWorker` `journalValidate` 모드가 "완전한 문장인지, 단어 나열이 아닌지, 실제 내용과 자신의
+생각이 담겼는지"를 판단해 불충분하면 제출 자체를 막는다(문법 오류만으로는 막지 않음) — 정확한
+안내 문구는 `reading-library.html`의 `journalBannerHtml`/`journalRejectHtml`이 고정 문구로
+보여준다(AI는 valid 여부만 판단).
 
 ### 2.7 Report schema (I)
 
@@ -295,7 +319,7 @@ materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.htm
 
 | 함수 | 트리거 | 역할 |
 |---|---|---|
-| `aiWorker` | `onRequest` (secret: `ANTHROPIC_API_KEY`) | 단일 엔드포인트, `mode`로 분기: (기본)문제생성 / `transform`지문변형 / `monthlyReport`월간리포트초안 / `examkey`정답표AI비전파싱 / `examVariant`오답노트변형생성 / `nelt`NELT성적표파싱. 전부 Anthropic Messages API를 raw `fetch`로 직접 호출(SDK 미사용). `claude-haiku-4-5-20251001`(기본/변형/변형생성/리포트/NELT) + `claude-sonnet-5`(정답표 비전 파싱, 정확도 우선). **Firestore 접근 없음.** |
+| `aiWorker` | `onRequest` (secret: `ANTHROPIC_API_KEY`) | 단일 엔드포인트, `mode`로 분기: (기본)문제생성 / `transform`지문변형 / `monthlyReport`월간리포트초안 / `examkey`정답표AI비전파싱 / `examVariant`오답노트변형생성 / `nelt`NELT성적표파싱 / **`wordMeaning`Reading 단어 클릭 문맥 뜻풀이(2026-08-26 신규, `reading-library.html` 전용 — word+sentence를 받아 `{lemma, partOfSpeech, meaningKo, confidence}` 반환, hallucination 방지를 위해 불확실하면 빈 값+low를 명시적으로 반환)**. 이 표는 완전한 모드 목록이 아니다 — `grammarGenerate`/`readingGenerate`/`readingAnalyze`/`readingAnalysisGenerate`(Exam Builder/Reading Analysis 재설계 세션에서 추가됨) 등 이후 세션에서 추가된 모드가 더 있을 수 있으니 실제 모드 목록은 `functions/index.js`의 `is*` 플래그들을 직접 확인할 것. 전부 Anthropic Messages API를 raw `fetch`로 직접 호출(SDK 미사용). 대부분 `claude-haiku-4-5-20251001` + `claude-sonnet-5`(정답표 비전 파싱, 정확도 우선). **Firestore 접근 없음.** |
 | `notifyTeacher` | `onRequest` | `sarahsEnglishMeta/main.teacherFcmTokens`로 data-only FCM 발송, 이벤트 종류 11가지 |
 | `notifyStudent` | `onRequest` | 호출자가 넘긴 토큰 1개로 FCM 발송, 이벤트 3가지 |
 | `sendTestNotification` | `onRequest` | 알림 테스트용 단발 발송 |
@@ -444,7 +468,13 @@ features/    // Teacher Center 대시보드 등 신규 화면 단위
 }
 ```
 
-**status 전이 규칙**: 문서가 아예 없으면 NOT_STARTED(저장 안 함, 상태 없음 = NOT_STARTED로 간주). 처음 열면 IN_PROGRESS+startedAt 기록. "다 읽었어요" 버튼을 눌러야만 COMPLETED+completedAt 기록 — 열람만으로는 자동 완료 처리하지 않는다(요청서 §5 원칙 그대로).
+**status 전이 규칙(2026-08-24 최초 제안 당시 — 지금은 바뀜)**: 문서가 아예 없으면 NOT_STARTED(저장 안 함, 상태 없음 = NOT_STARTED로 간주). 처음 열면 IN_PROGRESS+startedAt 기록. "다 읽었어요" 버튼을 눌러야만 COMPLETED+completedAt 기록 — 열람만으로는 자동 완료 처리하지 않는다(요청서 §5 원칙 그대로).
+
+> ⚠️ **위 문단은 2026-08-24 최초 제안 당시 규칙이고, 2026-08-26에 두 차례 더 바뀌어서 지금은
+> 다르다** — 최신 규칙은 §2.6의 "읽음/완료" 개념 문단을 볼 것: (1) IN_PROGRESS는 이제 어떤 코드
+> 경로로도 생성되지 않는다("열람=IN_PROGRESS" 자체를 없앰), (2) "다 읽었어요" 버튼도 없어졌고
+> Reading Log 제출이 유일한 완료 신호다. 이 문단은 이 스키마가 왜 이런 필드(`status`/`startedAt`
+> 등)를 갖게 됐는지 역사적 맥락을 보여주기 위해 남겨둔다 — 현재 동작의 근거로 읽지 말 것.
 
 **Reading Time 측정 방식**(요청서 §6): start/pause/resume/complete 구조를 `document.visibilitychange` + 리더 화면 진입/이탈 이벤트로 best-effort 구현한다. 브라우저를 강제 종료하는 경우까지 완벽히 잡으려 하지 않는다(요청서 §6에 명시된 그대로) — `beforeunload`/`pagehide`에서 한 번 더 저장을 시도하지만 실패해도 앱을 막지 않는다.
 
