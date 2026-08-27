@@ -53,7 +53,12 @@
   .reader{ background:var(--white); border:1px solid var(--line); border-radius:8px; padding:20px; }
   .reader .lv-tag{ font-size:11px; color:var(--gold); font-weight:700; }
   .reader .rt-title{ font-family:'Jua',sans-serif; font-size:20px; color:var(--navy); margin:8px 0 14px; }
-  .reader .body{ font-size:15px; line-height:1.85; white-space:pre-wrap; }
+  .reader .body{
+    font-size:15px; line-height:1.85; white-space:pre-wrap;
+    user-select:none; -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none;
+    -webkit-touch-callout:none;
+  }
+  @media print{ .reader .body{ display:none; } }
   .reader .src{ font-size:11px; color:var(--slate); margin-top:20px; padding-top:12px; border-top:1px dashed var(--line); }
   .reader .src a{ color:var(--slate); }
   .reader .hint{ font-size:11px; color:var(--slate); margin-bottom:12px; }
@@ -532,8 +537,12 @@ async function loadJournal() {
   const snap = await getDoc(journalDocRef);
   journalEntries = snap.exists() ? (snap.data().entries || []) : [];
 }
-async function saveJournalEntries() {
-  await setDoc(journalDocRef, { entries: journalEntries });
+// entries를 넘기면 그 값을 저장만 하고 journalEntries(메모리)는 그대로 둔다 — 호출부가 저장
+// 성공을 확인한 뒤에 직접 journalEntries를 갱신하게 해서, 저장이 실패했을 때 아직 반영되지
+// 않은 값(pasteAttempts 포함)이 이미 제출된 것처럼 메모리에 남지 않게 한다. 인자 없이 부르면
+// 기존처럼 지금 메모리에 있는 값을 그대로 저장한다(삭제 등 기존 호출부 호환).
+async function saveJournalEntries(entries) {
+  await setDoc(journalDocRef, { entries: entries || journalEntries });
 }
 
 // Reading Log 질문(2026-08-26 개편) — 딱 두 그룹: Level 1~4(한국어) / Level 5~10(영어). 각
@@ -685,9 +694,23 @@ function buildJournalSection(it) {
     });
     wrap.querySelector("#journal-cancel-btn").onclick = () => { journalEditing = false; render(); };
   }
+  // Reading Log 답변은 학생 스스로 쓴 문장이어야 하므로, 클립보드(Ctrl/Cmd+V·우클릭 붙여넣기
+  // 모두 'paste' 이벤트 하나로 걸림)와 드래그드롭으로 텍스트를 그대로 옮겨 담는 걸 막는다.
+  // 완전히 막기만 하면 시도 자체가 기록에 안 남으므로, 이 폼(이 스토리의 이번 작성 세션)
+  // 동안의 시도 횟수를 세어 제출 데이터(entry.pasteAttempts)에 함께 저장한다.
+  let pasteAttempts = 0;
+  const msgEl = wrap.querySelector("#journal-msg");
+  function blockExternalPaste(e) {
+    e.preventDefault();
+    pasteAttempts++;
+    msgEl.textContent = "⚠️ 외부에서 붙여넣기는 허용되지 않아요. 직접 작성해 주세요.";
+  }
+  wrap.querySelectorAll(".journal-answer").forEach((ta) => {
+    ta.addEventListener("paste", blockExternalPaste);
+    ta.addEventListener("drop", blockExternalPaste);
+  });
   wrap.querySelector("#journal-submit-btn").onclick = async () => {
     const answers = questions.map((q, i) => ({ q: `${q.label} — ${q.prompt}`, a: wrap.querySelector(`.journal-answer[data-i="${i}"]`).value.trim() }));
-    const msgEl = wrap.querySelector("#journal-msg");
     if (!answers.some((a) => a.a)) {
       msgEl.textContent = "적어도 하나는 답을 써 주세요.";
       return;
@@ -704,10 +727,17 @@ function buildJournalSection(it) {
     const entry = {
       id: existing ? existing.id : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)),
       storyId: it.id, storyTitle: it.title, level: it.level, tier, answers, submittedAt: Date.now(),
+      // 제출 직전까지 쌓인 누적 붙여넣기 시도 횟수 — 실제 붙여넣기는 전부 막혔으므로 답변 내용에는
+      // 영향이 없지만, 시도 자체는 이 값으로만 남는다.
+      pasteAttempts: (existing && existing.pasteAttempts ? existing.pasteAttempts : 0) + pasteAttempts,
     };
-    journalEntries = [entry, ...journalEntries.filter((e) => e.storyId !== it.id)];
+    // journalEntries(메모리)는 저장이 실제로 성공한 뒤에만 갱신한다 — 미리 갱신해두면 저장이
+    // 실패했을 때도 이 entry(와 그 안의 pasteAttempts)가 이미 제출된 것처럼 보여서, 취소/재렌더
+    // 시 기존 제출 실패 흐름이 깨진다.
+    const nextEntries = [entry, ...journalEntries.filter((e) => e.storyId !== it.id)];
     try {
-      await saveJournalEntries();
+      await saveJournalEntries(nextEntries);
+      journalEntries = nextEntries;
       // Reading Log 제출 = 완료(§1 원칙). 읽은 시간 기록을 위해 내부적으로만 markStoryCompleted를
       // 같이 호출한다 — 학생에게 보이는 별도 "완료" 버튼/개념은 없다.
       await markStoryCompleted(it.id);
@@ -824,6 +854,49 @@ function wrapWords(text, storyId, storyTitle) {
     return `<span class="${cls}" data-word="${key}">${w}</span>`;
   });
 }
+
+// ---------- Reading Passage 복사 방지 — 본문(.reader .body) 텍스트에 한해서만 드래그 선택,
+// 복사/잘라내기, 우클릭 메뉴, 인쇄/저장 단축키, 모바일 long-press 선택 메뉴를 막는다. CSS의
+// user-select:none/-webkit-touch-callout:none과 아래 이벤트 차단을 함께 써야 PC(드래그·단축키·
+// 우클릭)와 모바일(long-press로 뜨는 복사 메뉴, Android의 contextmenu 기반 선택 팝업) 모두
+// 막힌다. 단어 클릭(.w) 뜻풀이 조회는 selection이 아니라 click 이벤트로 동작해서 영향받지 않는다.
+function isPassageTarget(el) {
+  return !!(el && el.closest && el.closest(".reader .body"));
+}
+function isSelectionInPassage() {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const node = sel.anchorNode;
+  const el = node && (node.nodeType === 3 ? node.parentElement : node);
+  return isPassageTarget(el);
+}
+["selectstart", "contextmenu", "dragstart"].forEach((type) => {
+  document.addEventListener(type, (e) => {
+    if (isPassageTarget(e.target)) e.preventDefault();
+  });
+});
+// copy/cut은 비-편집 영역(일반 div)에서 발생하면 브라우저에 따라 e.target이 그 span이 아니라
+// document/body로 잡히는 경우가 있어(선택 시작 지점이 아니라 포커스 기준으로 타겟이 정해짐),
+// e.target 대신 "지금 선택 영역이 지문 안에 있는가"로 판단해야 실제로 안 새어나간다.
+["copy", "cut"].forEach((type) => {
+  document.addEventListener(type, (e) => {
+    if (isSelectionInPassage()) e.preventDefault();
+  });
+});
+// Ctrl/Cmd+C·X는 실제로 지문 안의 텍스트가 선택돼 있을 때만 막는다(그래야 Reading Log
+// textarea에서의 정상적인 복사/잘라내기는 건드리지 않는다). Ctrl/Cmd+P·S(인쇄/저장)는 선택
+// 여부와 무관하게 브라우저가 페이지 전체를 대상으로 하므로, 지금 화면에 지문이 떠 있는 동안만
+// (reader 화면일 때만) 막는다.
+document.addEventListener("keydown", (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const key = e.key.toLowerCase();
+  if ((key === "c" || key === "x") && isSelectionInPassage()) {
+    e.preventDefault();
+  } else if ((key === "p" || key === "s") && document.querySelector(".reader .body")) {
+    e.preventDefault();
+  }
+});
 
 function renderReader() {
   const it = items.find((x) => x.id === view.storyId);
