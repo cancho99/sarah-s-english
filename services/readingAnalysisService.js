@@ -30,10 +30,13 @@ window.SarahServices = window.SarahServices || {};
     return Object.entries(docs).map(([id, data]) => ({ id, ...data }));
   }
 
-  // input: { title, originalText, passageId?, grade, difficulty, examType?, analysis }
+  // input: { title, originalText, passageId?, grade, difficulty, publisher?, examType?, analysis }
   // passageId is an OPTIONAL pointer into the legacy readingPassages collection, kept only for
   // teacher traceability ("이 지문은 원래 그 legacy passage에서 왔다") — never dereferenced by any
   // required code path, so a stale/missing legacy passage never breaks this doc.
+  // publisher/examType (2026-08-27, teacher list-organization request) are free-form/optional —
+  // existing docs saved before this change simply have both as "" and render as "미분류" in the
+  // UI, no migration needed.
   async function createAnalysis(input) {
     const now = Date.now();
     const doc = {
@@ -42,6 +45,7 @@ window.SarahServices = window.SarahServices || {};
       passageId: input.passageId || null,
       grade: input.grade || "",
       difficulty: input.difficulty || "BASIC",
+      publisher: input.publisher || "",
       examType: input.examType || "",
       // AI 응답 원형 — "분석노트" 재설계(Phase B-1 설계 승인, 2026-08-26) 스키마:
       // { title, passageLevel: {topicKo, topicEn, summary, flow[], levelGrammarPoints[]},
