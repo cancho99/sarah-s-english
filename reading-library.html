@@ -563,21 +563,33 @@ function journalBannerHtml(tier) {
     return `
       <div style="font-size:12.5px;line-height:1.75;background:#FBF6EA;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;margin:6px 0 14px;">
         <b>Write your Reading Log in English.</b><br/>
-        Write <b>at least 5–7 complete sentences.</b> Do not simply copy sentences from the passage. Use your own words and include specific details from the reading.<br/>
-        Your response should include:
+        <div style="margin-top:6px;font-weight:700;color:var(--navy);">✅ Pass criteria (read before you write!)</div>
         <ul style="margin:4px 0 0;padding-left:18px;">
-          <li>a summary of the passage</li>
-          <li>important details from the passage</li>
-          <li>an explanation of an important or interesting detail</li>
-          <li>your own thoughts or response</li>
+          <li>All 4 answers together must add up to <b>at least 5–7 complete sentences</b>.</li>
+          <li>Include all four: a <b>summary</b>, <b>specific details</b> from the passage, an <b>explanation</b> of why a detail matters, and <b>your own thoughts</b>.</li>
+          <li>Use your own words — don't copy sentences straight from the passage.</li>
+        </ul>
+        <div style="margin-top:6px;font-weight:700;color:var(--danger);">❌ These will be rejected</div>
+        <ul style="margin:4px 0 0;padding-left:18px;">
+          <li>Short reactions with no detail (e.g. "I liked it. It was interesting.")</li>
+          <li>Copy-pasted sentences from the passage</li>
         </ul>
       </div>`;
   }
   return `
     <div style="font-size:12.5px;line-height:1.75;background:#FBF6EA;border:1px solid var(--gold);border-radius:6px;padding:10px 12px;margin:6px 0 14px;">
       <b>글을 읽고 자신의 생각을 완전한 문장으로 작성하세요.</b><br/>
-      단어나 짧은 표현만 적으면 안 됩니다. <b>반드시 완전한 문장으로 작성해야 합니다.</b><br/>
-      글에서 알게 된 중요한 내용과 기억에 남는 내용을 구체적으로 설명하고, 마지막에는 자신의 생각도 써 보세요.
+      <div style="margin-top:6px;font-weight:700;color:var(--navy);">✅ 통과 기준 (쓰기 전에 꼭 읽어보세요!)</div>
+      <ul style="margin:4px 0 0;padding-left:18px;">
+        <li>각 문항마다 <b>완전한 문장</b>으로 <b>최소 2문장 이상</b> 작성하기</li>
+        <li>글에서 알게 된 <b>실제 내용(중요한 정보)</b>을 구체적으로 설명하기</li>
+        <li>마지막 문항엔 반드시 <b>나의 생각/느낀 점</b> 포함하기</li>
+      </ul>
+      <div style="margin-top:6px;font-weight:700;color:var(--danger);">❌ 이렇게 쓰면 불합격이에요</div>
+      <ul style="margin:4px 0 0;padding-left:18px;">
+        <li>단어나 짧은 표현만 나열 (예: "초콜릿", "재미있었다")</li>
+        <li>내용 없이 짧은 문장만 나열 (예: "초콜릿에 대한 글이다. 재미있었다.")</li>
+      </ul>
     </div>`;
 }
 
