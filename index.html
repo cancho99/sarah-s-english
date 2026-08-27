@@ -5937,6 +5937,99 @@ function qbCategoryLabel(taxonomy, mainKey, subKey) {
   return { main: cat.label, sub: sub ? sub.label : (subKey || "") };
 }
 
+// "확인 · 바로 출제 가능하게" — services/questionBankService.js의 STATUS_FLOW/canTransition/
+// setStatus는 손대지 않고, 그 한 단계씩만 허용하는 규칙을 그대로 지키면서 index.html에서 여러
+// 단계를 순서대로 밟아 PUBLISHED까지 이동시키는 조합 헬퍼. 이미 PUBLISHED거나 ARCHIVED면 더
+// 이동할 게 없으므로 null.
+function qbPublishChain(QB, fromStatus) {
+  if (fromStatus === "PUBLISHED" || fromStatus === "ARCHIVED") return null;
+  const order = QB.STATUS_FLOW.map((s) => s.key);
+  const fromIndex = order.indexOf(fromStatus);
+  const publishedIndex = order.indexOf("PUBLISHED");
+  if (fromIndex === -1 || publishedIndex === -1) return null;
+  return order.slice(fromIndex + 1, publishedIndex + 1);
+}
+
+// 체인을 따라 setStatusFn(doc, nextStatus, reviewPatch)을 순서대로 호출한다 — 검토 메모는 첫
+// 전환에만 실어 보낸다(setStatus가 review를 병합해 저장하므로 이후 전환에서 덮어쓸 필요 없음).
+async function qbConfirmAndPublish(QB, doc, setStatusFn, reviewPatch) {
+  const chain = qbPublishChain(QB, doc.status);
+  if (!chain) return doc;
+  let current = doc;
+  for (let i = 0; i < chain.length; i++) {
+    current = await setStatusFn(current, chain[i], i === 0 ? reviewPatch : undefined);
+  }
+  return current;
+}
+
+// 목록 화면의 "선택한 N개 한번에 출제 가능하게" — 이미 PUBLISHED/ARCHIVED인 항목은 건너뛴다.
+// onProgress({ index, total, doc, skipped, error })로 진행 상황을 알려준다.
+async function qbBulkPublish(QB, docs, setStatusFn, onProgress) {
+  const results = [];
+  for (let i = 0; i < docs.length; i++) {
+    const doc = docs[i];
+    if (doc.status === "PUBLISHED" || doc.status === "ARCHIVED") {
+      results.push({ id: doc.id, skipped: true });
+      if (onProgress) onProgress({ index: i + 1, total: docs.length, doc, skipped: true });
+      continue;
+    }
+    try {
+      const updated = await qbConfirmAndPublish(QB, doc, setStatusFn);
+      results.push({ id: doc.id, doc: updated });
+      if (onProgress) onProgress({ index: i + 1, total: docs.length, doc: updated, skipped: false });
+    } catch (e) {
+      results.push({ id: doc.id, error: e });
+      if (onProgress) onProgress({ index: i + 1, total: docs.length, doc, error: e });
+    }
+  }
+  return results;
+}
+
+function qbCanPublish(doc) { return doc && doc.status !== "PUBLISHED" && doc.status !== "ARCHIVED"; }
+
+// 목록 화면(체크박스 다건 선택 + "전체 선택" + 일괄 출제 가능 버튼) 상단 바 — controlled 컴포넌트.
+// 선택 상태 자체는 그걸 쓰는 목록 컴포넌트(GrammarBankView 등)가 소유하고, 여기엔 그 상태와
+// 토글 함수만 넘겨준다 — 체크박스가 각 목록의 기존 <tr>/카드 마크업 안에 그대로 끼어들어가야
+// 해서, 선택 상태를 별도 컴포넌트가 감싸 들고 있으면 오히려 더 복잡해진다.
+function QbBulkPublishBar({ count, allChecked, onToggleAll, busy, progress, onRun }) {
+  return html`
+    <div style=${{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+      <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
+        <input type="checkbox" checked=${allChecked} onChange=${onToggleAll} style=${{ width: 14, height: 14, appearance: "auto" }} />
+        전체 선택
+      </label>
+      <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} disabled=${count === 0 || busy} onClick=${onRun}>
+        ${busy ? `처리 중... (${progress ? progress.index : 0}/${progress ? progress.total : 0})` : `선택한 ${count}개 한번에 출제 가능하게`}
+      <//>
+    </div>
+  `;
+}
+
+// 카드/행을 클릭하면 상세 화면으로 이동하는 목록에서, 그 클릭을 가로채지 않고 바로 상태만
+// 옮기는 작은 버튼. 이미 PUBLISHED/ARCHIVED면 아무것도 렌더링하지 않는다.
+function QbQuickPublishButton({ QB, doc, setStatusFn, onPublished }) {
+  const [busy, setBusy] = useState(false);
+  if (!qbCanPublish(doc)) return null;
+  async function handleClick(e) {
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const updated = await qbConfirmAndPublish(QB, doc, setStatusFn);
+      onPublished(updated);
+    } catch (err) {
+      alert("출제 가능 처리에 실패했어요: " + String(err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return html`
+    <button type="button" onClick=${handleClick} disabled=${busy}
+      style=${{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 20, border: `1px solid ${C.gold}`, background: busy ? C.ivory : "#FBF6EA", color: "#8A6414", cursor: busy ? "default" : "pointer", whiteSpace: "nowrap" }}>
+      ${busy ? "처리 중..." : "출제 가능으로"}
+    </button>
+  `;
+}
+
 function GrammarQuestionForm({ QB, questions, existingDoc, onSaved, onCancel }) {
   const base = existingDoc || {};
   const [grade, setGrade] = useState(base.grade || QB.GRADES[0]);
@@ -6125,6 +6218,21 @@ function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged, onA
     }
   }
 
+  const canPublish = qbCanPublish(doc);
+  async function confirmAndPublish() {
+    setSaving(true);
+    try {
+      const reviewPatch = { ...review, reviewedAt: Date.now(), reviewedBy: "teacher" };
+      const updated = await qbConfirmAndPublish(QB, doc, QB.setGrammarQuestionStatus, reviewPatch);
+      onChanged(updated);
+      setMsg("확인하고 출제 가능 상태로 바꿨어요.");
+    } catch (e) {
+      setMsg("처리 실패: " + String(e.message || e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return html`
     <div>
       <${BackBtn} onClick=${() => onBack(false)} />
@@ -6185,7 +6293,12 @@ function GrammarQuestionDetail({ QB, doc, roster, onBack, onEdit, onChanged, onA
           `)}
         </div>
         <textarea style=${{ ...inputStyle, minHeight: 50 }} placeholder="검수 메모 (선택)" value=${review.reviewNote || ""} onChange=${(e) => setReview((r) => ({ ...r, reviewNote: e.target.value }))} />
-        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12, marginTop: 8 }} onClick=${saveReview} disabled=${saving}>검토 내용 저장<//>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveReview} disabled=${saving}>검토 내용 저장<//>
+          ${canPublish && html`
+            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${confirmAndPublish} disabled=${saving}>확인 · 바로 출제 가능하게<//>
+          `}
+        </div>
       <//>
 
       <${Card}>
@@ -6444,12 +6557,28 @@ const READING_REVIEW_ITEMS = [
   ["examTypeFit", "⑦ 시험 유형 적합성"], ["notRoteMemory", "⑧ 단순 암기 아님"],
   ["discrimination", "⑨ 문제 변별력"], ["explanationValue", "⑩ 해설의 교육적 가치"],
 ];
-function ReviewChecklistCard({ items, review, onSave, saving }) {
+function ReviewChecklistCard({ items, review, onSave, saving, QB, doc, setStatusFn, onPublished }) {
   const [draft, setDraft] = useState(review);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState("");
   function cycle(key) {
     setDraft((r) => { const cur = r[key]; const next = cur === null || cur === undefined ? true : cur === true ? false : null; return { ...r, [key]: next }; });
   }
   function label(v) { return v === true ? "✅" : v === false ? "❌" : "미확인"; }
+  const canPublish = QB && doc && setStatusFn && qbCanPublish(doc);
+  async function handleConfirmAndPublish() {
+    setPublishing(true); setPublishMsg("");
+    try {
+      const reviewPatch = { ...draft, reviewedAt: Date.now(), reviewedBy: "teacher" };
+      const updated = await qbConfirmAndPublish(QB, doc, setStatusFn, reviewPatch);
+      onPublished && onPublished(updated);
+      setPublishMsg("확인하고 출제 가능 상태로 바꿨어요.");
+    } catch (e) {
+      setPublishMsg("처리 실패: " + String(e.message || e));
+    } finally {
+      setPublishing(false);
+    }
+  }
   return html`
     <${Card}>
       <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>문제 검수</div>
@@ -6461,7 +6590,15 @@ function ReviewChecklistCard({ items, review, onSave, saving }) {
         `)}
       </div>
       <textarea style=${{ ...inputStyle, minHeight: 50 }} placeholder="검수 메모 (선택)" value=${draft.reviewNote || ""} onChange=${(e) => setDraft((r) => ({ ...r, reviewNote: e.target.value }))} />
-      <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12, marginTop: 8 }} onClick=${() => onSave(draft)} disabled=${saving}>검토 내용 저장<//>
+      <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => onSave(draft)} disabled=${saving}>검토 내용 저장<//>
+        ${canPublish && html`
+          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleConfirmAndPublish} disabled=${publishing}>
+            ${publishing ? "처리 중..." : "확인 · 바로 출제 가능하게"}
+          <//>
+        `}
+      </div>
+      ${publishMsg && html`<div style=${{ fontSize: 11, color: C.navy, marginTop: 6 }}>${publishMsg}</div>`}
     <//>
   `;
 }
@@ -6534,7 +6671,8 @@ function ReadingQuestionDetail({ QB, doc, passage, roster, onBack, onEdit, onCha
         ${(doc.tags || []).length > 0 && html`<div style=${{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>${doc.tags.map((t) => html`<span key=${t} style=${{ fontSize: 11, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 20, padding: "2px 9px", color: C.navy }}>#${t}</span>`)}</div>`}
       <//>
       <${QuestionUsageHistoryPanel} questionId=${doc.id} roster=${roster} />
-      <${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving} />
+      <${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving}
+        QB=${QB} doc=${doc} setStatusFn=${QB.setReadingQuestionStatus} onPublished=${(updated) => { onChanged(updated); setMsg("확인하고 출제 가능 상태로 바꿨어요."); }} />
       <${StatusChangeCard} QB=${QB} doc=${doc} onChange=${changeStatus} saving=${saving} />
       ${QB.canHardDelete(doc) && html`<div style=${{ marginBottom: 12 }}><button onClick=${handleDelete} style=${{ background: "none", border: "none", color: C.danger, fontSize: 12, cursor: "pointer", padding: 0 }}>완전히 삭제 (초안 · 미사용)</button></div>`}
       ${msg && html`<div style=${{ fontSize: 12, color: C.navy }}>${msg}</div>`}
@@ -6600,7 +6738,8 @@ function ReadingPassageDetail({ QB, passage, questions, onBack, onEdit, onChange
           `)}
       <//>
       <${AiGenerateReadingPanel} QB=${QB} passage=${passage} onGenerated=${onQuestionsAdded} />
-      <${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${passage.review || {}} onSave=${saveReview} saving=${saving} />
+      <${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${passage.review || {}} onSave=${saveReview} saving=${saving}
+        QB=${QB} doc=${passage} setStatusFn=${QB.setReadingPassageStatus} onPublished=${(updated) => { onChanged(updated); setMsg("확인하고 출제 가능 상태로 바꿨어요."); }} />
       <${StatusChangeCard} QB=${QB} doc=${passage} onChange=${changeStatus} saving=${saving} />
       ${QB.canHardDelete(passage) && html`<div style=${{ marginBottom: 12 }}>${linkedQuestions.length > 0 ? html`<span style=${{ fontSize: 11.5, color: C.slate }}>연결된 문제가 있어 삭제할 수 없어요 — 대신 보관(Archive) 처리해 주세요.</span>` : html`<button onClick=${handleDelete} style=${{ background: "none", border: "none", color: C.danger, fontSize: 12, cursor: "pointer", padding: 0 }}>완전히 삭제 (초안 · 미사용 · 문제 없음)</button>`}</div>`}
       ${msg && html`<div style=${{ fontSize: 12, color: C.navy }}>${msg}</div>`}
@@ -7492,11 +7631,15 @@ function ReadingAnalysisQuestionCard({ QB, doc, onChanged }) {
   return html`
     <${Card} style=${{ marginBottom: 10 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
+        ${onToggleSelect && html`<div onClick=${(e) => e.stopPropagation()} style=${{ display: "flex", alignItems: "flex-start", paddingTop: 2 }}><input type="checkbox" checked=${!!selected} onChange=${onToggleSelect} style=${{ width: 14, height: 14, appearance: "auto" }} /></div>`}
         <div style=${{ minWidth: 0, flex: 1 }}>
           <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${typeLabel} · ${doc.grade}</div>
           <div style=${{ fontSize: 13, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${doc.questionText}</div>
         </div>
-        <${QbBadge} status=${doc.status} />
+        <div style=${{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+          <${QbQuickPublishButton} QB=${QB} doc=${doc} setStatusFn=${QB.setReadingAnalysisQuestionStatus} onPublished=${onChanged} />
+          <${QbBadge} status=${doc.status} />
+        </div>
       </div>
       ${open && html`
         <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
@@ -7504,7 +7647,8 @@ function ReadingAnalysisQuestionCard({ QB, doc, onChanged }) {
             <div>${(doc.choices || []).map((c, i) => html`<div key=${i} style=${{ padding: "4px 8px", fontSize: 12.5, background: i === Number(doc.answer) ? "#E1EEE4" : "transparent", fontWeight: i === Number(doc.answer) ? 700 : 400 }}>${i + 1}. ${c}</div>`)}</div>
           ` : html`<div style=${{ fontSize: 12.5 }}><b>정답:</b> ${doc.answer}</div>`}
           ${doc.explanation && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 6 }}><b>해설</b> — ${doc.explanation}</div>`}
-          <div style=${{ marginTop: 10 }}><${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving} /></div>
+          <div style=${{ marginTop: 10 }}><${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving}
+            QB=${QB} doc=${doc} setStatusFn=${QB.setReadingAnalysisQuestionStatus} onPublished=${(updated) => { onChanged(updated); setMsg("확인하고 출제 가능 상태로 바꿨어요."); }} /></div>
           <div style=${{ marginTop: 10 }}><${StatusChangeCard} QB=${QB} doc=${doc} onChange=${changeStatus} saving=${saving} /></div>
           ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 6 }}>${msg}</div>`}
         </div>
@@ -7523,6 +7667,9 @@ function ReadingAnalysisQuestionGeneratorTab({ selectedId, onSelectAnalysis }) {
   const [count, setCount] = useState(5);
   const [generating, setGenerating] = useState(false);
   const [msg, setMsg] = useState("");
+  const [selected, setSelected] = useState({});
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null);
 
   useEffect(() => { RA.listAnalyses().then(setAnalyses).catch(() => setAnalyses([])); }, []);
   useEffect(() => { QB.listReadingAnalysisQuestions().then(setQuestions).catch(() => setQuestions([])); }, [selectedId]);
@@ -7531,6 +7678,29 @@ function ReadingAnalysisQuestionGeneratorTab({ selectedId, onSelectAnalysis }) {
 
   const selectedAnalysis = analyses.find((a) => a.id === selectedId);
   const linked = (questions || []).filter((q) => q.analysisId === selectedId);
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  const allChecked = linked.length > 0 && linked.every((q) => selected[q.id]);
+  function toggleAll() {
+    if (allChecked) { setSelected({}); return; }
+    const next = {};
+    linked.forEach((q) => { next[q.id] = true; });
+    setSelected(next);
+  }
+  function toggleOne(id) { setSelected((s) => ({ ...s, [id]: !s[id] })); }
+  async function runBulkPublish() {
+    const targets = linked.filter((q) => selected[q.id]);
+    if (targets.length === 0) return;
+    setBulkBusy(true); setBulkProgress({ index: 0, total: targets.length });
+    try {
+      await qbBulkPublish(QB, targets, QB.setReadingAnalysisQuestionStatus, (p) => {
+        setBulkProgress({ index: p.index, total: p.total });
+        if (!p.error && !p.skipped) setQuestions((qs) => qs.map((x) => (x.id === p.doc.id ? p.doc : x)));
+      });
+      setSelected({});
+    } finally {
+      setBulkBusy(false); setBulkProgress(null);
+    }
+  }
 
   async function handleGenerate() {
     const n = Math.max(1, Math.min(20, Number(count) || 5));
@@ -7571,7 +7741,12 @@ function ReadingAnalysisQuestionGeneratorTab({ selectedId, onSelectAnalysis }) {
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>이 지문에 연결된 문제 ${linked.length}개</div>
           ${linked.length === 0
             ? html`<${Empty} text="아직 생성된 문제가 없어요." />`
-            : linked.map((q) => html`<${ReadingAnalysisQuestionCard} key=${q.id} QB=${QB} doc=${q} onChanged=${(doc) => setQuestions((qs) => qs.map((x) => (x.id === doc.id ? doc : x)))} />`)}
+            : html`
+              <${QbBulkPublishBar} count=${selectedIds.length} allChecked=${allChecked} onToggleAll=${toggleAll} busy=${bulkBusy} progress=${bulkProgress} onRun=${runBulkPublish} />
+              ${linked.map((q) => html`<${ReadingAnalysisQuestionCard} key=${q.id} QB=${QB} doc=${q}
+                onChanged=${(doc) => setQuestions((qs) => qs.map((x) => (x.id === doc.id ? doc : x)))}
+                selected=${!!selected[q.id]} onToggleSelect=${() => toggleOne(q.id)} />`)}
+            `}
         `}
     </div>
   `;
