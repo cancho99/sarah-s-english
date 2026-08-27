@@ -114,6 +114,26 @@
      Homework/Vocabulary도 같은 시각 언어를 쓰도록 통일했다. */
   .ap-sc-progress { height: 4px; background: #DCD8CF; border-radius: 2px; overflow: hidden; }
   .ap-sc-progress > div { height: 100%; background: #B8935A; }
+
+  /* Roadmap CMS 3-column 편집기(RoadmapEditor, 2026-08-27 재설계) — Phase Nav / Milestone List /
+     Detail Editor 세 컬럼이 각자 독립 스크롤한다(페이지 전체 스크롤과 분리, 화면 안에서 마우스만
+     세로로 왔다갔다 하지 않도록). 세 컬럼 모두 flex:1로 동일한 폭(사용자 지시, 2026-08-27).
+     좁은 화면에서는 세로 1-column으로 접힌다. */
+  .rm-cms { display: flex; border-top: 1px solid #E1DACB; }
+  .rm-cms-col { max-height: 74vh; overflow-y: auto; }
+  .rm-cms-nav { flex: 1; min-width: 0; border-right: 1px solid #E1DACB; padding: 10px; background: #FCFAF5; }
+  .rm-cms-nav-list { display: flex; flex-direction: column; gap: 6px; }
+  .rm-cms-center { flex: 1; min-width: 0; border-right: 1px solid #E1DACB; padding: 14px; }
+  .rm-cms-detail { flex: 1; min-width: 0; padding: 14px; }
+  @media (max-width: 900px) {
+    .rm-cms { flex-direction: column; }
+    .rm-cms-col { max-height: none; overflow-y: visible; }
+    .rm-cms-nav { width: 100%; border-right: none; border-bottom: 1px solid #E1DACB; padding: 10px; }
+    .rm-cms-nav-list { flex-direction: row; overflow-x: auto; padding-bottom: 2px; }
+    .rm-cms-nav-list > * { flex: 0 0 auto; min-width: 150px; }
+    .rm-cms-center { width: 100%; border-right: none; border-bottom: 1px solid #E1DACB; }
+    .rm-cms-detail { width: 100%; }
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
@@ -15676,11 +15696,16 @@ const miniBtnStyle = { fontSize: 10, padding: "2px 6px", border: `1px solid ${C.
 // into their own "저장" button, matching how the rest of RoadmapEditor's text fields work. No
 // student content is invented here — every Category/Milestone/Task starts blank; the teacher fills
 // it in (item 17 of the request: "학생별 Milestone을 임의로 생성하지 않는다").
-function RoadmapMilestoneBoard({ phase, patchPhase }) {
+// CMS 재설계(2026-08-27) — 선택된 Milestone(selected/onSelectMilestone)을 더 이상 이 컴포넌트
+// 안에 로컬 state로 갖지 않고 부모(RoadmapEditor)로부터 controlled prop으로 받는다. 그래야
+// 부모가 같은 selected 값을 오른쪽 Detail 컬럼(RoadmapMilestoneDetail)에도 그대로 넘겨서, 가운데
+// 목록과 오른쪽 상세가 물리적으로 분리된 컬럼이면서도 같은 선택 상태를 공유할 수 있다(예전엔
+// Detail이 이 컴포넌트 안에 인라인으로 렌더됐지만 이제는 부모가 별도 컬럼에 렌더링). Category
+// CRUD(add/remove/reorder/rename/weight)는 완전히 그대로 유지 — 펼침/접힘(accordion)만 없앴다
+// (가운데 컬럼이 이미 자체 스크롤을 가지므로 접을 필요가 없어짐, item 5/11).
+function RoadmapMilestoneBoard({ phase, patchPhase, selected, onSelectMilestone }) {
   const svc = window.SarahServices.roadmapService;
   const categories = phase.categories || [];
-  const [openCategoryId, setOpenCategoryId] = useState(categories[0]?.id || null);
-  const [selected, setSelected] = useState(null); // { categoryId, milestoneId } | null
   const [newCategoryTitle, setNewCategoryTitle] = useState("");
 
   async function addCategoryClick() {
@@ -15691,7 +15716,7 @@ function RoadmapMilestoneBoard({ phase, patchPhase }) {
   }
   async function removeCategoryClick(cat) {
     if (!confirm(`"${cat.title || "이름 없는 영역"}" 영역을 삭제할까요? 안의 Milestone/Task도 함께 삭제돼요.`)) return;
-    if (selected && selected.categoryId === cat.id) setSelected(null);
+    if (selected && selected.categoryId === cat.id) onSelectMilestone(null);
     await patchPhase((p) => svc.removeCategory(p, cat.id));
   }
   async function moveCategory(idx, dir) {
@@ -15701,61 +15726,45 @@ function RoadmapMilestoneBoard({ phase, patchPhase }) {
     await patchPhase((p) => svc.updateCategory(p, cat.id, { title }));
   }
 
-  const selectedCategory = selected ? categories.find((c) => c.id === selected.categoryId) : null;
-  const selectedMilestone = selectedCategory ? (selectedCategory.milestones || []).find((m) => m.id === selected.milestoneId) : null;
-
   return html`
-    <div style=${{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${C.line}` }}>
-      <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 4 }}>📂 학습 영역 · Milestone · Task</div>
-      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>이 단계 안의 학습 영역(Vocabulary/Grammar/Reading 등)과 세부 목표를 관리해요. 진행률은 Task → Milestone → 영역 → 단계 순서로 자동 계산돼요.</div>
-
+    <div>
       ${categories.length === 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "8px 0" }}>아직 등록된 학습 영역이 없어요.</div>`}
 
       ${categories.map((cat, ci) => {
         const pct = svc.categoryProgress(cat);
-        const isOpen = openCategoryId === cat.id;
         return html`
-          <div key=${cat.id} style=${{ border: `1px solid ${C.line}`, borderRadius: 6, marginBottom: 8, overflow: "hidden" }}>
-            <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: C.ivory, cursor: "pointer" }} onClick=${() => setOpenCategoryId(isOpen ? null : cat.id)}>
-              <span style=${{ fontSize: 12 }}>${isOpen ? "▾" : "▸"}</span>
-              <input value=${cat.title} onClick=${(e) => e.stopPropagation()} onChange=${(e) => renameCategory(cat, e.target.value)}
-                style=${{ flex: 1, fontSize: 13, fontWeight: 700, color: C.navy, border: "none", background: "transparent", padding: 0, minWidth: 60 }} />
+          <div key=${cat.id} style=${{ marginBottom: 14 }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <input value=${cat.title} onChange=${(e) => renameCategory(cat, e.target.value)}
+                style=${{ flex: 1, fontSize: 12.5, fontWeight: 700, color: C.navy, border: "none", background: "transparent", padding: 0, minWidth: 50 }} />
               <input type="number" min="0" step="0.5" value=${cat.weight ?? 1} title="이 영역이 단계 진행률에 반영되는 가중치 (기본 1)"
-                onClick=${(e) => e.stopPropagation()}
                 onChange=${(e) => patchPhase((p) => svc.updateCategory(p, cat.id, { weight: Number(e.target.value) || 0 }))}
-                style=${{ width: 34, fontSize: 10.5, padding: "2px 3px", border: `1px solid ${C.line}`, borderRadius: 3, color: C.slate }} />
-              <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold, minWidth: 36, textAlign: "right" }}>${pct}%</span>
-              <button onClick=${(e) => { e.stopPropagation(); moveCategory(ci, -1); }} disabled=${ci === 0} style=${miniBtnStyle}>↑</button>
-              <button onClick=${(e) => { e.stopPropagation(); moveCategory(ci, 1); }} disabled=${ci === categories.length - 1} style=${miniBtnStyle}>↓</button>
-              <button onClick=${(e) => { e.stopPropagation(); removeCategoryClick(cat); }} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
+                style=${{ width: 30, fontSize: 10, padding: "1px 2px", border: `1px solid ${C.line}`, borderRadius: 3, color: C.slate }} />
+              <span style=${{ fontSize: 11, fontWeight: 700, color: C.gold, minWidth: 32, textAlign: "right" }}>${pct}%</span>
+              <button onClick=${() => moveCategory(ci, -1)} disabled=${ci === 0} style=${miniBtnStyle}>↑</button>
+              <button onClick=${() => moveCategory(ci, 1)} disabled=${ci === categories.length - 1} style=${miniBtnStyle}>↓</button>
+              <button onClick=${() => removeCategoryClick(cat)} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
             </div>
-            ${isOpen && html`
-              <div style=${{ padding: "10px 12px" }}>
-                <div style=${{ height: 4, borderRadius: 2, background: C.line, marginBottom: 10, overflow: "hidden" }}>
-                  <div style=${{ height: "100%", width: `${pct}%`, background: C.gold }} />
-                </div>
-                <${RoadmapMilestoneList} category=${cat} patchPhase=${patchPhase}
-                  selectedId=${selected && selected.categoryId === cat.id ? selected.milestoneId : null}
-                  onSelect=${(milestoneId) => setSelected(milestoneId ? { categoryId: cat.id, milestoneId } : null)} />
-              </div>
-            `}
+            <${RoadmapMilestoneList} category=${cat} patchPhase=${patchPhase}
+              selectedId=${selected && selected.categoryId === cat.id ? selected.milestoneId : null}
+              onSelect=${(milestoneId) => onSelectMilestone(milestoneId ? { categoryId: cat.id, milestoneId } : null)} />
           </div>
         `;
       })}
 
       <div style=${{ display: "flex", gap: 6, marginTop: 4 }}>
         <input value=${newCategoryTitle} onChange=${(e) => setNewCategoryTitle(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addCategoryClick()}
-          placeholder="새 학습 영역 이름 (예: Reading, Grammar, Vocabulary)" style=${{ ...inputStyle, flex: 1 }} />
-        <${Button} variant="ghost" style=${{ padding: "8px 14px", fontSize: 12, whiteSpace: "nowrap" }} onClick=${addCategoryClick}>+ 영역 추가<//>
+          placeholder="새 학습 영역 이름" style=${{ ...inputStyle, flex: 1, fontSize: 12, padding: "6px 10px" }} />
+        <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 11.5, whiteSpace: "nowrap" }} onClick=${addCategoryClick}>+ 추가<//>
       </div>
-
-      ${selectedMilestone && html`
-        <${RoadmapMilestoneDetail} category=${selectedCategory} milestone=${selectedMilestone} patchPhase=${patchPhase} onClose=${() => setSelected(null)} />
-      `}
     </div>
   `;
 }
 
+// CMS 재설계(2026-08-27) — area(m.area || m.title) 기준으로 묶어서 보여준다(item 5: "영역별로
+// 그룹화"). 그룹핑은 순수 렌더링용이라 category.milestones의 실제 순서/인덱스는 그대로 유지 —
+// 위/아래 이동 버튼은 여전히 원래 배열 인덱스(mi)로 동작해서 svc.reorderMilestones와 어긋나지
+// 않는다. Task/Material 개수 배지 추가(item 5: "task 개수, material 개수를 한눈에").
 function RoadmapMilestoneList({ category, patchPhase, selectedId, onSelect }) {
   const svc = window.SarahServices.roadmapService;
   const milestones = category.milestones || [];
@@ -15775,33 +15784,54 @@ function RoadmapMilestoneList({ category, patchPhase, selectedId, onSelect }) {
   async function moveMilestone(idx, dir) {
     await patchPhase((p) => svc.reorderMilestones(p, category.id, idx, idx + dir));
   }
+  function materialCount(m) {
+    const mats = (m.materials) || {};
+    return svc.MATERIAL_BUCKETS.reduce((sum, b) => sum + ((mats[b] || []).length), 0);
+  }
+
+  const groups = [];
+  const groupIdx = {};
+  milestones.forEach((m, mi) => {
+    const key = (m.area || m.title || "").trim() || "(미분류)";
+    if (!(key in groupIdx)) { groupIdx[key] = groups.length; groups.push({ area: key, items: [] }); }
+    groups[groupIdx[key]].items.push({ m, mi });
+  });
 
   return html`
     <div>
       ${milestones.length === 0 && html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>아직 등록된 Milestone이 없어요.</div>`}
-      ${milestones.map((m, mi) => {
-        const pct = svc.milestoneProgress(m);
-        const isSelected = selectedId === m.id;
-        return html`
-          <div key=${m.id} style=${{ marginBottom: 5 }}>
-            <div onClick=${() => onSelect(isSelected ? null : m.id)} style=${{
-              display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 4, cursor: "pointer",
-              background: isSelected ? "#FBF4EA" : "transparent", border: `1px solid ${isSelected ? C.gold : "transparent"}`, flexWrap: "wrap",
-            }}>
-              <span style=${{ fontSize: 13, width: 16, textAlign: "center" }}>${svc.statusIcon(m.status)}</span>
-              <span style=${{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 80 }}>${m.title}</span>
-              <span style=${{ fontSize: 11, color: C.slate }}>${svc.statusLabel(m.status)}</span>
-              <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold, minWidth: 34, textAlign: "right" }}>${pct}%</span>
-              <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, -1); }} disabled=${mi === 0} style=${miniBtnStyle}>↑</button>
-              <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, 1); }} disabled=${mi === milestones.length - 1} style=${miniBtnStyle}>↓</button>
-              <button onClick=${(e) => { e.stopPropagation(); removeMilestoneClick(m); }} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
-            </div>
-            <div style=${{ height: 4, borderRadius: 2, background: C.line, margin: "2px 8px 0", overflow: "hidden" }}>
-              <div style=${{ height: "100%", width: `${pct}%`, background: C.gold }} />
-            </div>
-          </div>
-        `;
-      })}
+      ${groups.map((g) => html`
+        <div key=${g.area} style=${{ marginBottom: 6 }}>
+          <div style=${{ fontSize: 10, fontWeight: 700, color: C.gold, letterSpacing: 0.6, textTransform: "uppercase", margin: "8px 0 3px" }}>${g.area}</div>
+          ${g.items.map(({ m, mi }) => {
+            const pct = svc.milestoneProgress(m);
+            const isSelected = selectedId === m.id;
+            const tCount = (m.tasks || []).length;
+            const matCount = materialCount(m);
+            return html`
+              <div key=${m.id} style=${{ marginBottom: 4 }}>
+                <div onClick=${() => onSelect(isSelected ? null : m.id)} style=${{
+                  display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", borderRadius: 5, cursor: "pointer",
+                  background: isSelected ? "#FBF4EA" : "transparent", border: `1px solid ${isSelected ? C.gold : "transparent"}`, flexWrap: "wrap",
+                }}>
+                  <span style=${{ fontSize: 13, width: 15, textAlign: "center", flexShrink: 0 }}>${svc.statusIcon(m.status)}</span>
+                  <span style=${{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 70, fontWeight: isSelected ? 700 : 400 }}>${m.title}</span>
+                  ${tCount > 0 && html`<span style=${{ fontSize: 10, color: C.slate }} title="Task 개수">✓${tCount}</span>`}
+                  ${matCount > 0 && html`<span style=${{ fontSize: 10, color: C.slate }} title="교재 개수">📘${matCount}</span>`}
+                  <span style=${{ fontSize: 10.5, color: C.slate, minWidth: 34 }}>${svc.statusLabel(m.status)}</span>
+                  <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold, minWidth: 32, textAlign: "right", flexShrink: 0 }}>${pct}%</span>
+                  <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, -1); }} disabled=${mi === 0} style=${miniBtnStyle}>↑</button>
+                  <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, 1); }} disabled=${mi === milestones.length - 1} style=${miniBtnStyle}>↓</button>
+                  <button onClick=${(e) => { e.stopPropagation(); removeMilestoneClick(m); }} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
+                </div>
+                <div style=${{ height: 3, background: C.line, margin: "1px 8px 0", overflow: "hidden" }}>
+                  <div style=${{ height: "100%", width: `${pct}%`, background: C.gold }} />
+                </div>
+              </div>
+            `;
+          })}
+        </div>
+      `)}
       <div style=${{ display: "flex", gap: 6, marginTop: 6 }}>
         <input value=${newTitle} onChange=${(e) => setNewTitle(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addMilestoneClick()}
           placeholder="새 Milestone 이름" style=${{ ...inputStyle, flex: 1, fontSize: 12.5, padding: "6px 10px" }} />
@@ -15858,14 +15888,16 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
   function clampInt(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0; }
 
   return html`
-    <div style=${{ marginTop: 14, border: `1px solid ${C.gold}`, borderRadius: 8, padding: 16, background: "#FFFDF9" }}>
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 8 }}>
+        <button onClick=${onClose} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: 0, flexShrink: 0 }}>← PHASE 개요</button>
+      </div>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 8 }}>
         <div style=${{ flex: 1 }}>
           <input value=${title} onChange=${(e) => setTitle(e.target.value)} style=${{ ...serif, fontWeight: 700, fontSize: 17, color: C.navy, border: "none", background: "transparent", padding: 0, width: "100%" }} />
           <input value=${area} onChange=${(e) => setArea(e.target.value)} placeholder="영역 태그 (비우면 위 이름으로 자동 인식 — 예: 독해, Speaking)"
             style=${{ fontSize: 11, color: C.gold, border: "none", background: "transparent", padding: 0, marginTop: 2, width: "100%" }} />
         </div>
-        <button onClick=${onClose} style=${{ background: "none", border: "none", color: C.slate, fontSize: 16, cursor: "pointer" }}>✕</button>
       </div>
 
       <div style=${{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
@@ -16075,10 +16107,24 @@ const AREA_STATUS_STYLE = {
 };
 // PHASE 카드를 접은 채로도 "문법 70% · 독해 80% · 어휘 90% · 듣기 100%"를 바로 볼 수 있게 하는
 // 한 줄 요약(item 4) — Category 구분 없이 area 단위로 평탄화한 svc.groupMilestonesByArea 재사용.
-function RoadmapPhaseAreaStrip({ phase }) {
+// compact=true(2026-08-27 CMS 재설계, PHASE NAV 좁은 컬럼 안에서 쓰는 경우) — 가로 flex-wrap
+// 대신 세로로 쌓고 패딩을 줄인다. 계산 로직(groupMilestonesByArea/AREA_STATUS_STYLE)은 동일.
+function RoadmapPhaseAreaStrip({ phase, compact }) {
   const svc = window.SarahServices.roadmapService;
   const areas = svc.groupMilestonesByArea(phase);
   if (areas.length === 0) return null;
+  if (compact) {
+    return html`
+      <div style=${{ marginTop: 6, display: "flex", flexDirection: "column", gap: 1.5 }}>
+        ${areas.map((a) => html`
+          <div key=${a.area} style=${{ display: "flex", justifyContent: "space-between", fontSize: 10.5 }}>
+            <span style=${{ color: C.slate }}>${a.area}</span>
+            <span style=${{ fontWeight: 700, color: AREA_STATUS_STYLE[a.status.key].color }}>${a.progress}%</span>
+          </div>
+        `)}
+      </div>
+    `;
+  }
   return html`
     <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px 14px", padding: "0 12px 10px" }}>
       ${areas.map((a) => html`
@@ -16110,55 +16156,37 @@ function RoadmapCompletionChecklist({ phase, patchPhase, completionCriteria }) {
     </div>
   `;
 }
+// CMS 재설계(2026-08-27) — 예전엔 펼치는 카드 리스트(펼치면 그 안에 Milestone까지 세로로
+// 전부 나열)였는데, 이제 이 컴포넌트가 3-column 레이아웃의 왼쪽 PHASE NAV 그 자체가 된다(item
+// 4/11: "한 번에 하나의 Phase를 중심으로 작업, Phase 1을 펼쳐놓고 Phase 2가 계속 밑에 나오는
+// 방식은 사용하지 않는다"). 펼침/접힘 상태(예전 openIdx)와 Milestone 목록 렌더링은 완전히
+// 제거했다 — 그 역할은 가운데 컬럼(RoadmapMilestoneBoard)이 전담한다. svc.phaseProgress/
+// phaseStatusInfo/RoadmapPhaseAreaStrip은 전부 기존 그대로 재사용(계산 로직 무수정).
 function RoadmapPhaseOverview({ phases, currentIdx, viewIdx, onSelectPhase }) {
   const svc = window.SarahServices.roadmapService;
-  const [openIdx, setOpenIdx] = useState(null);
   return html`
-    <div style=${{ marginBottom: 16 }}>
+    <div class="rm-cms-nav-list">
       ${phases.map((p, i) => {
         const pct = svc.phaseProgress(p);
         const st = svc.phaseStatusInfo(p, i, currentIdx);
-        const isOpen = openIdx === i;
-        const rows = svc.allMilestones(p);
+        const isSelected = i === viewIdx;
         const barColor = st.key === "done" ? "#3D6B4F" : C.gold;
-        const isCurrent = i === currentIdx;
         return html`
-          <div key=${i} style=${{
-            border: `1.5px solid ${i === viewIdx ? C.gold : isCurrent ? C.navy : C.line}`, borderRadius: 8, marginBottom: 10, overflow: "hidden",
-            background: st.key === "current" ? "#FBF4EA" : C.white,
+          <div key=${i} onClick=${() => onSelectPhase(i)} style=${{
+            border: `1.5px solid ${isSelected ? C.gold : st.key === "current" ? C.navy : C.line}`, borderRadius: 7, padding: "8px 9px", cursor: "pointer",
+            background: isSelected ? "#FBF4EA" : C.white,
           }}>
-            <div style=${{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px 4px", cursor: "pointer", flexWrap: "wrap" }}
-              onClick=${() => { setOpenIdx(isOpen ? null : i); onSelectPhase(i); }}>
-              <span style=${{ fontSize: 12 }}>${isOpen ? "▾" : "▸"}</span>
-              <span style=${{ fontSize: 11, fontWeight: 700, color: C.slate }}>PHASE ${i + 1}</span>
-              <span style=${{ flex: 1, ...serif, fontSize: 16, fontWeight: 700, color: C.navy, minWidth: 90 }}>${p.title || `Phase ${i + 1}`}</span>
-              ${p.periodLabel && html`<span style=${{ fontSize: 11, color: C.slate }}>${p.periodLabel}</span>`}
-              <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 10, color: st.key === "done" ? "#3D6B4F" : st.key === "current" ? C.gold : C.slate, background: st.key === "done" ? "#E8F3EC" : st.key === "current" ? "#F3E4C8" : C.ivory }}>${st.icon} ${st.label}</span>
-              <span style=${{ ...serif, fontSize: 20, color: C.navy, minWidth: 50, textAlign: "right" }}>${pct}%</span>
+            <div style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style=${{ fontSize: 9.5, fontWeight: 700, color: C.slate, letterSpacing: 0.5 }}>PHASE ${i + 1}</span>
+              <span style=${{ fontSize: 11, fontWeight: 700, color: st.key === "done" ? "#3D6B4F" : st.key === "current" ? C.gold : C.slate }}>${st.icon}</span>
+              <span style=${{ flex: 1 }} />
+              <span style=${{ ...serif, fontSize: 14, color: C.navy, fontWeight: 700 }}>${pct}%</span>
             </div>
-            <div style=${{ height: 7, background: C.line, margin: "0 12px 8px", borderRadius: 3.5, overflow: "hidden" }}>
+            <div style=${{ ...serif, fontSize: 13.5, color: C.navy, fontWeight: 700, lineHeight: 1.3, marginTop: 3 }}>${p.title || `Phase ${i + 1}`}</div>
+            <div style=${{ height: 5, background: C.line, borderRadius: 2.5, marginTop: 6, overflow: "hidden" }}>
               <div style=${{ height: "100%", width: `${pct}%`, background: barColor }} />
             </div>
-            <${RoadmapPhaseAreaStrip} phase=${p} />
-            ${isOpen && html`
-              <div style=${{ padding: "0 12px 12px", borderTop: `1px dashed ${C.line}` }}>
-                ${rows.length === 0
-                  ? html`<div style=${{ fontSize: 12, color: C.slate, paddingTop: 10 }}>이 단계에 등록된 세부 목표(Milestone)가 아직 없어요. 아래 편집 화면에서 학습 영역/Milestone을 추가할 수 있어요.</div>`
-                  : rows.map((r) => html`
-                    <div key=${r.milestone.id} style=${{ marginTop: 10 }}>
-                      <div style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.ink }}>
-                        <span style=${{ fontSize: 12 }}>${svc.statusIcon(r.milestone.status)}</span>
-                        <span style=${{ flex: 1 }}>${r.milestone.title}</span>
-                        <span style=${{ fontSize: 10.5, color: C.slate }}>${svc.statusLabel(r.milestone.status)}</span>
-                        <span style=${{ fontWeight: 700, color: C.gold, minWidth: 34, textAlign: "right" }}>${r.progress}%</span>
-                      </div>
-                      <div style=${{ height: 5, background: C.line, borderRadius: 3, marginTop: 3, overflow: "hidden" }}>
-                        <div style=${{ height: "100%", width: `${r.progress}%`, background: C.gold }} />
-                      </div>
-                    </div>
-                  `)}
-              </div>
-            `}
+            <${RoadmapPhaseAreaStrip} phase=${p} compact=${true} />
           </div>
         `;
       })}
@@ -16196,6 +16224,12 @@ function RoadmapEditor({ student, data, updateData }) {
   const [completionCriteria, setCompletionCriteria] = useState("");
   const [whyThisStep, setWhyThisStep] = useState("");
   const [materialsListText, setMaterialsListText] = useState("");
+  // CMS 재설계(2026-08-27) — 오른쪽 Detail 컬럼에 뭘 보여줄지 결정하는 유일한 state.
+  // null이면 "PHASE 개요"(체크리스트+진단완료 버튼), 값이 있으면 그 Milestone의 상세 편집.
+  // Phase를 바꾸거나 학생을 바꾸면 선택을 반드시 초기화한다 — 안 그러면 이전 Phase에서 고른
+  // milestoneId가 새 Phase에 우연히 같은 id로 존재할 리는 없지만(uid() 랜덤), 존재하지 않는
+  // milestone을 가리킨 채로 남아 오른쪽 패널이 빈 채로 고장나 보이는 걸 막는다.
+  const [selectedMilestone, setSelectedMilestone] = useState(null); // { categoryId, milestoneId } | null
 
   useEffect(() => {
     setViewIdx(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
@@ -16206,6 +16240,7 @@ function RoadmapEditor({ student, data, updateData }) {
     setSkillsText(stringifyPipeRows(roadmap?.skills, ["label", "current", "target", "pct", "nextFocus"]));
     setWhyDiagnosis(roadmap?.whyRoadmap?.diagnosis || ""); setWhyPriority(roadmap?.whyRoadmap?.priority || "");
     setWhyIntervention(roadmap?.whyRoadmap?.intervention || ""); setWhyOutcome(roadmap?.whyRoadmap?.outcome || "");
+    setSelectedMilestone(null);
   }, [student.id]);
   useEffect(() => {
     const p = (roadmap?.phases || [])[viewIdx];
@@ -16215,6 +16250,7 @@ function RoadmapEditor({ student, data, updateData }) {
     setCompletionCriteria(p?.completionCriteria || "");
     setWhyThisStep(p?.whyThisStep || "");
     setMaterialsListText(stringifyPipeRows(p?.materialsList, ["name", "purpose", "role"]));
+    setSelectedMilestone(null);
   }, [viewIdx, student.id]);
 
   function blankPhase(n) {
@@ -16245,6 +16281,10 @@ function RoadmapEditor({ student, data, updateData }) {
   const overdueDays = phase.targetDate && !phase.diagnosticDone && phase.targetDate < todayStr
     ? Math.round((new Date(todayStr + "T00:00:00") - new Date(phase.targetDate + "T00:00:00")) / 86400000)
     : 0;
+  // 오른쪽 Detail 컬럼용 파생값 — selectedMilestone(카테고리 id + milestone id)이 가리키는 실제
+  // 객체를 매 렌더마다 phase.categories에서 다시 찾는다(별도 캐시 없음, 항상 최신 데이터).
+  const selectedCategoryObj = selectedMilestone ? (phase.categories || []).find((c) => c.id === selectedMilestone.categoryId) : null;
+  const selectedMilestoneObj = selectedCategoryObj ? (selectedCategoryObj.milestones || []).find((m) => m.id === selectedMilestone.milestoneId) : null;
 
   function currentPhasePatch() {
     return {
@@ -16323,148 +16363,125 @@ function RoadmapEditor({ student, data, updateData }) {
   }
 
   return html`
-    <${Card}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
-        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>🗺 학습 로드맵</div>
-        ${overdueDays > 0 && html`<span style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⚠ ${phase.title || `Phase ${viewIdx + 1}`} 목표일 ${overdueDays}일 지남</span>`}
-      </div>
-
-      <div style=${{ display: "flex", alignItems: "center", gap: 18, marginBottom: 4, padding: "16px 20px", background: C.ivory, borderRadius: 8, flexWrap: "wrap" }}>
-        <div>
-          <div style=${{ fontSize: 10, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>전체 진행률</div>
-          <div style=${{ ...serif, fontSize: 36, color: C.navy, lineHeight: 1.1 }}>${svc.overallProgress(roadmap)}%</div>
-        </div>
-        <div style=${{ borderLeft: `1px solid ${C.line}`, paddingLeft: 20, flex: 1, minWidth: 200 }}>
-          <div style=${{ fontSize: 10, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>CURRENT PHASE</div>
-          <div style=${{ ...serif, fontSize: 18, color: C.navy, fontWeight: 700, marginTop: 3 }}>PHASE ${currentIdx + 1} · ${phases[currentIdx]?.title || ""}</div>
-          <div style=${{ fontSize: 12.5, color: C.gold, fontWeight: 700, marginTop: 2 }}>이 단계 진행률 ${svc.phaseProgress(phases[currentIdx] || {})}%</div>
-        </div>
-      </div>
-      ${(phases[currentIdx]?.objectives || []).length > 0 && html`
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 14px" }}>
-          ${(phases[currentIdx].objectives || []).map((o, oi) => html`
-            <span key=${oi} style=${{ fontSize: 12, color: C.navy, background: "#F3E4C8", borderRadius: 14, padding: "4px 12px", fontWeight: 600 }}>🎯 ${o}</span>
-          `)}
-        </div>
-      `}
-
-      <${RoadmapPhaseOverview} phases=${phases} currentIdx=${currentIdx} viewIdx=${viewIdx} onSelectPhase=${setViewIdx} />
-
-      <${Field} label="최종 목표">
-        <input style=${inputStyle} value=${finalGoal} onChange=${(e) => setFinalGoal(e.target.value)} placeholder="예: 고2 여름방학 · 수능 영어 1등급" />
-      <//>
-
-      <details style=${{ marginBottom: 12 }}>
-        <summary style=${{ fontSize: 11.5, color: C.slate, cursor: "pointer" }}>프리미엄 학부모 화면용 정보 (선택 입력) ▾</summary>
-        <div style=${{ marginTop: 10 }}>
-          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <${Field} label="현재 레벨 (예: TOEFL Junior Advanced)">
-              <input style=${inputStyle} value=${currentLevelLabel} onChange=${(e) => setCurrentLevelLabel(e.target.value)} />
-            <//>
-            <${Field} label="목표 레벨 (예: TOEFL iBT)">
-              <input style=${inputStyle} value=${targetLevelLabel} onChange=${(e) => setTargetLevelLabel(e.target.value)} />
-            <//>
+    <${Card} style=${{ padding: 0, overflow: "hidden" }}>
+      <div style=${{ padding: "14px 18px", borderBottom: `1px solid ${C.line}` }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style=${{ fontSize: 9, color: C.gold, fontWeight: 700, letterSpacing: 1.5 }}>ROADMAP</div>
+            <div style=${{ ...serif, fontSize: 18, color: C.navy }}>${student.name} <span style=${{ ...serif, fontSize: 12.5, color: C.slate, fontWeight: 400 }}>${[student.school, student.grade].filter(Boolean).join(" · ")}</span></div>
           </div>
-          <${Field} label="스킬 매트릭스 — 한 줄에 하나씩, '영역 | 현재 | 목표 | 진행률(0~100) | 다음 초점'">
-            <textarea style=${{ ...inputStyle, minHeight: 80, fontFamily: "monospace", fontSize: 12 }} value=${skillsText} onChange=${(e) => setSkillsText(e.target.value)} placeholder="Reading | B1+ | B2 | 78 | Inference & Author's Purpose" />
-          <//>
-          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginTop: 10, marginBottom: 4 }}>왜 이 로드맵인가 (Why This Roadmap)</div>
-          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <${Field} label="진단 (Diagnosis)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyDiagnosis} onChange=${(e) => setWhyDiagnosis(e.target.value)} /><//>
-            <${Field} label="우선순위 (Priority)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyPriority} onChange=${(e) => setWhyPriority(e.target.value)} /><//>
-            <${Field} label="개입/보강 (Intervention)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyIntervention} onChange=${(e) => setWhyIntervention(e.target.value)} /><//>
-            <${Field} label="기대 성과 (Expected Outcome)"><textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyOutcome} onChange=${(e) => setWhyOutcome(e.target.value)} /><//>
+          <div style=${{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div style=${{ textAlign: "right" }}>
+              <div style=${{ fontSize: 9, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>OVERALL</div>
+              <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${svc.overallProgress(roadmap)}%</div>
+            </div>
+            <div style=${{ textAlign: "right" }}>
+              <div style=${{ fontSize: 9, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>CURRENT PHASE</div>
+              <div style=${{ fontSize: 13, color: C.gold, fontWeight: 700 }}>PHASE ${currentIdx + 1}</div>
+            </div>
+            <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveAll}>저장<//>
+            ${savedMsg && html`<span style=${{ fontSize: 11, color: C.navy }}>${savedMsg}</span>`}
           </div>
         </div>
-      <//>
+        ${overdueDays > 0 && html`<div style=${{ marginTop: 6, fontSize: 11, fontWeight: 700, color: C.danger }}>⚠ ${phase.title || `Phase ${viewIdx + 1}`} 목표일 ${overdueDays}일 지남</div>`}
+      </div>
 
-      <div style=${{ display: "flex", alignItems: "center", margin: "14px 0 4px" }}>
-        ${phases.map((p, i) => html`
-          <div key=${i} style=${{ display: "flex", alignItems: "center", flex: i < phases.length - 1 ? 1 : "0 0 auto" }}>
-            <div onClick=${() => setViewIdx(i)} title=${p.title || `Phase ${i + 1}`} style=${{
-              width: 26, height: 26, borderRadius: "50%", flexShrink: 0, cursor: "pointer", boxSizing: "border-box",
-              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700,
-              border: `2px solid ${i === viewIdx ? C.gold : i === currentIdx ? C.navy : C.line}`,
-              background: i < currentIdx || (i === currentIdx && p.diagnosticDone) ? C.navy : C.white,
-              color: i < currentIdx || (i === currentIdx && p.diagnosticDone) ? "#fff" : (i === currentIdx ? C.navy : C.slate),
-            }}>${i + 1}</div>
-            ${i < phases.length - 1 && html`<div style=${{ flex: 1, height: 2, background: i < currentIdx ? C.navy : C.line }} />`}
+      <div class="rm-cms">
+        <div class="rm-cms-col rm-cms-nav">
+          <${RoadmapPhaseOverview} phases=${phases} currentIdx=${currentIdx} viewIdx=${viewIdx} onSelectPhase=${setViewIdx} />
+          <${Button} variant="ghost" style=${{ marginTop: 8, width: "100%", padding: "6px 8px", fontSize: 11 }} onClick=${addPhase}>+ 단계 추가<//>
+        </div>
+
+        <div class="rm-cms-col rm-cms-center">
+          <div style=${{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+            <input value=${title} onChange=${(e) => setTitle(e.target.value)} style=${{ ...serif, fontSize: 16, color: C.navy, border: "none", borderBottom: `1px solid ${C.line}`, padding: "2px 0", flex: 1, background: "transparent", minWidth: 0 }} />
+            <div style=${{ display: "flex", gap: 4, flexShrink: 0 }}>
+              ${viewIdx !== currentIdx && html`<button onClick=${setAsCurrent} title="현재 단계로 지정" style=${{ ...miniBtnStyle, padding: "3px 8px" }}>★</button>`}
+              <button onClick=${removePhase} title="단계 삭제" style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger, padding: "3px 8px" }}>✕</button>
+            </div>
           </div>
-        `)}
-      </div>
-      <div style=${{ fontSize: 9.5, color: C.slate, marginBottom: 12 }}>${currentIdx + 1}/${phases.length}단계 진행 중 — 위 원형 단계를 눌러 다른 단계를 보거나 편집할 수 있어요.</div>
+          <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            <input value=${periodLabel} onChange=${(e) => setPeriodLabel(e.target.value)} placeholder="기간 (예: 중3 현재 ~ 여름방학)" style=${{ ...inputStyle, flex: "1 1 140px", fontSize: 11.5, padding: "5px 8px", marginBottom: 0 }} />
+            <input type="date" value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} title="목표 종료일 (지연 알림 기준)" style=${{ ...inputStyle, width: 140, fontSize: 11.5, padding: "5px 8px", marginBottom: 0 }} />
+          </div>
+          <input value=${focus} onChange=${(e) => setFocus(e.target.value)} placeholder="학습 초점" style=${{ ...inputStyle, fontSize: 11.5, padding: "5px 8px", marginBottom: 8 }} />
+          ${(phase.objectives || []).length > 0 && html`
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 10 }}>
+              ${(phase.objectives || []).map((o, oi) => html`<span key=${oi} style=${{ fontSize: 10.5, color: C.navy, background: "#F3E4C8", borderRadius: 10, padding: "2px 9px", fontWeight: 600 }}>🎯 ${o}</span>`)}
+            </div>
+          `}
 
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-        <div style=${{ flex: 1, minWidth: 160 }}>
-          <${Field} label="단계 이름">
-            <input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} />
+          <${RoadmapMilestoneBoard} key=${viewIdx} phase=${phase} patchPhase=${patchPhase} selected=${selectedMilestone} onSelectMilestone=${setSelectedMilestone} />
+
+          <details style=${{ marginTop: 14, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
+            <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>이 단계 추가 정보 (교재 메모·상세 계획·통과 조건) ▾</summary>
+            <div style=${{ marginTop: 10 }}>
+              <${Field} label="주요 교재 · 자료 (텍스트 메모)"><input style=${inputStyle} value=${materials} onChange=${(e) => setMaterials(e.target.value)} /><//>
+              <${Field} label="상세 계획 / 메모"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${detail} onChange=${(e) => setDetail(e.target.value)} /><//>
+              <${Field} label="핵심 목표 (Core Objectives) — 한 줄에 하나씩">
+                <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${objectivesText} onChange=${(e) => setObjectivesText(e.target.value)} placeholder="Academic Vocabulary 확장&#10;긴 문장 구조 분석 능력 강화" />
+              <//>
+              <${Field} label="교재 목록 — 한 줄에 하나씩, '교재명 | 용도 | 역할'">
+                <textarea style=${{ ...inputStyle, minHeight: 60, fontFamily: "monospace", fontSize: 12 }} value=${materialsListText} onChange=${(e) => setMaterialsListText(e.target.value)} placeholder="Wordly Wise | Academic Vocabulary | Vocabulary Foundation" />
+              <//>
+              <${Field} label="다음 단계 진입 조건 (Completion Criteria)">
+                <input style=${inputStyle} value=${completionCriteria} onChange=${(e) => setCompletionCriteria(e.target.value)} placeholder="예: Vocabulary 90%+ · Grammar 85%+ · Reading Accuracy 80%+" />
+              <//>
+              <${Field} label="왜 이 단계인가 (Why This Step)">
+                <textarea style=${{ ...inputStyle, minHeight: 50 }} value=${whyThisStep} onChange=${(e) => setWhyThisStep(e.target.value)} />
+              <//>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveAll}>저장<//>
+            </div>
           <//>
         </div>
-        <div style=${{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12 }}>
-          <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold }}>이 단계 진행률 ${svc.phaseProgress(phase)}%</span>
+
+        <div class="rm-cms-col rm-cms-detail">
+          ${selectedMilestoneObj
+            ? html`<${RoadmapMilestoneDetail} category=${selectedCategoryObj} milestone=${selectedMilestoneObj} patchPhase=${patchPhase} onClose=${() => setSelectedMilestone(null)} />`
+            : html`
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 2 }}>PHASE 개요</div>
+              <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>가운데에서 Milestone을 클릭하면 여기서 상세 편집할 수 있어요.</div>
+              <div style=${{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style=${{ ...serif, fontSize: 26, color: C.navy }}>${svc.phaseProgress(phase)}%</span>
+                <span style=${{ fontSize: 11, color: C.slate }}>이 단계 진행률</span>
+              </div>
+
+              <${RoadmapCompletionChecklist} phase=${phase} patchPhase=${patchPhase} completionCriteria=${completionCriteria} />
+
+              <div style=${{ marginTop: 6 }}>
+                ${phase.diagnosticDone
+                  ? html`
+                    <div style=${{ fontSize: 12, color: "#3D6B4F", fontWeight: 700, marginBottom: 6 }}>✓ 진단시험 완료 (${fmtDate(phase.diagnosticDate)})</div>
+                    <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${reopenPhase}>완료 취소<//>
+                  `
+                  : html`<${Button} variant="gold" style=${{ padding: "7px 14px", fontSize: 12.5, width: "100%" }} onClick=${completeAndAdvance}>진단시험 완료 · 다음 단계로<//>`}
+              </div>
+
+              <details style=${{ marginTop: 16, paddingTop: 10, borderTop: `1px dashed ${C.line}` }}>
+                <summary style=${{ fontSize: 11, color: C.slate, cursor: "pointer" }}>로드맵 전체 정보 (최종 목표·학부모 화면·메모) ▾</summary>
+                <div style=${{ marginTop: 10 }}>
+                  <${Field} label="최종 목표"><input style=${inputStyle} value=${finalGoal} onChange=${(e) => setFinalGoal(e.target.value)} placeholder="예: 고2 여름방학 · 수능 영어 1등급" /><//>
+                  <${Field} label="약점 관리 · 정기 보고 메모"><textarea style=${{ ...inputStyle, minHeight: 60 }} value=${overallNotes} onChange=${(e) => setOverallNotes(e.target.value)} /><//>
+                  <details style=${{ marginTop: 6 }}>
+                    <summary style=${{ fontSize: 10.5, color: C.slate, cursor: "pointer" }}>프리미엄 학부모 화면용 정보 ▾</summary>
+                    <div style=${{ marginTop: 8 }}>
+                      <${Field} label="현재 레벨 (예: TOEFL Junior Advanced)"><input style=${inputStyle} value=${currentLevelLabel} onChange=${(e) => setCurrentLevelLabel(e.target.value)} /><//>
+                      <${Field} label="목표 레벨 (예: TOEFL iBT)"><input style=${inputStyle} value=${targetLevelLabel} onChange=${(e) => setTargetLevelLabel(e.target.value)} /><//>
+                      <${Field} label="스킬 매트릭스 — '영역 | 현재 | 목표 | 진행률(0~100) | 다음 초점'">
+                        <textarea style=${{ ...inputStyle, minHeight: 60, fontFamily: "monospace", fontSize: 11 }} value=${skillsText} onChange=${(e) => setSkillsText(e.target.value)} />
+                      <//>
+                      <div style=${{ fontSize: 11, fontWeight: 700, color: C.navy, marginTop: 8, marginBottom: 4 }}>왜 이 로드맵인가</div>
+                      <${Field} label="진단 (Diagnosis)"><textarea style=${{ ...inputStyle, minHeight: 40 }} value=${whyDiagnosis} onChange=${(e) => setWhyDiagnosis(e.target.value)} /><//>
+                      <${Field} label="우선순위 (Priority)"><textarea style=${{ ...inputStyle, minHeight: 40 }} value=${whyPriority} onChange=${(e) => setWhyPriority(e.target.value)} /><//>
+                      <${Field} label="개입/보강 (Intervention)"><textarea style=${{ ...inputStyle, minHeight: 40 }} value=${whyIntervention} onChange=${(e) => setWhyIntervention(e.target.value)} /><//>
+                      <${Field} label="기대 성과 (Expected Outcome)"><textarea style=${{ ...inputStyle, minHeight: 40 }} value=${whyOutcome} onChange=${(e) => setWhyOutcome(e.target.value)} /><//>
+                    </div>
+                  <//>
+                  <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12, marginTop: 6 }} onClick=${saveAll}>저장<//>
+                </div>
+              <//>
+            `}
         </div>
-        <div style=${{ display: "flex", gap: 6, paddingBottom: 12 }}>
-          ${viewIdx !== currentIdx && html`<${Button} variant="ghost" style=${{ padding: "6px 10px", fontSize: 11.5 }} onClick=${setAsCurrent}>현재 단계로 지정<//>`}
-          <button onClick=${removePhase} style=${{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, fontSize: 11, padding: "0 9px", borderRadius: 3, cursor: "pointer" }}>단계 삭제</button>
-        </div>
-      </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <${Field} label="기간 (텍스트, 예: 중3 현재 ~ 여름방학)">
-          <input style=${inputStyle} value=${periodLabel} onChange=${(e) => setPeriodLabel(e.target.value)} />
-        <//>
-        <${Field} label="목표 종료일 (지연 알림 기준)">
-          <input type="date" style=${inputStyle} value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} />
-        <//>
-      </div>
-      <${Field} label="학습 초점">
-        <input style=${inputStyle} value=${focus} onChange=${(e) => setFocus(e.target.value)} />
-      <//>
-      <${Field} label="주요 교재 · 자료">
-        <input style=${inputStyle} value=${materials} onChange=${(e) => setMaterials(e.target.value)} />
-      <//>
-      <${Field} label="상세 계획 / 메모">
-        <textarea style=${{ ...inputStyle, minHeight: 90 }} value=${detail} onChange=${(e) => setDetail(e.target.value)} />
-      <//>
-
-      <details style=${{ marginBottom: 12 }}>
-        <summary style=${{ fontSize: 11.5, color: C.slate, cursor: "pointer" }}>이 단계 프리미엄 화면용 정보 (선택 입력) ▾</summary>
-        <div style=${{ marginTop: 10 }}>
-          <${Field} label="핵심 목표 (Core Objectives) — 한 줄에 하나씩">
-            <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${objectivesText} onChange=${(e) => setObjectivesText(e.target.value)} placeholder="Academic Vocabulary 확장&#10;긴 문장 구조 분석 능력 강화" />
-          <//>
-          <${Field} label="교재 목록 — 한 줄에 하나씩, '교재명 | 용도 | 역할'">
-            <textarea style=${{ ...inputStyle, minHeight: 70, fontFamily: "monospace", fontSize: 12 }} value=${materialsListText} onChange=${(e) => setMaterialsListText(e.target.value)} placeholder="Wordly Wise | Academic Vocabulary | Vocabulary Foundation" />
-          <//>
-          <${Field} label="다음 단계 진입 조건 (Completion Criteria)">
-            <input style=${inputStyle} value=${completionCriteria} onChange=${(e) => setCompletionCriteria(e.target.value)} placeholder="예: Vocabulary 90%+ · Grammar 85%+ · Reading Accuracy 80%+" />
-          <//>
-          <${Field} label="왜 이 단계인가 (Why This Step)">
-            <textarea style=${{ ...inputStyle, minHeight: 60 }} value=${whyThisStep} onChange=${(e) => setWhyThisStep(e.target.value)} placeholder="예: 중등 수준의 영어 이해력을 고등 Academic English로 확장하기 위해..." />
-          <//>
-        </div>
-      <//>
-
-      <${RoadmapCompletionChecklist} phase=${phase} patchPhase=${patchPhase} completionCriteria=${completionCriteria} />
-
-      <${RoadmapMilestoneBoard} key=${viewIdx} phase=${phase} patchPhase=${patchPhase} />
-
-      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
-        <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${saveAll}>저장<//>
-        ${phase.diagnosticDone
-          ? html`
-            <span style=${{ fontSize: 12, color: "#3D6B4F", fontWeight: 700 }}>✓ 진단시험 완료 (${fmtDate(phase.diagnosticDate)})</span>
-            <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${reopenPhase}>완료 취소<//>
-          `
-          : html`<${Button} variant="gold" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${completeAndAdvance}>진단시험 완료 · 다음 단계로<//>`}
-        ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
-      </div>
-
-      <${Button} variant="ghost" style=${{ marginTop: 14, padding: "6px 12px", fontSize: 11.5 }} onClick=${addPhase}>+ 단계 추가<//>
-
-      <div style=${{ marginTop: 14 }}>
-        <${Field} label="약점 관리 · 정기 보고 메모">
-          <textarea style=${{ ...inputStyle, minHeight: 70 }} value=${overallNotes} onChange=${(e) => setOverallNotes(e.target.value)} placeholder="약점 영역 진단/보강 방식, 주간·월간 학부모 보고 주기 등 자유롭게 기록 (위 저장 버튼으로 함께 저장돼요)" />
-        <//>
       </div>
     <//>
   `;
