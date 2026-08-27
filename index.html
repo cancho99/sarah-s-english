@@ -97,6 +97,25 @@
   .ap-icon-tile .lb { font-size: 12px; font-weight: 700; color: #1C2B4A; text-align: center; line-height: 1.3; word-break: keep-all; }
   .ap-icon-tile:hover, .ap-icon-tile:active { background: #FBF6EA; border-color: #B8935A; }
 
+  /* Today(🎯 Teacher Command Center, TeacherCenterHome) 재정돈 — 이미 onClick으로 전체 행이
+     클릭되는 행(기한 지난 항목/로드맵 지연/상담 요청/최근 시험)에 hover 배경을 줘서 "클릭 가능"을
+     눈으로 바로 알 수 있게 했다. margin/padding을 카드 패딩(16px)과 맞춰서 hover 배경이 카드
+     가장자리까지 꽉 차 보이게 했다 — 카드 안에 카드가 하나 더 있는 것처럼 어중간하게 뜨지 않도록. */
+  .ap-tc-row { margin: 0 -16px; padding: 6px 16px; border-radius: 6px; transition: background .1s ease; }
+  .ap-tc-row:hover { background: #FBF6EA; }
+  /* 가장 긴급한 신호(기한 지난 미완료)만 옅은 경고색 박스로 감싸서, 세로로 긴 목록 안에서도
+     스크롤 없이 눈에 먼저 들어오게 했다. */
+  .ap-tc-alert { background: #FBF0EE; border: 1px solid #EBCFC9; border-radius: 8px; padding: 10px 16px; margin-top: 14px; }
+  /* 카드를 세로 1열로만 쌓으면(이전 시도) 화면 폭을 못 쓰고 스크롤만 길어진다는 피드백을 받아
+     그리드로 바꿨다. 컬럼 폭을 minmax(360px, 480px)로 고정해서, 화면이 넓을수록 컬럼 하나가
+     늘어나는 게 아니라 컬럼 "개수"가 늘어나게 했다 — 그래야 각 카드 안의 좌우 정렬 줄(이름↔시간
+     등)이 아무리 넓은 모니터에서도 계속 붙어 있고, 동시에 넓은 화면에서는 카드 여러 개가 한 눈에
+     들어와 스크롤(=커서 동선)이 줄어든다. */
+  .ap-tc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 480px)); gap: 14px; align-items: start; }
+  @media (max-width: 760px) {
+    .ap-tc-grid { grid-template-columns: 1fr; }
+  }
+
   /* Students Command Center (Teacher OS Students 개편) — summary strip + student card grid.
      Same auto-fill/minmax idea as .ap-icon-grid above but wider tiles (a card carries far more
      text than an icon tile), so it needs its own min width rather than reusing that class. */
@@ -151,6 +170,7 @@
 <script src="services/backupService.js" defer></script>
 <script src="services/homeworkService.js" defer></script>
 <script src="services/vocabularyService.js" defer></script>
+<script src="services/vocabTestService.js" defer></script>
 <script src="services/examService.js" defer></script>
 <script src="services/readingService.js" defer></script>
 <script src="services/readingAnalysisService.js" defer></script>
@@ -10401,7 +10421,15 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
       <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>🎯 Teacher Command Center</div>
       <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>오늘(${fmtDate(todayStr)}) 내가 지금 무엇을 해야 하는지부터 보여드려요.</div>
 
-      <div style=${{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        ${statTile("오늘 수업", todayClasses.length, C.navy)}
+        ${statTile("미확인 숙제", hwCounts.unchecked, hwCounts.unchecked > 0 ? C.danger : C.navy)}
+        ${statTile("기한 지난", overdueCheckCount, overdueCheckCount > 0 ? C.danger : C.navy)}
+        ${statTile("상담 요청", pendingConsults.length, pendingConsults.length > 0 ? C.danger : C.navy)}
+        ${statTile("로드맵 지연", roadmapAlerts.length, roadmapAlerts.length > 0 ? C.danger : C.navy)}
+      </div>
+
+      <div className="ap-tc-grid">
         <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} />
 
         <${Card}>
@@ -10486,34 +10514,36 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
           })}
 
           ${overdueCheckCount > 0 && html`
-            <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger, marginTop: 14 }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
-            ${overdueHomework.length > 0 && html`
-              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 6 }}>숙제</div>
-              ${overdueHomework.map(({ student, hw }, i) => html`
-                <div key=${"ohw" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                  <span><b>${student.name}</b> — ${hw.content}</span>
-                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>기한 ${fmtDate(hw.dueDate)}</span>
-                </div>
-              `)}
-            `}
-            ${overdueVocab.length > 0 && html`
-              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>단어시험</div>
-              ${overdueVocab.map(({ student, test }, i) => html`
-                <div key=${"ovc" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                  <span><b>${student.name}</b> — ${test.title}</span>
-                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>재시험 ${fmtDate(test.retestDate)}</span>
-                </div>
-              `)}
-            `}
-            ${overdueMock.length > 0 && html`
-              <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>모의고사</div>
-              ${overdueMock.map(({ student, test }, i) => html`
-                <div key=${"omk" + i} onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                  <span><b>${student.name}</b> — ${test.title}</span>
-                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>응시일 ${fmtDate(test.date)}</span>
-                </div>
-              `)}
-            `}
+            <div className="ap-tc-alert">
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
+              ${overdueHomework.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 8 }}>숙제</div>
+                ${overdueHomework.map(({ student, hw }, i) => html`
+                  <div key=${"ohw" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                    <span><b>${student.name}</b> — ${hw.content}</span>
+                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>기한 ${fmtDate(hw.dueDate)}</span>
+                  </div>
+                `)}
+              `}
+              ${overdueVocab.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>단어시험</div>
+                ${overdueVocab.map(({ student, test }, i) => html`
+                  <div key=${"ovc" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                    <span><b>${student.name}</b> — ${test.title}</span>
+                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>재시험 ${fmtDate(test.retestDate)}</span>
+                  </div>
+                `)}
+              `}
+              ${overdueMock.length > 0 && html`
+                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>모의고사</div>
+                ${overdueMock.map(({ student, test }, i) => html`
+                  <div key=${"omk" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+                    <span><b>${student.name}</b> — ${test.title}</span>
+                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>응시일 ${fmtDate(test.date)}</span>
+                  </div>
+                `)}
+              `}
+            </div>
           `}
         <//>
 
@@ -10522,7 +10552,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
             <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
             <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
             ${roadmapAlerts.map((x, i) => html`
-              <div key=${x.student.id} onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
+              <div key=${x.student.id} className="ap-tc-row" onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
                 <span><b>${x.student.name}</b> — ${x.phase.title || "진행 단계"}</span>
                 <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${x.overdueDays}일 지연</span>
               </div>
@@ -10534,7 +10564,7 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
           <${Card}>
             <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>💬 학부모 상담 요청 (${pendingConsults.length}건)</div>
             ${pendingConsults.slice(0, 6).map((c, i) => html`
-              <div key=${c.r.id} onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
+              <div key=${c.r.id} className="ap-tc-row" onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
                 <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
               </div>
             `)}
@@ -10580,8 +10610,8 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
         <${Card}>
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📈 최근 시험 (전체)</div>
           ${recentTestsTop.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>최근 응시한 시험이 없어요.</div>` : recentTestsTop.map((r, i) => html`
-            <div key=${i} onClick=${() => (onSelectStudentAssessment || onSelectStudent)(r.studentId)}
-              style=${{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
+            <div key=${i} className="ap-tc-row" onClick=${() => (onSelectStudentAssessment || onSelectStudent)(r.studentId)}
+              style=${{ display: "flex", justifyContent: "space-between", padding: "6px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
               <div>
                 <span style=${{ color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${r.studentName}</span>
                 <span style=${{ fontSize: 11.5, color: C.slate, marginLeft: 6 }}>${r.title}</span>
@@ -13411,11 +13441,31 @@ function HomeworkEditor({ student, data, updateData }) {
   `;
 }
 
+// Vocabulary Test 재구성 §15 — 자동 부정행위 판정이 아니라 선생님 확인용 신호. "컨닝함"이라고
+// 확정 표시하지 않는다(명시적 지시) — NORMAL 대신 PASS를 쓴 이유는 mastery 통과까지 포함한 최종
+// 한 줄 상태이기 때문(computeVocabFinalStatus 주석 참고).
+const VOCAB_FINAL_STATUS_META = {
+  PASS: { emoji: "🟢", label: "PASS" },
+  REVIEW_REQUIRED: { emoji: "🟡", label: "REVIEW REQUIRED" },
+  RECHECK_REQUIRED: { emoji: "🔴", label: "RECHECK REQUIRED" },
+};
+function fmtVocabDuration(sec) {
+  if (sec == null) return "-";
+  const s = Math.max(0, Math.round(sec));
+  return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${s % 60}초`;
+}
+
 function VocabResultRow({ r, title, updateData }) {
   const [open, setOpen] = useState(false);
   const pct = Math.round((r.score / r.total) * 100);
   const ok = pct >= vocabPassThreshold(title);
   const hasBreakdown = Array.isArray(r.breakdown) && r.breakdown.length > 0;
+  // §12/§14 — recallTotal이 있는 새 기록에서만 Instant Recall/Mastery 줄을 보여준다. 옛날 기록
+  // (recall 데이터 자체가 없음)은 이 블록이 통째로 안 보이고 기존 합격/재시험 배지만 그대로 보인다
+  // — 기존 vocabPassThreshold 기준을 절대 대체하지 않는다.
+  const hasRecall = r.recallTotal != null && r.recallTotal > 0;
+  const finalMeta = r.finalStatus ? VOCAB_FINAL_STATUS_META[r.finalStatus] : null;
+  const ig = r.integrity;
 
   async function markCorrect(idx) {
     await updateData((d) => ({
@@ -13447,6 +13497,18 @@ function VocabResultRow({ r, title, updateData }) {
         ${hasBreakdown && html`<span style=${{ fontSize: 11, color: C.slate, marginLeft: "auto" }}>${open ? "▲ 답안 닫기" : "▼ 답안 보기"}</span>`}
         <button onClick=${removeResult} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13, padding: "0 2px", marginLeft: hasBreakdown ? undefined : "auto" }}>✕</button>
       </div>
+      ${hasRecall && html`
+        <div style=${{ marginTop: 6, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style=${{ color: C.slate }}>Instant Recall <b style=${{ color: C.navy }}>${r.recallScore}</b> / ${r.recallTotal}</span>
+          ${finalMeta && html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.ivory, border: `1px solid ${C.line}` }}>${finalMeta.emoji} ${finalMeta.label}</span>`}
+        </div>
+        <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>자동 판정이 아닌 선생님 확인용 신호입니다.</div>
+      `}
+      ${ig && html`
+        <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>
+          시험 시간: ${fmtVocabDuration(r.duration)} · 페이지 이탈: ${(ig.visibilityExitCount || 0) + (ig.focusLossCount || 0)}회 · Paste 시도: ${ig.pasteAttemptCount || 0}회 · Copy 시도: ${ig.copyAttemptCount || 0}회
+        </div>
+      `}
       ${open && hasBreakdown && html`
         <div style=${{ marginTop: 8, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 4, padding: 10 }}>
           ${r.breakdown.map((row, i) => html`
@@ -13533,6 +13595,12 @@ function VocabEditor({ student, data, updateData }) {
   const [bankBookId, setBankBookId] = useState(""); const [bankFrom, setBankFrom] = useState(1); const [bankTo, setBankTo] = useState(1);
   const [bankCount, setBankCount] = useState("");
   const [bankMsg, setBankMsg] = useState("");
+  // Vocabulary Test 재구성 §3 — 단어를 어떤 방법(직접 입력/붙여넣기/워드뱅크)으로 모았든, 그중
+  // 몇 개를 실제로 출제할지는 여기 한 곳에서 정한다. 비워두면 모은 단어 전부를 출제(기존 동작
+  // 그대로 유지) — 값을 넣으면 저장 시점에 무작위로 그만큼만 뽑는다(§5 학생별 랜덤화와는 별개로,
+  // "몇 개를 뽑을지"는 시험을 만들 때 한 번만 정해진다).
+  const [questionCount, setQuestionCount] = useState("");
+  const [countMsg, setCountMsg] = useState("");
 
   function runParse() {
     const parsed = parseVocabPaste(pasteText);
@@ -13587,11 +13655,21 @@ function VocabEditor({ student, data, updateData }) {
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
   function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
   async function save() {
-    const result = buildVocabTestEntry({ title, wordsRaw: words, mode, retestDate, retestTime });
+    setCountMsg("");
+    const usableWords = words.filter((w) => w.word && w.meaning);
+    // §3 — 실제로 출제 가능한 단어 수보다 많이 요청했으면 명확한 안내를 보여주고 저장을 막는다.
+    // 비워두면(questionCount 없음) 검증 없이 전부 그대로 쓴다 — 기존 동작과 완전히 같다.
+    let wordsRaw = words;
+    if (questionCount) {
+      const check = window.SarahServices.vocabTestService.validateQuestionCount(usableWords.length, questionCount);
+      if (!check.ok) { setCountMsg(check.message); return; }
+      wordsRaw = window.SarahServices.vocabTestService.sampleWords(usableWords, questionCount);
+    }
+    const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime });
     if (!result.ok) return;
     await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setCreating(false);
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setCreating(false);
   }
   async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
   // Mirrors homework's 기간만료 — for a 단어 시험 whose 재시험 예정일이 지났고 더 볼 일이 없는 경우.
@@ -13626,6 +13704,10 @@ function VocabEditor({ student, data, updateData }) {
               `)}
             </div>
           <//>
+          <${Field} label="출제 단어 수 (비워두면 모은 단어 전부 출제)">
+            <input style=${inputStyle} type="number" min="1" value=${questionCount} onChange=${(e) => { setQuestionCount(e.target.value); setCountMsg(""); }} placeholder="예: 20" />
+          <//>
+          ${countMsg && html`<div style=${{ fontSize: 12, color: C.danger, whiteSpace: "pre-wrap", marginBottom: 10 }}>${countMsg}</div>`}
           <${Field} label="재시험 예정 시간 (필수 — 5분 전·정각에 학생/선생님께 알림이 가요)">
             <div style=${{ display: "flex", gap: 8 }}>
               <div style=${{ flex: 1 }}><${DateField} value=${retestDate} onChange=${setRetestDate} /></div>
@@ -13668,7 +13750,7 @@ function VocabEditor({ student, data, updateData }) {
           `}
           ${pasteMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${pasteMsg}</div>`}
           ${bankMsg && bankBooks && bankBooks.length > 0 && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${bankMsg}</div>`}
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개, 직접 입력 방식으로 출제됩니다)</div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 6, fontWeight: 600 }}>단어 목록 (최소 2개) — 영어→뜻은 객관식, 뜻→영어는 직접 입력으로 출제됩니다</div>
           ${words.map((w, i) => html`
             <div key=${i} style=${{ marginBottom: 10, paddingBottom: 10, borderBottom: `1px solid ${C.line}` }}>
               <div style=${{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -14790,6 +14872,16 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
 
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
+  // Vocabulary Test 재구성 §19 — 새로고침/재진입으로 activeTest(로컬 state, 저장되지 않음)가
+  // 사라져도, Firestore에 남아있는 activeTestSession(type:"vocab")을 보고 같은 화면으로 자동
+  // 복귀시킨다. exam/mock은 이 앱에서 원래부터 이런 자동 복귀가 없었으므로(그쪽은 건드리지 않는다는
+  // 지시) 오직 vocab에서만 추가한다.
+  useEffect(() => {
+    if (data && !activeTest && data.activeTestSession && data.activeTestSession.type === "vocab") {
+      const t = (data.vocabTests || []).find((x) => x.id === data.activeTestSession.testId);
+      if (t) setActiveTest({ type: "vocab", test: t });
+    }
+  }, [data]);
   useEffect(() => {
     if (!timerRunning) return;
     const iv = setInterval(() => { setElapsedSec(Math.floor((Date.now() - timerStart) / 1000)); }, 1000);
@@ -14847,20 +14939,21 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       }} />`;
   }
 
+  // Vocabulary Test 재구성(2026-08-27) — vocab만 전용 컴포넌트(VocabTestTaker)로 분리했다.
+  // 모바일 우선 UI/보안/문제별 시간 기록/Instant Recall이 exam(추가시험) 쪽에는 전혀 없는 새
+  // 흐름이라, 기존 TestTaker(exam 전용으로 그대로 남음, 손대지 않음)에 끼워 넣으면 exam 쪽까지
+  // 건드릴 위험이 커진다 — 완전히 별도 컴포넌트로 두는 게 "Vocabulary 외 기능은 건드리지 않는다"
+  // 원칙에 더 안전하다.
+  if (activeTest && activeTest.type === "vocab") {
+    return html`<${VocabTestTaker} student=${student} test=${activeTest.test} data=${data} updateData=${updateData}
+      onExit=${async () => { await updateData(student.id, (d) => ({ ...d, activeTestSession: null })); setActiveTest(null); }}
+      onDone=${() => setActiveTest(null)} />`;
+  }
+
   if (activeTest) {
     return html`<${TestTaker} activeTest=${activeTest} onExit=${async () => { await updateData(student.id, (d) => ({ ...d, activeTestSession: null })); setActiveTest(null); }}
       onSubmit=${async (score, total, breakdown) => {
-        const save = () => activeTest.type === "vocab"
-          ? updateData(student.id, (d) => ({
-              ...d,
-              activeTestSession: null,
-              vocabResults: [{
-                id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown,
-                startedAt: (d.activeTestSession && d.activeTestSession.testId === activeTest.test.id) ? d.activeTestSession.startedAt : null,
-                submittedAt: Date.now(),
-              }, ...d.vocabResults],
-            }))
-          : updateData(student.id, (d) => ({ ...d, activeTestSession: null, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
+        const save = () => updateData(student.id, (d) => ({ ...d, activeTestSession: null, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
         try {
           await save();
         } catch (e) {
@@ -14900,6 +14993,11 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   // 몇시부터 몇시까지 응시했는지 남긴다 (자세한 내용은 onSubmit/onExit 쪽 주석 참고).
   async function startVocabTest(t) {
     setActiveTest({ type: "vocab", test: t });
+    // §19 재진입 시 상태 보존 — 새로고침 후 "응시하기"를 다시 눌러도(버튼은 아직 결과가 없으면
+    // 계속 보인다) 이미 문제를 생성해둔 세션이 있으면 startedAt/문제 세트를 다시 만들지 않는다.
+    // VocabTestTaker가 이 activeTestSession.vocab을 보고 그대로 이어서 진행한다.
+    const existing = data && data.activeTestSession;
+    if (existing && existing.type === "vocab" && existing.testId === t.id && existing.vocab) return;
     await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "vocab", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
   }
   async function startMockTest(t, editResultId) {
@@ -16848,6 +16946,265 @@ function checkWordAnswer(userAnswer, correctWord, synonyms) {
   if (norm === normText(correctWord)) return true;
   if ((synonyms || []).some((s) => normText(s) === norm)) return true;
   return isKnownSynonym(userAnswer, correctWord);
+}
+
+// ---------- Vocabulary Test 재구성(2026-08-27) — 채점 helper. TYPE 1(영어→뜻)은 이제 객관식이라
+// 인덱스 비교, TYPE 2(뜻→영어)는 기존 checkWordAnswer를 그대로 재사용(직접 입력 채점 로직을
+// 새로 만들지 않는다 — exam/기존 vocab 흐름과 같은 기준으로 맞은 걸 인정한다).
+function gradeVocabQuestion(q, answer) {
+  if (q.questionType === "w2m") return answer === q.correctIndex;
+  return checkWordAnswer(answer || "", q.word, q.synonyms);
+}
+function buildVocabQuestionOutcome(q, answer, timing) {
+  return {
+    wordId: q.wordId, questionType: q.questionType, answer,
+    correct: gradeVocabQuestion(q, answer),
+    startedAt: timing ? timing.startedAt : null,
+    answeredAt: timing ? timing.answeredAt : null,
+    duration: timing ? timing.duration : null,
+  };
+}
+// 기존 TestTaker의 breakdown({prompt, given, correct, ok}) 모양을 그대로 따른다 — VocabResultRow가
+// 이미 이 모양을 그려주고 있어서(§14 호환성), 재사용하면 결과 화면을 새로 만들 필요가 없다.
+function buildVocabBreakdownRow(q, answer) {
+  const ok = gradeVocabQuestion(q, answer);
+  if (q.questionType === "w2m") {
+    const given = answer != null ? q.choices[answer] : null;
+    return { prompt: q.word, given: given || "(선택 안 함)", correct: q.choices[q.correctIndex], ok };
+  }
+  const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word} (${q.synonyms.join(", ")}도 정답)` : q.word;
+  return { prompt: q.meaning, given: answer || "(빈칸)", correct: correctDisplay, ok };
+}
+// Main Test + Instant Recall이 모두 끝난 시점에 vocabResults[] entry 하나를 완성한다.
+// score/total은 항상 Main Test 기준(기존 의미 그대로, §14) — recallScore/recallTotal/mastery/
+// finalStatus/integrity/questions는 전부 새로 추가되는 필드일 뿐, 기존 필드의 의미는 바꾸지 않는다.
+function finalizeVocabTestEntry(test, sessionStartedAt, v, recallAnswers, recallTimings, recallScore) {
+  const mainTotal = v.questions.length;
+  const recallTotal = v.recall.questions.length;
+  const submittedAt = Date.now();
+  const svc = window.SarahServices.vocabTestService;
+  const questionsOut = v.questions.map((q, i) => buildVocabQuestionOutcome(q, v.answers[i], v.questionTimings[i]));
+  const recallQuestionsOut = v.recall.questions.map((q, i) => buildVocabQuestionOutcome(q, recallAnswers[i], recallTimings[i]));
+  const breakdown = v.questions.map((q, i) => buildVocabBreakdownRow(q, v.answers[i]));
+  return {
+    id: uid(), testId: test.id, date: today(),
+    score: v.mainScore, total: mainTotal, breakdown,
+    startedAt: sessionStartedAt, submittedAt,
+    duration: sessionStartedAt ? Math.round((submittedAt - sessionStartedAt) / 1000) : null,
+    // §10/§12 — Reading Assessment Integrity와 같은 원칙으로, 여기서부터는 전부 additive 필드다.
+    questions: questionsOut,
+    recallScore, recallTotal, recallQuestions: recallQuestionsOut,
+    mastery: svc.computeVocabMastery({ mainScore: v.mainScore, mainTotal, recallScore, recallTotal }),
+    finalStatus: svc.computeVocabFinalStatus({ mainScore: v.mainScore, mainTotal, recallScore, recallTotal, integrity: v.integrity }),
+    integrity: v.integrity,
+  };
+}
+
+const VOCAB_RECALL_COUNT = 5; // §11 기본값(요구사항 명시) — 조정 가능하도록 상수로 분리
+
+// 모바일 우선 · 한 문제씩 진행 · 시험 보안(복사/붙여넣기/드래그/우클릭 차단) · 문제별 풀이시간·
+// 페이지 이탈 기록 · Instant Recall · Mastery 판정을 전부 담당하는 vocab 전용 컴포넌트.
+// exam(추가시험)은 그대로 TestTaker를 쓴다 — 이 컴포넌트는 절대 그쪽에 영향을 주지 않는다.
+//
+// 재개(§19) — 진행 상태는 activeTestSession.vocab에 "다음" 문제로 넘어갈 때(키 입력마다가 아니라
+// 문제 단위로)마다 저장한다. 새로고침되면 StudentDash의 useEffect가 이 값을 보고 이 컴포넌트를
+// 다시 마운트시키고, 아래 초기화 effect가 기존 세션을 그대로 이어서 쓴다(문제 세트를 다시 만들지
+// 않음 — §5 "채점 데이터가 랜덤화 때문에 꼬이지 않도록"와 같은 이유).
+function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
+  const session = data.activeTestSession && data.activeTestSession.testId === test.id ? data.activeTestSession : null;
+  const [vocab, setVocab] = useState(() => (session && session.vocab) || null);
+  const [draftAnswer, setDraftAnswer] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [initError, setInitError] = useState("");
+  const [showRecallIntro, setShowRecallIntro] = useState(false);
+  const questionStartedAtRef = useRef(Date.now());
+  const promptRef = useRef(null);
+  const initializedRef = useRef(false);
+
+  function patchIntegrity(fn) {
+    setVocab((v) => (v ? { ...v, integrity: fn(v.integrity) } : v));
+  }
+
+  // ---- 최초 마운트: 기존 세션 재개 또는 새 문제 세트 생성(둘 중 정확히 하나, 한 번만) ----
+  useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    if (vocab) {
+      // 재개 — refreshCount만 늘린다(§8). 문제 세트/답안/진행 인덱스는 그대로 유지.
+      (async () => {
+        try {
+          const next = await updateData(student.id, (d) => {
+            const cur = d.activeTestSession && d.activeTestSession.testId === test.id ? d.activeTestSession : null;
+            if (!cur || !cur.vocab) return d;
+            return { ...d, activeTestSession: { ...cur, vocab: { ...cur.vocab, integrity: { ...cur.vocab.integrity, refreshCount: (cur.vocab.integrity.refreshCount || 0) + 1 } } } };
+          });
+          if (next.activeTestSession && next.activeTestSession.vocab) setVocab(next.activeTestSession.vocab);
+        } catch (e) { /* 재진입 카운트 실패로 시험 진행 자체를 막을 이유는 없다 */ }
+      })();
+      return;
+    }
+    const questions = window.SarahServices.vocabTestService.buildVocabQuestions(test.words, test.mode || "mix");
+    const fresh = {
+      questions, answers: questions.map(() => null), questionTimings: questions.map(() => null),
+      currentIndex: 0, phase: "main", mainScore: null, recall: null,
+      integrity: { visibilityExitCount: 0, focusLossCount: 0, pasteAttemptCount: 0, copyAttemptCount: 0, refreshCount: 0, exitEvents: [] },
+    };
+    (async () => {
+      try {
+        const next = await updateData(student.id, (d) => {
+          const cur = d.activeTestSession && d.activeTestSession.testId === test.id ? d.activeTestSession : { type: "vocab", testId: test.id, testTitle: test.title, startedAt: Date.now() };
+          return { ...d, activeTestSession: { ...cur, vocab: fresh } };
+        });
+        setVocab(next.activeTestSession.vocab);
+      } catch (e) {
+        setInitError("시험을 시작하지 못했어요: " + String((e && e.message) || e).slice(0, 200));
+      }
+    })();
+  }, []);
+
+  const positionKey = vocab ? `${vocab.phase}:${vocab.phase === "recall" ? vocab.recall.currentIndex : vocab.currentIndex}` : null;
+  useEffect(() => {
+    setDraftAnswer(null);
+    questionStartedAtRef.current = Date.now();
+  }, [positionKey]);
+
+  // ---- 페이지 이탈 기록(§8) — visibility/focus 각각 별도 카운터. 최근 20개까지만 exitEvents에
+  // 남긴다. "컨닝 확정 증거"가 아니라 review signal일 뿐이라 여기서는 아무것도 막지 않는다.
+  useEffect(() => {
+    let hiddenAt = null; let blurredAt = null;
+    function pushExitEvent(type, at, durationSec) {
+      setVocab((v) => (v ? { ...v, integrity: { ...v.integrity, exitEvents: [...(v.integrity.exitEvents || []), { at, type, durationSec }].slice(-20) } } : v));
+    }
+    function onVisibility() {
+      if (document.hidden) { hiddenAt = Date.now(); patchIntegrity((ig) => ({ ...ig, visibilityExitCount: (ig.visibilityExitCount || 0) + 1 })); }
+      else if (hiddenAt) { pushExitEvent("visibility", hiddenAt, Math.round((Date.now() - hiddenAt) / 1000)); hiddenAt = null; }
+    }
+    function onBlur() { blurredAt = Date.now(); patchIntegrity((ig) => ({ ...ig, focusLossCount: (ig.focusLossCount || 0) + 1 })); }
+    function onFocus() { if (blurredAt) { pushExitEvent("focus", blurredAt, Math.round((Date.now() - blurredAt) / 1000)); blurredAt = null; } }
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+
+  async function submitCurrent() {
+    if (!vocab || saving) return;
+    const isRecall = vocab.phase === "recall";
+    const qs = isRecall ? vocab.recall.questions : vocab.questions;
+    const idx = isRecall ? vocab.recall.currentIndex : vocab.currentIndex;
+    const isLast = idx === qs.length - 1;
+    const timing = { startedAt: questionStartedAtRef.current, answeredAt: Date.now(), duration: Math.round((Date.now() - questionStartedAtRef.current) / 1000) };
+
+    setSaving(true);
+    try {
+      const next = await updateData(student.id, (d) => {
+        const cur = d.activeTestSession && d.activeTestSession.testId === test.id ? d.activeTestSession : null;
+        if (!cur) return d; // 세션이 이미 정리됐으면(다른 곳에서 종료 등) 로컬 진행 상황을 되살리지 않는다
+        // Firestore의 최신 스냅샷(cur.vocab)이 아니라 로컬 state(vocab)를 기준으로 쓴다 — 페이지
+        // 이탈/copy·paste 시도 카운트는 문제 전환 사이에 로컬에서만 누적되다가 여기서 처음
+        // 저장되므로, cur.vocab을 그대로 쓰면 마지막 저장 이후의 로컬 누적분을 잃어버린다.
+        const v = vocab;
+        if (!isRecall) {
+          const answers = v.answers.map((a, i) => (i === idx ? draftAnswer : a));
+          const questionTimings = v.questionTimings.map((t, i) => (i === idx ? timing : t));
+          if (!isLast) return { ...d, activeTestSession: { ...cur, vocab: { ...v, answers, questionTimings, currentIndex: idx + 1 } } };
+          const mainScore = v.questions.reduce((sum, qq, i) => sum + (gradeVocabQuestion(qq, answers[i]) ? 1 : 0), 0);
+          const recallQuestions = window.SarahServices.vocabTestService.pickInstantRecallQuestions(test.words, VOCAB_RECALL_COUNT);
+          return {
+            ...d,
+            activeTestSession: {
+              ...cur,
+              vocab: {
+                ...v, answers, questionTimings, phase: "recall", mainScore,
+                recall: { questions: recallQuestions, answers: recallQuestions.map(() => null), questionTimings: recallQuestions.map(() => null), currentIndex: 0 },
+              },
+            },
+          };
+        }
+        const rAnswers = v.recall.answers.map((a, i) => (i === idx ? draftAnswer : a));
+        const rTimings = v.recall.questionTimings.map((t, i) => (i === idx ? timing : t));
+        if (!isLast) return { ...d, activeTestSession: { ...cur, vocab: { ...v, recall: { ...v.recall, answers: rAnswers, questionTimings: rTimings, currentIndex: idx + 1 } } } };
+        const recallScore = v.recall.questions.reduce((sum, qq, i) => sum + (gradeVocabQuestion(qq, rAnswers[i]) ? 1 : 0), 0);
+        const entry = finalizeVocabTestEntry(test, cur.startedAt, v, rAnswers, rTimings, recallScore);
+        return { ...d, activeTestSession: null, vocabResults: [entry, ...(d.vocabResults || [])] };
+      });
+      if (isRecall && isLast) { onDone(); return; }
+      if (!isRecall && isLast) setShowRecallIntro(true);
+      if (next.activeTestSession && next.activeTestSession.vocab) setVocab(next.activeTestSession.vocab);
+    } catch (e) {
+      console.error("단어 시험 저장 실패", e);
+      let recovered = false;
+      if (isDocSizeError(e)) recovered = await attemptAutoShrinkAndRetry(student.id, updateData, () => Promise.resolve());
+      if (!recovered) alert(friendlyErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (initError) {
+    return html`<div><${BackBtn} onClick=${onExit} /><${Card}><div style=${{ color: C.danger, fontSize: 13 }}>${initError}</div><//></div>`;
+  }
+  if (!vocab) {
+    return html`<div><${BackBtn} onClick=${onExit} /><${Card}><div style=${{ fontSize: 13, color: C.slate }}>시험을 준비하는 중...</div><//></div>`;
+  }
+  if (vocab.phase === "recall" && showRecallIntro) {
+    return html`
+      <div>
+        <${Card} style=${{ textAlign: "center", padding: 28 }}>
+          <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>Main Test 완료!</div>
+          <div style=${{ fontSize: 13, color: C.slate, marginBottom: 18 }}>이번엔 방금 나온 단어 중 ${vocab.recall.questions.length}개를 빠르게 다시 확인할게요.</div>
+          <${Button} variant="gold" onClick=${() => setShowRecallIntro(false)}>Instant Recall 시작<//>
+        <//>
+      </div>
+    `;
+  }
+
+  const isRecall = vocab.phase === "recall";
+  const qs = isRecall ? vocab.recall.questions : vocab.questions;
+  const idx = isRecall ? vocab.recall.currentIndex : vocab.currentIndex;
+  const q = qs[idx];
+  const isLastQuestion = idx === qs.length - 1;
+  const canSubmit = q.questionType === "w2m" ? draftAnswer != null : !!(draftAnswer && String(draftAnswer).trim());
+  const MC_MARKS = ["①", "②", "③", "④", "⑤"];
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onExit} />
+      <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 4 }}>${isRecall ? "🔎 Instant Recall" : test.title}</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>${idx + 1} / ${qs.length}</div>
+      <${Card}>
+        <div ref=${promptRef}
+          style=${{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", fontSize: 24, ...serif, color: C.navy, textAlign: "center", padding: "20px 4px", marginBottom: 18 }}
+          onCopy=${(e) => { e.preventDefault(); patchIntegrity((ig) => ({ ...ig, copyAttemptCount: (ig.copyAttemptCount || 0) + 1 })); }}
+          onCut=${(e) => e.preventDefault()}
+          onContextMenu=${(e) => e.preventDefault()}
+          onDragStart=${(e) => e.preventDefault()}
+        >${q.questionType === "w2m" ? q.word : q.meaning}</div>
+        ${q.questionType === "w2m" ? html`
+          <div>
+            ${q.choices.map((c, ci) => html`
+              <div key=${ci} onClick=${() => setDraftAnswer(ci)} onContextMenu=${(e) => e.preventDefault()}
+                style=${{
+                  padding: "12px 14px", border: `1px solid ${draftAnswer === ci ? C.gold : C.line}`, background: draftAnswer === ci ? "#FBF4EA" : C.white,
+                  borderRadius: 4, marginBottom: 8, fontSize: 15, cursor: "pointer", userSelect: "none", WebkitUserSelect: "none",
+                }}>${MC_MARKS[ci] || `${ci + 1}.`} ${c}</div>
+            `)}
+          </div>
+        ` : html`
+          <input style=${{ ...inputStyle, fontSize: 16, textAlign: "center" }} placeholder="영어 단어를 입력하세요" autocapitalize="off" autocorrect="off" spellcheck="false"
+            value=${draftAnswer || ""} onChange=${(e) => setDraftAnswer(e.target.value)}
+            onPaste=${(e) => { e.preventDefault(); patchIntegrity((ig) => ({ ...ig, pasteAttemptCount: (ig.pasteAttemptCount || 0) + 1 })); }}
+            onCopy=${(e) => e.preventDefault()} onCut=${(e) => e.preventDefault()}
+          />
+        `}
+      <//>
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${!canSubmit || saving} onClick=${submitCurrent}>${saving ? "저장 중..." : (isRecall && isLastQuestion ? "제출 완료" : "다음")}<//>
+    </div>
+  `;
 }
 
 function TestTaker({ activeTest, onExit, onSubmit }) {
