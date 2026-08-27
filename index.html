@@ -106,14 +106,16 @@
   /* 가장 긴급한 신호(기한 지난 미완료)만 옅은 경고색 박스로 감싸서, 세로로 긴 목록 안에서도
      스크롤 없이 눈에 먼저 들어오게 했다. */
   .ap-tc-alert { background: #FBF0EE; border: 1px solid #EBCFC9; border-radius: 8px; padding: 10px 16px; margin-top: 14px; }
-  /* 카드를 세로 1열로만 쌓으면(이전 시도) 화면 폭을 못 쓰고 스크롤만 길어진다는 피드백을 받아
-     그리드로 바꿨다. 컬럼 폭을 minmax(360px, 480px)로 고정해서, 화면이 넓을수록 컬럼 하나가
-     늘어나는 게 아니라 컬럼 "개수"가 늘어나게 했다 — 그래야 각 카드 안의 좌우 정렬 줄(이름↔시간
-     등)이 아무리 넓은 모니터에서도 계속 붙어 있고, 동시에 넓은 화면에서는 카드 여러 개가 한 눈에
-     들어와 스크롤(=커서 동선)이 줄어든다. */
-  .ap-tc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 480px)); gap: 14px; align-items: start; }
+  /* 카드를 세로 1열로만 쌓으면(1차 시도) 화면 폭을 못 쓰고 스크롤만 길어지고, 일반 grid로
+     바꾸면(2차 시도) 카드 높이가 제각각이라 짧은 카드 밑에 다음 "행"이 시작될 때까지 큰 빈
+     공간이 생긴다(grid는 행 단위로 높이가 맞춰지기 때문 — 사용자가 "가운데 비어있는 게
+     못생겼다"고 지적한 지점). CSS multi-column(신문 단 나누기 방식)으로 바꿔서 각 컬럼이 자기
+     높이만큼만 차곡차곡 쌓이게 했다 — Pinterest 식 masonry와 같은 효과를 라이브러리 없이 얻는다.
+     break-inside:avoid로 카드 하나가 컬럼 경계에서 잘리지 않게 막았다. */
+  .ap-tc-grid { column-width: 400px; column-gap: 14px; }
+  .ap-tc-grid > * { break-inside: avoid; margin: 0 0 14px; }
   @media (max-width: 760px) {
-    .ap-tc-grid { grid-template-columns: 1fr; }
+    .ap-tc-grid { column-width: auto; column-count: 1; }
   }
 
   /* Students Command Center (Teacher OS Students 개편) — summary strip + student card grid.
