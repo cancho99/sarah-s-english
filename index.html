@@ -10332,16 +10332,6 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
   const vocabToday = testsToday.filter((r) => r.kind === "vocab");
   const examResultsToday = testsToday.filter((r) => r.kind !== "vocab");
 
-  // ---- 학생별 메모("🕐 오늘 수업" 행의 ⚠️ 메모 미리보기용, 기존 data.notes/StudentInfoSection
-  // 그대로 재사용) ----
-  const notesByStudent = {};
-  roster.forEach((s) => {
-    const data = dataCache[s.id];
-    const notes = data && data.notes;
-    if (!notes || !notes.length) return;
-    notesByStudent[s.id] = [...notes].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
-  });
-
   // ---- Reading 활동 (오늘, 오늘 수업 학생만 — readingService.getReadingActivityForDate를
   // 로스터 전체에 돌리면 학생당 4회 읽기가 추가로 발생해 너무 무겁다, DailyReportWorkspace와 같은
   // 함수를 같은 방식으로 재사용한다) ----
@@ -10418,14 +10408,12 @@ function TeacherCenterHome({ roster, dataCache, onOpenBoard, onSelectStudent, on
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🕐 오늘 수업 (${todayClasses.length}건)</div>
           ${todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 예정된 수업이 없어요.</div>` : todayClasses.map((c, i) => {
             const prep = prepByStudent[c.student.id];
-            const note = notesByStudent[c.student.id];
             return html`
               <div key=${i} style=${{ padding: "7px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
                 <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span onClick=${() => onSelectStudent(c.student.id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${c.student.name}</span>
                   <span style=${{ fontSize: 12, color: C.slate }}>${c.time}~${c.endTime}${c.kind === "보강" ? " (보강)" : ""}</span>
                 </div>
-                ${note && html`<div style=${{ fontSize: 11, color: C.ink, marginTop: 3, whiteSpace: "pre-wrap" }}>⚠️ ${note.content}</div>`}
                 ${(prep.auto.length + prep.linked.length) > 0 && html`
                   <div style=${{ fontSize: 10.5, color: C.gold, marginTop: 3 }}>
                     ${[...prep.auto, ...prep.linked.map((t) => ({ icon: (TEACHER_TODO_TYPES.find((x) => x.key === t.type) || {}).icon, label: t.content }))]
