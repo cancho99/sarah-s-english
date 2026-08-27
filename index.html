@@ -96,6 +96,24 @@
   .ap-icon-tile .ic { font-size: 26px; }
   .ap-icon-tile .lb { font-size: 12px; font-weight: 700; color: #1C2B4A; text-align: center; line-height: 1.3; word-break: keep-all; }
   .ap-icon-tile:hover, .ap-icon-tile:active { background: #FBF6EA; border-color: #B8935A; }
+
+  /* Students Command Center (Teacher OS Students 개편) — summary strip + student card grid.
+     Same auto-fill/minmax idea as .ap-icon-grid above but wider tiles (a card carries far more
+     text than an icon tile), so it needs its own min width rather than reusing that class. */
+  .ap-sc-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .ap-sc-stat { background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; padding: 14px 16px; }
+  .ap-sc-stat .n { font-family: 'Jua', -apple-system, sans-serif; font-size: 26px; color: #1C2B4A; line-height: 1.2; }
+  .ap-sc-stat .l { font-size: 11.5px; color: #5B6270; margin-top: 4px; font-weight: 600; }
+  .ap-sc-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .ap-sc-filters input[type="text"] { flex: 1 1 180px; min-width: 140px; }
+  .ap-sc-filters select { flex: 0 0 auto; }
+  .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+  .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
+  /* Roadmap의 카테고리 진행률 바(RoadmapMilestoneBoard)와 정확히 같은 치수/색상 — 사용자 지시로
+     Homework/Vocabulary도 같은 시각 언어를 쓰도록 통일했다. */
+  .ap-sc-progress { height: 4px; background: #DCD8CF; border-radius: 2px; overflow: hidden; }
+  .ap-sc-progress > div { height: 100%; background: #B8935A; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
@@ -3993,7 +4011,7 @@ function StudentAreaSection({ roster, saveRosterList, updateStudentRosterEntry, 
       category=${category} setCategory=${setCategory} sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   }
   return html`<${StudentInfoSection} roster=${roster} saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry}
-    selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId} updateData=${updateData} dataCache=${dataCache}
+    selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId} ensureData=${ensureData} updateData=${updateData} dataCache=${dataCache}
     examKeyLibrary=${examKeyLibrary} sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink}
     teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} setCategory=${setCategory}
     showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
@@ -4002,7 +4020,7 @@ function StudentAreaSection({ roster, saveRosterList, updateStudentRosterEntry, 
 
 // 학생 목록 ↔ 학생 상세(StudentDetailSection) 전환만 담당 — 목록/추가 폼은 기존 그대로, 상세는
 // 아래 StudentDetailSection에 위임한다.
-function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, setCategory, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, onViewGrowthReport, deepTarget, onConsumeDeepTarget }) {
+function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, setCategory, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent, removeStudent, onViewGrowthReport, deepTarget, onConsumeDeepTarget }) {
   const selected = roster.find((r) => r.id === selectedStudentId);
   // category도 같이 지워야 한다 — 안 지우면, onSelectStudent가 category="homework"까지 같이
   // 세팅해 넘긴 학생을 봤다가 뒤로가기를 눌렀을 때 selectedStudentId만 null이 되고 category는
@@ -4021,26 +4039,289 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
       sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
       onBack=${backToList} onDelete=${handleDelete} onViewGrowthReport=${onViewGrowthReport} deepTarget=${deepTarget} onConsumeDeepTarget=${onConsumeDeepTarget} />`;
   }
+  return html`<${StudentCommandCenter} roster=${roster} dataCache=${dataCache} ensureData=${ensureData} setSelectedStudentId=${setSelectedStudentId}
+    showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
+    addErr=${addErr} addStudent=${addStudent} />`;
+}
+
+// Students 개편(2026-08-27, 사용자 지시) — 단순 이름 목록(IconGrid)을 "학생의 현재 학습 상태를
+// 한눈에" 보는 Teacher Command Center로 바꾼다. 기존 기능(학생 추가 폼, 학생 클릭→상세 이동,
+// setSelectedStudentId를 통한 StudentDetailSection 진입)은 완전히 그대로 — 이 컴포넌트는 그
+// 진입점 UI만 바꾼다. 학생 상세(StudentDetailSection)와 그 아래 모든 탭/데이터/Firebase 구조는
+// 전혀 건드리지 않는다.
+//
+// 1차 버전 범위(사용자 지시) — 로드맵은 아직 구조 확정 전이라 이번엔 상태 판정에서 완전히
+// 제외한다. 상태는 Homework%와 Vocabulary%를 평균한 종합 퍼센트 하나로 판정한다(2026-08-27
+// 최종 지시 — 처음엔 "두 축 중 더 나쁜 쪽 채택" 구조였다가, 학생/학부모도 바로 이해할 수 있는
+// 숫자 하나가 되도록 "평균" 방식으로 단순화했다). computeHomeworkAxis/computeVocabAxis가 각각
+// pct만 돌려주고, computeStudentSnapshot이 그 pct들을 평균해 combinedPct/status를 만든다 —
+// 나중에 시험 성적/Reading 등을 추가할 땐 pcts 배열에 항목만 더 넣으면 된다.
+//
+// 카드 한 장에 필요한 숫자(숙제 진행율/단어 학습·합격율)를 구하려면 로스터 전체의 학생별 데이터가
+// dataCache에 있어야 하는데, 지금까지는 "학생을 클릭해서 선택"할 때만 개별로 불러왔다(TeacherDash
+// 최상단의 `if (selectedStudentId) ensureData(...)`). 이 목록 화면은 아직 아무도 선택 안 된
+// 상태에서 전체를 보여줘야 하므로, TeacherCenterSection(Today 대시보드)이 이미 쓰는 것과 똑같은
+// 패턴 — 로스터를 순회하며 순차 ensureData 후 로딩 게이트 — 을 그대로 재사용한다(새 로딩 방식을
+// 만들지 않음).
+
+// 상태 임계값(사용자 지시, 2026-08-27 최종): 퍼센트 지표 하나가 80% 이하면 NEEDS ATTENTION,
+// 60% 이하면 AT RISK — Homework/Vocabulary/종합 평균 전부 이 하나의 규칙을 공유한다.
+function pctToStatus(pct) {
+  if (pct == null) return null;
+  if (pct <= 60) return "atRisk";
+  if (pct <= 80) return "needsAttention";
+  return "onTrack";
+}
+// 숙제 축 — 이번 달 제출률(homeworkStats) 하나만 본다. 미완료/미확인 건수 같은 부가 신호는
+// 더 이상 상태 판정에 안 쓴다(사용자 지시: "숙제랑 단어랑 합쳐서 평균 80% 이하 노란불, 60%
+// 이하 빨간불" — 퍼센트 하나로 판단을 단순화하고, 그래야 학생/학부모 화면에도 "왜 이 색인지"를
+// 숫자 하나로 설명할 수 있다).
+function computeHomeworkAxis(data) {
+  const hw = homeworkStats(data); // 이번 달 기준 {total, done, pct}
+  if (hw.total === 0) return { status: null, pct: null, total: 0, done: 0 };
+  return { status: pctToStatus(hw.pct), pct: hw.pct, total: hw.total, done: hw.done };
+}
+// Vocabulary 축 — 대표 지표(mainPct)는 "합격률"이 아니라 "여태까지 쌓아온 점수 평균"(사용자
+// 지시): 온라인 퀴즈(vocabResults, 교사가 "올려주는" 시험)와 vocabLog(교사가 "로그에 쓰는" 직접
+// 기록한 단어시험) 전체 이력(이번 달로 좁히지 않음)의 회차별 점수%를 퀴즈+로그 구분 없이 전부
+// 한 배열에 모아 평균한다 — 사용자가 실제 데이터(퀴즈 8건+로그 20건=28건)로 직접 검증 완료.
+function computeVocabAxis(data) {
+  const titleById = {};
+  (data.vocabTests || []).forEach((t) => { titleById[t.id] = t.title; });
+  // vocabResults의 score는 맞은 개수(총점 대비 계산 필요), vocabLog의 score는 이미 반올림된
+  // %(VocabLogEditor.add() 참고)라 그대로 쓴다 — 두 소스를 { pct } 한 모양으로 정규화.
+  const quizPcts = (data.vocabResults || [])
+    .map((r) => (r.total > 0 ? Math.round((r.score / r.total) * 100) : null))
+    .filter((p) => p != null);
+  const logPcts = (data.vocabLog || [])
+    .map((v) => (typeof v.score === "number" ? v.score : (v.total > 0 ? Math.round((v.correct / v.total) * 100) : null)))
+    .filter((p) => p != null);
+  const allPcts = [...quizPcts, ...logPcts];
+  if (allPcts.length === 0) return { status: null, mainPct: null };
+
+  const mainPct = Math.round(allPcts.reduce((sum, p) => sum + p, 0) / allPcts.length);
+  return { status: pctToStatus(mainPct), mainPct };
+}
+// 종합 상태(카드 배지의 🟢/🟡/🔴) — 로드맵은 여전히 판정에서 제외(사용자 지시: 로드맵 구조가
+// 아직 확정 전이라 이번 버전에서 계속 뺀다). Homework%와 Vocabulary% 중 값이 있는 것만 평균 내
+// 하나의 종합 퍼센트로 만들고, 그 퍼센트에 pctToStatus를 그대로 적용한다 — "두 축 중 더 나쁜
+// 쪽"이 아니라 "두 축을 합친 평균"으로 판정 기준을 바꾼 것(사용자 지시로 단순화, 학생/학부모도
+// 이해하기 쉬운 숫자 하나가 되도록). 둘 다 데이터가 없으면 ON TRACK 기본값 — 확인할 근거가 없다고
+// AT RISK로 미리 겁줄 이유는 없다.
+function computeStudentSnapshot(student, data, todayStr) {
+  const homework = computeHomeworkAxis(data);
+  const vocab = computeVocabAxis(data);
+  const pcts = [homework.pct, vocab.mainPct].filter((p) => p != null);
+  const combinedPct = pcts.length ? Math.round(pcts.reduce((sum, p) => sum + p, 0) / pcts.length) : null;
+  const status = combinedPct == null ? "onTrack" : pctToStatus(combinedPct);
+  const todayClass = todaysClassesForRoster([student], todayStr)[0] || null;
+  const hasRoadmap = !!(data.roadmap && (data.roadmap.phases || []).length);
+  const roadmapPct = hasRoadmap ? window.SarahServices.roadmapService.overallProgress(data.roadmap) : null;
+  return { student, homework, vocab, combinedPct, roadmapPct, status, todayClass };
+}
+const STUDENT_STATUS_META = {
+  onTrack: { icon: "🟢", label: "ON TRACK", color: "#1E7A46", bg: "#E8F3EC" },
+  needsAttention: { icon: "🟡", label: "NEEDS ATTENTION", color: "#8A6413", bg: "#FBF1DD" },
+  atRisk: { icon: "🔴", label: "AT RISK", color: C.danger, bg: "#F7E9E6" },
+};
+// 학생/학부모 홈 화면용 — Students 개편에서 만든 계산(computeStudentSnapshot)을 교사 화면 밖에서도
+// 그대로 재사용한다(사용자 지시: "이런 내용 학부모랑 학생도 볼 수 있게 해줘"). 계산은 한 곳에만
+// 있고 이 카드는 그 결과를 학생/학부모에게 맞는 말투로 보여주기만 하므로, 교사 화면(Students
+// 카드)과 색이 어긋날 일이 없다.
+const STUDENT_STATUS_EXPLAIN = {
+  onTrack: "숙제와 단어 학습을 잘 하고 있어요!",
+  needsAttention: "숙제와 단어 학습에 조금 더 신경 써 주세요.",
+  atRisk: "숙제와 단어 학습을 다시 점검해 볼 때예요.",
+};
+function LearningStatusCard({ student, data }) {
+  const snap = computeStudentSnapshot(student, data, today());
+  const meta = STUDENT_STATUS_META[snap.status];
+  return html`
+    <${Card} style=${{ marginBottom: 18 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700 }}>📊 학습 상태</div>
+        <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: meta.bg, color: meta.color }}>${meta.icon} ${meta.label}</span>
+      </div>
+      <div style=${{ fontSize: 13, color: C.ink, marginBottom: 10 }}>${STUDENT_STATUS_EXPLAIN[snap.status]}</div>
+      <div style=${{ display: "flex", gap: 16, fontSize: 12, color: C.slate, flexWrap: "wrap" }}>
+        <div>숙제 제출률 <b style=${{ color: C.navy }}>${snap.homework.pct != null ? snap.homework.pct + "%" : "-"}</b></div>
+        <div>단어 평균 점수 <b style=${{ color: C.navy }}>${snap.vocab.mainPct != null ? snap.vocab.mainPct + "%" : "-"}</b></div>
+        <div>종합 평균 <b style=${{ color: C.navy }}>${snap.combinedPct != null ? snap.combinedPct + "%" : "-"}</b></div>
+      </div>
+    <//>
+  `;
+}
+function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+  const [loaded, setLoaded] = useState(false);
+  const [search, setSearch] = useState("");
+  const [gradeFilter, setGradeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const rosterKey = roster.map((r) => r.id).join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoaded(false);
+    (async () => {
+      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line */
+  }, [rosterKey]);
+
+  if (roster.length === 0) {
+    return html`
+      <div>
+        <div className="ap-split-left-title">학생 목록</div>
+        <${Empty} text="학생을 추가해 주세요." />
+        <${AddStudentForm} showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc} addErr=${addErr} addStudent=${addStudent} />
+      </div>
+    `;
+  }
+  if (!loaded) return html`<${Empty} text="불러오는 중..." />`;
+
+  const todayStr = today();
+  const snapshots = roster.map((s) => computeStudentSnapshot(s, dataCache[s.id] || emptyData(), todayStr));
+  const grades = [...new Set(roster.map((r) => r.grade).filter(Boolean))];
+
+  const q = search.trim().toLowerCase();
+  const filtered = snapshots.filter((snap) => {
+    if (q && !snap.student.name.toLowerCase().includes(q)) return false;
+    if (gradeFilter !== "all" && (snap.student.grade || "") !== gradeFilter) return false;
+    if (statusFilter !== "all" && snap.status !== statusFilter) return false;
+    return true;
+  });
+
+  // 축(axis)별로 "관리 필요" 학생 수를 따로 세고, 종합 상태(status)로도 한 번 더 센다 — 숙제는
+  // 문제없는데 단어만 문제인 학생과 그 반대를 교사가 요약 타일만 보고도 구분할 수 있게 한다.
+  // data가 아예 없는 축(status: null)은 "관리 필요"로 세지 않는다 — 판단할 근거가 없을 뿐이지
+  // 문제가 있다는 뜻이 아니다.
+  const summary = {
+    total: roster.length,
+    todayClasses: snapshots.filter((s) => s.todayClass).length,
+    hwNeedsCare: snapshots.filter((s) => s.homework.status && s.homework.status !== "onTrack").length,
+    vocabNeedsCare: snapshots.filter((s) => s.vocab.status && s.vocab.status !== "onTrack").length,
+    overallNeedsCare: snapshots.filter((s) => s.status !== "onTrack").length,
+  };
+
   return html`
     <div>
-      <div className="ap-split-left-title">학생 목록</div>
-      ${roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
-        <${IconGrid} items=${roster.map((r) => ({ key: r.id, icon: "🧑‍🎓", label: r.name, onClick: () => setSelectedStudentId(r.id) }))} />
+      <div className="ap-split-left-title">Students</div>
+
+      <div className="ap-sc-summary">
+        <div className="ap-sc-stat"><div className="n">${summary.total}</div><div className="l">전체 학생</div></div>
+        <div className="ap-sc-stat"><div className="n">${summary.todayClasses}</div><div className="l">오늘 수업</div></div>
+        <div className="ap-sc-stat"><div className="n" style=${{ color: summary.hwNeedsCare > 0 ? C.danger : C.navy }}>${summary.hwNeedsCare}</div><div className="l">숙제 관리 필요</div></div>
+        <div className="ap-sc-stat"><div className="n" style=${{ color: summary.vocabNeedsCare > 0 ? C.danger : C.navy }}>${summary.vocabNeedsCare}</div><div className="l">Vocabulary 관리 필요</div></div>
+        <div className="ap-sc-stat"><div className="n" style=${{ color: summary.overallNeedsCare > 0 ? C.danger : C.navy }}>${summary.overallNeedsCare}</div><div className="l">전체 Attention 필요</div></div>
+      </div>
+
+      <div className="ap-sc-filters">
+        <input type="text" style=${inputStyle} placeholder="🔍 이름으로 검색" value=${search} onChange=${(e) => setSearch(e.target.value)} />
+        <select style=${{ ...inputStyle, width: "auto" }} value=${gradeFilter} onChange=${(e) => setGradeFilter(e.target.value)}>
+          <option value="all">전체 학년</option>
+          ${grades.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}
+        </select>
+        <select style=${{ ...inputStyle, width: "auto" }} value=${statusFilter} onChange=${(e) => setStatusFilter(e.target.value)}>
+          <option value="all">전체 상태</option>
+          <option value="onTrack">🟢 ON TRACK</option>
+          <option value="needsAttention">🟡 NEEDS ATTENTION</option>
+          <option value="atRisk">🔴 AT RISK</option>
+        </select>
+        <${Button} variant="ghost" onClick=${() => setShowAdd(!showAdd)}>+ 학생 추가<//>
+      </div>
+
+      <${AddStudentForm} showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc} addErr=${addErr} addStudent=${addStudent} />
+
+      ${filtered.length === 0 ? html`<${Empty} text="조건에 맞는 학생이 없어요." />` : html`
+        <div className="ap-sc-grid">
+          ${filtered.map((snap) => html`<${StudentSnapshotCard} key=${snap.student.id} snap=${snap} onClick=${() => setSelectedStudentId(snap.student.id)} />`)}
+        </div>
       `}
-      ${!showAdd ? html`
-        <${Button} variant="ghost" onClick=${() => setShowAdd(true)} style=${{ width: "100%", justifyContent: "center", marginTop: 14 }}>+ 학생 추가<//>
-      ` : html`
-        <${Card} style=${{ marginTop: 14 }}>
-          <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
-          <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
-          <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
-          ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
-          <div style=${{ display: "flex", gap: 8 }}>
-            <${Button} variant="gold" onClick=${addStudent}>저장<//>
-            <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+    </div>
+  `;
+}
+function AddStudentForm({ showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+  if (!showAdd) return null;
+  return html`
+    <${Card} style=${{ marginBottom: 16 }}>
+      <${Field} label="이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} /><//>
+      <${Field} label="학생 코드 (학생 로그인용)"><input style=${inputStyle} value=${sc} onChange=${(e) => setSc(e.target.value)} /><//>
+      <${Field} label="학부모 코드 (학부모 로그인용)"><input style=${inputStyle} value=${pc} onChange=${(e) => setPc(e.target.value)} /><//>
+      ${addErr && html`<div style=${{ color: C.danger, fontSize: 12, marginBottom: 8 }}>${addErr}</div>`}
+      <div style=${{ display: "flex", gap: 8 }}>
+        <${Button} variant="gold" onClick=${addStudent}>저장<//>
+        <${Button} variant="ghost" onClick=${() => setShowAdd(false)}>취소<//>
+      </div>
+    <//>
+  `;
+}
+// 카드 정보 우선순위(사용자 지시 §7): 이름 → 상태 → 왜 그 상태인지 → Homework → Vocabulary →
+// (전체 클릭 시) 학생 상세 이동. 로드맵/최근 시험 성취처럼 이번 1차 범위 밖인 정보는 카드에서
+// 완전히 뺐다 — "카드가 정보로 빽빽해지지 않게" 원칙.
+function StudentSnapshotCard({ snap, onClick }) {
+  const { student, homework, vocab, combinedPct, roadmapPct, status } = snap;
+  const meta = STUDENT_STATUS_META[status];
+  return html`
+    <div className="ap-sc-card" onClick=${onClick}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div>
+          <div style=${{ ...serif, fontSize: 17, color: C.navy }}>${student.name}</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${[student.grade, student.school].filter(Boolean).join(" · ") || "학년/학교 미등록"}</div>
+        </div>
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "4px 8px", borderRadius: 20, background: meta.bg, color: meta.color, whiteSpace: "nowrap" }}>${meta.icon} ${meta.label}</span>
+      </div>
+
+      <${StatusExplainLine} homework=${homework} vocab=${vocab} combinedPct=${combinedPct} status=${status} />
+
+      <div style=${{ borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
+        <div style=${{ fontSize: 10.5, color: C.slate, fontWeight: 700, marginBottom: 5 }}>📝 HOMEWORK</div>
+        ${homework.total > 0 ? html`
+          <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="ap-sc-progress" style=${{ flex: 1 }}><div style=${{ width: homework.pct + "%" }} /></div>
+            <span style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, minWidth: 34, textAlign: "right" }}>${homework.pct}%</span>
           </div>
-        <//>
-      `}
+        ` : html`<div style=${{ fontSize: 11.5, color: C.slate }}>등록된 숙제 없음</div>`}
+      </div>
+
+      <div>
+        <div style=${{ fontSize: 10.5, color: C.slate, fontWeight: 700, marginBottom: 5 }}>🔤 VOCABULARY</div>
+        ${vocab.mainPct != null ? html`
+          <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="ap-sc-progress" style=${{ flex: 1 }}><div style=${{ width: vocab.mainPct + "%" }} /></div>
+            <span style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, minWidth: 34, textAlign: "right" }}>${vocab.mainPct}%</span>
+          </div>
+        ` : html`<div style=${{ fontSize: 11.5, color: C.slate }}>단어시험 기록 없음</div>`}
+      </div>
+
+      <div>
+        <div style=${{ fontSize: 10.5, color: C.slate, fontWeight: 700, marginBottom: 5 }}>🗺 ROADMAP</div>
+        ${roadmapPct != null ? html`
+          <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="ap-sc-progress" style=${{ flex: 1 }}><div style=${{ width: roadmapPct + "%" }} /></div>
+            <span style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, minWidth: 34, textAlign: "right" }}>${roadmapPct}%</span>
+          </div>
+        ` : html`<div style=${{ fontSize: 11.5, color: C.slate }}>설정된 로드맵 없음</div>`}
+      </div>
+    </div>
+  `;
+}
+// "왜 이 색인지" 한 줄 설명 — 교사 화면(이 카드)과 학생/학부모 화면(LearningStatusCard)이 똑같은
+// 계산 결과(snap)를 받아 똑같은 문구를 보여준다(사용자 지시: 학생/학부모도 왜 초록/노랑/빨강인지
+// 알 수 있어야 한다). 숫자 하나(combinedPct)로 판정하므로 설명도 그 숫자를 그대로 보여주는 게
+// 제일 정직하다 — 미완료 건수 같은 부가 정보는 이제 판정에 안 쓰므로 설명에도 넣지 않는다.
+function StatusExplainLine({ homework, vocab, combinedPct, status }) {
+  const meta = STUDENT_STATUS_META[status];
+  if (combinedPct == null) {
+    return html`<div style=${{ fontSize: 11, color: C.slate }}>아직 숙제·단어 학습 기록이 없어요</div>`;
+  }
+  const parts = [];
+  if (homework.pct != null) parts.push(`숙제 ${homework.pct}%`);
+  if (vocab.mainPct != null) parts.push(`단어 ${vocab.mainPct}%`);
+  const color = status === "atRisk" ? C.danger : status === "needsAttention" ? "#8A6413" : "#1E7A46";
+  return html`
+    <div style=${{ fontSize: 11, color }}>
+      ${parts.join(" · ")} → 평균 ${combinedPct}% (${meta.label})
     </div>
   `;
 }
@@ -14661,6 +14942,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     return html`
       <div>
         ${header}
+        <${LearningStatusCard} student=${student} data=${data} />
         ${showStudyReminder && html`
           <${Modal} onClose=${() => setStudyReminderDismissed(true)}>
             <div style=${{ textAlign: "center" }}>
@@ -16905,6 +17187,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
     return html`
       <div>
         ${header}
+        <${LearningStatusCard} student=${student} data=${data} />
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
           <${Card} style=${{ marginBottom: 0 }}>
             <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>📌 오늘 해야 할 일</div>
