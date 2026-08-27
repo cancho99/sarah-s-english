@@ -7283,7 +7283,7 @@ function printAnalysisNotebook(doc) {
         <div class="sub" contenteditable="true" spellcheck="false">Reading Analysis</div>
         <h1 contenteditable="true" spellcheck="false">${esc(doc.title)}</h1>
         <div class="meta">
-          <div class="field"><label>학년</label><span>${esc(doc.grade)}</span></div>
+          <div class="field"><label>학년</label><span contenteditable="true" spellcheck="false">${esc(doc.grade)}</span></div>
           <div class="field"><label>이름</label><input type="text" /></div>
           <div class="field"><label>날짜</label><input type="text" /></div>
         </div>
@@ -8408,6 +8408,9 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         .sheet.page-break{page-break-before:always;}
         .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:14px;margin-bottom:16px;}
         .hd h1{font-size:19px;color:#1C2B4A;margin:0 0 10px;}
+        .hd h1[contenteditable]{outline:none;border-radius:2px;}
+        .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:1px dashed #B8935A;}
+        @media print{ .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:none;} }
         .meta{display:flex;justify-content:center;gap:22px;font-size:12px;flex-wrap:wrap;}
         .meta .field{display:flex;align-items:center;gap:6px;}
         .meta .field label{color:#5B6270;}
@@ -8429,12 +8432,12 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
         @media print{ .toolbar{display:none !important;} }
       </style></head><body>
       <div class="toolbar">
-        <span>학생용 인쇄 미리보기 — ${layout === "2col" ? "2단 레이아웃 · " : ""}정답지는 뒤에 별도 페이지로 붙어요.</span>
+        <span>학생용 인쇄 미리보기 — 제목을 클릭하면 직접 수정할 수 있어요. ${layout === "2col" ? "2단 레이아웃 · " : ""}정답지는 뒤에 별도 페이지로 붙어요.</span>
         <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
       </div>
       <div class="sheet">
         <div class="hd">
-          <h1>${esc(paper.title)}</h1>
+          <h1 contenteditable="true" spellcheck="false">${esc(paper.title)}</h1>
           <div class="meta">
             <div class="field"><label>이름</label><input type="text" /></div>
             <div class="field"><label>학년/반</label><input type="text" /></div>
