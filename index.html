@@ -16909,7 +16909,7 @@ function RoadmapMilestoneBoard({ phase, patchPhase, selected, onSelectMilestone 
               <input value=${cat.title} onChange=${(e) => renameCategory(cat, e.target.value)}
                 style=${{ flex: 1, fontSize: 12.5, fontWeight: 700, color: C.navy, border: "none", background: "transparent", padding: 0, minWidth: 50 }} />
               <input type="number" min="0" step="0.5" value=${cat.weight ?? 1} title="이 영역이 단계 진행률에 반영되는 가중치 (기본 1)"
-                onChange=${(e) => patchPhase((p) => svc.updateCategory(p, cat.id, { weight: Number(e.target.value) || 0 }))}
+                onChange=${(e) => { const v = Number(e.target.value) || 0; patchPhase((p) => svc.updateCategory(p, cat.id, { weight: v })); }}
                 style=${{ width: 30, fontSize: 10, padding: "1px 2px", border: `1px solid ${C.line}`, borderRadius: 3, color: C.slate }} />
               <span style=${{ fontSize: 11, fontWeight: 700, color: C.gold, minWidth: 32, textAlign: "right" }}>${pct}%</span>
               <button onClick=${() => moveCategory(ci, -1)} disabled=${ci === 0} style=${miniBtnStyle}>↑</button>
@@ -17108,7 +17108,7 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
             <${Field} label="목표일"><input type="date" style=${inputStyle} value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} /><//>
             <${Field} label="완료일">
               <input type="date" style=${inputStyle} value=${milestone.completedDate || ""}
-                onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { completedDate: e.target.value || null }))} />
+                onChange=${(e) => { const v = e.target.value || null; patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { completedDate: v })); }} />
             <//>
           </div>
           <div style=${{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10 }}>
@@ -17118,7 +17118,7 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
             <//>
             <${Field} label="영역 내 가중치">
               <input type="number" min="0" step="0.5" style=${inputStyle} value=${milestone.weight ?? 1}
-                onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { weight: Number(e.target.value) || 0 }))} />
+                onChange=${(e) => { const v = Number(e.target.value) || 0; patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { weight: v })); }} />
             <//>
           </div>
           <${Field} label="평가 · 숙달 기준 (Evaluation Criteria)">
@@ -17176,11 +17176,11 @@ function RoadmapMaterialsEditor({ category, milestone, patchPhase }) {
               <span style=${{ fontWeight: 700, color: C.ink }}>${it.title}</span>
               ${it.publisher && html`<span style=${{ color: C.slate }}>· ${it.publisher}</span>`}
               ${it.level && html`<span style=${{ color: C.slate }}>· ${it.level}</span>`}
-              <select value=${it.status || "NOT_STARTED"} onChange=${(e) => patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { status: e.target.value }))}
+              <select value=${it.status || "NOT_STARTED"} onChange=${(e) => { const v = e.target.value; patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { status: v })); }}
                 style=${{ fontSize: 10.5, border: `1px solid ${C.line}`, borderRadius: 10, padding: "1px 6px", color: C.slate }}>
                 ${svc.MATERIAL_STATUSES.map((s) => html`<option key=${s} value=${s}>${s === "NOT_STARTED" ? "미시작" : s === "IN_PROGRESS" ? "진행중" : "완료"}</option>`)}
               </select>
-              <select value=${it.role || ""} onChange=${(e) => patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { role: e.target.value }))}
+              <select value=${it.role || ""} onChange=${(e) => { const v = e.target.value; patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { role: v })); }}
                 title="역할 (같은 교재가 여러 Phase에 반복될 때 이 자리의 역할)"
                 style=${{ fontSize: 10.5, border: `1px solid ${C.line}`, borderRadius: 10, padding: "1px 6px", color: C.slate }}>
                 <option value="">역할 없음</option>
@@ -17238,15 +17238,15 @@ function RoadmapTaskList({ category, milestone, patchPhase }) {
       ${tasks.map((t, ti) => html`
         <div key=${t.id} style=${{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderTop: ti > 0 ? `1px dotted ${C.line}` : "none", flexWrap: "wrap" }}>
           <button onClick=${() => cycleStatus(t)} title=${svc.statusLabel(t.status)} style=${{ ...miniBtnStyle, width: 24, fontSize: 12 }}>${svc.statusIcon(t.status)}</button>
-          <input value=${t.title} onChange=${(e) => patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { title: e.target.value }))}
+          <input value=${t.title} onChange=${(e) => { const v = e.target.value; patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { title: v })); }}
             style=${{ flex: 1, fontSize: 12, border: "none", background: "transparent", padding: "2px 0", minWidth: 70 }} />
           <span style=${{ fontSize: 10.5, color: C.slate, minWidth: 40 }}>${svc.statusLabel(t.status)}</span>
           <input type="number" min="0" max="100" value=${t.progress ?? 0}
-            onChange=${(e) => patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) }))}
+            onChange=${(e) => { const v = Math.max(0, Math.min(100, Number(e.target.value) || 0)); patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { progress: v })); }}
             style=${{ ...cellStyle, width: 44 }} title="진행률 %" />
-          <input placeholder="점수" value=${t.score ?? ""} onChange=${(e) => patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { score: e.target.value }))}
+          <input placeholder="점수" value=${t.score ?? ""} onChange=${(e) => { const v = e.target.value; patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { score: v })); }}
             style=${{ ...cellStyle, width: 44 }} title="평가 점수" />
-          <input placeholder="숙달 메모" value=${t.mastery ?? ""} onChange=${(e) => patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { mastery: e.target.value }))}
+          <input placeholder="숙달 메모" value=${t.mastery ?? ""} onChange=${(e) => { const v = e.target.value; patchPhase((p) => svc.updateTask(p, category.id, milestone.id, t.id, { mastery: v })); }}
             style=${{ ...cellStyle, width: 76 }} title="숙달 메모" />
           <button onClick=${() => moveTask(ti, -1)} disabled=${ti === 0} style=${miniBtnStyle}>↑</button>
           <button onClick=${() => moveTask(ti, 1)} disabled=${ti === tasks.length - 1} style=${miniBtnStyle}>↓</button>
@@ -17540,6 +17540,11 @@ function RoadmapEditor({ student, data, updateData, rawUpdateData }) {
   // 새 Category/Milestone/Task 트리는 현재 보고 있는 단계(viewIdx)의 phase.categories[]에만
   // 씌운다 — addPhase/removePhase/completeAndAdvance와 같은 패턴(즉시 updateData, "저장" 버튼
   // 없이 바로 반영)으로, roadmapService의 순수 함수가 반환한 새 phase 객체로 그 자리만 교체한다.
+  // 주의: patchPhase(fn)의 fn은 Firestore 트랜잭션 안(await tx.get 이후)에서야 호출된다 — 즉
+  // 호출자가 onChange 핸들러에서 넘기는 fn 클로저 안에서 e.target.value를 그때 가서 읽으면 안 된다
+  // (컨트롤드 입력이 그 사이 리렌더로 이전 값으로 되돌아가 있어서 옛 값을 다시 저장해버림 — 드롭다운
+  // 이 조용히 원상복구되는 버그로 실제 발생함). 반드시 onChange에서 e.target.value를 동기적으로
+  // 지역 변수에 담은 뒤 그 변수를 fn에 넘겨야 한다(아래 모든 patchPhase 호출부가 이 패턴을 따름).
   async function patchPhase(fn) {
     await runUpdate((d) => {
       const rm = d.roadmap || roadmap;
