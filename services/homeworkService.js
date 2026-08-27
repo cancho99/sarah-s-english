@@ -36,6 +36,10 @@ window.SarahServices = window.SarahServices || {};
 
   function normalizeHomework(studentId, studentName, hw) {
     const photos = hw.photos || (hw.photo ? [{ url: hw.photo, uploadedAt: null }] : []);
+    // externalPhotos items keep the actual photo bytes out of this array (see
+    // HOMEWORK_PHOTOS_COLLECTION below) — photoCount comes from the stored count instead of the
+    // (empty) local array, so every existing count-based consumer keeps working unchanged.
+    const photoCount = hw.externalPhotos ? (hw.photoCount || 0) : photos.length;
     const today = todayStr();
 
     // Submission status — driven entirely by the existing `done`/`expired` fields, unchanged.
@@ -64,7 +68,7 @@ window.SarahServices = window.SarahServices || {};
       done: !!hw.done,
       doneAt: hw.doneAt || null,
       expired: !!hw.expired,
-      photoCount: photos.length,
+      photoCount,
       status, // "pending" | "overdue" | "done" | "expired" (Phase 1 meaning, unchanged)
       submissionStatus, // "submitted" | "not_submitted" | "expired"
       overdue,
@@ -128,8 +132,28 @@ window.SarahServices = window.SarahServices || {};
     };
   }
 
+  // 2026-08-27 성능 개선 — homework[].photos에 base64 사진을 그대로 박아넣던 방식은 학생 문서
+  // 하나가 수백KB~1MB에 육박하게 만들었고(CLAUDE.md "1MB-per-student-document" 참고), Today/
+  // Students/Reports 등 거의 모든 화면이 ensureData()로 로스터 전체 학생 문서를 통째로 미리
+  // 불러오면서 이 사진 바이트까지 매번 같이 내려받는 게 실제 로딩 지연의 큰 원인으로 확인됐다.
+  // 새 사진은 이 별도 컬렉션(학생당 문서 1개, key=homeworkId)에 저장하고, 학생 문서 쪽엔
+  // {externalPhotos:true, photoCount} 표시만 남긴다 — 기존에 이미 저장된 사진(photos[] 안의
+  // 실제 base64)은 전혀 옮기거나 건드리지 않는다(무마이그레이션, 데이터 그대로 유지).
+  const HOMEWORK_PHOTOS_COLLECTION = "homeworkPhotos";
+
+  async function getExternalPhotos(studentId) {
+    const doc = await window.SarahServices.firebaseClient.getDoc(HOMEWORK_PHOTOS_COLLECTION, studentId);
+    return doc || {};
+  }
+  async function saveExternalPhotos(studentId, homeworkId, photosArray) {
+    await window.SarahServices.firebaseClient.setDocAt(HOMEWORK_PHOTOS_COLLECTION, studentId, { [homeworkId]: photosArray }, { merge: true });
+  }
+
   window.SarahServices.homeworkService = {
     HOMEWORK_CATEGORIES,
+    HOMEWORK_PHOTOS_COLLECTION,
+    getExternalPhotos,
+    saveExternalPhotos,
     normalizeHomework,
     getHomeworkForStudent,
     getAllHomeworkAcrossRoster,

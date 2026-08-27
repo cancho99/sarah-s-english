@@ -121,6 +121,13 @@ service cloud.firestore {
       allow read, write: if isTeacher() || (isOwnStudent() && request.auth.token.studentId == studentId);
     }
 
+    // 2026-08-27 성능 개선 — homework[].photos의 base64를 별도 컬렉션으로 분리(학생당 문서
+    // 1개, key=homeworkId). sarahsEnglishStudents와 완전히 같은 신뢰 모델(본인 학생 문서만
+    // read/write)이라 그 규칙을 그대로 미러링한다.
+    match /homeworkPhotos/{studentId} {
+      allow read, write: if isTeacher() || (isOwnStudent() && request.auth.token.studentId == studentId);
+    }
+
     // ── 이번 Phase에서 손대지 않는 나머지 컬렉션 — 기존과 동일하게 완전 개방 유지 ──
     match /sarahsEnglishMeta/{id} { allow read, write: if true; }
     match /sarahsEnglishWordbank/{id} { allow read, write: if true; }
