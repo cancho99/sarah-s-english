@@ -15819,6 +15819,7 @@ function RoadmapMilestoneList({ category, patchPhase, selectedId, onSelect }) {
 function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
   const svc = window.SarahServices.roadmapService;
   const [title, setTitle] = useState(milestone.title || "");
+  const [area, setArea] = useState(milestone.area || "");
   const [description, setDescription] = useState(milestone.description || "");
   const [target, setTarget] = useState(milestone.target || "");
   const [current, setCurrent] = useState(milestone.current || "");
@@ -15831,7 +15832,7 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
   const [savedMsg, setSavedMsg] = useState("");
 
   useEffect(() => {
-    setTitle(milestone.title || ""); setDescription(milestone.description || "");
+    setTitle(milestone.title || ""); setArea(milestone.area || ""); setDescription(milestone.description || "");
     setTarget(milestone.target || ""); setCurrent(milestone.current || "");
     setStartDate(milestone.startDate || ""); setTargetDate(milestone.targetDate || "");
     setNotes(milestone.notes || ""); setRelatedMaterials(milestone.relatedMaterials || "");
@@ -15843,7 +15844,7 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
 
   async function saveFields() {
     await patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, {
-      title, description, target, current, startDate: startDate || null, targetDate: targetDate || null,
+      title, area, description, target, current, startDate: startDate || null, targetDate: targetDate || null,
       notes, relatedMaterials, evaluationCriteria, ...(hasTasks ? {} : { progress: clampInt(manualProgress) }),
     }));
     setSavedMsg("저장됐어요."); setTimeout(() => setSavedMsg(""), 2000);
@@ -15857,14 +15858,18 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
   function clampInt(v) { const n = Number(v); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0; }
 
   return html`
-    <div style=${{ marginTop: 14, border: `1px solid ${C.gold}`, borderRadius: 6, padding: 14, background: "#FFFDF9" }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
-        <input value=${title} onChange=${(e) => setTitle(e.target.value)} style=${{ fontWeight: 700, fontSize: 14, color: C.navy, border: "none", background: "transparent", padding: 0, flex: 1 }} />
+    <div style=${{ marginTop: 14, border: `1px solid ${C.gold}`, borderRadius: 8, padding: 16, background: "#FFFDF9" }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 8 }}>
+        <div style=${{ flex: 1 }}>
+          <input value=${title} onChange=${(e) => setTitle(e.target.value)} style=${{ ...serif, fontWeight: 700, fontSize: 17, color: C.navy, border: "none", background: "transparent", padding: 0, width: "100%" }} />
+          <input value=${area} onChange=${(e) => setArea(e.target.value)} placeholder="영역 태그 (비우면 위 이름으로 자동 인식 — 예: 독해, Speaking)"
+            style=${{ fontSize: 11, color: C.gold, border: "none", background: "transparent", padding: 0, marginTop: 2, width: "100%" }} />
+        </div>
         <button onClick=${onClose} style=${{ background: "none", border: "none", color: C.slate, fontSize: 16, cursor: "pointer" }}>✕</button>
       </div>
 
       <div style=${{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${computedPct}%</div>
+        <div style=${{ ...serif, fontSize: 30, color: C.navy }}>${computedPct}%</div>
         <div style=${{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           ${svc.STATUSES.map((s) => html`
             <button key=${s} onClick=${() => setStatus(s)} style=${{
@@ -15877,51 +15882,124 @@ function RoadmapMilestoneDetail({ category, milestone, patchPhase, onClose }) {
         </div>
       </div>
 
-      <${Field} label="설명">
+      <${Field} label="목표 (Objective)">
         <textarea style=${{ ...inputStyle, minHeight: 46 }} value=${description} onChange=${(e) => setDescription(e.target.value)} />
       <//>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <${Field} label="목표 (Target)"><input style=${inputStyle} value=${target} onChange=${(e) => setTarget(e.target.value)} /><//>
-        <${Field} label="현재 (Current)"><input style=${inputStyle} value=${current} onChange=${(e) => setCurrent(e.target.value)} /><//>
-      </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        <${Field} label="시작일"><input type="date" style=${inputStyle} value=${startDate} onChange=${(e) => setStartDate(e.target.value)} /><//>
-        <${Field} label="목표일"><input type="date" style=${inputStyle} value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} /><//>
-        <${Field} label="완료일">
-          <input type="date" style=${inputStyle} value=${milestone.completedDate || ""}
-            onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { completedDate: e.target.value || null }))} />
-        <//>
-      </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10 }}>
-        <${Field} label=${hasTasks ? "진행률 — Task 기반으로 자동 계산돼요" : "진행률 (%) — 아직 Task가 없어서 직접 입력해요"}>
-          <input type="number" min="0" max="100" style=${{ ...inputStyle, opacity: hasTasks ? 0.55 : 1 }} value=${hasTasks ? computedPct : manualProgress}
-            disabled=${hasTasks} onChange=${(e) => setManualProgress(e.target.value)} />
-        <//>
-        <${Field} label="영역 내 가중치">
-          <input type="number" min="0" step="0.5" style=${inputStyle} value=${milestone.weight ?? 1}
-            onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { weight: Number(e.target.value) || 0 }))} />
-        <//>
-      </div>
-      <${Field} label="평가 · 숙달 기준 (Evaluation Criteria)">
-        <input style=${inputStyle} value=${evaluationCriteria} onChange=${(e) => setEvaluationCriteria(e.target.value)} placeholder="예: 최근 평가 86% · 통과 기준 80%" />
-      <//>
-      <${Field} label="관련 교재 · 자료 (Related Materials)">
-        <input style=${inputStyle} value=${relatedMaterials} onChange=${(e) => setRelatedMaterials(e.target.value)} />
-      <//>
-      <${Field} label="선생님 메모">
-        <textarea style=${{ ...inputStyle, minHeight: 46 }} value=${notes} onChange=${(e) => setNotes(e.target.value)} />
-      <//>
-      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+
+      <${RoadmapMaterialsEditor} category=${category} milestone=${milestone} patchPhase=${patchPhase} />
+
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, margin: "12px 0 4px" }}>
         <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveFields}>저장<//>
         ${savedMsg && html`<span style=${{ fontSize: 11.5, color: C.navy }}>${savedMsg}</span>`}
       </div>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6, borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>Tasks</div>
+      <details style=${{ marginTop: 10 }}>
+        <summary style=${{ fontSize: 11.5, color: C.slate, cursor: "pointer" }}>세부 정보 더 보기 (목표치·기간·평가기준·메모) ▾</summary>
+        <div style=${{ marginTop: 10 }}>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <${Field} label="목표 (Target)"><input style=${inputStyle} value=${target} onChange=${(e) => setTarget(e.target.value)} /><//>
+            <${Field} label="현재 (Current)"><input style=${inputStyle} value=${current} onChange=${(e) => setCurrent(e.target.value)} /><//>
+          </div>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+            <${Field} label="시작일"><input type="date" style=${inputStyle} value=${startDate} onChange=${(e) => setStartDate(e.target.value)} /><//>
+            <${Field} label="목표일"><input type="date" style=${inputStyle} value=${targetDate} onChange=${(e) => setTargetDate(e.target.value)} /><//>
+            <${Field} label="완료일">
+              <input type="date" style=${inputStyle} value=${milestone.completedDate || ""}
+                onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { completedDate: e.target.value || null }))} />
+            <//>
+          </div>
+          <div style=${{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 10 }}>
+            <${Field} label=${hasTasks ? "진행률 — Task 기반으로 자동 계산돼요" : "진행률 (%) — 아직 Task가 없어서 직접 입력해요"}>
+              <input type="number" min="0" max="100" style=${{ ...inputStyle, opacity: hasTasks ? 0.55 : 1 }} value=${hasTasks ? computedPct : manualProgress}
+                disabled=${hasTasks} onChange=${(e) => setManualProgress(e.target.value)} />
+            <//>
+            <${Field} label="영역 내 가중치">
+              <input type="number" min="0" step="0.5" style=${inputStyle} value=${milestone.weight ?? 1}
+                onChange=${(e) => patchPhase((p) => svc.updateMilestone(p, category.id, milestone.id, { weight: Number(e.target.value) || 0 }))} />
+            <//>
+          </div>
+          <${Field} label="평가 · 숙달 기준 (Evaluation Criteria)">
+            <input style=${inputStyle} value=${evaluationCriteria} onChange=${(e) => setEvaluationCriteria(e.target.value)} placeholder="예: 최근 평가 86% · 통과 기준 80%" />
+          <//>
+          <${Field} label="관련 교재 · 자료 (예전 방식 텍스트, 위 교재 카드와 별개로 자유 메모용)">
+            <input style=${inputStyle} value=${relatedMaterials} onChange=${(e) => setRelatedMaterials(e.target.value)} />
+          <//>
+          <${Field} label="선생님 메모">
+            <textarea style=${{ ...inputStyle, minHeight: 46 }} value=${notes} onChange=${(e) => setNotes(e.target.value)} />
+          <//>
+          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+            <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${saveFields}>저장<//>
+          </div>
+        </div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderTop: `1px dashed ${C.line}`, paddingTop: 12 }}>Tasks</div>
       <${RoadmapTaskList} category=${category} milestone=${milestone} patchPhase=${patchPhase} />
     </div>
   `;
 }
 
+// 교재 구조화 편집기(item 6/7, 2026-08-27 로드맵 개편) — milestone.materials의 4버킷(주교재/
+// 부교재/내신·학교별/기출·실전) 각각을 태그형 카드로 보여주고 추가/상태변경/삭제한다. 즉시 저장
+// (patchPhase 패턴, RoadmapMilestoneBoard와 동일). 옛 relatedMaterials 텍스트 필드는 삭제하지
+// 않고 RoadmapMilestoneDetail의 접힌 "추가 정보"에 그대로 남겨(하위호환), 이 화면과 별개로 둔다.
+// 같은 교재가 여러 Phase/Milestone에 반복 배치될 때(예: 듣기 유지 학습, TOEFL 반복 응시) 그
+// 자리에서의 역할을 한눈에 보여주는 배지 색(2026-08-27 로드맵 교재 검토 후속). role이 없는(기존)
+// material은 배지 없이 그대로 렌더링된다 — 하위호환, 강제 아님.
+const MATERIAL_ROLE_COLOR = { MAIN: C.gold, REVIEW: "#3C5F8A", SCHOOL: "#2F7D52", INTENSIVE: C.danger };
+function RoadmapMaterialsEditor({ category, milestone, patchPhase }) {
+  const svc = window.SarahServices.roadmapService;
+  const materials = svc.materialsOf(milestone);
+  const [drafts, setDrafts] = useState({});
+  function setDraft(bucket, field, val) {
+    setDrafts((d) => ({ ...d, [bucket]: { ...(d[bucket] || {}), [field]: val } }));
+  }
+  async function addItem(bucket) {
+    const draft = drafts[bucket] || {};
+    if (!(draft.title || "").trim()) return;
+    await patchPhase((p) => svc.addMaterial(p, category.id, milestone.id, bucket, { title: draft.title.trim(), publisher: (draft.publisher || "").trim(), level: (draft.level || "").trim() }));
+    setDrafts((d) => ({ ...d, [bucket]: {} }));
+  }
+  return html`
+    <div style=${{ marginTop: 10 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📘 교재</div>
+      ${svc.MATERIAL_BUCKETS.map((bucket) => html`
+        <div key=${bucket} style=${{ marginBottom: 8 }}>
+          <div style=${{ fontSize: 10.5, fontWeight: 700, color: C.slate, letterSpacing: 0.5, marginBottom: 4 }}>${svc.MATERIAL_BUCKET_LABEL_KO[bucket]}</div>
+          ${(materials[bucket] || []).length === 0 && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>없음</div>`}
+          ${materials[bucket].map((it) => html`
+            <div key=${it.id} style=${{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px", border: `1px solid ${C.line}`, borderRadius: 14, marginBottom: 4, fontSize: 12, flexWrap: "wrap" }}>
+              ${it.role && html`<span style=${{ fontSize: 9, fontWeight: 700, color: "#fff", background: MATERIAL_ROLE_COLOR[it.role] || C.slate, borderRadius: 8, padding: "2px 6px", letterSpacing: 0.3 }}>${it.role}</span>`}
+              <span style=${{ fontWeight: 700, color: C.ink }}>${it.title}</span>
+              ${it.publisher && html`<span style=${{ color: C.slate }}>· ${it.publisher}</span>`}
+              ${it.level && html`<span style=${{ color: C.slate }}>· ${it.level}</span>`}
+              <select value=${it.status || "NOT_STARTED"} onChange=${(e) => patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { status: e.target.value }))}
+                style=${{ fontSize: 10.5, border: `1px solid ${C.line}`, borderRadius: 10, padding: "1px 6px", color: C.slate }}>
+                ${svc.MATERIAL_STATUSES.map((s) => html`<option key=${s} value=${s}>${s === "NOT_STARTED" ? "미시작" : s === "IN_PROGRESS" ? "진행중" : "완료"}</option>`)}
+              </select>
+              <select value=${it.role || ""} onChange=${(e) => patchPhase((p) => svc.updateMaterial(p, category.id, milestone.id, bucket, it.id, { role: e.target.value }))}
+                title="역할 (같은 교재가 여러 Phase에 반복될 때 이 자리의 역할)"
+                style=${{ fontSize: 10.5, border: `1px solid ${C.line}`, borderRadius: 10, padding: "1px 6px", color: C.slate }}>
+                <option value="">역할 없음</option>
+                ${svc.MATERIAL_ROLES.map((r) => html`<option key=${r} value=${r}>${r}</option>`)}
+              </select>
+              <button onClick=${() => patchPhase((p) => svc.removeMaterial(p, category.id, milestone.id, bucket, it.id))} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 13 }}>✕</button>
+            </div>
+          `)}
+          <div style=${{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            <input placeholder="교재명" value=${(drafts[bucket] || {}).title || ""} onChange=${(e) => setDraft(bucket, "title", e.target.value)}
+              onKeyDown=${(e) => e.key === "Enter" && addItem(bucket)} style=${{ ...inputStyle, marginBottom: 0, width: 130, fontSize: 11.5, padding: "4px 8px" }} />
+            <input placeholder="출판사(선택)" value=${(drafts[bucket] || {}).publisher || ""} onChange=${(e) => setDraft(bucket, "publisher", e.target.value)}
+              style=${{ ...inputStyle, marginBottom: 0, width: 90, fontSize: 11.5, padding: "4px 8px" }} />
+            <input placeholder="레벨(선택)" value=${(drafts[bucket] || {}).level || ""} onChange=${(e) => setDraft(bucket, "level", e.target.value)}
+              style=${{ ...inputStyle, marginBottom: 0, width: 80, fontSize: 11.5, padding: "4px 8px" }} />
+            <button onClick=${() => addItem(bucket)} style=${{ ...miniBtnStyle, padding: "4px 10px", fontSize: 11 }}>+ 추가</button>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
 function RoadmapTaskList({ category, milestone, patchPhase }) {
   const svc = window.SarahServices.roadmapService;
   const tasks = milestone.tasks || [];
@@ -15986,6 +16064,52 @@ function RoadmapTaskList({ category, milestone, patchPhase }) {
 // svc.allMilestones)까지 바로 보인다. 아래 원형 스텝퍼+편집 폼(기존 UI, 무수정)과 별개로 존재하는
 // 순수 요약 뷰라서 편집 로직은 전혀 안 건드린다 — 카드를 누르면 onSelectPhase(i)로 기존 viewIdx만
 // 옮겨서(원형 스텝퍼를 누른 것과 동일 동작) 아래 편집 폼도 같은 단계로 스크롤 없이 맞춰준다.
+// 영역별(문법/독해/어휘/듣기 등) 상태 배지 — item 4/9 요구사항의 ON TRACK/IN PROGRESS/
+// NEEDS ATTENTION/COMPLETED 색상+텍스트 동시 표시. roadmapService.areaStatusInfo가 반환하는
+// key만 보고 이 파일 쪽 팔레트로 매핑한다(서비스 레이어는 색을 모른다, UI 관심사 분리 유지).
+const AREA_STATUS_STYLE = {
+  completed: { color: "#3D6B4F", bg: "#E8F3EC" },
+  onTrack: { color: C.gold, bg: "#FBF4EA" },
+  needsAttention: { color: "#8A6413", bg: "#FBF1DD" },
+  notStarted: { color: C.slate, bg: C.ivory },
+};
+// PHASE 카드를 접은 채로도 "문법 70% · 독해 80% · 어휘 90% · 듣기 100%"를 바로 볼 수 있게 하는
+// 한 줄 요약(item 4) — Category 구분 없이 area 단위로 평탄화한 svc.groupMilestonesByArea 재사용.
+function RoadmapPhaseAreaStrip({ phase }) {
+  const svc = window.SarahServices.roadmapService;
+  const areas = svc.groupMilestonesByArea(phase);
+  if (areas.length === 0) return null;
+  return html`
+    <div style=${{ display: "flex", flexWrap: "wrap", gap: "4px 14px", padding: "0 12px 10px" }}>
+      ${areas.map((a) => html`
+        <div key=${a.area} style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+          <span style=${{ color: C.ink, fontWeight: 600 }}>${a.area}</span>
+          <span style=${{ fontWeight: 700, color: AREA_STATUS_STYLE[a.status.key].color }}>${a.progress}%</span>
+        </div>
+      `)}
+    </div>
+  `;
+}
+// Phase 통과 조건 체크리스트(item 9, 2026-08-27 사용자 지시 — 표준 4항목 틀: 목표 수준 도달/
+// 진단평가 통과/약점 보강 완료/다음 단계 진입 가능). 체크 즉시 저장(다른 구조적 편집과 동일한
+// patchPhase 패턴, "저장" 버튼 없음). 기존 completionCriteria(자유 텍스트, 이미 실제 내용이
+// 들어있는 필드)는 그대로 두고 체크리스트 아래 참고 메모로 같이 보여준다 — 대체가 아니라 추가.
+function RoadmapCompletionChecklist({ phase, patchPhase, completionCriteria }) {
+  const svc = window.SarahServices.roadmapService;
+  const items = svc.ensureChecklist(phase);
+  return html`
+    <div style=${{ marginTop: 14, marginBottom: 4 }}>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>✅ PHASE 통과 조건</div>
+      ${items.map((it) => html`
+        <label key=${it.id} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "5px 2px", cursor: "pointer", fontSize: 13 }}>
+          <input type="checkbox" checked=${!!it.done} onChange=${() => patchPhase((p) => svc.toggleChecklistItem({ ...p, completionChecklist: svc.ensureChecklist(p) }, it.id))} style=${{ width: 16, height: 16 }} />
+          <span style=${{ color: it.done ? C.slate : C.ink, textDecoration: it.done ? "line-through" : "none" }}>${it.label}</span>
+        </label>
+      `)}
+      ${completionCriteria && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 6, paddingLeft: 2 }}>참고: ${completionCriteria}</div>`}
+    </div>
+  `;
+}
 function RoadmapPhaseOverview({ phases, currentIdx, viewIdx, onSelectPhase }) {
   const svc = window.SarahServices.roadmapService;
   const [openIdx, setOpenIdx] = useState(null);
@@ -15997,23 +16121,25 @@ function RoadmapPhaseOverview({ phases, currentIdx, viewIdx, onSelectPhase }) {
         const isOpen = openIdx === i;
         const rows = svc.allMilestones(p);
         const barColor = st.key === "done" ? "#3D6B4F" : C.gold;
+        const isCurrent = i === currentIdx;
         return html`
           <div key=${i} style=${{
-            border: `1px solid ${i === viewIdx ? C.gold : C.line}`, borderRadius: 6, marginBottom: 8, overflow: "hidden",
+            border: `1.5px solid ${i === viewIdx ? C.gold : isCurrent ? C.navy : C.line}`, borderRadius: 8, marginBottom: 10, overflow: "hidden",
             background: st.key === "current" ? "#FBF4EA" : C.white,
           }}>
-            <div style=${{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer", flexWrap: "wrap" }}
+            <div style=${{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px 4px", cursor: "pointer", flexWrap: "wrap" }}
               onClick=${() => { setOpenIdx(isOpen ? null : i); onSelectPhase(i); }}>
               <span style=${{ fontSize: 12 }}>${isOpen ? "▾" : "▸"}</span>
               <span style=${{ fontSize: 11, fontWeight: 700, color: C.slate }}>PHASE ${i + 1}</span>
-              <span style=${{ flex: 1, fontSize: 13, fontWeight: 700, color: C.navy, minWidth: 90 }}>${p.title || `Phase ${i + 1}`}</span>
+              <span style=${{ flex: 1, ...serif, fontSize: 16, fontWeight: 700, color: C.navy, minWidth: 90 }}>${p.title || `Phase ${i + 1}`}</span>
               ${p.periodLabel && html`<span style=${{ fontSize: 11, color: C.slate }}>${p.periodLabel}</span>`}
-              <span style=${{ fontSize: 11.5, fontWeight: 700, color: st.key === "done" ? "#3D6B4F" : st.key === "current" ? C.gold : C.slate }}>${st.icon} ${st.label}</span>
-              <span style=${{ ...serif, fontSize: 15, color: C.navy, minWidth: 42, textAlign: "right" }}>${pct}%</span>
+              <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 10, color: st.key === "done" ? "#3D6B4F" : st.key === "current" ? C.gold : C.slate, background: st.key === "done" ? "#E8F3EC" : st.key === "current" ? "#F3E4C8" : C.ivory }}>${st.icon} ${st.label}</span>
+              <span style=${{ ...serif, fontSize: 20, color: C.navy, minWidth: 50, textAlign: "right" }}>${pct}%</span>
             </div>
-            <div style=${{ height: 6, background: C.line, margin: "0 12px 10px", borderRadius: 3, overflow: "hidden" }}>
+            <div style=${{ height: 7, background: C.line, margin: "0 12px 8px", borderRadius: 3.5, overflow: "hidden" }}>
               <div style=${{ height: "100%", width: `${pct}%`, background: barColor }} />
             </div>
+            <${RoadmapPhaseAreaStrip} phase=${p} />
             ${isOpen && html`
               <div style=${{ padding: "0 12px 12px", borderTop: `1px dashed ${C.line}` }}>
                 ${rows.length === 0
@@ -16203,17 +16329,24 @@ function RoadmapEditor({ student, data, updateData }) {
         ${overdueDays > 0 && html`<span style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⚠ ${phase.title || `Phase ${viewIdx + 1}`} 목표일 ${overdueDays}일 지남</span>`}
       </div>
 
-      <div style=${{ display: "flex", alignItems: "center", gap: 18, marginBottom: 14, padding: "10px 16px", background: C.ivory, borderRadius: 6, flexWrap: "wrap" }}>
+      <div style=${{ display: "flex", alignItems: "center", gap: 18, marginBottom: 4, padding: "16px 20px", background: C.ivory, borderRadius: 8, flexWrap: "wrap" }}>
         <div>
-          <div style=${{ fontSize: 9.5, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>OVERALL PROGRESS</div>
-          <div style=${{ ...serif, fontSize: 26, color: C.navy }}>${svc.overallProgress(roadmap)}%</div>
+          <div style=${{ fontSize: 10, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>전체 진행률</div>
+          <div style=${{ ...serif, fontSize: 36, color: C.navy, lineHeight: 1.1 }}>${svc.overallProgress(roadmap)}%</div>
         </div>
-        <div style=${{ borderLeft: `1px solid ${C.line}`, paddingLeft: 18 }}>
-          <div style=${{ fontSize: 9.5, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>CURRENT PHASE</div>
-          <div style=${{ fontSize: 13.5, color: C.navy, fontWeight: 700, marginTop: 2 }}>PHASE ${currentIdx + 1} · ${phases[currentIdx]?.title || ""}</div>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginTop: 2 }}>${svc.phaseProgress(phases[currentIdx] || {})}%</div>
+        <div style=${{ borderLeft: `1px solid ${C.line}`, paddingLeft: 20, flex: 1, minWidth: 200 }}>
+          <div style=${{ fontSize: 10, color: C.slate, fontWeight: 700, letterSpacing: 1 }}>CURRENT PHASE</div>
+          <div style=${{ ...serif, fontSize: 18, color: C.navy, fontWeight: 700, marginTop: 3 }}>PHASE ${currentIdx + 1} · ${phases[currentIdx]?.title || ""}</div>
+          <div style=${{ fontSize: 12.5, color: C.gold, fontWeight: 700, marginTop: 2 }}>이 단계 진행률 ${svc.phaseProgress(phases[currentIdx] || {})}%</div>
         </div>
       </div>
+      ${(phases[currentIdx]?.objectives || []).length > 0 && html`
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, margin: "10px 0 14px" }}>
+          ${(phases[currentIdx].objectives || []).map((o, oi) => html`
+            <span key=${oi} style=${{ fontSize: 12, color: C.navy, background: "#F3E4C8", borderRadius: 14, padding: "4px 12px", fontWeight: 600 }}>🎯 ${o}</span>
+          `)}
+        </div>
+      `}
 
       <${RoadmapPhaseOverview} phases=${phases} currentIdx=${currentIdx} viewIdx=${viewIdx} onSelectPhase=${setViewIdx} />
 
@@ -16310,6 +16443,8 @@ function RoadmapEditor({ student, data, updateData }) {
           <//>
         </div>
       <//>
+
+      <${RoadmapCompletionChecklist} phase=${phase} patchPhase=${patchPhase} completionCriteria=${completionCriteria} />
 
       <${RoadmapMilestoneBoard} key=${viewIdx} phase=${phase} patchPhase=${patchPhase} />
 
@@ -17163,6 +17298,33 @@ function phaseMaterialsList(phase) {
 // 레이아웃(Student Profile → Progress → Timeline → Current/Next/Goal → Skill Matrix →
 // Why This Roadmap)으로 재구성한다. 확장 필드(skills/whyRoadmap/objectives/materialsList 등)가
 // 비어 있으면 그 섹션을 감추거나 기본 텍스트로 대체해, 아직 안 채운 학생도 어색하지 않게 만든다.
+// 학부모용 영역별 진행률 바(item 3 요구사항 "영역별 Progress" 카드) — 현재 Phase의 Milestone을
+// area 기준으로 묶어(groupMilestonesByArea, 교사 화면과 동일 계산이라 숫자가 절대 어긋나지
+// 않음) 문법/독해/어휘/듣기 각각의 진행률만 담백하게 보여준다. Milestone/Task/메모/교재 상태 같은
+// 교사 관리용 세부 정보는 이 카드에 전혀 노출하지 않는다(item 8 Parent/Teacher 분리).
+function ParentRoadmapAreaProgress({ phase, sectionTitle, label, navy, slate, line, gold }) {
+  const svc = window.SarahServices.roadmapService;
+  const areas = svc.groupMilestonesByArea(phase);
+  if (areas.length === 0) return null;
+  return html`
+    <div style=${{ marginBottom: 28 }}>
+      <div style=${sectionTitle}>영역별 진행 상황</div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 18 }}>
+        ${areas.map((a) => html`
+          <div key=${a.area}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+              <span style=${{ fontSize: 13, fontWeight: 700, color: navy }}>${a.area}</span>
+              <span style=${{ ...serif, fontSize: 18, color: navy }}>${a.progress}%</span>
+            </div>
+            <div style=${{ height: 6, background: line, borderRadius: 3, overflow: "hidden" }}>
+              <div style=${{ height: "100%", width: `${a.progress}%`, background: gold }} />
+            </div>
+          </div>
+        `)}
+      </div>
+    </div>
+  `;
+}
 function ParentRoadmapSection({ student, data }) {
   const roadmap = data.roadmap;
   const [openIdx, setOpenIdx] = useState(roadmap ? (roadmap.currentPhaseIndex || 0) : 0);
@@ -17235,6 +17397,8 @@ function ParentRoadmapSection({ student, data }) {
           </div>
         </div>
       </div>
+
+      <${ParentRoadmapAreaProgress} phase=${currentPhase} sectionTitle=${sectionTitle} label=${label} navy=${navy} slate=${slate} line=${line} gold=${gold} />
 
       <div style=${sectionTitle}>Long-Term Roadmap</div>
       <div style=${{ marginBottom: 28 }}>

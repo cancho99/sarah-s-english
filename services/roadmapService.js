@@ -88,7 +88,45 @@ window.SarahServices = window.SarahServices || {};
       startDate: null, targetDate: null, completedDate: null,
       notes: "", relatedMaterials: "", evaluationCriteria: "",
       weight: 1, tasks: [],
+      // Optional, additive (2026-08-27 로드맵 개편) — area: 영역별 진행률 바 그룹핑 키. 없으면
+      // groupMilestonesByArea()가 title로 폴백하므로 기존 데이터도 마이그레이션 없이 즉시 동작한다.
+      // materials: 4버킷 구조화 교재 목록. 없으면 UI가 기존 relatedMaterials 문자열로 폴백 표시한다.
+      area: "",
+      materials: { main: [], supplementary: [], school: [], intensive: [] },
     };
+  }
+  const MATERIAL_BUCKETS = ["main", "supplementary", "school", "intensive"];
+  const MATERIAL_BUCKET_LABEL_KO = { main: "주교재", supplementary: "부교재", school: "내신/학교별", intensive: "기출·실전" };
+  const MATERIAL_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"];
+  // role: 같은 교재가 여러 Phase/Milestone에 걸쳐 반복 배치될 때(예: 유지 학습, 반복 응시) 그
+  // 자리에서의 역할을 표시하는 optional 배지(2026-08-27 로드맵 교재 검토 후속 — additive, 기존
+  // material에는 없어도 UI가 "역할 없음"으로 정상 렌더링한다). 버킷(주교재/부교재/내신/기출)과는
+  // 별개 축이다 — 버킷은 "어디 담겼는가", role은 "이 자리에서 무슨 역할인가".
+  const MATERIAL_ROLES = ["MAIN", "REVIEW", "SCHOOL", "INTENSIVE"];
+  function createMaterialItem(fields) {
+    return { id: uid(), title: "", publisher: "", level: "", status: "NOT_STARTED", role: "", ...(fields || {}) };
+  }
+  function materialsOf(milestone) {
+    const m = (milestone && milestone.materials) || {};
+    const out = {};
+    MATERIAL_BUCKETS.forEach((b) => { out[b] = m[b] || []; });
+    return out;
+  }
+  // 4항목 표준 Phase 통과 조건 틀(2026-08-27, 사용자 지시로 표준 문구 채택) — done은 항상 false로
+  // 시작한다(완료 여부를 추측해서 채우지 않음, item 10 "날짜 경과나 추측으로 진행률을 매기지
+  // 않는다" 원칙과 동일하게 체크리스트에도 적용). 기존 phase.completionCriteria(자유 텍스트,
+  // 이미 실제 내용이 들어있음)는 이 체크리스트와 별개로 계속 유지되며 참고 메모로 함께 보여준다.
+  // 고정 id를 쓴다(uid()가 아니라) — ensureChecklist()는 phase.completionChecklist가 아직
+  // 저장되기 전까지는 호출될 때마다 이 기본값을 새로 만들어내는데, id가 매번 랜덤이면 방금 화면에
+  // 그려진 항목의 id와 toggle 시점에 다시 생성되는 항목의 id가 서로 달라져서 체크가 반영되지 않는
+  // 버그가 생긴다(실제로 harness 테스트에서 재현·발견). 라벨 기반 고정 id라 항상 같은 값을 낸다.
+  function defaultCompletionChecklist() {
+    return [
+      { id: "target-level", label: "목표 수준 도달", done: false },
+      { id: "diagnostic-pass", label: "진단평가 통과", done: false },
+      { id: "weakness-done", label: "약점 보강 완료", done: false },
+      { id: "next-phase-ready", label: "다음 단계 진입 가능", done: false },
+    ];
   }
   function createCategory(title) {
     return { id: uid(), title: title || "", description: "", order: 0, weight: 1, milestones: [] };
@@ -224,6 +262,68 @@ window.SarahServices = window.SarahServices || {};
     })));
   }
 
+  // ---------- Material CRUD (2026-08-27 로드맵 개편, additive) — milestone.materials[bucket][] ----------
+  function mapMilestoneById(phase, categoryId, milestoneId, fn) {
+    return mapCategories(phase, (c) => (c.id !== categoryId ? c : mapMilestones(c, (m) => (m.id === milestoneId ? fn(m) : m))));
+  }
+  function addMaterial(phase, categoryId, milestoneId, bucket, fields) {
+    return mapMilestoneById(phase, categoryId, milestoneId, (m) => {
+      const materials = materialsOf(m);
+      return { ...m, materials: { ...materials, [bucket]: [...materials[bucket], createMaterialItem(fields)] } };
+    });
+  }
+  function updateMaterial(phase, categoryId, milestoneId, bucket, materialId, patch) {
+    return mapMilestoneById(phase, categoryId, milestoneId, (m) => {
+      const materials = materialsOf(m);
+      return { ...m, materials: { ...materials, [bucket]: materials[bucket].map((it) => (it.id === materialId ? { ...it, ...patch } : it)) } };
+    });
+  }
+  function removeMaterial(phase, categoryId, milestoneId, bucket, materialId) {
+    return mapMilestoneById(phase, categoryId, milestoneId, (m) => {
+      const materials = materialsOf(m);
+      return { ...m, materials: { ...materials, [bucket]: materials[bucket].filter((it) => it.id !== materialId) } };
+    });
+  }
+
+  // ---------- Phase completion checklist (2026-08-27, additive — phase.completionChecklist[]) ----------
+  function toggleChecklistItem(phase, itemId) {
+    const items = phase.completionChecklist || [];
+    return { ...phase, completionChecklist: items.map((it) => (it.id === itemId ? { ...it, done: !it.done } : it)) };
+  }
+  function ensureChecklist(phase) {
+    return (phase.completionChecklist && phase.completionChecklist.length) ? phase.completionChecklist : defaultCompletionChecklist();
+  }
+
+  // ---------- Area grouping (2026-08-27 로드맵 개편) — "영역별 Progress" 바를 위해 한 Phase 안의
+  // 모든 Milestone을 Category 구분 없이 area(없으면 title로 폴백) 기준으로 묶는다. 같은 area 이름을
+  // 가진 Milestone이 여러 개면 진행률은 그 Milestone들의 단순 평균(가중치 없음 — 영역 자체는
+  // Category/Milestone weight 체계 밖의 읽기 전용 요약 뷰라서 별도 가중치를 받지 않는다). ----------
+  function groupMilestonesByArea(phase) {
+    const rows = allMilestones(phase);
+    const order = [];
+    const byArea = {};
+    rows.forEach((r) => {
+      const key = (r.milestone.area || r.milestone.title || "").trim() || "(이름 없음)";
+      if (!byArea[key]) { byArea[key] = []; order.push(key); }
+      byArea[key].push(r);
+    });
+    return order.map((area) => {
+      const entries = byArea[area];
+      const progress = clampPct(entries.reduce((s, e) => s + e.progress, 0) / entries.length);
+      const anyReviewNeeded = entries.some((e) => e.milestone.status === "REVIEW_NEEDED");
+      return { area, progress, entries, status: areaStatusInfo(progress, anyReviewNeeded) };
+    });
+  }
+  // ON TRACK / IN PROGRESS / NEEDS ATTENTION / COMPLETED — item 3 요구사항의 영역 상태 라벨.
+  // REVIEW_NEEDED로 표시된 Milestone이 하나라도 섞여 있으면 진행률과 무관하게 NEEDS ATTENTION을
+  // 우선한다(교사가 명시적으로 "복습 필요"라고 표시한 신호를 진행률 숫자보다 우선 반영).
+  function areaStatusInfo(progress, hasReviewNeeded) {
+    if (hasReviewNeeded) return { key: "needsAttention", label: "NEEDS ATTENTION" };
+    if (progress >= 100) return { key: "completed", label: "COMPLETED" };
+    if (progress > 0) return { key: "onTrack", label: "IN PROGRESS" };
+    return { key: "notStarted", label: "NOT STARTED" };
+  }
+
   // ---------- Read-only overview helpers (for a Phase-cards-with-bars summary view) ----------
   // Flattens every milestone across all of a phase's categories into one list, category
   // boundaries dropped — the "PHASE 카드를 펼치면 세부 목표 진행률이 쭉 보인다" overview only
@@ -263,5 +363,9 @@ window.SarahServices = window.SarahServices || {};
     addMilestone, updateMilestone, removeMilestone, reorderMilestones,
     addTask, updateTask, removeTask, reorderTasks,
     allMilestones, phaseStatusInfo, nextIncompleteMilestone,
+    MATERIAL_BUCKETS, MATERIAL_BUCKET_LABEL_KO, MATERIAL_STATUSES, MATERIAL_ROLES,
+    createMaterialItem, materialsOf, addMaterial, updateMaterial, removeMaterial,
+    defaultCompletionChecklist, toggleChecklistItem, ensureChecklist,
+    groupMilestonesByArea, areaStatusInfo,
   };
 })();
