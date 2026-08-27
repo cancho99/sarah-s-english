@@ -2552,7 +2552,8 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -2852,7 +2853,8 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -3308,7 +3310,8 @@ function SettingsDataPanel({ roster, ensureData, dataCache, updateData, onSelect
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -4163,7 +4166,8 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
     let cancelled = false;
     setLoaded(false);
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -9757,7 +9761,8 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, roster, ensureD
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster || []) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all((roster || []).map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -9857,7 +9862,8 @@ function HomeworkStatusOverview({ roster, ensureData, dataCache, updateData, onB
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -10039,7 +10045,8 @@ function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSel
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       const AT = window.SarahServices.examAttemptService;
       const EP = window.SarahServices.examPaperService;
       const QB = window.SarahServices.questionBankService;
@@ -10680,7 +10687,8 @@ function LessonAreaSection({ roster, ensureData, dataCache, updateData, onSelect
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
@@ -11189,7 +11197,8 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const s of roster) { await ensureData(s.id); if (cancelled) return; }
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (cancelled) return;
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
