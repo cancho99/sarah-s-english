@@ -3996,6 +3996,7 @@ const STUDENT_DETAIL_TABS = [
   { key: "overview", icon: "📌", label: "Overview" },
   { key: "study", icon: "📚", label: "Learning" },
   { key: "assessment", icon: "📊", label: "Assessment" },
+  { key: "roadmap", icon: "🗺", label: "Roadmap" },
   { key: "reports", icon: "📨", label: "Reports" },
 ];
 
@@ -4388,6 +4389,7 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
       ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} onViewGrowthReport=${onViewGrowthReport} deepTarget=${myDeepTarget} />`}
       ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
         analysis=${analysis} analysisLoading=${analysisLoading} />`}
+      ${tab === "roadmap" && html`<${RoadmapEditor} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} />`}
       ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} onSelectStudent=${() => setTab("overview")} />`}
     </div>
   `;
@@ -4491,6 +4493,8 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
 
       <${StudentNextClassSummary} student=${student} />
 
+      <${StudentRoadmapProgressCard} data=${data} onJump=${onJump} />
+
       <${HomeworkProgressCard} data=${data} />
 
       <${VocabPassRateCard} data=${data} />
@@ -4528,20 +4532,53 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
 
       <div style=${{ marginTop: 18 }}>
         <button onClick=${() => setShowAdvanced(!showAdvanced)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, color: C.slate, cursor: "pointer" }}>
-          ${showAdvanced ? "▾" : "▸"} 전체 스케줄 편집 · 수업료 · 로드맵 · 학습 시간 · 저장 공간
+          ${showAdvanced ? "▾" : "▸"} 전체 스케줄 편집 · 수업료 · 학습 시간 · 저장 공간
         </button>
         ${showAdvanced && html`
           <div style=${{ marginTop: 12 }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>전체 학생 스케줄은 Classes → Schedule에서도 볼 수 있어요. 여기서는 이 학생만의 매주 반복 패턴·보강(월별 예외)을 편집해요.</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>전체 학생 스케줄은 Classes → Schedule에서도 볼 수 있어요. 여기서는 이 학생만의 매주 반복 패턴·보강(월별 예외)을 편집해요. 로드맵은 위쪽 🗺 Roadmap 탭으로 옮겼어요.</div>
             <${ScheduleGoalEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />
             <${TuitionEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />
-            <${RoadmapEditor} key=${student.id} student=${student} data=${data} updateData=${updateData} />
             <${ParentStudyTimeTab} studyLog=${data.studyLog || []} />
             <${StorageCleanupPanel} data=${data} updateData=${updateData} />
           </div>
         `}
       </div>
     </div>
+  `;
+}
+
+// 학생 상세 화면 상단(Overview 탭)에 보여주는 로드맵 요약 카드 — HomeworkProgressCard/
+// VocabPassRateCard와 같은 카드 톤(제목 라벨 → 큰 숫자 → 얇은 바)을 그대로 재사용한다. data.roadmap
+// 자체는 이미 StudentOverviewTab에 props로 들어와 있어서 별도 Firestore 호출 없이 순수 계산만
+// 한다(roadmapService.overallProgress/nextIncompleteMilestone). 로드맵이 아직 없는 학생(로드맵을
+// 안 만든 학생)에서는 카드 자체를 렌더링하지 않는다 — "로드맵 없음" 카드를 새로 만들지 않고, 기존
+// "🗺 로드맵 만들기" 진입점(RoadmapEditor, 아래 "전체 스케줄 편집..." 접힘 안)만 그대로 둔다.
+function StudentRoadmapProgressCard({ data, onJump }) {
+  const svc = window.SarahServices.roadmapService;
+  const roadmap = data.roadmap;
+  const phases = roadmap ? (roadmap.phases || []) : [];
+  if (!roadmap || phases.length === 0) return null;
+  const currentIdx = roadmap.currentPhaseIndex || 0;
+  const currentPhase = phases[currentIdx] || {};
+  const pct = svc.overallProgress(roadmap);
+  const next = svc.nextIncompleteMilestone(currentPhase);
+  return html`
+    <${Card} style=${{ marginBottom: 0, cursor: onJump ? "pointer" : "default" }} onClick=${onJump ? () => onJump("roadmap") : undefined}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700 }}>🗺 ROADMAP PROGRESS</div>
+        ${onJump && html`<span style=${{ fontSize: 11, color: C.navy, fontWeight: 700 }}>자세히 보기 →</span>`}
+      </div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style=${{ ...serif, fontSize: 22, color: C.navy, fontWeight: 700 }}>${pct}%</div>
+        <div style=${{ fontSize: 12, color: C.slate }}>PHASE ${currentIdx + 1} · ${currentPhase.title || ""}</div>
+      </div>
+      <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
+        <div style=${{ height: "100%", width: `${pct}%`, background: C.gold }} />
+      </div>
+      ${currentPhase.focus && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8 }}>현재 목표: <span style=${{ color: C.ink }}>${currentPhase.focus}</span></div>`}
+      ${next && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>다음 milestone: <span style=${{ color: C.ink }}>${next.milestone.title}</span></div>`}
+    <//>
   `;
 }
 
@@ -15722,17 +15759,22 @@ function RoadmapMilestoneList({ category, patchPhase, selectedId, onSelect }) {
         const pct = svc.milestoneProgress(m);
         const isSelected = selectedId === m.id;
         return html`
-          <div key=${m.id} onClick=${() => onSelect(isSelected ? null : m.id)} style=${{
-            display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 4, cursor: "pointer",
-            background: isSelected ? "#FBF4EA" : "transparent", border: `1px solid ${isSelected ? C.gold : "transparent"}`, marginBottom: 3, flexWrap: "wrap",
-          }}>
-            <span style=${{ fontSize: 13, width: 16, textAlign: "center" }}>${svc.statusIcon(m.status)}</span>
-            <span style=${{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 80 }}>${m.title}</span>
-            <span style=${{ fontSize: 11, color: C.slate }}>${svc.statusLabel(m.status)}</span>
-            <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold, minWidth: 34, textAlign: "right" }}>${pct}%</span>
-            <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, -1); }} disabled=${mi === 0} style=${miniBtnStyle}>↑</button>
-            <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, 1); }} disabled=${mi === milestones.length - 1} style=${miniBtnStyle}>↓</button>
-            <button onClick=${(e) => { e.stopPropagation(); removeMilestoneClick(m); }} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
+          <div key=${m.id} style=${{ marginBottom: 5 }}>
+            <div onClick=${() => onSelect(isSelected ? null : m.id)} style=${{
+              display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 4, cursor: "pointer",
+              background: isSelected ? "#FBF4EA" : "transparent", border: `1px solid ${isSelected ? C.gold : "transparent"}`, flexWrap: "wrap",
+            }}>
+              <span style=${{ fontSize: 13, width: 16, textAlign: "center" }}>${svc.statusIcon(m.status)}</span>
+              <span style=${{ flex: 1, fontSize: 12.5, color: C.ink, minWidth: 80 }}>${m.title}</span>
+              <span style=${{ fontSize: 11, color: C.slate }}>${svc.statusLabel(m.status)}</span>
+              <span style=${{ fontSize: 12, fontWeight: 700, color: C.gold, minWidth: 34, textAlign: "right" }}>${pct}%</span>
+              <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, -1); }} disabled=${mi === 0} style=${miniBtnStyle}>↑</button>
+              <button onClick=${(e) => { e.stopPropagation(); moveMilestone(mi, 1); }} disabled=${mi === milestones.length - 1} style=${miniBtnStyle}>↓</button>
+              <button onClick=${(e) => { e.stopPropagation(); removeMilestoneClick(m); }} style=${{ ...miniBtnStyle, color: C.danger, borderColor: C.danger }}>✕</button>
+            </div>
+            <div style=${{ height: 4, borderRadius: 2, background: C.line, margin: "2px 8px 0", overflow: "hidden" }}>
+              <div style=${{ height: "100%", width: `${pct}%`, background: C.gold }} />
+            </div>
           </div>
         `;
       })}
@@ -15915,6 +15957,65 @@ function RoadmapTaskList({ category, milestone, patchPhase }) {
   `;
 }
 
+// 읽기 전용 "Phase 카드" 목록 — 전체 로드맵을 한눈에(번호/제목/기간/완료·진행중·예정 상태/전체
+// 진행률 바) 보여주고, 카드를 펼치면 그 단계의 Milestone별 진행률(Category 구분 없이 평탄화,
+// svc.allMilestones)까지 바로 보인다. 아래 원형 스텝퍼+편집 폼(기존 UI, 무수정)과 별개로 존재하는
+// 순수 요약 뷰라서 편집 로직은 전혀 안 건드린다 — 카드를 누르면 onSelectPhase(i)로 기존 viewIdx만
+// 옮겨서(원형 스텝퍼를 누른 것과 동일 동작) 아래 편집 폼도 같은 단계로 스크롤 없이 맞춰준다.
+function RoadmapPhaseOverview({ phases, currentIdx, viewIdx, onSelectPhase }) {
+  const svc = window.SarahServices.roadmapService;
+  const [openIdx, setOpenIdx] = useState(null);
+  return html`
+    <div style=${{ marginBottom: 16 }}>
+      ${phases.map((p, i) => {
+        const pct = svc.phaseProgress(p);
+        const st = svc.phaseStatusInfo(p, i, currentIdx);
+        const isOpen = openIdx === i;
+        const rows = svc.allMilestones(p);
+        const barColor = st.key === "done" ? "#3D6B4F" : C.gold;
+        return html`
+          <div key=${i} style=${{
+            border: `1px solid ${i === viewIdx ? C.gold : C.line}`, borderRadius: 6, marginBottom: 8, overflow: "hidden",
+            background: st.key === "current" ? "#FBF4EA" : C.white,
+          }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", cursor: "pointer", flexWrap: "wrap" }}
+              onClick=${() => { setOpenIdx(isOpen ? null : i); onSelectPhase(i); }}>
+              <span style=${{ fontSize: 12 }}>${isOpen ? "▾" : "▸"}</span>
+              <span style=${{ fontSize: 11, fontWeight: 700, color: C.slate }}>PHASE ${i + 1}</span>
+              <span style=${{ flex: 1, fontSize: 13, fontWeight: 700, color: C.navy, minWidth: 90 }}>${p.title || `Phase ${i + 1}`}</span>
+              ${p.periodLabel && html`<span style=${{ fontSize: 11, color: C.slate }}>${p.periodLabel}</span>`}
+              <span style=${{ fontSize: 11.5, fontWeight: 700, color: st.key === "done" ? "#3D6B4F" : st.key === "current" ? C.gold : C.slate }}>${st.icon} ${st.label}</span>
+              <span style=${{ ...serif, fontSize: 15, color: C.navy, minWidth: 42, textAlign: "right" }}>${pct}%</span>
+            </div>
+            <div style=${{ height: 6, background: C.line, margin: "0 12px 10px", borderRadius: 3, overflow: "hidden" }}>
+              <div style=${{ height: "100%", width: `${pct}%`, background: barColor }} />
+            </div>
+            ${isOpen && html`
+              <div style=${{ padding: "0 12px 12px", borderTop: `1px dashed ${C.line}` }}>
+                ${rows.length === 0
+                  ? html`<div style=${{ fontSize: 12, color: C.slate, paddingTop: 10 }}>이 단계에 등록된 세부 목표(Milestone)가 아직 없어요. 아래 편집 화면에서 학습 영역/Milestone을 추가할 수 있어요.</div>`
+                  : rows.map((r) => html`
+                    <div key=${r.milestone.id} style=${{ marginTop: 10 }}>
+                      <div style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.ink }}>
+                        <span style=${{ fontSize: 12 }}>${svc.statusIcon(r.milestone.status)}</span>
+                        <span style=${{ flex: 1 }}>${r.milestone.title}</span>
+                        <span style=${{ fontSize: 10.5, color: C.slate }}>${svc.statusLabel(r.milestone.status)}</span>
+                        <span style=${{ fontWeight: 700, color: C.gold, minWidth: 34, textAlign: "right" }}>${r.progress}%</span>
+                      </div>
+                      <div style=${{ height: 5, background: C.line, borderRadius: 3, marginTop: 3, overflow: "hidden" }}>
+                        <div style=${{ height: "100%", width: `${r.progress}%`, background: C.gold }} />
+                      </div>
+                    </div>
+                  `)}
+              </div>
+            `}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
 // 학생별 5단계(Phase) 장기 로드맵을 선생님이 직접 기록·추적하는 패널. 각 Phase의 목표 종료일이
 // 지났는데 아직 "진단시험 완료" 처리를 안 했으면 TeacherOverview 홈 화면에 지연 경고로 뜬다
 // (숙제/단어시험/모의고사 미완료를 모으는 것과 같은 방식) — 이게 이 기능의 핵심 목적이다.
@@ -16089,6 +16190,8 @@ function RoadmapEditor({ student, data, updateData }) {
           <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginTop: 2 }}>${svc.phaseProgress(phases[currentIdx] || {})}%</div>
         </div>
       </div>
+
+      <${RoadmapPhaseOverview} phases=${phases} currentIdx=${currentIdx} viewIdx=${viewIdx} onSelectPhase=${setViewIdx} />
 
       <${Field} label="최종 목표">
         <input style=${inputStyle} value=${finalGoal} onChange=${(e) => setFinalGoal(e.target.value)} placeholder="예: 고2 여름방학 · 수능 영어 1등급" />

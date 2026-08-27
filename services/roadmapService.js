@@ -224,6 +224,36 @@ window.SarahServices = window.SarahServices || {};
     })));
   }
 
+  // ---------- Read-only overview helpers (for a Phase-cards-with-bars summary view) ----------
+  // Flattens every milestone across all of a phase's categories into one list, category
+  // boundaries dropped — the "PHASE 카드를 펼치면 세부 목표 진행률이 쭉 보인다" overview only
+  // needs title/progress/status per milestone, not the editing-time category grouping.
+  function allMilestones(phase) {
+    const rows = [];
+    (phase.categories || []).forEach((category) => {
+      (category.milestones || []).forEach((milestone) => {
+        rows.push({ category, milestone, progress: milestoneProgress(milestone) });
+      });
+    });
+    return rows;
+  }
+  // Phase-level 완료/진행중/예정 status — deliberately reuses the SAME signal the existing circle
+  // stepper already derives from (diagnosticDone + currentPhaseIndex), not phaseProgress()'s
+  // percentage, so "완료" here can never disagree with the existing "진단시험 완료" button/badge
+  // elsewhere in RoadmapEditor. Never elapsed-time-based (no targetDate math).
+  function phaseStatusInfo(phase, idx, currentIdx) {
+    const done = idx < currentIdx || (idx === currentIdx && !!phase.diagnosticDone);
+    if (done) return { key: "done", icon: "✓", label: "완료" };
+    if (idx === currentIdx) return { key: "current", icon: "●", label: "진행 중" };
+    return { key: "upcoming", icon: "○", label: "예정" };
+  }
+  // First not-yet-100%-complete milestone in a phase, in category/milestone order — used for a
+  // "다음 milestone" readout. Returns null when the phase has no milestones or all are complete.
+  function nextIncompleteMilestone(phase) {
+    const rows = allMilestones(phase).filter((r) => r.progress < 100);
+    return rows.length ? rows[0] : null;
+  }
+
   window.SarahServices.roadmapService = {
     STATUSES, STATUS_LABEL_KO, STATUS_ICON, STATUS_DEFAULT_PROGRESS,
     statusLabel, statusIcon, defaultProgressForStatus, statusFromProgress,
@@ -232,5 +262,6 @@ window.SarahServices = window.SarahServices || {};
     addCategory, updateCategory, removeCategory, reorderCategories,
     addMilestone, updateMilestone, removeMilestone, reorderMilestones,
     addTask, updateTask, removeTask, reorderTasks,
+    allMilestones, phaseStatusInfo, nextIncompleteMilestone,
   };
 })();
