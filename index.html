@@ -164,7 +164,8 @@
      examPaperService (getQuestionUsageHistory reads it). No UI wired to these yet. -->
 <script src="services/examAssignmentService.js" defer></script>
 <script src="services/examAttemptService.js" defer></script>
-<!-- 학생별 문법/독해 취약 유형 분석 — 순수 계산 서비스, 아직 어떤 UI도 연결하지 않음. -->
+<!-- 학생별 문항 단위 정답률 계산(순수 계산 서비스) — Assessment → Question Performance 탭이 사용.
+     "취약 유형" 판정 기능은 2026-08-27 제거됐다. -->
 <script src="services/studentAnalysisService.js" defer></script>
 <!-- 로드맵 Milestone/Task 진행률 계산 — 순수 계산 서비스, RoadmapEditor(index.html)가 사용. -->
 <script src="services/roadmapService.js" defer></script>
@@ -3974,56 +3975,6 @@ function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
 
 // 학생 정보: personal info + schedule/goals editing, student-first (there's only ever one thing
 // to do per student here, unlike 학생 관리's category-first flow) — also owns add/delete-student.
-// studentAnalysisService.js(순수 계산)의 결과를 보여만 주는 표시 전용 컴포넌트 — Firestore에
-// 아무것도 쓰지 않는다. loading/데이터없음/정상 세 상태를 전부 명시적으로 처리한다.
-function StudentWeaknessAnalysisCard({ loading, analysis, logs }) {
-  const recentLogs = (logs || []).slice(0, 3);
-  return html`
-    <${Card}>
-      <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>🎯 문법/독해 취약 유형 분석</div>
-      ${loading ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : !analysis || analysis.totalQuestions === 0 ? html`
-        <div style=${{ fontSize: 12.5, color: C.slate }}>아직 채점된 시험 응시 기록이 없어요.</div>
-      ` : html`
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-          <div>
-            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📚 문법 영역별 정확도</div>
-            ${analysis.grammar.categories.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>응시한 문법 문제가 없어요.</div>` : analysis.grammar.categories.map((c) => html`
-              <div key=${c.mainCategory} style=${{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                <span style=${{ color: C.ink }}>${c.mainCategory}</span><span style=${{ color: C.slate }}>${c.correct}/${c.total} · ${c.accuracy}%</span>
-              </div>
-            `)}
-          </div>
-          <div>
-            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📖 독해 영역별 정확도</div>
-            ${analysis.reading.categories.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>응시한 독해 문제가 없어요.</div>` : analysis.reading.categories.map((c) => html`
-              <div key=${c.mainCategory} style=${{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                <span style=${{ color: C.ink }}>${c.mainCategory}</span><span style=${{ color: C.slate }}>${c.correct}/${c.total} · ${c.accuracy}%</span>
-              </div>
-            `)}
-          </div>
-          <div>
-            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>⚠️ 주요 취약 유형 Top 3</div>
-            ${analysis.weakAreas.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>아직 판단할 만큼 응시 데이터가 쌓이지 않았어요(영역당 3문항 이상 필요).</div>` : analysis.weakAreas.slice(0, 3).map((w) => html`
-              <div key=${w.bank + w.mainCategory + w.subCategory} style=${{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-                <span style=${{ color: C.ink }}>${w.bank === "grammar" ? "📚" : "📖"} ${w.mainCategory}${w.subCategory ? " · " + w.subCategory : ""}</span>
-                <span style=${{ color: w.priority === "high" ? C.danger : C.slate }}>${w.correct}/${w.total} · ${w.accuracy}%</span>
-              </div>
-            `)}
-          </div>
-          <div>
-            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📘 최근 학습 이력</div>
-            ${recentLogs.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>아직 학습 기록이 없어요.</div>` : recentLogs.map((l) => html`
-              <div key=${l.id} style=${{ fontSize: 12, padding: "3px 0" }}>
-                <span style=${{ color: C.slate }}>${l.date}</span> <span style=${{ color: C.ink }}>${l.content}</span>
-              </div>
-            `)}
-          </div>
-        </div>
-      `}
-    <//>
-  `;
-}
-
 // Phase 2(Teacher OS) STEP 3 — "👩‍🎓 학생" 정보구조 전면 재설계. 기존엔 학생을 고르기 전에
 // "학생 개요"/"전체 기능"(15개 평면 탭) 중 하나를 먼저 고르는 구조였다. 이제는 학생을 고르면
 // 무조건 Overview(현재 상태 한눈에 파악)부터 뜨고, 필요할 때만 5개 영역(Overview/학습/평가/
@@ -4432,9 +4383,9 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
     /* eslint-disable-next-line */
   }, [student.id]);
 
-  // 취약 유형 분석(studentAnalysisService.js, 순수 계산) — Overview와 평가 탭이 같은 결과를
-  // 공유하도록 여기서 한 번만 불러온다(기존엔 StudentInfoSection에만 있었음). Firestore에 쓰지
-  // 않고 로컬 state로만 갖는다 — 로직 자체는 무수정.
+  // 문항별 정답률(studentAnalysisService.js, 순수 계산) — Assessment → Question Performance
+  // 탭이 쓴다(예전엔 Overview 탭의 취약 유형 카드도 같이 썼지만, 그 카드는 2026-08-27 제거됨).
+  // Firestore에 쓰지 않고 로컬 state로만 갖는다.
   const [analysis, setAnalysis] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   useEffect(() => {
@@ -4457,7 +4408,7 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
       <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 8 }}>${student.name} 학생</div>
       <${Tabs} tabs=${STUDENT_DETAIL_TABS} active=${tab} onChange=${setTab} />
       ${tab === "overview" && html`<${StudentOverviewTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
-        saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry} analysis=${analysis} analysisLoading=${analysisLoading}
+        saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry}
         teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJump=${setTab} />`}
       ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} onViewGrowthReport=${onViewGrowthReport} deepTarget=${myDeepTarget} />`}
       ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
@@ -4504,10 +4455,11 @@ function StudentNextClassSummary({ student }) {
 
 // Teacher OS STEP 6 — 사용자가 명시한 11개 우선순위 순서를 그대로 따른다: 학생 기본정보 →
 // 🔴 Teacher Tasks → 🕐 다음 수업 → 📚 숙제 진행 → 🔤 단어 현황 → 📊 최근 시험/성적 →
-// 📈 문법/독해 정확도·⚠️ 취약 유형(같은 카드, StudentWeaknessAnalysisCard 재사용— "최근 학습
-// 기록"도 그 카드의 "최근 학습 이력" 섹션이 이미 보여주므로 별도 카드를 새로 안 만든다) →
 // 📖 Reading 진행 → 최근 상담/주의사항. "카드를 여러 개 무작정 나열"하지 않도록 grid로 묶지 않고
 // 순서대로 1열로 쌓는다 — 이 순서 자체가 우선순위다.
+// (문법/독해 취약 유형 분석 카드는 2026-08-27 사용자 요청으로 제거됨 — StudentWeaknessAnalysisCard
+// 삭제, services/studentAnalysisService.js는 Question Performance 탭이 여전히 쓰는
+// questionAccuracy 계산 때문에 남아있다.)
 // Teacher Tasks에 연결된 teacherTodos는 여기서 완료 처리까지 할 수 있다(saveTeacherTodos 재사용,
 // STEP2의 TeacherTodoPanel과 같은 토글 로직 — 새 필드·새 컬렉션 없음). 학생별 개인 할 일
 // (data.todos/TodoEditor)은 이 카드에서 빼서 중복 표시를 없앴다 — 그 기능 자체는 삭제하지 않고
@@ -4517,7 +4469,7 @@ function StudentNextClassSummary({ student }) {
 // 스케줄 전체 편집/수업료/로드맵/학습 시간/저장 공간은 기본 접힌 "고급 관리" 영역 그대로 유지
 // (STEP5에서 이미 그렇게 정리됨) — ParentStudyTimeTab(공부시간)도 사용자의 11개 목록엔 없어서
 // 이번에 그 영역으로 옮겼다(기능 삭제 아님, 접어둔 곳으로 이동).
-function StudentOverviewTab({ student, data, updateData, roster, saveRosterList, updateStudentRosterEntry, analysis, analysisLoading, teacherTodos, saveTeacherTodos, onJump }) {
+function StudentOverviewTab({ student, data, updateData, roster, saveRosterList, updateStudentRosterEntry, teacherTodos, saveTeacherTodos, onJump }) {
   const svc = window.SarahServices;
   const todayStr = today();
   const todayClass = todaysClassesForRoster([student], todayStr)[0] || null;
@@ -4585,8 +4537,7 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
         <//>
       `}
 
-      <${StudentWeaknessAnalysisCard} loading=${analysisLoading} analysis=${analysis} logs=${data.logs} />
-      <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Reports 탭의 데일리 리포트에서 날짜별로 볼 수 있어요(위 카드의 "최근 학습 이력"에 최신 3건이 나와 있어요).</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Reports 탭의 데일리 리포트에서 날짜별로 볼 수 있어요.</div>
 
       <${StudentReadingSummaryCard} studentId=${student.id} />
 
@@ -4942,17 +4893,16 @@ function StudentStudyTab({ student, data, updateData, onViewGrowthReport, deepTa
   `;
 }
 
-// 📊 Assessment — Timeline / Exams / Mock Exams / Additional Tests / Question Performance /
-// Weak Areas. Teacher OS STEP 12 §3 — "Timeline"은 신규(4계통 통합 읽기 전용 뷰), 나머지 5개는
-// 기존 그대로(입력 화면은 계통별로 계속 따로 있어야 한다 — 시험 종류마다 입력 필드가 달라서
-// 하나로 합칠 수 없다. Timeline은 "보기"만 통합한다).
+// 📊 Assessment — Timeline / Exams / Mock Exams / Additional Tests / Question Performance.
+// Teacher OS STEP 12 §3 — "Timeline"은 신규(4계통 통합 읽기 전용 뷰), 나머지는 기존 그대로
+// (입력 화면은 계통별로 계속 따로 있어야 한다 — 시험 종류마다 입력 필드가 달라서 하나로 합칠 수
+// 없다. Timeline은 "보기"만 통합한다). "Weak Areas" 탭은 2026-08-27 사용자 요청으로 제거됨.
 const STUDENT_ASSESSMENT_SUBTABS = [
   { key: "timeline", icon: "📊", label: "Timeline" },
   { key: "regularExam", icon: "🏫", label: "Exams" },
   { key: "mock", icon: "📄", label: "Mock Exams" },
   { key: "examTests", icon: "📋", label: "Additional Tests" },
   { key: "questionAccuracy", icon: "🎯", label: "Question Performance" },
-  { key: "weakness", icon: "⚠️", label: "Weak Areas" },
 ];
 // Teacher OS STEP 12 §3 — regularExams/mockExams+mockExamResults/examTests+examResults/
 // examAssignments+examAttempts 4계통을 하나의 목록으로 합쳐 보여주기만 하는 읽기 전용 뷰.
@@ -5022,14 +4972,13 @@ function StudentAssessmentTab({ student, data, updateData, examKeyLibrary, analy
       ${sub === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${sub === "examTests" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
       ${sub === "questionAccuracy" && html`<${StudentQuestionAccuracyPanel} loading=${analysisLoading} analysis=${analysis} />`}
-      ${sub === "weakness" && html`<${StudentWeaknessAnalysisCard} loading=${analysisLoading} analysis=${analysis} logs=${data.logs} />`}
     </div>
   `;
 }
 
-// Teacher OS STEP 3 신규 — studentAnalysisService.computeStudentWeaknessAnalysis()가 이제 같이
-// 반환하는 questionAccuracy(문항 단위 누적치, weakAreas와 같은 attempts/questionsById 순회에서
-// 같이 계산됨 — 추가 Firestore 조회 없음)를 보여주기만 하는 표시 전용 컴포넌트.
+// Teacher OS STEP 3 신규 — studentAnalysisService.computeStudentWeaknessAnalysis()가 반환하는
+// questionAccuracy(문항 단위 누적치, 추가 Firestore 조회 없음)를 보여주기만 하는 표시 전용
+// 컴포넌트. "취약 유형(Weak Areas)" 판정은 2026-08-27 제거됐고 이 문항별 정답률만 남았다.
 function StudentQuestionAccuracyPanel({ loading, analysis }) {
   const rows = (analysis && analysis.questionAccuracy) || [];
   return html`
@@ -10098,12 +10047,13 @@ const HW_QUICK_FILTERS = [
 // initialView (Teacher OS integration, additive) — lets a nav item land directly on the board
 // ("📝 숙제 관리") instead of always starting on home ("🏠 대시보드"). Omitted/undefined keeps the
 // original default ("home"), so the existing "teacherCenter" nav call site is unaffected.
-// Phase 2 STEP 2 — also loads grammarQuestions/readingQuestions once here (alongside
-// attempts/papers, same Promise.all) so TeacherCenterHome's per-student 취약 유형 계산
-// (studentAnalysisService.computeStudentWeaknessAnalysis, a pure function) can run against data
-// already in memory instead of issuing its own redundant Firestore reads per student. teacherTodos
-// / saveTeacherTodos are threaded straight through from App() — same collection/writer
-// TeacherOverview's existing 할 일 widget already uses, nothing new is created.
+// Phase 2 STEP 2 — also loads examAttempts/examPapers once here so TeacherCenterHome's
+// "최근 시험 (전체)" card can read them without its own redundant Firestore reads. Used to also
+// load grammarQuestions/readingQuestions for a per-student 취약 유형 계산 that fed the Today
+// dashboard's "⚠️ 학생 주의사항" card — both the card and that extra fetch were removed
+// 2026-08-27 (user request). teacherTodos / saveTeacherTodos are threaded straight through from
+// App() — same collection/writer TeacherOverview's existing 할 일 widget already uses, nothing
+// new is created.
 function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, initialView, teacherTodos, saveTeacherTodos }) {
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState(initialView || "home"); // "home" | "board"
@@ -12191,8 +12141,6 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
   const [savedAt, setSavedAt] = useState(null);
   const [newLogContent, setNewLogContent] = useState("");
   const [addingLog, setAddingLog] = useState(false);
-  const [analysis, setAnalysis] = useState(null);
-  const [analysisLoading, setAnalysisLoading] = useState(false);
   const [showStudentContext, setShowStudentContext] = useState(false);
 
   useEffect(() => {
@@ -12203,16 +12151,6 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
     setTeacherComment((e && e.teacherComment) || {});
     setSavedAt(null);
   }, [date, student.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setAnalysisLoading(true);
-    svc.studentAnalysisService.getStudentWeaknessAnalysis(student.id)
-      .then((result) => { if (!cancelled) setAnalysis(result); })
-      .catch(() => { if (!cancelled) setAnalysis(null); })
-      .finally(() => { if (!cancelled) setAnalysisLoading(false); });
-    return () => { cancelled = true; };
-  }, [student.id]);
 
   const logsToday = (data.logs || []).filter((l) => l.date === date);
   const hasLegacyLessonContent = Object.values(legacyLessonContent || {}).some((v) => v && v.trim && v.trim());
@@ -12342,11 +12280,10 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
 
       <div style=${{ marginTop: 14 }}>
         <div onClick=${() => setShowStudentContext((v) => !v)} style=${{ fontSize: 11, fontWeight: 700, color: C.slate, cursor: "pointer", userSelect: "none" }}>
-          ${showStudentContext ? "▾" : "▸"} 학생 상태 참고 (취약 유형 · 최근 시험 · 주의사항)
+          ${showStudentContext ? "▾" : "▸"} 학생 상태 참고 (최근 시험 · 주의사항)
         </div>
         ${showStudentContext && html`
           <div style=${{ marginTop: 8 }}>
-            <${StudentWeaknessAnalysisCard} loading=${analysisLoading} analysis=${analysis} logs=${data.logs} />
             ${data.examSummary && html`
               <${Card} style=${{ marginTop: 10 }}>
                 <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 12.5 }}>📊 최근 시험 결과 (누적)</div>
