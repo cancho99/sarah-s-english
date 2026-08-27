@@ -117,14 +117,15 @@
 
   /* Roadmap CMS 3-column 편집기(RoadmapEditor, 2026-08-27 재설계) — Phase Nav / Milestone List /
      Detail Editor 세 컬럼이 각자 독립 스크롤한다(페이지 전체 스크롤과 분리, 화면 안에서 마우스만
-     세로로 왔다갔다 하지 않도록). 세 컬럼 모두 flex:1로 동일한 폭(사용자 지시, 2026-08-27).
-     좁은 화면에서는 세로 1-column으로 접힌다. */
+     세로로 왔다갔다 하지 않도록). 폭 비율은 1:1:2(Nav:List:Detail, 사용자 지시, 2026-08-27) —
+     Detail이 교재 편집기 등 정보량이 가장 많아 두 배로 넓게. 좁은 화면에서는 세로 1-column으로
+     접힌다. */
   .rm-cms { display: flex; border-top: 1px solid #E1DACB; }
   .rm-cms-col { max-height: 74vh; overflow-y: auto; }
   .rm-cms-nav { flex: 1; min-width: 0; border-right: 1px solid #E1DACB; padding: 10px; background: #FCFAF5; }
   .rm-cms-nav-list { display: flex; flex-direction: column; gap: 6px; }
   .rm-cms-center { flex: 1; min-width: 0; border-right: 1px solid #E1DACB; padding: 14px; }
-  .rm-cms-detail { flex: 1; min-width: 0; padding: 14px; }
+  .rm-cms-detail { flex: 2; min-width: 0; padding: 14px; }
   @media (max-width: 900px) {
     .rm-cms { flex-direction: column; }
     .rm-cms-col { max-height: none; overflow-y: visible; }
