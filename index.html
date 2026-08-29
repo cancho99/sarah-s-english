@@ -14697,6 +14697,19 @@ function HomeworkEditor({ student, data, updateData }) {
       homework: (d.homework || []).map((h) => (h.id === id ? { ...h, done: !h.done, doneAt: !h.done ? Date.now() : null } : h)),
     }));
   }
+  // "확인" — TeacherCenterHomeworkBoard(전체 학생 대상 "오늘 확인할 숙제" 화면)의 markChecked/
+  // unmarkChecked와 완전히 같은 개념. `done`(학생이 스스로 표시하는 제출 여부)과는 별개로,
+  // 교사가 실제로 검토했는지를 checkedAt/checkedBy로 남긴다. 이 컴포넌트는 이미 studentId
+  // 단위로 열려 있어서 updateData가 단일 인자(updater)만 받는다 — TeacherCenterHomeworkBoard의
+  // handleCheck(studentId, updater) 2인자 형태와 다른 이유가 그것.
+  async function toggleChecked(id) {
+    const svc = window.SarahServices.homeworkService;
+    const h = list.find((x) => x.id === id);
+    await updateData((d) => ({
+      ...d,
+      homework: h.checkedAt ? svc.unmarkChecked(d.homework, id) : svc.markChecked(d.homework, id),
+    }));
+  }
   // 기간만료 — for homework that's past the point of being realistically doable (e.g. the student
   // moved on weeks ago). Distinct from "완료": it stays done:false so 숙제 진행율 still correctly
   // counts it as not completed, but it drops out of the "오늘 해야 할 일"/"밀린 숙제" nagging
@@ -14764,7 +14777,10 @@ function HomeworkEditor({ student, data, updateData }) {
                 <div style=${{ fontSize: 10.5, color: C.slate }}>내준 날 ${fmtDate(h.assignedDate)} · 기한 ${fmtDate(h.dueDate)}</div>
                 <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
               </div>
-              <div onClick=${() => toggleDone(h.id)} style=${{ marginLeft: 10, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+              <div style=${{ marginLeft: 10, textAlign: "right" }}>
+                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+                <div onClick=${() => toggleChecked(h.id)} style=${{ cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", color: h.checkedAt ? C.gold : C.slate, marginTop: 2 }}>${h.checkedAt ? "✓ 확인완료 (누르면 취소)" : "확인 처리하기"}</div>
+              </div>
             </div>
           `)}
       <//>
@@ -14776,7 +14792,10 @@ function HomeworkEditor({ student, data, updateData }) {
                 <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(h.dueDate)}</div>
                 <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
               </div>
-              <div onClick=${() => toggleDone(h.id)} style=${{ marginLeft: 10, cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+              <div style=${{ marginLeft: 10, textAlign: "right" }}>
+                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+                <div onClick=${() => toggleChecked(h.id)} style=${{ cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", color: h.checkedAt ? C.gold : C.slate, marginTop: 2 }}>${h.checkedAt ? "✓ 확인완료 (누르면 취소)" : "확인 처리하기"}</div>
+              </div>
             </div>
           `)}
         <//>
@@ -14838,6 +14857,9 @@ function HomeworkEditor({ student, data, updateData }) {
                     : html`<div onClick=${() => toggleDone(h.id)} style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: h.done ? C.gold : C.slate }}>
                         ${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""} (누르면 미완료로)` : "완료로 표시하기"}
                       </div>`}
+                  <div onClick=${() => toggleChecked(h.id)} style=${{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 6, cursor: "pointer", fontSize: 12, fontWeight: 600, color: h.checkedAt ? C.gold : C.slate }}>
+                    ${h.checkedAt ? `✓ 확인완료 (누르면 취소)` : "확인 처리하기"}
+                  </div>
                   <div style=${{ display: "flex", gap: 10, marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
                     ${!h.done && html`<button onClick=${() => toggleExpired(h.id)} style=${{ background: "none", border: "none", color: h.expired ? C.gold : C.slate, cursor: "pointer", fontSize: 12 }}>${h.expired ? "기간만료 취소" : "기간만료로 표시"}</button>`}
                     <button onClick=${() => startEdit(h)} style=${{ background: "none", border: "none", color: C.navy, cursor: "pointer", fontSize: 12 }}>수정</button>
