@@ -1113,6 +1113,9 @@ function missingDailyReportsForRoster(roster, dataCache, todayStr, lookbackDays)
 // 항목은 항상 "지남" 쪽이다 — overdueDays는 그래도 부호 있는 값으로 계산해 둔다, 나중에
 // 유예 기준이 바뀌어도 표시 로직을 다시 안 짜도 되게). "작성됨" 판정은 monthlyReports가 daily
 // 처럼 status 필드가 없어 기존 getPublishedMonthlyReports(published:true)를 그대로 재사용한다.
+// monthlyReports[month].dismissed — 데일리 리포트 미작성의 dismissed 필드와 완전히 같은 이유·
+// 같은 방식(additive, published를 거짓으로 만들지 않음)으로, 실제로 작성할 계획이 없는 학생
+// (test 학생 등)을 목록에서만 뺀다.
 function missingMonthlyReportsForRoster(roster, dataCache, todayStr) {
   const svc = window.SarahServices;
   const day = Number(todayStr.slice(8, 10));
@@ -1126,6 +1129,7 @@ function missingMonthlyReportsForRoster(roster, dataCache, todayStr) {
   (roster || []).forEach((student) => {
     const data = dataCache[student.id] || emptyData();
     if (svc.reportService.getPublishedMonthlyReports(data)[targetMonth]) return;
+    if ((data.monthlyReports || {})[targetMonth]?.dismissed) return;
     out.push({ student, month: targetMonth, monthLabel: `${pm}월분`, overdueDays });
   });
   out.sort((a, b) => b.overdueDays - a.overdueDays);
@@ -5145,11 +5149,33 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
   `;
 }
 
+// Reading Assessment Integrity 배지 색상 — reading-library.html의 #admin journal-admin-panel
+// 이 쓰는 .ig-badge.{green,yellow,red,nodata} CSS를 인라인 스타일로 그대로 옮긴 값(§목적: 두
+// 화면에서 같은 신호가 같은 색으로 보이게). 계산 자체(GREEN/YELLOW/RED/NO_DATA 판정)는
+// services/readingService.js의 computeIntegrityStatus가 하고, 여기서는 표시만 한다.
+const INTEGRITY_BADGE_COLORS = {
+  green: { bg: "#E4F3E6", fg: "#2E7D34" },
+  yellow: { bg: "#FDF3D8", fg: "#8A6D1D" },
+  red: { bg: "#FBE4E1", fg: C.danger },
+  nodata: { bg: C.line, fg: C.slate },
+};
+
 // Reading History 한 줄 — 제목/레벨/날짜/"Reading Log ✓"는 항상 보이고, 클릭하면 실제로 제출한
 // 4개 질문의 답변을 펼쳐서 보여준다(이전엔 이 자리에 e.content를 읽으려 했는데 실제 저장 필드는
 // e.answers[]라 항상 빈 화면이었다 — 2026-08-26에 같이 고쳤다, §15 "정확하게 확인할 수 있도록").
+// Reading Assessment Integrity 배지/통계는 reading-library.html의 #admin 전용 journal-admin-panel
+// 에만 있던 것을 그대로 여기로도 노출한다(2026-08-29) — 모든 학생이 공유하는 이 컴포넌트 한 곳만
+// 고치면 전체 학생에게 적용된다. VocabResultRow의 Instant Recall/Integrity 표시(같은 파일,
+// ~14713줄)와 같은 스타일(작은 배지 pill + 회색 통계 한 줄)로 맞췄다.
 function ReadingHistoryEntry({ entry, first }) {
   const [open, setOpen] = useState(false);
+  const svc = window.SarahServices.readingService;
+  const integrity = entry.integrity || null;
+  const status = svc.computeIntegrityStatus(integrity);
+  const badge = svc.INTEGRITY_BADGE[status];
+  const badgeColors = INTEGRITY_BADGE_COLORS[badge.cls];
+  const checkpointLabel = integrity && integrity.checkpoint ? (svc.INTEGRITY_CHECKPOINT_LABEL[integrity.checkpoint.status] || integrity.checkpoint.status) : null;
+  const pageExitEvents = (integrity && integrity.pageExitEvents) || [];
   return html`
     <div style=${{ padding: "7px 0", borderTop: first ? "none" : `1px dotted ${C.line}` }}>
       <div onClick=${() => setOpen((v) => !v)} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
@@ -5159,8 +5185,24 @@ function ReadingHistoryEntry({ entry, first }) {
           <span style=${{ color: C.gold, fontWeight: 700, marginLeft: 8 }}>Reading Log ✓</span>
         </span>
       </div>
+      <div style=${{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: badgeColors.bg, color: badgeColors.fg, whiteSpace: "nowrap" }}>${badge.emoji} ${badge.label}</span>
+        ${checkpointLabel && html`<span style=${{ fontSize: 10.5, color: C.slate }}>Checkpoint: ${checkpointLabel}</span>`}
+      </div>
+      <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>자동 판정이 아닌 선생님 확인용 신호입니다.</div>
+      <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>
+        작성 시간: ${integrity ? fmtVocabDuration(integrity.writingDurationSec) : "-"} · 페이지 이탈: ${integrity ? `${integrity.pageExitCount || 0}회` : "-"} · 붙여넣기 시도: ${entry.pasteAttempts || 0}회 · 수정 횟수: ${integrity ? (integrity.editCount ?? "-") : "-"} · 대량 입력 의심: ${integrity ? `${integrity.largeInsertAttempts || 0}회` : "-"} · 워터마크 세션: ${(integrity && integrity.watermarkSessionId) || "-"}
+      </div>
       ${open && html`
         <div style=${{ marginTop: 8, paddingLeft: 4 }}>
+          ${pageExitEvents.length > 0 && html`
+            <div style=${{ marginBottom: 8 }}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 2 }}>페이지 이탈 기록</div>
+              ${pageExitEvents.map((ev, i) => html`
+                <div key=${i} style=${{ fontSize: 11, color: C.slate }}>${new Date(ev.at).toLocaleTimeString("ko-KR")} · ${ev.durationSec != null ? ev.durationSec + "초" : "-"}</div>
+              `)}
+            </div>
+          `}
           ${(entry.answers || []).map((qa, i) => html`
             <div key=${i} style=${{ marginBottom: 8 }}>
               <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 2 }}>${qa.q}</div>
@@ -11314,6 +11356,14 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // ---- 📊 월말 리포트 미작성 — "데일리 리포트 미작성" 바로 아래에 붙는다(오늘 수업 → 데일리
   // 리포트 미작성 → 월말 리포트 미작성 순서). 전월분 하나만 확인하므로 lookback 개념이 없다. ----
   const missingMonthlyReports = missingMonthlyReportsForRoster(roster, dataCache, todayStr);
+  // 데일리의 dismissMissingReport와 완전히 같은 패턴 — published를 건드리지 않고 dismissed만
+  // additive로 얹는다(위 missingMonthlyReportsForRoster 주석 참고).
+  async function dismissMissingMonthlyReport(studentId, month) {
+    await updateData(studentId, (d) => ({
+      ...d,
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ...(d.monthlyReports || {})[month], dismissed: true } },
+    }));
+  }
 
   // ---- 📝 오늘 확인할 것: 숙제 (로스터 전체, 오늘 마감/오늘 배정분) ----
   const allHw = svc.homeworkService.getAllHomeworkAcrossRoster(roster, dataCache);
@@ -11542,7 +11592,11 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
                 <div key=${m.student.id + m.month} className="ap-tc-row" onClick=${() => onWriteMonthlyReport(m.student.id, m.month)}
                   style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", fontSize: 12.5 }}>
                   <span><b style=${{ color: C.navy }}>${m.student.name}</b> <span style=${{ color: C.slate }}>— ${m.monthLabel}</span></span>
-                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${m.overdueDays > 0 ? `마감 ${m.overdueDays}일 지남` : `마감 D-${-m.overdueDays}`}</span>
+                  <span style=${{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8, flexShrink: 0 }}>
+                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap" }}>${m.overdueDays > 0 ? `마감 ${m.overdueDays}일 지남` : `마감 D-${-m.overdueDays}`}</span>
+                    <button onClick=${(e) => { e.stopPropagation(); dismissMissingMonthlyReport(m.student.id, m.month); }}
+                      style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 4, padding: "2px 7px", fontSize: 10.5, color: C.slate, cursor: "pointer", whiteSpace: "nowrap" }}>작성 안 함</button>
+                  </span>
                 </div>
               `)}
             </div>
