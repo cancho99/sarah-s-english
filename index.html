@@ -16616,6 +16616,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         const save = () => updateData(student.id, (d) => ({ ...d, activeTestSession: null, examResults: [{ id: uid(), testId: activeTest.test.id, date: today(), score, total, breakdown }, ...d.examResults] }));
         try {
           await save();
+          notifyTeacher(student.name, "exam_test_submit", `${score}/${total}점`);
         } catch (e) {
           console.error("결과 저장 실패", e);
           let recovered = false;
@@ -16659,14 +16660,17 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     const existing = data && data.activeTestSession;
     if (existing && existing.type === "vocab" && existing.testId === t.id && existing.vocab) return;
     await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "vocab", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
+    notifyTeacher(student.name, "vocab_test_start", t.title);
   }
   async function startMockTest(t, editResultId) {
     setEditingMockResultId(editResultId); setActiveMock(t);
     await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "mock", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
+    notifyTeacher(student.name, "mock_test_start", t.title);
   }
   async function startExamTest(t) {
     setActiveTest({ type: "exam", test: t });
     await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "exam", testId: t.id, testTitle: t.title, startedAt: Date.now() } }));
+    notifyTeacher(student.name, "exam_test_start", t.title);
   }
 
   async function startTimer() {
@@ -18793,6 +18797,9 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
     const timing = { startedAt: questionStartedAtRef.current, answeredAt: Date.now(), duration: Math.round((Date.now() - questionStartedAtRef.current) / 1000) };
 
     setSaving(true);
+    let savedEntry = null; // Recall의 마지막 문제일 때만 채워짐 — updateData의 트랜잭션 콜백은
+    // 재시도될 수 있어서(Firestore 표준 동작) 매번 새로 계산되지만, 입력(v/rAnswers/rTimings 등)이
+    // 같으면 결과도 항상 같으므로 여러 번 덮어써져도 문제없다.
     try {
       const next = await updateData(student.id, (d) => {
         const cur = d.activeTestSession && d.activeTestSession.testId === test.id ? d.activeTestSession : null;
@@ -18823,9 +18830,14 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
         if (!isLast) return { ...d, activeTestSession: { ...cur, vocab: { ...v, recall: { ...v.recall, answers: rAnswers, questionTimings: rTimings, currentIndex: idx + 1 } } } };
         const recallScore = v.recall.questions.reduce((sum, qq, i) => sum + (gradeVocabQuestion(qq, rAnswers[i]) ? 1 : 0), 0);
         const entry = finalizeVocabTestEntry(test, cur.startedAt, v, rAnswers, rTimings, recallScore);
+        savedEntry = entry;
         return { ...d, activeTestSession: null, vocabResults: [entry, ...(d.vocabResults || [])] };
       });
-      if (isRecall && isLast) { onDone(); return; }
+      if (isRecall && isLast) {
+        if (savedEntry) notifyTeacher(student.name, "vocab_test_submit", `${savedEntry.score}/${savedEntry.total}점`);
+        onDone();
+        return;
+      }
       if (!isRecall && isLast) setShowRecallIntro(true);
       if (next.activeTestSession && next.activeTestSession.vocab) setVocab(next.activeTestSession.vocab);
     } catch (e) {

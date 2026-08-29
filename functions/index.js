@@ -1451,6 +1451,12 @@ exports.notifyTeacher = onRequest(
         parent_login: `👪 ${studentName} 학생 학부모님이 로그인했어요`,
         consult_request: `💬 ${studentName} 학생 학부모님이 상담을 신청했어요`,
         level_test_booking: `🗓 ${studentName} 님이 레벨테스트·상담 예약 문의를 남겼어요`,
+        vocab_test_start: `🔤 ${studentName} 학생이 단어 시험을 시작했어요`,
+        vocab_test_submit: `🔤 ${studentName} 학생이 단어 시험을 제출했어요`,
+        mock_test_start: `📄 ${studentName} 학생이 모의고사 채점을 시작했어요`,
+        exam_test_start: `📝 ${studentName} 학생이 시험을 시작했어요`,
+        exam_test_submit: `📝 ${studentName} 학생이 시험을 제출했어요`,
+        reading_log_submit: `📖 ${studentName} 학생이 Reading Log를 제출했어요`,
       };
       const DEFAULT_BODIES = {
         homework_upload: "인증샷을 확인해 보세요.",
@@ -1464,6 +1470,12 @@ exports.notifyTeacher = onRequest(
         parent_login: "학부모용 화면에 접속했어요.",
         consult_request: "상담 신청 내용을 확인해 보세요.",
         level_test_booking: "예약 문의 내용을 확인해 보세요.",
+        vocab_test_start: "단어 시험을 시작했어요.",
+        vocab_test_submit: "단어 시험 결과를 확인해 보세요.",
+        mock_test_start: "모의고사 채점 입력을 시작했어요.",
+        exam_test_start: "시험을 시작했어요.",
+        exam_test_submit: "시험 결과를 확인해 보세요.",
+        reading_log_submit: "Reading Log 제출 내용을 확인해 보세요.",
       };
       const title = TITLES[kind] || "🔔 테스트 알림";
       const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "알림이 정상적으로 도착했어요!";

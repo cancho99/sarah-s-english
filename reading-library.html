@@ -995,6 +995,18 @@ function buildJournalSection(it) {
     try {
       await saveJournalEntries(nextEntries);
       journalEntries = nextEntries;
+      // index.html의 notifyTeacher와 달리 이 파일은 그 헬퍼를 쓰지 않는(공유 코드 없는) 독립
+      // 파일이라 같은 Cloud Function을 직접 fetch로 두드린다. fire-and-forget — 실패해도 Reading
+      // Log 저장 자체(위 saveJournalEntries)는 이미 끝난 뒤라 학생 쪽 흐름을 막지 않는다.
+      fetch("https://us-central1-sarah-s-english.cloudfunctions.net/notifyTeacher", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          studentName: params.get("name") || studentId,
+          kind: "reading_log_submit",
+          detail: it.title,
+        }),
+      }).catch((e) => console.warn("notifyTeacher failed", e));
       // Reading Log 제출 = 완료(§1 원칙). 읽은 시간 기록을 위해 내부적으로만 markStoryCompleted를
       // 같이 호출한다 — 학생에게 보이는 별도 "완료" 버튼/개념은 없다.
       await markStoryCompleted(it.id);
