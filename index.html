@@ -270,6 +270,7 @@
 <script src="services/homeworkService.js" defer></script>
 <script src="services/vocabularyService.js" defer></script>
 <script src="services/vocabTestService.js" defer></script>
+<script src="services/flashcardService.js" defer></script>
 <script src="services/examService.js" defer></script>
 <script src="services/readingService.js" defer></script>
 <script src="services/readingAnalysisService.js" defer></script>
@@ -1193,6 +1194,17 @@ function shuffle(arr) {
   return a;
 }
 const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], vocabTests: [], examTests: [], vocabResults: [], examResults: [], mockExams: [], mockExamResults: [], vocabLog: [], regularExams: [], consultRequests: [], tuitionRecords: {}, notes: [], roadmap: null });
+
+// 단어 플래시카드 암기(2026-08-29) 교재 등록 편집기(교사)와 학습 화면(학생)이 둘 다 같은
+// 워드뱅크 문서를 읽는다 — VocabEditor.openBank()가 이미 쓰는 것과 완전히 같은 직접 읽기 패턴
+// (CLAUDE.md에 문서화된, 이 컬렉션에 한해 index.html이 중앙 데이터 레이어를 우회하는 관례)을
+// 그대로 따라 중복 없이 한 곳에 모아둔다.
+async function loadWordbankBooks() {
+  const ref = window.__doc(window.__db, "sarahsEnglishWordbank", "main");
+  const snap = await window.__getDoc(ref);
+  const rec = snap.exists() ? snap.data() : {};
+  return Array.isArray(rec.books) ? rec.books : [];
+}
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
 // Some 정답표 sheets (esp. 유형별/단원별 문제집 books) cram an entire book's answers onto one
@@ -3882,6 +3894,80 @@ function StudentInfoEditor({ student, saveRosterList, roster }) {
   `;
 }
 
+// 단어 플래시카드 암기(2026-08-29) 요구사항 1 — 학생별로 사용 가능한 교재를 등록/지정. 학생
+// 쪽(FlashcardHome)은 student.flashcardBooks에 없는 교재는 아예 목록에 노출하지 않는다.
+// updateStudentRosterEntry(트랜잭션 기반, saveRosterList의 통짜 덮어쓰기와 달리 이 학생의
+// roster 항목만 read-modify-write)를 그대로 재사용 — 다른 학생 편집과 동시에 저장돼도 서로
+// 덮어쓰지 않는다.
+function StudentFlashcardBooksEditor({ student, updateStudentRosterEntry }) {
+  const [open, setOpen] = useState(false);
+  const [books, setBooks] = useState(null); // null = 아직 안 불러옴
+  const [selected, setSelected] = useState(new Set(student.flashcardBooks || []));
+  const [loadErr, setLoadErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setSelected(new Set(student.flashcardBooks || []));
+    setSaved(false);
+  }, [student.id]);
+
+  async function toggleOpen() {
+    const next = !open;
+    setOpen(next);
+    if (next && books === null) {
+      try { setBooks(await loadWordbankBooks()); }
+      catch (e) { setBooks([]); setLoadErr("워드뱅크를 불러오지 못했어요."); }
+    }
+  }
+  function toggleBook(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setSaved(false);
+  }
+  async function save() {
+    setSaving(true);
+    try {
+      await updateStudentRosterEntry(student.id, (r) => ({ ...r, flashcardBooks: [...selected] }));
+      setSaved(true);
+    } finally { setSaving(false); }
+  }
+
+  const registeredCount = (student.flashcardBooks || []).length;
+  return html`
+    <${Card} style=${{ marginBottom: 16 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>🎴 플래시카드 교재 등록 ${registeredCount > 0 && html`<span className="ap-chip">${registeredCount}개 등록됨</span>`}</span>
+        <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${toggleOpen}>${open ? "접기" : "등록/수정"}<//>
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>여기서 체크한 교재만 학생이 플래시카드 암기 화면에서 볼 수 있어요.</div>
+          ${books === null ? html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>` :
+            books.length === 0 ? html`<${Empty} text=${loadErr || "워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요."} />` : html`
+            <div style=${{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+              ${books.map((b) => html`
+                <label key=${b.id} style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
+                  <input type="checkbox" checked=${selected.has(b.id)} onChange=${() => toggleBook(b.id)} style=${{ width: 14, height: 14, appearance: "auto" }} />
+                  <span>${b.name}</span>
+                  <span style=${{ color: C.slate, fontSize: 11 }}>Day ${b.totalDays || 0}</span>
+                </label>
+              `)}
+            </div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+              <${Button} variant="gold" style=${{ padding: "6px 16px", fontSize: 12 }} disabled=${saving} onClick=${save}>저장<//>
+              ${saved && html`<span style=${{ fontSize: 11.5, color: C.navy }}>저장됐어요.</span>`}
+            </div>
+          `}
+        </div>
+      `}
+    <//>
+  `;
+}
+
 function ScheduleGoalEditor({ student, updateStudentRosterEntry }) {
   const [showMonthly, setShowMonthly] = useState(false); // monthly overrides are the less-common case, so they stay tucked behind their own toggle instead of always showing alongside the weekly pattern
   // Left column is add/edit-one-at-a-time — registered slots are NOT listed here (that would just
@@ -4810,6 +4896,7 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
       </div>
 
       <${StudentInfoEditor} student=${student} saveRosterList=${saveRosterList} roster=${roster} />
+      <${StudentFlashcardBooksEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />
 
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 12, alignItems: "start" }}>
         <${Card} style=${{ marginBottom: 0 }}>
@@ -15956,6 +16043,7 @@ function StudyLogEntryCard({ entry, studentId, updateData }) {
 const STUDENT_HOME_ACTIONS = [
   { key: "homework", label: "숙제 제출", icon: "📝", bg: "#FBF4EA" },
   { key: "vocab", label: "단어 시험", icon: "🔤", bg: "#EAF1FB" },
+  { key: "flashcards", label: "단어 플래시카드", icon: "🎴", bg: "#FDF3F7" },
   { key: "materials", label: "자료실", icon: "📁", bg: "#F3EDF7" },
   { key: "mock", label: "모의고사 채점", icon: "📄", bg: "#E9F1EA" },
   { key: "examTests", label: "추가시험", icon: "📋", bg: "#FDF0E3" },
@@ -16668,6 +16756,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
       ${tab === "exams" && html`<${StudentExamListSection} student=${student} />`}
+      ${tab === "flashcards" && html`<${FlashcardHome} student=${student} />`}
     </div>
   `;
 }
@@ -19487,6 +19576,147 @@ function ConsultRequestPanel({ student, data, updateData }) {
           <//>
         `)}
       `}
+    </div>
+  `;
+}
+
+// 단어 플래시카드 암기(2026-08-29) — 학생 쪽 화면 전체. book → day → 카드 세션 → (선택)
+// "모르는 단어 모아보기" 4단계를 이 컴포넌트 하나에서 관리한다. 단어 데이터는 기존 단어시험
+// 생성기(sarahsEnglishWordbank/main)에 이미 입력된 Day별 리스트를 그대로 재사용(요구사항 2) —
+// 별도 컬렉션/필드를 새로 쓰지 않는다. 세션 진행 상태(deck/missed)는 이 화면 안에서만 쓰는
+// 휴리스틱 학습 보조 데이터라 Firestore에 저장하지 않는다 — 새로고침하면 Day 선택부터 다시
+// 시작한다(기존 단어시험 activeTestSession처럼 재개가 필요한 "시험 응시 기록"과는 성격이 다름).
+function FlashcardHome({ student }) {
+  const svc = window.SarahServices.flashcardService;
+  const [screen, setScreen] = useState("books"); // "books" | "days" | "session" | "missed"
+  const [allBooks, setAllBooks] = useState(null); // null = 아직 안 불러옴
+  const [loadErr, setLoadErr] = useState("");
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [deck, setDeck] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [missed, setMissed] = useState([]);
+  const [flipped, setFlipped] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try { setAllBooks(await loadWordbankBooks()); }
+      catch (e) { setAllBooks([]); setLoadErr("워드뱅크를 불러오지 못했어요."); }
+    })();
+  }, []);
+
+  const books = allBooks ? svc.getAccessibleBooks(allBooks, student.flashcardBooks) : null;
+
+  function startDay(book, day) {
+    const words = svc.getWordsForDay(book, day);
+    if (words.length === 0) return;
+    setSelectedBook(book);
+    setDeck(svc.buildDeck(words)); setTotal(words.length); setMissed([]); setFlipped(false);
+    setScreen("session");
+  }
+  // "알아요" — 요구사항 3: 다음 단어로 넘어간다(맨 앞 카드가 큐에서 빠짐).
+  function markKnown() {
+    setDeck((d) => svc.markKnown(d));
+    setFlipped(false);
+  }
+  // "모름" — 요구사항 3: 리스트 맨 뒤로 재배치. 동시에 요구사항 4의 "모르는 단어 모아보기"
+  // 리스트에도 추가된다(별도 상태, 나중에 메인 큐에서 알아요로 넘어가도 여기서는 안 빠진다).
+  function markUnknown() {
+    setDeck((d) => {
+      if (d[0]) setMissed((m) => svc.addMissed(m, d[0]));
+      return svc.markUnknown(d);
+    });
+    setFlipped(false);
+  }
+  function removeMissed(id) { setMissed((m) => svc.removeMissed(m, id)); }
+
+  const progress = svc.computeProgress(total, deck.length);
+
+  return html`
+    <div>
+      <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>🎴 단어 플래시카드 암기</div>
+
+      ${screen === "books" && html`
+        ${books === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` :
+          books.length === 0 ? html`<${Empty} text=${loadErr || "선생님이 등록해 주신 교재가 아직 없어요."} />` : html`
+          <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+            ${books.map((b) => html`
+              <${Card} key=${b.id} onClick=${() => { setSelectedBook(b); setScreen("days"); }} style=${{ marginBottom: 0 }}>
+                <div style=${{ fontWeight: 700, color: C.navy }}>${b.name}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>Day ${b.totalDays || 0}</div>
+              <//>
+            `)}
+          </div>
+        `}
+      `}
+
+      ${screen === "days" && selectedBook && html`
+        <${BackBtn} onClick=${() => setScreen("books")} />
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${selectedBook.name} — Day 선택</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 8 }}>
+          ${svc.getDayList(selectedBook).map((d) => html`
+            <button key=${d.day} disabled=${d.count === 0} onClick=${() => startDay(selectedBook, d.day)}
+              style=${{ padding: "10px 4px", borderRadius: 6, border: `1px solid ${C.line}`, background: d.count === 0 ? C.ivory : C.white, color: d.count === 0 ? C.slate : C.ink, cursor: d.count === 0 ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 700 }}>
+              Day ${d.day}
+              <div style=${{ fontSize: 10, fontWeight: 400, color: C.slate, marginTop: 2 }}>${d.count}개</div>
+            </button>
+          `)}
+        </div>
+      `}
+
+      ${screen === "session" && html`
+        <${BackBtn} onClick=${() => setScreen("days")} />
+        ${deck.length === 0 ? html`
+          <${Card} style=${{ textAlign: "center" }}>
+            <div style=${{ fontSize: 30, marginBottom: 8 }}>🎉</div>
+            <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 12 }}>이 Day 단어를 모두 학습했어요!</div>
+            ${missed.length > 0
+              ? html`<${Button} variant="gold" onClick=${() => setScreen("missed")}>모르는 단어 모아보기 (${missed.length})<//>`
+              : html`<div style=${{ fontSize: 12.5, color: C.slate }}>"모름"을 한 번도 누르지 않고 다 외웠어요.</div>`}
+          <//>
+        ` : html`
+          <div style=${{ marginBottom: 14 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: C.slate, marginBottom: 4 }}>
+              <span>${progress.done} / ${progress.total}</span>
+              ${missed.length > 0 && html`<span onClick=${() => setScreen("missed")} style=${{ cursor: "pointer", color: C.gold, fontWeight: 700 }}>모르는 단어 (${missed.length})</span>`}
+            </div>
+            <div style=${{ height: 6, borderRadius: 3, background: C.ivory, overflow: "hidden" }}>
+              <div style=${{ height: "100%", width: `${progress.pct}%`, background: C.gold }}></div>
+            </div>
+          </div>
+
+          <${Card} onClick=${() => setFlipped((f) => !f)} style=${{ minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+            <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${flipped ? deck[0].ko : deck[0].en}</div>
+          <//>
+          <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
+
+          <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <${Button} variant="danger" style=${{ justifyContent: "center", padding: "12px" }} onClick=${markUnknown}>❌ 모름<//>
+            <${Button} variant="gold" style=${{ justifyContent: "center", padding: "12px" }} onClick=${markKnown}>✅ 알아요<//>
+          </div>
+        `}
+      `}
+
+      ${screen === "missed" && html`<${FlashcardMissedList} missed=${missed} onKnow=${removeMissed} onBack=${() => setScreen("session")} />`}
+    </div>
+  `;
+}
+
+// 요구사항 4 — 세션 중 "모름"으로 표시된 단어만 모아보는 화면. 여기서 "알아요"를 누르면
+// 이 리스트에서만 즉시 제거된다(메인 카드 큐와는 별개 — FlashcardHome의 missed state).
+function FlashcardMissedList({ missed, onKnow, onBack }) {
+  return html`
+    <div>
+      <${BackBtn} onClick=${onBack} />
+      <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>모르는 단어 모아보기</div>
+      ${missed.length === 0 ? html`<${Empty} text="🎉 모두 외웠어요!" />` : missed.map((m) => html`
+        <${Card} key=${m.id} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style=${{ fontWeight: 700, color: C.navy }}>${m.en}</div>
+            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>${m.ko}</div>
+          </div>
+          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => onKnow(m.id)}>알아요<//>
+        <//>
+      `)}
     </div>
   `;
 }
