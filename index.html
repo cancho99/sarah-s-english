@@ -4954,35 +4954,45 @@ function StudentReadingSummaryCard({ studentId }) {
 // 스토리 join도 DailyReportWorkspace가 이미 하는 것과 똑같은 3줄짜리 로직을 그대로 다시 쓴다(그
 // join 자체가 readingService.js 내부 전용 헬퍼라 export가 안 돼 있어서 새 서비스를 만들지 않고
 // 여기서 반복). 새 Firestore 접근 코드나 새 컬렉션은 없다.
-// Teacher OS STEP 10 — 책(Story)별 Vocabulary 요약 카드 하나. 펼치면(단어 보기/시험 만들기 둘 다
-// 같은 패널을 연다) 검색 + 체크박스 직접 선택 + 랜덤 N개 선택 + Create Vocabulary Test가 전부
-// 이 안에 있다(Story → Words → Selected Words → Create Test, §5). 시험 저장은
-// buildVocabTestEntry()(VocabEditor.save()와 완전히 같은 정의)로 만들어 기존 updateData를 통해
-// 그대로 vocabTests[]에 넣는다 — 새 저장 로직 없음.
-function StoryVocabularyGroup({ group, updateData, studentFcmToken }) {
-  const [expanded, setExpanded] = useState(false);
+// Teacher OS STEP 10, 재구성 2026-08-29 — 책(Story)별 Vocabulary는 더 이상 별도 목록 화면이
+// 아니라 각 Reading Log 카드 안으로 합쳐진다(entry.storyTitle === group.source 매칭, 안 맞는
+// 그룹은 그냥 표시 안 됨 — 사용자 지시). 시험 저장은 buildVocabTestEntry()(VocabEditor.save()와
+// 완전히 같은 정의)로 만들어 기존 updateData를 통해 그대로 vocabTests[]에 넣는다 — 새 저장
+// 로직 없음.
+// 단어 pill 태그 나열 — Reading Log 카드가 공유하는 순수 표시 컴포넌트. app 공용 .ap-chip
+// 스타일(학생 상세 헤더 학생코드/학부모코드 칩과 동일)을 그대로 재사용한다.
+function VocabWordPills({ words }) {
+  return html`
+    <div style=${{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      ${words.map((w, i) => html`
+        <span key=${w.word + i} className="ap-chip"><b>${w.word}</b>${w.meaning ? ` · ${w.meaning}` : ""}</span>
+      `)}
+    </div>
+  `;
+}
+
+// 이전 StoryVocabularyGroup의 "시험 만들기" 로직(검색/전체선택/전체해제/랜덤선택/개별 체크 +
+// 제목·모드·재시험 일시 입력·저장)을 그대로 옮겨온 것 — 단어 목록 자체는 이제 VocabWordPills가
+// 항상 보여주므로, 이 컴포넌트는 ReadingCardVocabBlock의 "🎯 이 단어로 시험 만들기" 버튼을
+// 눌렀을 때만 열린다. 기본으로 이 story의 단어 전체가 선택된 채 시작해서(예전 openForTest와
+// 동일한 지름길), 검색·개별 해제·랜덤 재선택으로 좁힐 수 있다. Firestore 쓰기(vocabTests)는
+// 원래 로직과 완전히 동일하다.
+function VocabTestBuilder({ group, updateData, studentFcmToken, onClose }) {
+  const defaultTitle = group.story ? group.story.title : group.source;
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState({}); // word.toLowerCase() -> true
+  const [selected, setSelected] = useState(() => {
+    const all = {};
+    group.words.forEach((w) => { all[w.word.toLowerCase()] = true; });
+    return all;
+  });
   const [randomN, setRandomN] = useState("");
   const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   const [mode, setMode] = useState("mix");
   const [retestDate, setRetestDate] = useState("");
   const [retestTime, setRetestTime] = useState("15:00");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-
-  const label = group.story ? group.story.title : group.source;
-  const levelLabel = group.story && group.story.level != null ? ` (Lv.${group.story.level})` : "";
-
-  function openForTest() {
-    setExpanded(true);
-    setCreating(true);
-    setTitle((t) => t || label);
-    const all = {};
-    group.words.forEach((w) => { all[w.word.toLowerCase()] = true; });
-    setSelected(all);
-  }
 
   const filtered = group.words.filter((w) => {
     if (!search.trim()) return true;
@@ -5041,66 +5051,70 @@ function StoryVocabularyGroup({ group, updateData, studentFcmToken }) {
   }
 
   return html`
-    <${Card} style=${{ marginBottom: 8 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <div style=${{ minWidth: 0, flex: 1 }}>
-          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${label}${levelLabel}</div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>새 단어 ${group.wordCount}개 · 마지막 학습일 ${group.lastStudiedAt ? fmtDate(new Date(group.lastStudiedAt).toISOString().slice(0, 10)) : "-"}</div>
-        </div>
-        <div style=${{ display: "flex", gap: 6, flexShrink: 0 }}>
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setExpanded((v) => !v)}>${expanded ? "숨기기" : "단어 보기"}<//>
-          <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${openForTest}>시험 만들기<//>
-        </div>
+    <div style=${{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.line}` }} onClick=${(e) => e.stopPropagation()}>
+      <input style=${{ ...inputStyle, marginBottom: 8 }} placeholder="단어 또는 뜻으로 검색" value=${search} onChange=${(e) => setSearch(e.target.value)} />
+      <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" onClick=${selectAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 선택</button>
+        <button type="button" onClick=${clearAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 해제</button>
+        <input type="number" min="1" style=${{ ...inputStyle, width: 70, padding: "5px 8px" }} placeholder="N개" value=${randomN} onChange=${(e) => setRandomN(e.target.value)} />
+        <button type="button" onClick=${pickRandom} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>랜덤 선택</button>
+        <div style=${{ flex: 1 }} />
+        <div style=${{ fontSize: 11.5, color: C.slate }}>선택됨 ${selectedWords.length} / ${filtered.length}</div>
       </div>
-      ${expanded && html`
-        <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
-          <input style=${{ ...inputStyle, marginBottom: 8 }} placeholder="단어 또는 뜻으로 검색" value=${search} onChange=${(e) => setSearch(e.target.value)} />
-          <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" onClick=${selectAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 선택</button>
-            <button type="button" onClick=${clearAll} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>전체 해제</button>
-            <input type="number" min="1" style=${{ ...inputStyle, width: 70, padding: "5px 8px" }} placeholder="N개" value=${randomN} onChange=${(e) => setRandomN(e.target.value)} />
-            <button type="button" onClick=${pickRandom} style=${{ fontSize: 11.5, background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "4px 10px", cursor: "pointer" }}>랜덤 선택</button>
-            <div style=${{ flex: 1 }} />
-            <div style=${{ fontSize: 11.5, color: C.slate }}>선택됨 ${selectedWords.length} / ${filtered.length}</div>
-          </div>
-          <div style=${{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            ${filtered.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, padding: 10 }}>조건에 맞는 단어가 없어요.</div>` : filtered.map((w, i) => html`
-              <label key=${w.word + i} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5, cursor: "pointer" }}>
-                <input type="checkbox" checked=${!!selected[w.word.toLowerCase()]} onChange=${() => toggleWord(w.word)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
-                <span style=${{ fontWeight: 700, color: C.ink, minWidth: 110 }}>${w.word}</span>
-                <span style=${{ color: C.slate, flex: 1 }}>${w.meaning || "-"}</span>
-                <span style=${{ color: C.slate, fontSize: 11 }}>${w.addedAt ? fmtDate(new Date(w.addedAt).toISOString().slice(0, 10)) : ""}</span>
-              </label>
-            `)}
-          </div>
+      <div style=${{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+        ${filtered.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, padding: 10 }}>조건에 맞는 단어가 없어요.</div>` : filtered.map((w, i) => html`
+          <label key=${w.word + i} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5, cursor: "pointer" }}>
+            <input type="checkbox" checked=${!!selected[w.word.toLowerCase()]} onChange=${() => toggleWord(w.word)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+            <span style=${{ fontWeight: 700, color: C.ink, minWidth: 110 }}>${w.word}</span>
+            <span style=${{ color: C.slate, flex: 1 }}>${w.meaning || "-"}</span>
+            <span style=${{ color: C.slate, fontSize: 11 }}>${w.addedAt ? fmtDate(new Date(w.addedAt).toISOString().slice(0, 10)) : ""}</span>
+          </label>
+        `)}
+      </div>
 
-          <div style=${{ marginTop: 12 }}>
-            ${!creating ? html`
-              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} disabled=${selectedWords.length === 0} onClick=${() => { setCreating(true); setTitle((t) => t || label); }}>Create Vocabulary Test (선택 ${selectedWords.length}개)<//>
-            ` : html`
-              <div style=${{ background: C.ivory, borderRadius: 4, padding: 10 }}>
-                <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Create Vocabulary Test — 선택된 단어 ${selectedWords.length}개</div>
-                <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
-                  <input style=${inputStyle} placeholder="시험 제목" value=${title} onChange=${(e) => setTitle(e.target.value)} />
-                  <select style=${inputStyle} value=${mode} onChange=${(e) => setMode(e.target.value)}>
-                    <option value="mix">혼합 (영↔한 랜덤)</option>
-                    <option value="w2m">영단어 → 뜻만</option>
-                    <option value="m2w">뜻 → 영단어만</option>
-                  </select>
-                  <${DateField} value=${retestDate} onChange=${setRetestDate} />
-                  <${TimeField} value=${retestTime} onChange=${setRetestTime} />
-                </div>
-                <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${createTest} disabled=${saving || selectedWords.length < 2 || !title || !retestDate || !retestTime}>저장<//>
-                  <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCreating(false)}>취소<//>
-                </div>
-              </div>
-            `}
-            ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+      <div style=${{ marginTop: 12 }}>
+        ${!creating ? html`
+          <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} disabled=${selectedWords.length === 0} onClick=${() => setCreating(true)}>Create Vocabulary Test (선택 ${selectedWords.length}개)<//>
+            <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onClose}>닫기<//>
           </div>
-        </div>
-      `}
-    <//>
+        ` : html`
+          <div style=${{ background: C.ivory, borderRadius: 4, padding: 10 }}>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>Create Vocabulary Test — 선택된 단어 ${selectedWords.length}개</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 8 }}>
+              <input style=${inputStyle} placeholder="시험 제목" value=${title} onChange=${(e) => setTitle(e.target.value)} />
+              <select style=${inputStyle} value=${mode} onChange=${(e) => setMode(e.target.value)}>
+                <option value="mix">혼합 (영↔한 랜덤)</option>
+                <option value="w2m">영단어 → 뜻만</option>
+                <option value="m2w">뜻 → 영단어만</option>
+              </select>
+              <${DateField} value=${retestDate} onChange=${setRetestDate} />
+              <${TimeField} value=${retestTime} onChange=${setRetestTime} />
+            </div>
+            <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${createTest} disabled=${saving || selectedWords.length < 2 || !title || !retestDate || !retestTime}>저장<//>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCreating(false)}>취소<//>
+            </div>
+          </div>
+        `}
+        ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
+      </div>
+    </div>
+  `;
+}
+
+// Reading Log 카드 안(펼쳤을 때)에 들어가는 블록 — 단어 pill 목록 + "🎯 이 단어로 시험 만들기"
+// 버튼. 버튼을 누르기 전까지는 VocabTestBuilder를 아예 마운트하지 않는다(그 컴포넌트의 state
+// 초기화가 group.words 기준이라 매번 새로 열 때 깨끗하게 시작되게).
+function ReadingCardVocabBlock({ group, updateData, studentFcmToken }) {
+  const [showBuilder, setShowBuilder] = useState(false);
+  return html`
+    <div onClick=${(e) => e.stopPropagation()}>
+      <${VocabWordPills} words=${group.words} />
+      ${!showBuilder
+        ? html`<button type="button" onClick=${() => setShowBuilder(true)} style=${{ marginTop: 8, fontSize: 11.5, fontWeight: 700, background: "none", border: `1px solid ${C.gold}`, color: C.gold, borderRadius: 20, padding: "5px 12px", cursor: "pointer" }}>🎯 이 단어로 시험 만들기</button>`
+        : html`<${VocabTestBuilder} group=${group} updateData=${updateData} studentFcmToken=${studentFcmToken} onClose=${() => setShowBuilder(false)} />`}
+    </div>
   `;
 }
 
@@ -5126,7 +5140,14 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
   // 더 이상 존재하지 않고, 이 화면에 표시하지도 않는다. journal 항목은 storyTitle/level을 제출
   // 시점에 이미 담고 있어서 readingLibrary/readingActivity를 조인할 필요가 없다.
   const history = [...journal].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+  const weekGroups = groupReadingHistoryByWeek(history);
+  // 별도 "🔤 Vocabulary" 섹션을 없애고(2026-08-29) 각 Reading Log 카드 안으로 합친다 —
+  // group.source는 단어를 모을 당시의 스토리 title 문자열이라(readingVocab에 storyId가 없음,
+  // groupReadingVocabByStory 주석 참고) entry.storyTitle과 문자열로 직접 매칭한다. 어떤
+  // entry.storyTitle과도 안 맞는 그룹(스토리가 삭제/개명됐거나, 아직 Reading Log를 제출 안 한
+  // 스토리에서 모은 단어)은 별도 섹션 없이 그냥 표시되지 않는다(사용자 지시, 2026-08-29).
   const vocabGroups = window.SarahServices.readingService.groupReadingVocabByStory(vocab, stories);
+  const vocabGroupByTitle = new Map(vocabGroups.map((g) => [g.source, g]));
 
   return html`
     <div>
@@ -5139,14 +5160,47 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
         <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>✅ Reading History (${history.length})</div>
         ${history.length === 0
           ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 완료하고 제출한 Reading Log가 없어요.</div>`
-          : history.map((e, i) => html`<${ReadingHistoryEntry} key=${e.id || i} entry=${e} first=${i === 0} />`)}
+          : weekGroups.map((g, gi) => html`
+            <div key=${g.label} style=${{ marginTop: gi === 0 ? 0 : 16 }}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6, letterSpacing: 0.2 }}>${g.label}</div>
+              ${g.entries.map((e, i) => html`<${ReadingHistoryEntry} key=${e.id || i} entry=${e} vocabGroup=${vocabGroupByTitle.get(e.storyTitle) || null} updateData=${updateData} studentFcmToken=${studentFcmToken} />`)}
+            </div>
+          `)}
       <//>
-      <div style=${{ fontWeight: 700, color: C.navy, margin: "14px 0 8px", fontSize: 13.5 }}>🔤 Vocabulary (${vocab.length}개 단어 · ${vocabGroups.length}개 Story)</div>
-      ${vocabGroups.length === 0 ? html`<${Card}><div style=${{ fontSize: 12.5, color: C.slate }}>등록된 단어가 없어요.</div><//>` : vocabGroups.map((g) => html`
-        <${StoryVocabularyGroup} key=${g.source} group=${g} updateData=${updateData} studentFcmToken=${studentFcmToken} />
-      `)}
     </div>
   `;
+}
+
+// 주의 시작(월요일) 00:00을 기준으로 entries를 묶는다 — Reading History를 "주 단위 세로 섹션 +
+// 카드형 항목"으로 재구성(2026-08-29)하면서 추가. submittedAt이 없는(있을 수 없지만 방어적으로)
+// 항목은 "날짜 미상" 묶음으로 맨 뒤에 둔다. 순수 함수, Firestore 접근 없음.
+function mondayOf(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d;
+}
+function fmtMD(d) { return `${d.getMonth() + 1}.${d.getDate()}`; }
+function groupReadingHistoryByWeek(entries) {
+  const withDate = entries.filter((e) => e.submittedAt);
+  const withoutDate = entries.filter((e) => !e.submittedAt);
+  const byWeek = new Map();
+  withDate.forEach((e) => {
+    const monday = mondayOf(e.submittedAt);
+    const key = monday.getTime();
+    if (!byWeek.has(key)) byWeek.set(key, { weekStart: monday, entries: [] });
+    byWeek.get(key).entries.push(e);
+  });
+  const groups = [...byWeek.values()]
+    .sort((a, b) => b.weekStart - a.weekStart)
+    .map((g) => {
+      const sunday = new Date(g.weekStart);
+      sunday.setDate(sunday.getDate() + 6);
+      return { label: `${fmtMD(g.weekStart)} ~ ${fmtMD(sunday)}`, entries: g.entries };
+    });
+  if (withoutDate.length > 0) groups.push({ label: "날짜 미상", entries: withoutDate });
+  return groups;
 }
 
 // Reading Assessment Integrity 배지 색상 — reading-library.html의 #admin journal-admin-panel
@@ -5160,49 +5214,52 @@ const INTEGRITY_BADGE_COLORS = {
   nodata: { bg: C.line, fg: C.slate },
 };
 
-// Reading History 한 줄 — 제목/레벨/날짜/"Reading Log ✓"는 항상 보이고, 클릭하면 실제로 제출한
-// 4개 질문의 답변을 펼쳐서 보여준다(이전엔 이 자리에 e.content를 읽으려 했는데 실제 저장 필드는
-// e.answers[]라 항상 빈 화면이었다 — 2026-08-26에 같이 고쳤다, §15 "정확하게 확인할 수 있도록").
-// Reading Assessment Integrity 배지/통계는 reading-library.html의 #admin 전용 journal-admin-panel
-// 에만 있던 것을 그대로 여기로도 노출한다(2026-08-29) — 모든 학생이 공유하는 이 컴포넌트 한 곳만
-// 고치면 전체 학생에게 적용된다. VocabResultRow의 Instant Recall/Integrity 표시(같은 파일,
-// ~14713줄)와 같은 스타일(작은 배지 pill + 회색 통계 한 줄)로 맞췄다.
-function ReadingHistoryEntry({ entry, first }) {
+// Reading History 카드 한 장 — 접었을 땐 제목+배지(이모지만)/Lv·날짜 두 줄만 짧게 보여주고,
+// 펼치면 배지가 이모지+풀텍스트로 바뀌고(RED면 카드 테두리도 danger로 강조) Reading Assessment
+// Integrity 지표 6개(라벨-값 양끝 정렬)와 기존 질문/답변이 이어진다(2026-08-29 재구성 — 이전엔
+// 한 줄에 "·"로 지표를 전부 이어붙이는 가로 나열이었다). Integrity 계산은
+// services/readingService.js의 computeIntegrityStatus(선생님 확인용 신호, 자동 판정 아님)가
+// 한다. VocabResultRow(같은 파일, ~14713줄 부근)의 Instant Recall/Integrity 표시와 같은 계열의
+// 스타일을 쓴다.
+function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken }) {
   const [open, setOpen] = useState(false);
   const svc = window.SarahServices.readingService;
   const integrity = entry.integrity || null;
   const status = svc.computeIntegrityStatus(integrity);
   const badge = svc.INTEGRITY_BADGE[status];
   const badgeColors = INTEGRITY_BADGE_COLORS[badge.cls];
-  const checkpointLabel = integrity && integrity.checkpoint ? (svc.INTEGRITY_CHECKPOINT_LABEL[integrity.checkpoint.status] || integrity.checkpoint.status) : null;
-  const pageExitEvents = (integrity && integrity.pageExitEvents) || [];
+  const isRed = status === "RED";
+  const hasVocab = vocabGroup && vocabGroup.words.length > 0;
+  const metrics = [
+    { label: "작성 시간", value: integrity ? fmtVocabDuration(integrity.writingDurationSec) : "-" },
+    { label: "페이지 이탈", value: integrity ? `${integrity.pageExitCount || 0}회` : "-" },
+    { label: "붙여넣기 시도", value: `${entry.pasteAttempts || 0}회` },
+    { label: "수정 횟수", value: integrity ? (integrity.editCount ?? "-") : "-" },
+    { label: "대량 입력 의심", value: integrity ? `${integrity.largeInsertAttempts || 0}회` : "-" },
+    { label: "워터마크 세션", value: (integrity && integrity.watermarkSessionId) || "-" },
+  ];
   return html`
-    <div style=${{ padding: "7px 0", borderTop: first ? "none" : `1px dotted ${C.line}` }}>
-      <div onClick=${() => setOpen((v) => !v)} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", userSelect: "none" }}>
-        <span style=${{ fontSize: 12.5, color: C.ink }}>${open ? "▾" : "▸"} ${entry.storyTitle}${entry.level != null ? ` (Lv.${entry.level})` : ""}</span>
-        <span style=${{ fontSize: 11.5, color: C.slate, whiteSpace: "nowrap" }}>
-          ${entry.submittedAt ? fmtDate(new Date(entry.submittedAt).toISOString().slice(0, 10)) : ""}
-          <span style=${{ color: C.gold, fontWeight: 700, marginLeft: 8 }}>Reading Log ✓</span>
-        </span>
+    <${Card} onClick=${() => setOpen((v) => !v)} style=${{ marginBottom: 8, padding: 12, cursor: "pointer", ...(open && isRed ? { border: `1px solid ${C.danger}` } : {}) }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.ink }}>${entry.storyTitle}</div>
+        ${open
+          ? html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: badgeColors.bg, color: badgeColors.fg, whiteSpace: "nowrap" }}>${badge.emoji} ${badge.label}</span>`
+          : html`<span style=${{ fontSize: 15, lineHeight: 1 }}>${badge.emoji}</span>`}
       </div>
-      <div style=${{ marginTop: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: badgeColors.bg, color: badgeColors.fg, whiteSpace: "nowrap" }}>${badge.emoji} ${badge.label}</span>
-        ${checkpointLabel && html`<span style=${{ fontSize: 10.5, color: C.slate }}>Checkpoint: ${checkpointLabel}</span>`}
-      </div>
-      <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>자동 판정이 아닌 선생님 확인용 신호입니다.</div>
-      <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>
-        작성 시간: ${integrity ? fmtVocabDuration(integrity.writingDurationSec) : "-"} · 페이지 이탈: ${integrity ? `${integrity.pageExitCount || 0}회` : "-"} · 붙여넣기 시도: ${entry.pasteAttempts || 0}회 · 수정 횟수: ${integrity ? (integrity.editCount ?? "-") : "-"} · 대량 입력 의심: ${integrity ? `${integrity.largeInsertAttempts || 0}회` : "-"} · 워터마크 세션: ${(integrity && integrity.watermarkSessionId) || "-"}
+      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>
+        ${entry.level != null ? `Lv.${entry.level}` : ""}${entry.level != null && entry.submittedAt ? " · " : ""}${entry.submittedAt ? fmtMD(new Date(entry.submittedAt)) : ""}${hasVocab ? ` · 🔤 단어 ${vocabGroup.words.length}개` : ""}
       </div>
       ${open && html`
-        <div style=${{ marginTop: 8, paddingLeft: 4 }}>
-          ${pageExitEvents.length > 0 && html`
-            <div style=${{ marginBottom: 8 }}>
-              <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 2 }}>페이지 이탈 기록</div>
-              ${pageExitEvents.map((ev, i) => html`
-                <div key=${i} style=${{ fontSize: 11, color: C.slate }}>${new Date(ev.at).toLocaleTimeString("ko-KR")} · ${ev.durationSec != null ? ev.durationSec + "초" : "-"}</div>
-              `)}
+        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
+          ${metrics.map((m, i) => html`
+            <div key=${m.label} style=${{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i === 0 ? "none" : `1px dotted ${C.line}` }}>
+              <span style=${{ fontSize: 11.5, color: C.slate }}>${m.label}</span>
+              <span style=${{ fontSize: 12, color: C.ink, fontWeight: 600 }}>${m.value}</span>
             </div>
-          `}
+          `)}
+          <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 6 }}>자동 판정이 아닌 선생님 확인용 신호입니다.</div>
+        </div>
+        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
           ${(entry.answers || []).map((qa, i) => html`
             <div key=${i} style=${{ marginBottom: 8 }}>
               <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 2 }}>${qa.q}</div>
@@ -5210,8 +5267,14 @@ function ReadingHistoryEntry({ entry, first }) {
             </div>
           `)}
         </div>
+        ${hasVocab && html`
+          <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
+            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🔤 이 책에서 모은 단어</div>
+            <${ReadingCardVocabBlock} group=${vocabGroup} updateData=${updateData} studentFcmToken=${studentFcmToken} />
+          </div>
+        `}
       `}
-    </div>
+    <//>
   `;
 }
 

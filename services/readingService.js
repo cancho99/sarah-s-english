@@ -219,6 +219,76 @@ window.SarahServices = window.SarahServices || {};
     };
   }
 
+  // ---------- Reading Assessment Integrity — ported verbatim from reading-library.html's
+  // journal-admin-panel (2026-08-26) so index.html's StudentReadingLogTab > ReadingHistoryEntry
+  // (shared by every student, not a per-student patch) can show the same 선생님 확인용 신호.
+  // reading-library.html itself is untouched — it keeps its own copy of this logic; there is no
+  // shared module between the two files (see CLAUDE.md's note on this file's iframe/embed
+  // pattern having no postMessage bridge). Pure functions, no Firestore access, no AI calls.
+  // The badge is never used to auto-fail, auto-block submission, or auto-deduct anything.
+  const INTEGRITY_THRESHOLDS = {
+    SHORT_WRITING_DURATION_SEC: 20, // 이보다 짧은 작성 시간 + LARGE_ANSWER_LENGTH 이상 답변 = 이상 패턴 1회
+    LARGE_ANSWER_LENGTH: 300,
+    LARGE_SINGLE_INSERT_CHARS: 50, // 한 번의 input 이벤트에서 이 글자 수 이상 한꺼번에 늘어나면 "대량 입력 의심"
+    YELLOW_PAGE_EXIT_MIN: 2, YELLOW_PAGE_EXIT_MAX: 4,
+    YELLOW_PASTE_MIN: 1, YELLOW_PASTE_MAX: 2,
+    YELLOW_LARGE_INSERT_MIN: 1,
+    RED_PAGE_EXIT_MIN: 5,
+    RED_PASTE_MIN: 3,
+    RED_PASTE_WITH_EXIT_PASTE_MIN: 1, RED_PASTE_WITH_EXIT_EXIT_MIN: 3,
+    RED_LARGE_INSERT_MIN: 2,
+  };
+
+  function hasShortDurationLargeAnswer(integrity) {
+    return !!(
+      integrity && integrity.writingDurationSec != null && integrity.answerLength != null &&
+      integrity.writingDurationSec < INTEGRITY_THRESHOLDS.SHORT_WRITING_DURATION_SEC &&
+      integrity.answerLength >= INTEGRITY_THRESHOLDS.LARGE_ANSWER_LENGTH
+    );
+  }
+
+  // 반환값은 "GREEN"|"YELLOW"|"RED"|"NO_DATA"(integrity 필드 자체가 없는, 이 기능 이전에 제출된
+  // 기존 entry) 뿐이다 — 순수 함수, AI 호출 없음, 부작용 없음.
+  function computeIntegrityStatus(integrity) {
+    if (!integrity) return "NO_DATA";
+    const T = INTEGRITY_THRESHOLDS;
+    const pageExitCount = integrity.pageExitCount || 0;
+    const pasteAttempts = integrity.pasteAttempts || 0;
+    const largeInsertAttempts = integrity.largeInsertAttempts || 0;
+    const checkpointStatus = (integrity.checkpoint && integrity.checkpoint.status) || "NOT_REQUIRED";
+    const shortDurationLargeAnswer = hasShortDurationLargeAnswer(integrity);
+
+    const anyWarningSignal = pageExitCount >= T.YELLOW_PAGE_EXIT_MIN || pasteAttempts >= T.YELLOW_PASTE_MIN ||
+      largeInsertAttempts >= T.YELLOW_LARGE_INSERT_MIN || shortDurationLargeAnswer;
+
+    const isRed =
+      pageExitCount >= T.RED_PAGE_EXIT_MIN ||
+      pasteAttempts >= T.RED_PASTE_MIN ||
+      (pasteAttempts >= T.RED_PASTE_WITH_EXIT_PASTE_MIN && pageExitCount >= T.RED_PASTE_WITH_EXIT_EXIT_MIN) ||
+      largeInsertAttempts >= T.RED_LARGE_INSERT_MIN ||
+      (checkpointStatus === "FAILED" && anyWarningSignal);
+    if (isRed) return "RED";
+
+    const isYellow =
+      (pageExitCount >= T.YELLOW_PAGE_EXIT_MIN && pageExitCount <= T.YELLOW_PAGE_EXIT_MAX) ||
+      (pasteAttempts >= T.YELLOW_PASTE_MIN && pasteAttempts <= T.YELLOW_PASTE_MAX) ||
+      largeInsertAttempts >= T.YELLOW_LARGE_INSERT_MIN ||
+      checkpointStatus === "PENDING" || checkpointStatus === "FAILED" ||
+      shortDurationLargeAnswer;
+    if (isYellow) return "YELLOW";
+
+    return "GREEN";
+  }
+
+  const INTEGRITY_BADGE = {
+    GREEN: { emoji: "🟢", label: "정상 응시", cls: "green" },
+    YELLOW: { emoji: "🟡", label: "확인 필요", cls: "yellow" },
+    RED: { emoji: "🔴", label: "재검증 필요", cls: "red" },
+    NO_DATA: { emoji: "⚪", label: "기록 없음", cls: "nodata" },
+  };
+
+  const INTEGRITY_CHECKPOINT_LABEL = { NOT_REQUIRED: "해당 없음", PENDING: "미응답", PASSED: "통과", FAILED: "실패" };
+
   window.SarahServices.readingService = {
     getReadingVocabForStudent,
     getReadingJournalForStudent,
@@ -228,5 +298,8 @@ window.SarahServices = window.SarahServices || {};
     getMonthlyReadingStats,
     getReadingGrowthReport,
     groupReadingVocabByStory,
+    computeIntegrityStatus,
+    INTEGRITY_BADGE,
+    INTEGRITY_CHECKPOINT_LABEL,
   };
 })();
