@@ -639,8 +639,21 @@ function validateReadingAnalysis(parsed) {
     return { valid: false, errors: ["sentences 배열이 없거나 비어 있습니다."] };
   }
 
+  // Phase B-4 실측(2026-08-28, 실제 사용자 검증 실패 리포트 기반)에서 발견 — 원문(pasted from
+  // PDF/Word 등)에 타이포그래피 인용부호(’ ‘ “ ”)나 en/em dash(– —)가 섞여 있으면, 모델이
+  // originalText는 그대로 옮기면서도 chunks[].text 안에서는 자기 기본 타이포그래피(직선따옴표
+  // '/", 하이픈 -)로 슬쩍 바꿔 쓰는 경우가 실측에서 나왔다 — 단어/부호 "종류"는 그대로인데
+  // 문자 인코딩만 달라 §2가 오탐지했다. 위 punctuation-spacing 케이스와 같은 종류의 순수 표기
+  // 차이이므로(단어 삭제/추가/순서변경은 여전히 그대로 잡힘) 비교 전에 동일 문자로 통일한다.
+  function normTypography(s) {
+    return String(s || "")
+      .replace(/[‘’′]/g, "'")
+      .replace(/[“”″]/g, '"')
+      .replace(/[–—−]/g, "-")
+      .replace(/…/g, "...");
+  }
   function norm(s) {
-    return String(s || "").replace(/\s+/g, " ").trim();
+    return normTypography(s).replace(/\s+/g, " ").trim();
   }
   // Phase B-3 실측(2026-08-26)에서 발견 — chunk 경계에 걸친 문장부호(,.;:!?) 앞에 공백이 끼는
   // 경우가 실제로 나왔다(예: AI가 "gardens," 대신 "gardens"+","를 별도 chunk로 낸 경우
@@ -1141,6 +1154,9 @@ exports.aiWorker = onRequest(
         return;
       }
       if (!validation.valid) {
+        // 재생성까지 2번 다 실패한 원인을 서버 로그에 남긴다 — 지금까지는 클라이언트 응답의
+        // detail만 있고 어디에도 기록되지 않아, 실패가 재발해도 원인을 알 방법이 없었다.
+        console.error("readingAnalyze validation failed:", JSON.stringify(validation.errors));
         res.status(502).json({
           error: "AI 분석 결과가 검증을 통과하지 못했습니다(원문-chunk 불일치, chunk 순서 오류, clause 범위 오류, 또는 존재하지 않는 문장 인덱스 참조). 다시 시도해 주세요.",
           detail: validation.errors.join(" / "),
