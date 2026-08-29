@@ -175,6 +175,22 @@
     .ap-mobile-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; background: #1C2B4A; color: #FAF7F1; }
     .ap-mobile-topbar .title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ap-mobile-topbar button { background: none; border: none; color: #FAF7F1; font-size: 13px; cursor: pointer; flex-shrink: 0; }
+    /* 모바일 탭 접근 불가 버그 수정(2026-08-29) — TeacherDash의 모바일 홈-그리드/atHome
+       분기를 대체한 상시 노출 탭바. 가로 스크롤은 되지만 늘어지는 느낌이 안 나도록
+       scroll-snap으로 탭 하나씩 스냅되게 하고, 스크롤바 자체는 시각적으로 숨긴다(터치
+       스와이프는 스크롤바 없이도 동작). */
+    .ap-mobile-tabbar {
+      display: flex; overflow-x: auto; gap: 4px; padding: 6px 8px; background: #1C2B4A;
+      scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .ap-mobile-tabbar::-webkit-scrollbar { display: none; }
+    .ap-mobile-tab {
+      scroll-snap-align: start; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
+      gap: 3px; padding: 7px 12px; border-radius: 8px; background: transparent; border: none;
+      color: #8A93A6; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .ap-mobile-tab .ic { font-size: 17px; }
+    .ap-mobile-tab.active { background: rgba(255,255,255,0.14); color: #FAF7F1; }
   }
   /* Icon-grid launcher — used for the category-first drill-down (학생 정보/학생 관리, on both
      desktop and mobile) as well as the mobile home screen. auto-fill/minmax means it always wraps
@@ -3393,19 +3409,6 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   `;
 }
 
-// On mobile the full sidebar (13 items) is cut down to the 3 things a teacher needs on the go —
-// everything else (passage tool, wordbank, reports, settings, ...) stays desktop-only.
-// "studentInfo" only exists on mobile (a phone-only split of what desktop shows all together inside
-// 학생 관리) — it has no entry in navItems, so it's added separately when building the mobile home grid.
-// Teacher OS 통합 (Phase 2 STEP 1) — 새 7개 상위 키로 갱신. 예전 세부 키(studentInfo/students/
-// homeworkMgmt/grammarBank/readingBank/examBuilder/readingLibrary/sarahsOriginal)는 이제 nav
-// 항목 자체가 없어 모바일 아이콘 그리드에 노출할 필요가 없다(코드/기능은 그대로 살아있음, 그냥
-// 진입점이 새 7개로 바뀐 것).
-// Teacher OS STEP 4 — 최종 사이드바 8개 메뉴에 맞춰 갱신. 옛 키(lessonArea/examHub/schedule/
-// revenue)는 각각 classes/questionBank(Assignments & Results 탭 흡수)/classes(Schedule 탭)/
-// settingsHub(Business 탭)로 흡수됐으므로 여기서도 새 키로 교체 — 컴포넌트 자체(LessonAreaSection
-// 등)는 지우지 않고 그대로 남겨둔다(다른 진입점 없이는 이제 아무도 안 부르지만, 삭제는 아님).
-const MOBILE_TEACHER_SECTIONS = ["dashboard", "studentArea", "classes", "questionBank", "sarahsOriginal", "reports", "readingArea", "settingsHub"];
 function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, teacherTodos, saveTeacherTodos, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   // Teacher OS 통합 (Phase 1) — 로그인 후 첫 화면을 기존 "mainpage"(TeacherOverview)에서 새
@@ -3675,23 +3678,30 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
   }
 
+  // 모바일 탭 접근 불가 버그 수정(2026-08-29) — 예전엔 "atHome"이 "section이
+  // MOBILE_TEACHER_SECTIONS에 없을 때"만 참이 되어 아이콘 그리드(홈)를 보여줬는데, 로그인 직후
+  // 기본 section이 바로 "dashboard"(Today)이고 "dashboard"가 그 목록에도 들어있어서 atHome이
+  // 처음부터 계속 거짓이었다 — 즉 홈 화면(다른 탭을 고르는 아이콘 그리드) 자체에 도달할 방법이
+  // 없었고, "‹ 홈" 버튼도 결국 handleNavChange("dashboard")만 다시 불러서 Today로 되돌아갈 뿐
+  // 같은 화면을 벗어나지 못했다. "홈 화면 vs 콘텐츠 화면"을 분리하는 대신, 모바일에서도 항상
+  // 모든 탭에 바로 접근 가능한 가로 스크롤 탭바를 상단에 고정해 이 함정 자체를 없앤다 — 데스크톱
+  // SideNav와 동일하게 navItems 전체를 보여주므로 "readingAnalysis"가 옛 MOBILE_TEACHER_SECTIONS
+  // 배열에서 누락돼 있던 문제도 같이 해결된다.
   if (isMobile) {
-    const mobileNavItems = navItems.filter((n) => MOBILE_TEACHER_SECTIONS.includes(n.key));
-    const atHome = !MOBILE_TEACHER_SECTIONS.includes(section);
     return html`
       <div style=${{ minHeight: "100vh", background: C.ivory }}>
         <div className="ap-mobile-topbar">
-          <div className="title">
-            ${!atHome && html`<button onClick=${() => handleNavChange("dashboard")}>‹ 홈</button>`}
-            <span>${atHome ? "Sarah's English" : (mobileNavItems.find((n) => n.key === activeKey) || {}).label || ""}</span>
-          </div>
+          <span className="title">${(navItems.find((n) => n.key === activeKey) || {}).label || "Sarah's English"}</span>
           <button onClick=${onLogout}>로그아웃</button>
         </div>
-        <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
-          ${atHome
-            ? html`<${IconGrid} items=${mobileNavItems.map((n) => ({ ...n, onClick: () => handleNavChange(n.key) }))} />`
-            : body}
+        <div className="ap-mobile-tabbar">
+          ${navItems.map((n) => html`
+            <button key=${n.key} className=${"ap-mobile-tab" + (activeKey === n.key ? " active" : "")} onClick=${() => handleNavChange(n.key)}>
+              <span className="ic">${n.icon}</span><span>${n.label}</span>
+            </button>
+          `)}
         </div>
+        <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>${body}</div>
       </div>
     `;
   }
