@@ -568,7 +568,22 @@ async function syncTeacherFirebaseAuth(passcode) {
 // permission-denied로 실패하고, 그건 ensureData/StudentDash·ParentDash의 dataLoadErrors 재시도
 // 배너로 사용자에게 보인다 — 이 함수 자체가 사용자에게 뭔가를 보여줄 필요는 없고, 콘솔에 원인을
 // 남기는 것과 무한정 매달리지 않는 것(AbortController 타임아웃)만 책임진다.
-async function syncStudentFirebaseAuth(code) {
+//
+// 2026-08-29 성능 조사 — 실제 프로덕션에서 studentLogin 호출 자체가 콜드 스타트일 때 ~4초,
+// 웜(warm)일 때도 ~1.1초 걸리는 것을 직접 측정해 확인했다(us-central1, Cloud Functions v2 기본
+// minInstances=0). App()의 onLogin은 화면 전환과 이 함수를 동시에 fire-and-forget으로 쏘기
+// 때문에, StudentDash가 마운트하자마자 부르는 ensureData()의 첫 sarahsEnglishStudents 읽기는
+// (같은 실측: 38ms) 이 함수가 끝나기 **한참 전에** 이미 도착해서 거의 항상 permission-denied로
+// 실패한다(이 기기에 예전 로그인으로 이미 유효한 Firebase Auth 세션이 남아있지 않은 한). 그런데
+// 이 함수가 나중에 성공해도 그걸 계기로 데이터를 다시 읽어오는 자동 재시도가 기존엔 전혀 없었다
+// — 그래서 로그인 직후 화면이 (예전엔 조용히 빈 데이터로, 지금은 dataLoadErrors 배너로) 멈춰
+// 있다가 사용자가 "다시 시도"를 직접 눌러야만 실제 데이터가 나타났다. onSuccess 콜백으로 그
+// 재시도를 자동화해서, 이 배관이 실제로 끝나는 시점(로그인 응답 속도에 좌우됨)에 맞춰 화면이
+// 스스로 채워지게 한다 — Cloud Function 자체를 빠르게 만들지는 못하지만("완전히 새 인스턴스를
+// 켜는" 콜드 스타트는 클라이언트 코드로 없앨 수 없다), 적어도 그 뒤에 사람이 개입할 필요는
+// 없앤다. onSuccess는 선택 인자이고, 없거나 실패해도 이 함수의 나머지 동작(로그, 타임아웃)은
+// 전과 동일하다.
+async function syncStudentFirebaseAuth(code, onSuccess) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
@@ -585,6 +600,7 @@ async function syncStudentFirebaseAuth(code) {
       return;
     }
     await window.__signInWithCustomToken(window.__auth, json.token);
+    if (onSuccess) onSuccess();
   } catch (e) {
     const timedOut = e && e.name === "AbortError";
     console.error("syncStudentFirebaseAuth failed (기존 로그인에는 영향 없음, but subsequent data reads may fail):",
@@ -1215,11 +1231,23 @@ const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], voc
 // 워드뱅크 문서를 읽는다 — VocabEditor.openBank()가 이미 쓰는 것과 완전히 같은 직접 읽기 패턴
 // (CLAUDE.md에 문서화된, 이 컬렉션에 한해 index.html이 중앙 데이터 레이어를 우회하는 관례)을
 // 그대로 따라 중복 없이 한 곳에 모아둔다.
+// 2026-08-29 성능 조사 — sarahsEnglishWordbank/main은 학원 전체 교재/Day 단어 전부를 담은
+// 단일 문서라(현재 실측 8개 교재, 8,367개 단어, ~420KB), 학생이 등록한 교재 1~2개만 필요한
+// FlashcardHome/VocabEditor도 매번 이 문서 전체를 새로 받아온다. Firestore 문서 하나를
+// 서버에서 부분 조회할 방법은 없으므로(클라이언트 SDK의 getDoc은 항상 문서 전체 단위), 같은
+// 페이지 세션 안에서는 한 번만 실제로 읽고 이후 호출은 메모리에 있는 값을 그대로 돌려준다 —
+// 위 `let store`(모듈 스코프 캐시)와 같은 패턴. 트레이드오프: 교사가 wordtest.html에서 단어를
+// 고친 직후라도 이미 이 페이지를 열어둔 학생/교사 탭은 새로고침 전까지 그 변경을 못 본다 — 이건
+// 이 앱의 다른 데이터(roster 등)도 이미 세션당 한 번만 불러오는 것과 같은 수준의 신선도이므로
+// 새로운 트레이드오프를 들여오는 게 아니다.
+let _wordbankBooksCache = null;
 async function loadWordbankBooks() {
+  if (_wordbankBooksCache) return _wordbankBooksCache;
   const ref = window.__doc(window.__db, "sarahsEnglishWordbank", "main");
   const snap = await window.__getDoc(ref);
   const rec = snap.exists() ? snap.data() : {};
-  return Array.isArray(rec.books) ? rec.books : [];
+  _wordbankBooksCache = Array.isArray(rec.books) ? rec.books : [];
+  return _wordbankBooksCache;
 }
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
@@ -1843,6 +1871,11 @@ function App() {
             if (s2) {
               setSession({ role: saved.role, student: s2 });
               setScreen(saved.role === "student" ? "studentDash" : "parentDash");
+              // 새로고침으로 세션을 복원할 때도 같은 Custom Token 배관을 다시 태운다 — 브라우저에
+              // 이미 유효한 Firebase Auth 세션이 남아있으면(보통 그럴 것) 사실상 아무 효과 없이
+              // 끝나지만, 그 세션이 만료/삭제됐을 경우(예: 다른 브라우저의 로그아웃, 스토리지
+              // 정리) 로그인 때와 똑같이 자동 재시도로 데이터를 채워준다.
+              syncStudentFirebaseAuth(saved.role === "student" ? s2.studentCode : s2.parentCode, () => ensureData(s2.id));
             } else {
               saveSessionToStorage(null);
             }
@@ -2029,14 +2062,18 @@ function App() {
             // Fire-and-forget: recording the login time shouldn't block or fail the login itself.
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastStudentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "student_login");
-            syncStudentFirebaseAuth(s.studentCode);
+            // onSuccess: 로그인 직후 첫 ensureData() 읽기는 이 배관(Cloud Function 호출 +
+            // signInWithCustomToken, 실측 1~4초)이 끝나기 전에 거의 항상 먼저 도착해 permission-
+            // denied로 실패한다 — 그 뒤 사람이 "다시 시도"를 누르지 않아도 화면이 스스로 채워지게
+            // 자동으로 한 번 더 불러온다(위 syncStudentFirebaseAuth 주석 참고).
+            syncStudentFirebaseAuth(s.studentCode, () => ensureData(s.id));
           }} />`}
         ${screen === "parentLogin" && html`<${StudentParentLogin} mode="parent" roster=${roster} onBack=${() => setScreen("home")}
           onLogin=${(s) => {
             const sess = { role: "parent", student: s }; saveSessionToStorage(sess); setSession(sess); setScreen("parentDash");
             saveRosterList(roster.map((r) => (r.id === s.id ? { ...r, lastParentLoginAt: Date.now() } : r))).catch(() => {});
             notifyTeacher(s.name, "parent_login");
-            syncStudentFirebaseAuth(s.parentCode);
+            syncStudentFirebaseAuth(s.parentCode, () => ensureData(s.id));
           }} />`}
       <//>`}
     </div>
