@@ -1105,6 +1105,32 @@ function missingDailyReportsForRoster(roster, dataCache, todayStr, lookbackDays)
   out.sort((a, b) => a.date.localeCompare(b.date));
   return out;
 }
+// Today 대시보드 "데일리 리포트 미작성" 바로 아래 "월말 리포트 미작성" 섹션이 쓰는 계산. 월말
+// 리포트는 학생당 한 달에 한 번이라(수업 스케줄과 무관) 데일리처럼 날짜별로 훑을 필요 없이,
+// "전월분"이 작성됐는지만 확인한다. 마감은 매달 7일(예: 8월분은 9월 7일까지) — 그런데
+// 사용자 요구사항상 마감일 전(1~7일)에는 카운트다운조차 보여주지 않고 조용히 있다가, 유예
+// 기간이 끝나는 8일부터만 노출한다(그 시점엔 이미 최소 1일 지난 상태이므로 이 함수가 반환하는
+// 항목은 항상 "지남" 쪽이다 — overdueDays는 그래도 부호 있는 값으로 계산해 둔다, 나중에
+// 유예 기준이 바뀌어도 표시 로직을 다시 안 짜도 되게). "작성됨" 판정은 monthlyReports가 daily
+// 처럼 status 필드가 없어 기존 getPublishedMonthlyReports(published:true)를 그대로 재사용한다.
+function missingMonthlyReportsForRoster(roster, dataCache, todayStr) {
+  const svc = window.SarahServices;
+  const day = Number(todayStr.slice(8, 10));
+  if (day < 8) return []; // 아직 유예 기간(해당 월 1~7일) — 표시 안 함
+  const [y, m] = todayStr.slice(0, 7).split("-").map(Number);
+  let py = y, pm = m - 1;
+  if (pm < 1) { pm = 12; py -= 1; }
+  const targetMonth = `${py}-${String(pm).padStart(2, "0")}`;
+  const overdueDays = day - 7; // 마감(이번 달 7일) 기준 경과일 — day>=8이므로 항상 1 이상
+  const out = [];
+  (roster || []).forEach((student) => {
+    const data = dataCache[student.id] || emptyData();
+    if (svc.reportService.getPublishedMonthlyReports(data)[targetMonth]) return;
+    out.push({ student, month: targetMonth, monthLabel: `${pm}월분`, overdueDays });
+  });
+  out.sort((a, b) => b.overdueDays - a.overdueDays);
+  return out;
+}
 // Shown on student home, parent home, and the teacher's per-student "학습 현황" tab — one place
 // defining what "숙제 진행율" means so the number is identical everywhere it appears.
 function HomeworkProgressCard({ data, big }) {
@@ -3380,6 +3406,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); setStudentCategory("homework"); }}
       onSelectStudentAssessment=${(id) => { setStudentDeepTarget({ studentId: id, tab: "assessment", nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
       onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
+      onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }}
       teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
   } else if (section === "studentArea") {
     body = html`<${StudentAreaSection} roster=${roster} saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry} selectedStudentId=${selectedStudentId} setSelectedStudentId=${setSelectedStudentId}
@@ -3413,7 +3440,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "homeworkMgmt") {
     body = html`<${TeacherCenterSection} key="tc-board" roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialView="board"
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
-      onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }} />`;
+      onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
+      onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }} />`;
   } else if (section === "grammarBank") {
     body = html`<${QuestionBankSection} key="qb-grammar" roster=${roster} initialBank="grammar" />`;
   } else if (section === "readingBank") {
@@ -3435,7 +3463,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "teacherCenter") {
     body = html`<${TeacherCenterSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
-      onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }} />`;
+      onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
+      onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }} />`;
   } else if (section === "wordbank") {
     body = html`<${WordbankSection} />`;
   } else if (section === "passage") {
@@ -3506,6 +3535,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); setStudentCategory("homework"); }}
       onSelectStudentAssessment=${(id) => { setStudentDeepTarget({ studentId: id, tab: "assessment", nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
       onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
+      onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }}
       teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
   }
 
@@ -11085,7 +11115,7 @@ const HW_QUICK_FILTERS = [
 // 2026-08-27 (user request). teacherTodos / saveTeacherTodos are threaded straight through from
 // App() — same collection/writer TeacherOverview's existing 할 일 widget already uses, nothing
 // new is created.
-function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, initialView, teacherTodos, saveTeacherTodos }) {
+function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, onWriteMonthlyReport, initialView, teacherTodos, saveTeacherTodos }) {
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState(initialView || "home"); // "home" | "board"
   // Teacher OS Dashboard(9-D 재사용) — examAttempts/examPapers를 합쳐 "최근 시험" 카드에 Phase 8
@@ -11112,7 +11142,7 @@ function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSel
 
   return view === "board"
     ? html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onBack=${() => setView("home")} onSelectStudent=${onSelectStudent} />`
-    : html`<${TeacherCenterHome} roster=${roster} dataCache=${dataCache} updateData=${updateData} onOpenBoard=${() => setView("board")} onSelectStudent=${onSelectStudent} onSelectStudentAssessment=${onSelectStudentAssessment} onWriteDailyReport=${onWriteDailyReport}
+    : html`<${TeacherCenterHome} roster=${roster} dataCache=${dataCache} updateData=${updateData} onOpenBoard=${() => setView("board")} onSelectStudent=${onSelectStudent} onSelectStudentAssessment=${onSelectStudentAssessment} onWriteDailyReport=${onWriteDailyReport} onWriteMonthlyReport=${onWriteMonthlyReport}
         examAttempts=${examData.attempts} examPapers=${examData.papers}
         teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
 }
@@ -11263,7 +11293,7 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
 // 미작성자만 보였음)의 상태를 보여주고 기존 화면으로 바로 연결한다.
 // 새 Firestore 컬렉션이나 학생 문서 필드는 하나도 추가하지 않는다 — teacherTodos에 optional
 // 필드 몇 개(TEACHER_TODO_TYPES 주석 참고)를 얹은 것이 유일한 스키마 확장이다.
-function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, examAttempts, examPapers, teacherTodos, saveTeacherTodos }) {
+function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, onWriteMonthlyReport, examAttempts, examPapers, teacherTodos, saveTeacherTodos }) {
   const svc = window.SarahServices;
   const todayStr = today();
   const todayClasses = todaysClassesForRoster(roster, todayStr);
@@ -11280,6 +11310,10 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
       dailyReports: { ...(d.dailyReports || {}), [date]: { ...(d.dailyReports || {})[date], dismissed: true } },
     }));
   }
+
+  // ---- 📊 월말 리포트 미작성 — "데일리 리포트 미작성" 바로 아래에 붙는다(오늘 수업 → 데일리
+  // 리포트 미작성 → 월말 리포트 미작성 순서). 전월분 하나만 확인하므로 lookback 개념이 없다. ----
+  const missingMonthlyReports = missingMonthlyReportsForRoster(roster, dataCache, todayStr);
 
   // ---- 📝 오늘 확인할 것: 숙제 (로스터 전체, 오늘 마감/오늘 배정분) ----
   const allHw = svc.homeworkService.getAllHomeworkAcrossRoster(roster, dataCache);
@@ -11497,6 +11531,22 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               </div>
             `)}
           </div>
+
+          ${missingMonthlyReports.length > 0 && html`
+            <div className="ap-tc-alert" style=${{ marginTop: 12 }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger }}>📊 월말 리포트 미작성</div>
+                <span style=${{ fontSize: 11, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "2px 8px" }}>${missingMonthlyReports.length}건</span>
+              </div>
+              ${missingMonthlyReports.map((m, i) => html`
+                <div key=${m.student.id + m.month} className="ap-tc-row" onClick=${() => onWriteMonthlyReport(m.student.id, m.month)}
+                  style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", fontSize: 12.5 }}>
+                  <span><b style=${{ color: C.navy }}>${m.student.name}</b> <span style=${{ color: C.slate }}>— ${m.monthLabel}</span></span>
+                  <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${m.overdueDays > 0 ? `마감 ${m.overdueDays}일 지남` : `마감 D-${-m.overdueDays}`}</span>
+                </div>
+              `)}
+            </div>
+          `}
         <//>
 
         <${Card}>
@@ -13059,13 +13109,14 @@ function RegularExamEditor({ data, updateData }) {
 
 // ---------- 월말리포트 ----------
 // ---------- 리포트 작성 (top-level: 데일리 리포트 / 월말리포트) ----------
-// initialTarget (Phase 3, optional): { studentId, kind, date, nonce } — set by Teacher Center's
-// "📋 데일리 리포트 미작성" 항목 클릭(및 "오늘 수업 기록" 카드의 [작성]/[보기/수정] 버튼)이
-// 그 학생의 Daily Report 화면으로, 해당 수업일(date)로 바로 이동할 때 쓴다. `nonce`는 매번
-// Date.now()로 새로 채워져서 같은 학생/날짜를 다시 눌러도 재적용된다. `date`는
-// DailyReportGenerator의 initialDate/initialDateNonce로 그대로 전달된다. 둘 다 없어도
-// (initialTarget 자체를 안 넘겨도) 화면의 기본 동작(첫 번째 학생, "daily" 탭, 오늘 날짜)은
-// 그대로다 — 순수 additive.
+// initialTarget (Phase 3, optional): { studentId, kind, date, month, nonce } — set by Teacher
+// Center's "📋 데일리 리포트 미작성"/"📊 월말 리포트 미작성" 항목 클릭(및 "오늘 수업 기록" 카드의
+// [작성]/[보기/수정] 버튼)이 그 학생의 Daily/Monthly Report 화면으로, 해당 수업일(date)/대상월
+// (month)로 바로 이동할 때 쓴다. `nonce`는 매번 Date.now()로 새로 채워져서 같은 학생/날짜(월)를
+// 다시 눌러도 재적용된다. `date`는 DailyReportGenerator의, `month`는 MonthlyReportView의
+// initialDate(Month)/initialDate(Month)Nonce로 그대로 전달된다. 전부 없어도(initialTarget 자체를
+// 안 넘겨도) 화면의 기본 동작(첫 번째 학생, "daily" 탭, 오늘 날짜/이번 달)은 그대로다 — 순수
+// additive.
 function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent }) {
   const [kind, setKind] = useState("daily");
   const [studentId, setStudentId] = useState(roster[0]?.id || "");
@@ -13090,6 +13141,12 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
     { key: "dashboard", label: "Student Progress", icon: "📈" },
   ];
   const data = student ? (dataCache[student.id] || emptyData()) : emptyData();
+  // StudentDetailSection의 myDeepTarget과 같은 이유로 같은 가드를 쓴다 — initialTarget.date/month를
+  // 그대로 계속 흘려보내면, 딥링크로 학생 A의 특정 날짜/월을 본 다음 위 드롭다운으로 학생 B를
+  // "그냥" 다시 고를 때도 initialTarget이 안 지워져 있어(nonce가 안 바뀜) A의 날짜/월이 B의
+  // 화면에도 그대로 새어 들어간다 — 지금 선택된 studentId와 initialTarget.studentId가 같을 때만
+  // 유효한 딥링크로 취급한다.
+  const myTarget = initialTarget && initialTarget.studentId === studentId ? initialTarget : null;
 
   return html`
     <div>
@@ -13104,8 +13161,9 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
         ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null}
-          initialDate=${initialTarget && initialTarget.date} initialDateNonce=${initialTarget && initialTarget.nonce} />`}
-        ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} />`}
+          initialDate=${myTarget && myTarget.date} initialDateNonce=${myTarget && myTarget.nonce} />`}
+        ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)}
+          initialMonth=${myTarget && myTarget.month} initialMonthNonce=${myTarget && myTarget.nonce} />`}
         ${kind === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
       `}
     </div>
@@ -13564,9 +13622,16 @@ function buildNeltComparisonText(current, previous) {
   return lines.join("\n");
 }
 
-function MonthlyReportView({ student, data, updateData }) {
-  const [month, setMonth] = useState(today().slice(0, 7));
+function MonthlyReportView({ student, data, updateData, initialMonth, initialMonthNonce }) {
+  const [month, setMonth] = useState(initialMonth || today().slice(0, 7));
   const saved = (data.monthlyReports || {})[month] || {};
+
+  // Today 대시보드의 "월말 리포트 미작성" 항목 클릭 시 이번 달이 아니라 그 항목의 전월분으로
+  // 바로 열려야 한다 — DailyReportGenerator의 같은 패턴(initialDate/initialDateNonce) 참고.
+  useEffect(() => {
+    if (initialMonth) setMonth(initialMonth);
+    /* eslint-disable-next-line */
+  }, [initialMonthNonce]);
   const [ratings, setRatings] = useState(saved.ratings || {});
   const [attendance, setAttendance] = useState(saved.attendance || null);
   const [content, setContent] = useState(saved.content != null ? saved.content : null);
