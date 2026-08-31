@@ -13995,8 +13995,17 @@ function buildNeltComparisonText(current, previous) {
 }
 
 function MonthlyReportView({ student, data, updateData, initialMonth, initialMonthNonce }) {
+  const svc = window.SarahServices;
   const [month, setMonth] = useState(initialMonth || today().slice(0, 7));
   const saved = (data.monthlyReports || {})[month] || {};
+  const ps = computeProgressSummary(svc, data, month);
+  const [progReading, setProgReading] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setProgReading(null);
+    svc.readingService.getMonthlyReadingStats(student.id, month).then((r) => { if (!cancelled) setProgReading(r); });
+    return () => { cancelled = true; };
+  }, [student.id, month]);
 
   // Today 대시보드의 "월말 리포트 미작성" 항목 클릭 시 이번 달이 아니라 그 항목의 전월분으로
   // 바로 열려야 한다 — DailyReportGenerator의 같은 패턴(initialDate/initialDateNonce) 참고.
@@ -14182,6 +14191,16 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
           <div><span class="lbl">학교</span>${student.school || ""}</div>
         </div>
         <div class="sec">
+          <div class="secttl"><span class="badge">0</span>이번 달 한눈에 보기</div>
+          <table><tr><th>수업 횟수</th><th>총 학습 시간</th><th>숙제 이행률</th><th>Vocabulary 평균</th><th>Reading 활동</th><th>시험 평균</th></tr>
+          <tr><td style="text-align:center;">${ps.classCount}회</td><td style="text-align:center;">${ps.studyMin}분</td><td style="text-align:center;">${ps.hw.rate != null ? ps.hw.rate + "%" : "-"}</td><td style="text-align:center;">${ps.vocab.avgPct != null ? ps.vocab.avgPct + "%" : "-"}</td><td style="text-align:center;">${progReading ? progReading.storiesRead + "편" : "-"}</td><td style="text-align:center;">${ps.examAvg != null ? ps.examAvg + "%" : "-"}</td></tr></table>
+          ${ps.recentExam ? `<div style="font-size:11px;color:#8A8370;margin-top:6px;font-family:'Noto Sans KR',sans-serif;">최근 시험: ${fmtDate(ps.recentExam.date)} · ${String(ps.recentExam.name).replace(/</g, "&lt;")} — ${ps.recentExam.score}${ps.recentExam.pct != null ? ` (${ps.recentExam.pct}%)` : ""}</div>` : ""}
+          <div class="twocol" style="margin-top:10px;">
+            <div><div class="ttl">Strength</div>${ps.strengths.length === 0 ? "기준을 충족하는 데이터가 아직 없어요." : ps.strengths.map((s) => "✓ " + s.replace(/</g, "&lt;")).join("\n")}</div>
+            <div><div class="ttl">Needs Improvement</div>${ps.weaknesses.length === 0 ? "기준을 충족하는 데이터가 아직 없어요." : ps.weaknesses.map((s) => "△ " + s.replace(/</g, "&lt;")).join("\n")}</div>
+          </div>
+        </div>
+        <div class="sec">
           <div class="secttl"><span class="badge">1</span>출결 및 학습 현황</div>
           <table><tr><th>수업일수</th><th>출석</th><th>결석 / 보강</th><th>과제 수행률</th><th>단어 통과율</th></tr>
           <tr><td style="text-align:center;">${att.classDays || "-"}</td><td style="text-align:center;">${att.attended || "-"}</td><td style="text-align:center;">${att.absent || "-"}</td><td style="text-align:center;">${att.hwRate || "-"}</td><td style="text-align:center;">${att.vocabRate || "-"}</td></tr></table>
@@ -14268,6 +14287,31 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
           ${published
             ? html`<${Button} variant="ghost" onClick=${unpublishReport}>비공개로 되돌리기<//>`
             : html`<${Button} variant="gold" onClick=${publishReport}>✔ 작성 완료 (학부모께 공개)<//>`}
+        </div>
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>0. 이번 달 한눈에 보기 (Student Progress 요약)</div>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <${KpiTile} label="수업 횟수" value=${ps.classCount} sub="회 (학습기록 기준)" />
+        <${KpiTile} label="총 학습 시간" value=${ps.studyMin} sub="분 (자습 타이머)" />
+        <${KpiTile} label="숙제 이행률" value=${ps.hw.rate != null ? ps.hw.rate + "%" : "-"} sub=${"지난달 " + (ps.hwPrev.rate != null ? ps.hwPrev.rate + "%" : "-") + trendArrow(ps.hwPrev.rate, ps.hw.rate)} />
+        <${KpiTile} label="Vocabulary 평균" value=${ps.vocab.avgPct != null ? ps.vocab.avgPct + "%" : "-"} sub=${"지난달 " + (ps.vocabPrev.avgPct != null ? ps.vocabPrev.avgPct + "%" : "-") + trendArrow(ps.vocabPrev.avgPct, ps.vocab.avgPct)} />
+        <${KpiTile} label="Reading 활동" value=${progReading ? progReading.storiesRead : "-"} sub="편 (이번 달 독서기록)" />
+      </div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        <div style=${{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 14 }}>
+          <div><div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>시험 평균</div><div style=${{ fontSize: 18, fontWeight: 700, color: C.navy }}>${ps.examAvg != null ? ps.examAvg + "%" : "-"}</div></div>
+          <div><div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>최근 시험</div><div style=${{ fontSize: 13, color: C.ink }}>${ps.recentExam ? `${fmtDate(ps.recentExam.date)} · ${ps.recentExam.name} — ${ps.recentExam.score}${ps.recentExam.pct != null ? ` (${ps.recentExam.pct}%)` : ""}` : "-"}</div></div>
+        </div>
+        <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.gold, marginBottom: 6 }}>Strength</div>
+            ${ps.strengths.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>기준을 충족하는 데이터가 아직 없어요.</div>` : ps.strengths.map((s, i) => html`<div key=${i} style=${{ fontSize: 12.5, padding: "3px 0" }}>✓ ${s}</div>`)}
+          </div>
+          <div>
+            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.danger, marginBottom: 6 }}>Needs Improvement</div>
+            ${ps.weaknesses.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>기준을 충족하는 데이터가 아직 없어요.</div>` : ps.weaknesses.map((s, i) => html`<div key=${i} style=${{ fontSize: 12.5, padding: "3px 0" }}>△ ${s}</div>`)}
+          </div>
         </div>
       <//>
 
@@ -14427,6 +14471,52 @@ function DashSection({ title, children }) {
   `;
 }
 
+// Student Progress 탭(MonthlyReportDashboard)이 계산하던 hw/vocab/exam/classCount/studyMin/
+// strengths·weaknesses를 공용 함수로 뺐다 — MonthlyReportView(작성 화면)와 인쇄용 PDF(printReport)
+// 둘 다 같은 요약을 "0. 이번 달 한눈에 보기" 섹션에 그대로 재사용하기 위함(복제 계산 금지).
+function computeProgressSummary(svc, data, month) {
+  const prevMonth = monthOffset(month, 1);
+  const hw = svc.homeworkService.getMonthlyHomeworkStats(data, month);
+  const hwPrev = svc.homeworkService.getMonthlyHomeworkStats(data, prevMonth);
+  const vocab = svc.vocabularyService.getMonthlyVocabStats(data, month);
+  const vocabPrev = svc.vocabularyService.getMonthlyVocabStats(data, prevMonth);
+  const cumulativeWords = svc.vocabularyService.getCumulativeWordCount(data);
+  const examBd = svc.examService.getMonthlyRegularExamBreakdown(data, month);
+  const examBdPrev = svc.examService.getMonthlyRegularExamBreakdown(data, prevMonth);
+  const { mocks, exams } = svc.examService.getMonthlyMockAndExamResults(data, month);
+
+  const examRows = [
+    ...examBd.rows.map((x) => ({ date: x.date, name: [x.examType, x.materialCategory, x.examDetail].filter(Boolean).join(" · "), score: x.score, pct: x.scoreNum })),
+    ...mocks.map((m) => ({ date: m.date, name: "모의고사 · " + m.title, score: `${m.score}/${m.total}`, pct: m.total ? Math.round((m.score / m.total) * 100) : null })),
+    ...exams.map((e) => ({ date: e.date, name: "시험 · " + e.title, score: `${e.score}/${e.total}`, pct: e.total ? Math.round((e.score / e.total) * 100) : null })),
+  ].sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  const scoredRows = examRows.filter((r) => r.pct != null);
+  const examAvg = scoredRows.length ? Math.round(scoredRows.reduce((s, r) => s + r.pct, 0) / scoredRows.length) : null;
+  const recentExam = examRows.length ? examRows[examRows.length - 1] : null;
+
+  const classCount = svc.reportService.getMonthlyClassCount(data, month) || 0;
+  const studyMin = monthlyStudyMinutes(data.studyLog || [], month);
+
+  // Strength/Weakness — 실제 숫자가 있을 때만, 임계값 기준으로만 판단(AI 추론 없음).
+  const strengths = [], weaknesses = [];
+  if (vocab.passRate != null) {
+    if (vocab.passRate >= 85) strengths.push(`Vocabulary (통과율 ${vocab.passRate}%)`);
+    else if (vocab.passRate < 60) weaknesses.push(`Vocabulary (통과율 ${vocab.passRate}%)`);
+  }
+  if (hw.rate != null) {
+    if (hw.rate >= 90) strengths.push(`Homework Consistency (${hw.rate}%)`);
+    else if (hw.rate < 70) weaknesses.push(`Homework Consistency (${hw.rate}%)`);
+  }
+  Object.entries(examBd.byCategory).forEach(([cat, s]) => {
+    if (s.avg == null) return;
+    if (s.avg >= 85) strengths.push(`${cat} (평균 ${s.avg}점)`);
+    else if (s.avg < 70) weaknesses.push(`${cat} (평균 ${s.avg}점)`);
+  });
+
+  return { hw, hwPrev, vocab, vocabPrev, cumulativeWords, examBd, examBdPrev, examRows, examAvg, recentExam, classCount, studyMin, strengths, weaknesses };
+}
+
 function MonthlyReportDashboard({ student, data }) {
   const svc = window.SarahServices;
   const [month, setMonth] = useState(today().slice(0, 7));
@@ -14456,48 +14546,14 @@ function MonthlyReportDashboard({ student, data }) {
     return () => { cancelled = true; };
   }, [student.id]);
 
-  const prevMonth = monthOffset(month, 1);
   const months3 = [monthOffset(month, 2), monthOffset(month, 1), month];
 
-  const hw = svc.homeworkService.getMonthlyHomeworkStats(data, month);
-  const hwPrev = svc.homeworkService.getMonthlyHomeworkStats(data, prevMonth);
-  const vocab = svc.vocabularyService.getMonthlyVocabStats(data, month);
-  const vocabPrev = svc.vocabularyService.getMonthlyVocabStats(data, prevMonth);
-  const cumulativeWords = svc.vocabularyService.getCumulativeWordCount(data);
-  const examBd = svc.examService.getMonthlyRegularExamBreakdown(data, month);
-  const examBdPrev = svc.examService.getMonthlyRegularExamBreakdown(data, prevMonth);
-  const { mocks, exams } = svc.examService.getMonthlyMockAndExamResults(data, month);
+  const ps = computeProgressSummary(svc, data, month);
+  const { hw, hwPrev, vocab, vocabPrev, cumulativeWords, examBd, examBdPrev, examRows, strengths, weaknesses, classCount, studyMin: totalStudyMin } = ps;
+
   const behavior = svc.reportService.getMonthlyLearningBehavior(data, month);
   const dailyEntries = svc.reportService.getMonthlyDailyReportEntries(data, month);
   const savedMonthly = svc.reportService.getMonthlyReport(data, month); // existing teacher-authored fields, display only
-
-  // "수업 횟수" — reuses the same signal MonthlyReportView's 출석 already uses (distinct 학습
-  // 기록/logs dates this month), so the two screens never disagree about how many classes
-  // happened.
-  const classCount = svc.reportService.getMonthlyClassCount(data, month) || 0;
-  const totalStudyMin = monthlyStudyMinutes(data.studyLog || [], month);
-
-  const examRows = [
-    ...examBd.rows.map((x) => ({ date: x.date, name: [x.examType, x.materialCategory, x.examDetail].filter(Boolean).join(" · "), score: x.score, pct: x.scoreNum })),
-    ...mocks.map((m) => ({ date: m.date, name: "모의고사 · " + m.title, score: `${m.score}/${m.total}`, pct: m.total ? Math.round((m.score / m.total) * 100) : null })),
-    ...exams.map((e) => ({ date: e.date, name: "시험 · " + e.title, score: `${e.score}/${e.total}`, pct: e.total ? Math.round((e.score / e.total) * 100) : null })),
-  ].sort((a, b) => (a.date < b.date ? -1 : 1));
-
-  // Strength/Weakness — 실제 숫자가 있을 때만, 임계값 기준으로만 판단(AI 추론 없음).
-  const strengths = [], weaknesses = [];
-  if (vocab.passRate != null) {
-    if (vocab.passRate >= 85) strengths.push(`Vocabulary (통과율 ${vocab.passRate}%)`);
-    else if (vocab.passRate < 60) weaknesses.push(`Vocabulary (통과율 ${vocab.passRate}%)`);
-  }
-  if (hw.rate != null) {
-    if (hw.rate >= 90) strengths.push(`Homework Consistency (${hw.rate}%)`);
-    else if (hw.rate < 70) weaknesses.push(`Homework Consistency (${hw.rate}%)`);
-  }
-  Object.entries(examBd.byCategory).forEach(([cat, s]) => {
-    if (s.avg == null) return;
-    if (s.avg >= 85) strengths.push(`${cat} (평균 ${s.avg}점)`);
-    else if (s.avg < 70) weaknesses.push(`${cat} (평균 ${s.avg}점)`);
-  });
 
   const rateColor = (v, good = 85, bad = 60) => v == null ? C.slate : v >= good ? C.gold : v < bad ? C.danger : C.ink;
 
