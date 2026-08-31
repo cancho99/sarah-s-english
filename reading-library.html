@@ -651,6 +651,27 @@ async function validateJournalAnswers(level, answers) {
   }
 }
 
+// 제출 전 문장 다듬기(2026-08-31) — AI(aiWorker의 journalPolish 모드)에게 문법/자연스러움
+// 교정을 요청한다. validateJournalAnswers와 같은 "막지 않는다" 원칙 — 인프라 문제가 생기거나
+// 응답 스키마가 이상하면(배열 길이 불일치 등) null을 돌려주고, 호출부(showPolishReview)는
+// 이걸 "다듬기 단계를 건너뛰고 원문 그대로 바로 제출"로 해석한다.
+async function polishJournalAnswers(level, answers) {
+  try {
+    const res = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "journalPolish", level, answers }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!Array.isArray(data.corrected) || data.corrected.length !== answers.length) return null;
+    return data.corrected;
+  } catch (e) {
+    console.error("Reading Log 다듬기 실패(네트워크) — 건너뛰고 원문 제출", e);
+    return null;
+  }
+}
+
 function escapeHtml(s) {
   return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -810,6 +831,75 @@ function showCheckpointPrompt(container, question) {
   });
 }
 
+// 원문과 AI 교정문을 단어(공백 포함 토큰) 단위로 비교해, 교정문 쪽에서 "달라진 단어"만
+// 굵게/색 강조한 HTML을 만든다. 완벽한 형태소 분석은 아니지만(공백 기준 분리), 문법 다듬기
+// 수준의 변경을 한눈에 보여주기엔 충분하다 — 원문(취소선)은 그대로 plain text로 보여주므로
+// 이 함수는 교정문 렌더링에만 쓰인다. 표준 LCS 기반 diff.
+function diffHighlightHtml(original, corrected) {
+  const a = (original || "").split(/(\s+)/);
+  const b = (corrected || "").split(/(\s+)/);
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  let i = 0, j = 0, html = "";
+  const emit = (tok, changed) => {
+    if (changed && !/^\s+$/.test(tok)) return `<b style="color:var(--gold);">${escapeHtml(tok)}</b>`;
+    return escapeHtml(tok);
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { html += emit(b[j], false); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { i++; } // 원문에만 있던 단어(삭제) — 교정문 표시엔 안 나타남
+    else { html += emit(b[j], true); j++; }
+  }
+  while (j < m) { html += emit(b[j], true); j++; }
+  return html;
+}
+
+// 요구사항 3~4 — 성실성 검증을 통과한 뒤 곧바로 저장하지 않고, 문항별 원문/AI 교정문을 나란히
+// 보여주고 학생이 문항별로 교정 적용 여부를 고르게 한다. showCheckpointPrompt와 같은 패턴 —
+// container에 그려주고 최종 answers 배열로 resolve하는 Promise. corrected가 null이면(다듬기
+// 실패/스키마 불일치, §5 원칙) 이 화면 자체를 띄우지 않고 즉시 원문 그대로 resolve한다.
+function showPolishReview(container, questions, originalAnswers, corrected) {
+  if (!Array.isArray(corrected)) return Promise.resolve(originalAnswers);
+  return new Promise((resolve) => {
+    container.innerHTML = `
+      <div style="font-size:12.5px;line-height:1.7;background:#FBF6EA;border:1px solid var(--gold);border-radius:6px;padding:12px 14px;margin:10px 0;">
+        <div style="font-weight:700;color:var(--navy);margin-bottom:8px;">✏️ 제출 전 문장 다듬기</div>
+        <div style="font-size:11.5px;color:var(--slate);margin-bottom:10px;">AI가 문법·표현을 다듬은 문장이에요. 적용하고 싶은 문항만 체크하고 제출하세요.</div>
+        ${questions.map((q, idx) => `
+          <div style="margin-bottom:14px;padding-bottom:12px;border-bottom:1px dashed var(--line);">
+            <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">${escapeHtml(q.label)}</div>
+            <div style="font-size:12.5px;color:var(--slate);text-decoration:line-through;white-space:pre-wrap;margin-bottom:4px;">${escapeHtml(originalAnswers[idx].a)}</div>
+            <div style="font-size:13px;white-space:pre-wrap;margin-bottom:6px;">${diffHighlightHtml(originalAnswers[idx].a, corrected[idx])}</div>
+            <label style="font-size:11.5px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" class="polish-apply" data-i="${idx}" checked style="width:14px;height:14px;" />
+              이 교정 적용
+            </label>
+          </div>
+        `).join("")}
+        <button type="button" class="primary" id="polish-apply-btn">선택한 대로 제출하기</button>
+        <button type="button" class="primary" id="polish-skip-btn" style="background:var(--line);color:var(--ink);margin-left:8px;">전체 원문 유지</button>
+      </div>`;
+    container.querySelector("#polish-apply-btn").addEventListener("click", () => {
+      const finalAnswers = originalAnswers.map((a, idx) => {
+        const cb = container.querySelector(`.polish-apply[data-i="${idx}"]`);
+        const useCorrected = cb && cb.checked && typeof corrected[idx] === "string" && corrected[idx].trim();
+        return { q: a.q, a: useCorrected ? corrected[idx] : a.a };
+      });
+      container.innerHTML = "";
+      resolve(finalAnswers);
+    });
+    container.querySelector("#polish-skip-btn").addEventListener("click", () => {
+      container.innerHTML = "";
+      resolve(originalAnswers);
+    });
+  });
+}
+
 // 이야기를 바꿔서 들어오면 폼이 자동으로 닫힌 상태(기존 기록 요약 또는 새 폼)로 리셋되도록,
 // "지금 펼쳐놓은 기록 폼이 어느 이야기 것인지"를 따로 기억해 renderReader에서 비교한다.
 let journalEditing = false;
@@ -869,6 +959,7 @@ function buildJournalSection(it) {
     `).join("")}
     <button class="primary" id="journal-submit-btn">Submit</button>
     ${existing ? `<button class="primary" id="journal-cancel-btn" style="background:var(--line);color:var(--ink);margin-left:8px;">취소</button>` : ""}
+    <div id="journal-polish"></div>
     <div id="journal-checkpoint"></div>
     <div class="msg" id="journal-msg" style="white-space:pre-wrap;"></div>
   `;
@@ -885,6 +976,7 @@ function buildJournalSection(it) {
   // 동안의 시도 횟수를 세어 제출 데이터(entry.pasteAttempts)에 함께 저장한다.
   let pasteAttempts = 0;
   const msgEl = wrap.querySelector("#journal-msg");
+  const polishEl = wrap.querySelector("#journal-polish");
   const checkpointEl = wrap.querySelector("#journal-checkpoint");
 
   // ---------- Reading Assessment Integrity — 이 폼이 열려 있는 동안(이번 작성 세션)만의 신호를
@@ -936,7 +1028,7 @@ function buildJournalSection(it) {
   });
 
   wrap.querySelector("#journal-submit-btn").onclick = async () => {
-    const answers = questions.map((q, i) => ({ q: `${q.label} — ${q.prompt}`, a: wrap.querySelector(`.journal-answer[data-i="${i}"]`).value.trim() }));
+    let answers = questions.map((q, i) => ({ q: `${q.label} — ${q.prompt}`, a: wrap.querySelector(`.journal-answer[data-i="${i}"]`).value.trim() }));
     if (!answers.some((a) => a.a)) {
       msgEl.textContent = "적어도 하나는 답을 써 주세요.";
       return;
@@ -950,6 +1042,17 @@ function buildJournalSection(it) {
       msgEl.innerHTML = journalRejectHtml(tier);
       return;
     }
+
+    // ---------- 제출 전 문장 다듬기(2026-08-31, §2~5) — 성실성 검증을 통과한 뒤, 곧바로 저장하지
+    // 않고 AI가 교정한 버전을 문항별로 검토·선택할 기회를 준다. AI 호출이 실패하거나 응답이
+    // 이상하면 polishJournalAnswers가 null을 돌려주고, showPolishReview는 그 즉시(화면을 띄우지
+    // 않고) 원문 그대로 resolve한다 — 다듬기 기능 자체가 제출을 막는 일은 절대 없다.
+    msgEl.textContent = "다듬는 중...";
+    const corrected = await polishJournalAnswers(it.level, answers);
+    msgEl.textContent = ""; // 다듬기 화면 자체가 뜨는 순간(또는 건너뛰는 순간) 지운다 — 사용자가
+    // 다듬기 화면에서 버튼을 누르기 전까지 "다듬는 중..."이 계속 남아있으면 이미 다 된 일을
+    // 아직 하는 중처럼 보인다.
+    answers = await showPolishReview(polishEl, questions, answers, corrected);
 
     // ---------- Checkpoint(즉석 이해 확인) — 스토리에 등록된 문제가 있을 때만 보여준다. AI 자동
     // 생성 없음. 결과는 Integrity 신호로만 쓰이고, 실패해도 제출 자체는 그대로 진행된다(§4 원칙).

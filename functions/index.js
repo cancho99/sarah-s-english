@@ -475,6 +475,32 @@ function buildJournalValidatePrompt({ level, journalAnswers }) {
   return `학생 레벨: ${level}\n\n제출한 답변:\n${qa}\n\n위 기준에 따라 이 독서 기록이 합격인지 판단해 JSON으로만 답하세요.`;
 }
 
+// Reading Log "제출 전 문장 다듬기"(2026-08-31) — journalValidate(성실성 검증)를 통과한 뒤,
+// 최종 저장 직전에 학생이 쓴 각 답변을 문법/자연스러움 기준으로 교정한 버전을 만들어 보여준다.
+// 채점이 아니라 교정이 목적이라 별도 프롬프트/모드로 분리했다 — journalValidate 로직은 한 글자도
+// 건드리지 않는다. journalValidate와 같은 "막지 않는다" 원칙을 그대로 따른다: 이 모드가 실패해도
+// (인프라 오류, 스키마 위반 등) 절대 제출 자체를 막지 않고, 호출부(reading-library.html)가
+// corrected:null을 "다듬기 단계를 건너뛰고 원문 그대로 즉시 제출"로 해석한다.
+const JOURNAL_POLISH_SYSTEM_PROMPT = `당신은 한국의 영어 학원에서 학생이 제출한 "독서 기록(Reading Log)" 답변을 문법적으로 자연스럽게 다듬어주는 보조원입니다. 채점이 아니라 교정이 목적입니다.
+
+[레벨별 언어]
+- level이 1~4이면 답변은 한국어입니다. 한국어 문법과 자연스러운 표현으로 고쳐주세요.
+- level이 5 이상이면 답변은 영어입니다. 영어 문법과 자연스러운 표현으로 고쳐주세요.
+
+[규칙]
+- 학생이 쓴 내용의 의미를 바꾸지 마세요. 새로운 내용을 추가하거나 삭제하지 마세요 — 오직 문법 오류, 어색한 표현, 맞춤법만 고칩니다.
+- 이미 문법적으로 자연스러운 문장은 그대로 두세요(억지로 바꾸지 마세요).
+- 답변이 비어 있으면("") 빈 문자열 그대로 돌려주세요.
+- 학생의 원래 어투와 문장 길이를 최대한 유지하세요 — 새로 쓰지 말고 다듬기만 하세요.
+
+반드시 아래 JSON 스키마로만 답하세요. 설명이나 다른 텍스트 없이 순수 JSON만 출력합니다. "corrected" 배열의 길이와 순서는 입력받은 답변 배열과 반드시 동일해야 합니다.
+{ "corrected": ["첫 번째 답변의 교정문", "두 번째 답변의 교정문", ...] }`;
+
+function buildJournalPolishPrompt({ level, journalAnswers }) {
+  const qa = journalAnswers.map((a, i) => `Q${i + 1}. ${a.q}\nA${i + 1}. ${a.a || "(빈 답변)"}`).join("\n\n");
+  return `학생 레벨: ${level}\n\n제출한 답변(총 ${journalAnswers.length}개):\n${qa}\n\n각 답변을 위 규칙에 따라 교정해 JSON으로만 답하세요.`;
+}
+
 function buildWordMeaningPrompt({ word, sentence }) {
   return `단어: "${word}"
 문장(문맥): "${sentence}"
@@ -848,6 +874,9 @@ exports.aiWorker = onRequest(
     const isWordMeaning = mode === "wordMeaning";
     // Reading Log 제출 검증(2026-08-26) — 역시 reading-library.html 전용, 완전히 별개 기능.
     const isJournalValidate = mode === "journalValidate";
+    // Reading Log "제출 전 문장 다듬기"(2026-08-31) — journalValidate 통과 후에만 호출되는
+    // 별개 모드. reading-library.html 전용.
+    const isJournalPolish = mode === "journalPolish";
 
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
@@ -1311,6 +1340,57 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json({ valid: jvParsed.valid !== false });
+      return;
+    }
+
+    if (isJournalPolish) {
+      const lvl = Number(level) || 1;
+      const ansArr = Array.isArray(answers) ? answers : [];
+      if (ansArr.length === 0) {
+        res.status(200).json({ corrected: null });
+        return;
+      }
+      let jpRes;
+      try {
+        jpRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 1500,
+            system: JOURNAL_POLISH_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildJournalPolishPrompt({ level: lvl, journalAnswers: ansArr }) }],
+          }),
+        });
+      } catch (e) {
+        // 다듬기 실패 = 원문 그대로 제출(§5 원칙, journalValidate와 동일한 fail-open).
+        res.status(200).json({ corrected: null });
+        return;
+      }
+      if (!jpRes.ok) {
+        res.status(200).json({ corrected: null });
+        return;
+      }
+      const jpData = await jpRes.json();
+      const jpText = (jpData.content || []).map((b) => b.text || "").join("");
+      let jpParsed;
+      try {
+        jpParsed = JSON.parse(stripFences(jpText));
+      } catch {
+        res.status(200).json({ corrected: null });
+        return;
+      }
+      // 모델이 스키마를 어기면(배열이 아니거나 길이가 안 맞으면) 신뢰하지 않고 프론트가 원문
+      // 그대로 쓰도록 corrected:null로 내려보낸다 — wordMeaning 핸들러와 같은 방어적 파싱 원칙.
+      if (!Array.isArray(jpParsed.corrected) || jpParsed.corrected.length !== ansArr.length) {
+        res.status(200).json({ corrected: null });
+        return;
+      }
+      res.status(200).json({ corrected: jpParsed.corrected.map((c) => (typeof c === "string" ? c : "")) });
       return;
     }
 
