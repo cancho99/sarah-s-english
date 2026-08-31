@@ -17824,12 +17824,22 @@ function RoadmapTaskList({ category, milestone, patchPhase }) {
   const svc = window.SarahServices.roadmapService;
   const tasks = milestone.tasks || [];
   const [newTitle, setNewTitle] = useState("");
+  const [bulkTitles, setBulkTitles] = useState("");
 
   async function addTaskClick() {
     const title = newTitle.trim();
     if (!title) return;
     await patchPhase((p) => svc.addTask(p, category.id, milestone.id, title));
     setNewTitle("");
+  }
+  // 교재 목차 붙여넣기 → Task 일괄 생성(2026-08-31) — 줄바꿈 기준으로 나눠 빈 줄만 제외하고,
+  // 나머지는 그대로 한 줄 = Task 하나로 만든다. 문법/독해뿐 아니라 모든 Milestone의 Task 목록에
+  // 공통으로 쓸 수 있게 카테고리 구분 없이 붙였다.
+  async function addBulkTasksClick() {
+    const titles = bulkTitles.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (titles.length === 0) return;
+    await patchPhase((p) => svc.addTasksBulk(p, category.id, milestone.id, titles));
+    setBulkTitles("");
   }
   async function removeTaskClick(t) {
     if (!confirm(`"${t.title || "이름 없는 Task"}"를 삭제할까요?`)) return;
@@ -17874,6 +17884,12 @@ function RoadmapTaskList({ category, milestone, patchPhase }) {
         <input value=${newTitle} onChange=${(e) => setNewTitle(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addTaskClick()}
           placeholder="새 Task 이름" style=${{ ...inputStyle, flex: 1, fontSize: 12, padding: "6px 10px" }} />
         <button onClick=${addTaskClick} style=${{ ...miniBtnStyle, padding: "6px 12px", fontSize: 11.5, whiteSpace: "nowrap" }}>+ 추가</button>
+      </div>
+      <div style=${{ marginTop: 8 }}>
+        <textarea value=${bulkTitles} onChange=${(e) => setBulkTitles(e.target.value)}
+          placeholder=${"교재 목차를 한 줄에 하나씩 붙여넣으세요\n예)\n1과 문장의 구성 요소\n2과 명사와 관사\n3과 대명사"}
+          style=${{ ...inputStyle, fontSize: 12, padding: "6px 10px", minHeight: 64, resize: "vertical" }} />
+        <button onClick=${addBulkTasksClick} style=${{ ...miniBtnStyle, padding: "6px 12px", fontSize: 11.5, whiteSpace: "nowrap", marginTop: 4 }}>목차 붙여넣기로 Task 일괄 추가</button>
       </div>
     </div>
   `;

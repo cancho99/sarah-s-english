@@ -245,6 +245,17 @@ window.SarahServices = window.SarahServices || {};
       return { ...m, tasks: [...ts, t] };
     })));
   }
+  // 교재 목차 붙여넣기 → Task 일괄 생성(2026-08-31) — addTask 하나를 titles.length번 부른 것과
+  // 같은 결과가 되도록 같은 mapCategories/mapMilestones 패턴을 그대로 쓴다. order는 기존
+  // tasks.length부터 이어서 매겨서(0부터 다시 매기지 않음) 이미 있던 Task들과 뒤섞이지 않는다.
+  function addTasksBulk(phase, categoryId, milestoneId, titles) {
+    return mapCategories(phase, (c) => (c.id !== categoryId ? c : mapMilestones(c, (m) => {
+      if (m.id !== milestoneId) return m;
+      const ts = m.tasks || [];
+      const newTasks = titles.map((title, i) => ({ ...createTask(title), order: ts.length + i }));
+      return { ...m, tasks: [...ts, ...newTasks] };
+    })));
+  }
   function updateTask(phase, categoryId, milestoneId, taskId, patch) {
     return mapCategories(phase, (c) => (c.id !== categoryId ? c : mapMilestones(c, (m) => (m.id !== milestoneId ? m : mapTasks(m, (t) => (t.id === taskId ? { ...t, ...patch } : t))))));
   }
@@ -361,7 +372,7 @@ window.SarahServices = window.SarahServices || {};
     taskProgress, milestoneProgress, categoryProgress, phaseProgress, overallProgress,
     addCategory, updateCategory, removeCategory, reorderCategories,
     addMilestone, updateMilestone, removeMilestone, reorderMilestones,
-    addTask, updateTask, removeTask, reorderTasks,
+    addTask, addTasksBulk, updateTask, removeTask, reorderTasks,
     allMilestones, phaseStatusInfo, nextIncompleteMilestone,
     MATERIAL_BUCKETS, MATERIAL_BUCKET_LABEL_KO, MATERIAL_STATUSES, MATERIAL_ROLES,
     createMaterialItem, materialsOf, addMaterial, updateMaterial, removeMaterial,
