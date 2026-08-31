@@ -1235,6 +1235,28 @@ function VocabPassRateCard({ data, big }) {
     <//>
   `;
 }
+// 학부모 홈 — "지금 어떤 레벨의 책을 몇 권 읽고 있는지"(2026-08-31). "읽는 중(진행중)" 개념은
+// 2026-08-26에 의도적으로 없앴다(readingService.js 주석 참고 — Reading Log를 실제로 제출해야만
+// "완료"로 집계됨). 그래서 여기서도 "몇 권 읽고 있는지"가 아니라 "이번 달 Reading Log를 제출해서
+// 완료한 책 수"를 보여준다 — getMonthlyReadingStats()가 이미 계산해 주는 storiesRead/levelCounts/
+// recentLevel을 그대로 쓴다. HomeworkProgressCard/VocabPassRateCard와 같은 카드 스타일.
+function ParentReadingStatusCard({ stats }) {
+  const levelLine = stats && stats.levelCounts
+    ? Object.entries(stats.levelCounts).sort((a, b) => Number(a[0]) - Number(b[0])).map(([lv, n]) => `Lv.${lv} ${n}권`).join(" · ")
+    : "";
+  return html`
+    <${Card} style=${{ marginBottom: 0 }}>
+      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>📚 이번 달 리딩 현황</div>
+      ${!stats || stats.storiesRead === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>이번 달 제출한 Reading Log가 아직 없어요.</div>` : html`
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style=${{ ...serif, fontSize: 22, color: C.navy, fontWeight: 700 }}>${stats.storiesRead}권</div>
+          <div style=${{ fontSize: 12, color: C.slate }}>최근 Lv.${stats.recentLevel}</div>
+        </div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8 }}>${levelLine}</div>
+      `}
+    <//>
+  `;
+}
 // Paired with HomeworkProgressCard on parent home (and reused wherever a quick cumulative-time
 // readout is useful) — same big-number-in-a-box treatment, all-time total (not month-scoped).
 function StudyTimeStatCard({ studyLog }) {
@@ -19540,8 +19562,13 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
   // reads simultaneously and made the tab noticeably slow to open, especially on mobile. Only
   // render the most recent few by default; "이전 리포트 더 보기" reveals the rest on demand.
   const [dailyReportShowCount, setDailyReportShowCount] = useState(5);
+  // "지금 어떤 레벨의 책을 몇 권 읽고 있는지" — ParentReadingStatusCard용. reading-library.html이
+  // 소유한 readingJournal을 readingService가 읽기만 하므로(index.html은 여기 쓴 적 없음) data와는
+  // 별도로 이번 달분만 따로 가져온다.
+  const [readingStats, setReadingStats] = useState(null);
   useEffect(() => { (async () => { const d = await ensureData(student.id); setData(d); })(); }, [student.id]);
   useEffect(() => { if (dataCache[student.id]) setData(dataCache[student.id]); }, [dataCache, student.id]);
+  useEffect(() => { (async () => { setReadingStats(await window.SarahServices.readingService.getMonthlyReadingStats(student.id, today().slice(0, 7))); })(); }, [student.id]);
 
   if (!data && dataLoadErrors && dataLoadErrors[student.id]) {
     return html`<${LoadErrorNotice} error=${dataLoadErrors[student.id]} onRetry=${() => ensureData(student.id)} />`;
@@ -19585,11 +19612,11 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
           <${HomeworkProgressCard} data=${data} />
           <${StudyTimeStatCard} studyLog=${data.studyLog || []} />
-        </div>
-
-        <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
-          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
+          <${ParentReadingStatusCard} stats=${readingStats} />
+          <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
+            <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>🗓 다음 수업</div>
+            <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
+          </div>
         </div>
 
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
