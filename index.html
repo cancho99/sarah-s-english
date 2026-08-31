@@ -19432,8 +19432,12 @@ function ParentRoadmapSection({ student, data }) {
   const currentIdx = Math.min(roadmap.currentPhaseIndex || 0, phases.length - 1);
   const currentPhase = phases[currentIdx];
   const nextPhase = phases[currentIdx + 1];
-  const completedCount = phases.slice(0, currentIdx).length + (currentPhase.diagnosticDone ? 1 : 0);
-  const progressPct = Math.round((completedCount / phases.length) * 100);
+  // 진행률 계산 버그 수정(2026-08-31) — 여기서 currentIdx/diagnosticDone만 보고 직접 계산하던
+  // 예전 progressPct는 선생님 화면(StudentRoadmapProgressCard)이 쓰는 roadmapService.
+  // overallProgress()와 다른 방식이라 같은 로드맵인데 두 화면의 %가 서로 달랐다. 계산 로직
+  // 자체(roadmapService.js)는 건드리지 않고, 이 화면도 그 함수를 그대로 호출하도록 맞췄다 —
+  // 타임라인 점(statusOf)·currentIdx 등 나머지 표시는 그대로 둔다.
+  const progressPct = window.SarahServices.roadmapService.overallProgress(roadmap);
   const why = roadmap.whyRoadmap;
   const hasWhy = why && (why.diagnosis || why.priority || why.intervention || why.outcome);
   const skills = roadmap.skills || [];
