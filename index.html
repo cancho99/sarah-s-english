@@ -14311,16 +14311,15 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
         .toolbar .msg{opacity:.85;}
         .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;font-family:'Noto Sans KR',sans-serif;flex-shrink:0;}
         .toolbar button:hover{opacity:.9;}
-        [contenteditable]{outline:none;border-radius:2px;}
-        [contenteditable]:hover{outline:1px dashed #B8935A;outline-offset:3px;}
-        [contenteditable]:focus{outline:1.5px solid #B8935A;outline-offset:3px;}
-        @media print{ .toolbar{display:none !important;} [contenteditable]{outline:none !important;} }
+        .page[contenteditable]{outline:none;cursor:text;}
+        .page[contenteditable]:focus{outline:1.5px solid #B8935A;outline-offset:-2px;}
+        @media print{ .toolbar{display:none !important;} .page[contenteditable]{outline:none !important;} }
       </style></head><body>
       <div class="toolbar">
-        <span class="msg">미리보기입니다 — 텍스트 부분을 클릭하면 바로 고칠 수 있어요 (이 화면에서 고친 내용은 인쇄물에만 반영되고, 저장 데이터는 바뀌지 않아요). 확인 후 인쇄해 주세요.</span>
+        <span class="msg">미리보기입니다 — 화면의 어떤 텍스트든 클릭해서 자유롭게 고칠 수 있어요 (이 화면에서 고친 내용은 인쇄물에만 반영되고, 저장 데이터는 바뀌지 않아요). 확인 후 인쇄해 주세요.</span>
         <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
       </div>
-      <div class="page">
+      <div class="page" contenteditable="true" spellcheck="false">
         <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
         <div class="logowrap"><img src="${LOGO_DATA_URI}" alt="Sarah's English" /></div>
         <h1>${Number(m)}월 월말 학습 리포트</h1>
@@ -14363,7 +14362,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
             </div>
           `).join("")}
           ${(data.neltResults || []).length >= 2 ? `<div style="margin-top:12px;">${buildNeltTrendChartSVG(data.neltResults)}</div>` : ""}
-          ${neltComment ? `<div class="content-box" contenteditable="true" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
+          ${neltComment ? `<div class="content-box" style="margin-top:12px;">${neltComment.replace(/</g, "&lt;")}</div>` : ""}
         </div>` : ""}
         ${roadmapInfo ? `
         <div class="sec">
@@ -14395,7 +14394,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
         </div>` : ""}
         <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 1</div>
       </div>
-      <div class="page">
+      <div class="page" contenteditable="true" spellcheck="false">
         <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
         <div class="sec">
           <div class="secttl"><span class="badge">3</span>이번 달 학습 내용</div>
@@ -14404,24 +14403,24 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
           ` : orderedContentCategories(draftContent).filter((cat) => draftContent[cat] && draftContent[cat].trim()).map((cat) => `
           <div style="margin-bottom:10px;">
             <div style="font-size:12px;font-weight:700;color:#B8935A;margin-bottom:3px;font-family:'Noto Sans KR',sans-serif;">${cat}</div>
-            <div class="content-box" contenteditable="true">${draftContent[cat].replace(/</g, "&lt;")}</div>
+            <div class="content-box">${draftContent[cat].replace(/</g, "&lt;")}</div>
           </div>
           `).join("")}
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">4</span>칭찬할 점 &amp; 보완할 점</div>
           <div class="twocol">
-            <div><div class="ttl">👍 잘하고 있어요</div><div contenteditable="true">${(good || "").replace(/</g, "&lt;")}</div></div>
-            <div><div class="ttl">✏️ 더 챙기면 좋아요</div><div contenteditable="true">${(improve || "").replace(/</g, "&lt;")}</div></div>
+            <div><div class="ttl">👍 잘하고 있어요</div><div>${(good || "").replace(/</g, "&lt;")}</div></div>
+            <div><div class="ttl">✏️ 더 챙기면 좋아요</div><div>${(improve || "").replace(/</g, "&lt;")}</div></div>
           </div>
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">5</span>선생님 종합 코멘트</div>
-          <div class="content-box" contenteditable="true">${(comment || "").replace(/</g, "&lt;")}</div>
+          <div class="content-box">${(comment || "").replace(/</g, "&lt;")}</div>
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">6</span>다음 달 학습 방향</div>
-          <div class="content-box" contenteditable="true">${(nextMonth || "").replace(/</g, "&lt;")}</div>
+          <div class="content-box">${(nextMonth || "").replace(/</g, "&lt;")}</div>
         </div>
         <div class="closing">한 달 동안 함께 애써 준 우리 학생, 그리고 믿고 맡겨 주신 학부모님께 감사드립니다.</div>
         <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 2</div>
