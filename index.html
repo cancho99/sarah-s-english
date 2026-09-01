@@ -14255,7 +14255,13 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
       if (!res.ok || json.error) {
         setGenErr((json.error || "AI 작성에 실패했습니다.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
       } else {
-        if (json.content != null) setContent(json.content);
+        // AI로 리포트 다듬기 버그 수정(2026-09-01) — content는 과목별 객체({"문법": "...", ...})
+        // 여야 하는데, aiWorker가 옛 스키마(문자열)로 돌려주면 orderedContentCategories가 문자열의
+        // 글자 인덱스를 "카테고리"로 오인해 완전히 깨진 화면("3. 이번 달 학습 내용"이 글자 하나당
+        // 카드 하나로 쪼개짐)이 됐다(실사용 중 재현·확인). 서버 프롬프트/스키마는 고쳤지만, AI
+        // 응답이 스키마를 어겨도 화면이 깨지지 않도록 저장된 값을 읽을 때와 같은
+        // normalizeReportContent를 여기서도 통과시킨다(문자열이면 {"기타": 문자열}로 안전 변환).
+        if (json.content != null) setContent(normalizeReportContent(json.content));
         if (json.good != null) setGood(json.good);
         if (json.improve != null) setImprove(json.improve);
         if (json.comment != null) setComment(json.comment);
