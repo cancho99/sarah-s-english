@@ -13622,6 +13622,42 @@ function StarRating({ value, onChange }) {
   `;
 }
 
+// 학습 기록(logs) 과목 태그 — 새 필드(선택값)라 과거 기록(category 없음)은 "미분류"로 취급한다.
+// LogsEditor(Class Record)/StudentReadingLogTab 등 다른 logs 소비처는 이 필드를 몰라도 그대로
+// 동작해야 하므로 category는 어디에서도 필수로 만들지 않는다.
+const LOG_CATEGORIES = ["문법", "독해", "어휘", "듣기", "쓰기", "기타"];
+const LOG_CATEGORY_ORDER = [...LOG_CATEGORIES, "미분류"];
+// MonthlyReportView의 "이번 달 학습 내용" — logs를 category(없으면 "미분류")로 묶어 과목별
+// 텍스트 블록 객체로 만든다. 로그가 없는 카테고리는 키 자체를 만들지 않는다(화면/인쇄 양쪽에서
+// "있는 과목만" 보여주기 위함).
+function groupLogsByCategory(logRows) {
+  const groups = {};
+  (logRows || []).forEach((l) => {
+    const cat = l.category || "미분류";
+    (groups[cat] = groups[cat] || []).push(l);
+  });
+  const result = {};
+  LOG_CATEGORY_ORDER.forEach((cat) => {
+    if (groups[cat] && groups[cat].length > 0) {
+      result[cat] = groups[cat].map((l) => `• ${fmtDate(l.date)}: ${l.content}`).join("\n");
+    }
+  });
+  return result;
+}
+// 월말 리포트 content 필드는 예전엔 문자열 하나였다 — 과목별 객체로 바뀌면서, 이미 저장돼 있던
+// 예전 문자열 값을 { 기타: 그 문자열 } 로 취급해 하위호환한다(별도 마이그레이션 없음).
+function normalizeReportContent(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "string") return raw ? { "기타": raw } : null;
+  return raw;
+}
+function orderedContentCategories(contentObj) {
+  const keys = Object.keys(contentObj || {});
+  const known = LOG_CATEGORY_ORDER.filter((c) => keys.includes(c));
+  const extra = keys.filter((c) => !LOG_CATEGORY_ORDER.includes(c));
+  return [...known, ...extra];
+}
+
 // Phase 3 (Report Center) — the new structured "오늘 학습 기록" card. Reads Homework/Vocabulary/
 // Exam data straight from the existing per-student `data` object via homeworkService/
 // vocabularyService/examService (no data copied, always current), and Reading data via an async
@@ -13647,6 +13683,7 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
   const [teacherComment, setTeacherComment] = useState({});
   const [savedAt, setSavedAt] = useState(null);
   const [newLogContent, setNewLogContent] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("기타");
   const [addingLog, setAddingLog] = useState(false);
   const [showStudentContext, setShowStudentContext] = useState(false);
 
@@ -13677,7 +13714,7 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
     if (!newLogContent.trim()) return;
     setAddingLog(true);
     try {
-      await updateData((d) => ({ ...d, logs: [{ id: uid(), date, content: newLogContent.trim() }, ...(d.logs || [])] }));
+      await updateData((d) => ({ ...d, logs: [{ id: uid(), date, content: newLogContent.trim(), category: selectedCategory }, ...(d.logs || [])] }));
       setNewLogContent("");
     } finally {
       setAddingLog(false);
@@ -13719,9 +13756,15 @@ function DailyReportWorkspace({ student, data, date, updateData, reading, examAt
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>Today's Learning <span style=${{ fontWeight: 400 }}>(Class Record · Class Log와 같은 기록이에요)</span></div>
       <div style=${{ marginBottom: 14 }}>
         ${logsToday.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>오늘 날짜로 등록된 수업 기록이 없어요.</div>` : logsToday.map((l) => html`
-          <div key=${l.id} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}` }}>${l.content}</div>
+          <div key=${l.id} style=${{ fontSize: 12.5, padding: "5px 0", borderTop: `1px dotted ${C.line}`, display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span style=${{ fontSize: 10, fontWeight: 700, color: C.gold, background: C.ivory, borderRadius: 3, padding: "1px 6px", flexShrink: 0 }}>${l.category || "미분류"}</span>
+            <span>${l.content}</span>
+          </div>
         `)}
         <div style=${{ display: "flex", gap: 8, marginTop: 8 }}>
+          <select style=${{ ...smallInput, width: "auto", flexShrink: 0, alignSelf: "flex-start" }} value=${selectedCategory} onChange=${(e) => setSelectedCategory(e.target.value)}>
+            ${LOG_CATEGORIES.map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
+          </select>
           <textarea style=${{ ...areaInput, flex: 1 }} placeholder="오늘 배운 내용 (예: Unit 5 관계대명사 who/which 개념 설명, 워크북 12-14p 풀이)" value=${newLogContent} onChange=${(e) => setNewLogContent(e.target.value)} />
           <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12, alignSelf: "flex-start" }} onClick=${addLog} disabled=${addingLog}>기록 추가<//>
         </div>
@@ -14015,7 +14058,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
   }, [initialMonthNonce]);
   const [ratings, setRatings] = useState(saved.ratings || {});
   const [attendance, setAttendance] = useState(saved.attendance || null);
-  const [content, setContent] = useState(saved.content != null ? saved.content : null);
+  const [content, setContent] = useState(normalizeReportContent(saved.content));
   const [good, setGood] = useState(saved.good || "");
   const [improve, setImprove] = useState(saved.improve || "");
   const [comment, setComment] = useState(saved.comment || "");
@@ -14067,7 +14110,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     const s = (data.monthlyReports || {})[month] || {};
     setRatings(s.ratings || {});
     setAttendance(s.attendance || null);
-    setContent(s.content != null ? s.content : null);
+    setContent(normalizeReportContent(s.content));
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
     setNeltComment(s.neltComment || ""); setPublished(s.published || false); setGenErr("");
   }, [month]);
@@ -14079,7 +14122,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     hwRate: hwRate === null ? "" : hwRate + "%",
     vocabRate: vcRate === null ? "" : vcRate + "%",
   };
-  const draftContent = content != null ? content : (logRows.length === 0 ? "" : logRows.map((l) => `• ${fmtDate(l.date)}: ${l.content}`).join("\n"));
+  const draftContent = content != null ? content : groupLogsByCategory(logRows);
 
   async function saveReport(publishOverride) {
     const nextPublished = publishOverride != null ? publishOverride : published;
@@ -14249,7 +14292,14 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
         <div class="hd"><span class="brand">T. Sarah's English</span><span class="tag">MONTHLY REPORT</span></div>
         <div class="sec">
           <div class="secttl"><span class="badge">3</span>이번 달 학습 내용</div>
-          <div class="content-box" contenteditable="true">${(draftContent || "기록된 내용이 없습니다.").replace(/</g, "&lt;")}</div>
+          ${orderedContentCategories(draftContent).filter((cat) => draftContent[cat] && draftContent[cat].trim()).length === 0 ? `
+          <div class="content-box">기록된 내용이 없습니다.</div>
+          ` : orderedContentCategories(draftContent).filter((cat) => draftContent[cat] && draftContent[cat].trim()).map((cat) => `
+          <div style="margin-bottom:10px;">
+            <div style="font-size:12px;font-weight:700;color:#B8935A;margin-bottom:3px;font-family:'Noto Sans KR',sans-serif;">${cat}</div>
+            <div class="content-box" contenteditable="true">${draftContent[cat].replace(/</g, "&lt;")}</div>
+          </div>
+          `).join("")}
         </div>
         <div class="sec">
           <div class="secttl"><span class="badge">4</span>칭찬할 점 &amp; 보완할 점</div>
@@ -14414,10 +14464,18 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
         ${genErr && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${genErr}</div>`}
       <//>
 
-      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>3. 이번 달 학습 내용 (학습 기록에서 자동으로 뽑아왔어요 · 수정 가능)</div>
-      <${Card} style=${{ marginBottom: 20 }}>
-        <textarea style=${{ ...inputStyle, minHeight: 140, whiteSpace: "pre-wrap" }} value=${draftContent} onChange=${(e) => setContent(e.target.value)} placeholder="이번 달 학습 기록이 여기에 자동으로 정리돼요." />
-      <//>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>3. 이번 달 학습 내용 (학습 기록에서 과목별로 자동으로 뽑아왔어요 · 수정 가능)</div>
+      ${orderedContentCategories(draftContent).length === 0 ? html`
+        <${Card} style=${{ marginBottom: 20 }}>
+          <div style=${{ fontSize: 12.5, color: C.slate }}>이번 달 학습 기록이 아직 없어요.</div>
+        <//>
+      ` : orderedContentCategories(draftContent).map((cat) => html`
+        <${Card} key=${cat} style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.gold, marginBottom: 6 }}>${cat}</div>
+          <textarea style=${{ ...inputStyle, minHeight: 100, whiteSpace: "pre-wrap" }} value=${draftContent[cat] || ""} onChange=${(e) => setContent({ ...draftContent, [cat]: e.target.value })} placeholder="이번 달 학습 기록이 여기에 자동으로 정리돼요." />
+        <//>
+      `)}
+      <div style=${{ marginBottom: 8 }} />
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>4. 칭찬할 점 & 보완할 점</div>
       <${Card} style=${{ marginBottom: 20 }}>
