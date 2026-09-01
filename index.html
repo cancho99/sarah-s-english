@@ -14048,8 +14048,12 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     const currentIdx = Math.min(roadmap.currentPhaseIndex || 0, roadmapPhases.length - 1);
     const currentPhase = roadmapPhases[currentIdx];
     const nextPhase = roadmapPhases[currentIdx + 1] || null;
-    const completedCount = roadmapPhases.slice(0, currentIdx).length + (currentPhase.diagnosticDone ? 1 : 0);
-    const progressPct = Math.round((completedCount / roadmapPhases.length) * 100);
+    // 진행률 계산 버그 수정(2026-08-31) — currentIdx/diagnosticDone만 보고 직접 계산하던 예전
+    // 공식은 Phase 전체를 "진단 완료" 처리하지 않으면 무조건 0%였다. ParentRoadmapSection이
+    // 이미 쓰고 있는 roadmapService.overallProgress(전체 로드맵 진행률, Milestone/Task 기반)로
+    // 맞춘다 — svc는 MonthlyReportView 상단에 이미 window.SarahServices로 선언돼 있으므로
+    // svc.roadmapService로 접근한다(재선언하지 않음).
+    const progressPct = Math.round(svc.roadmapService.overallProgress(roadmap));
     const todayStr = today();
     const isOverdue = !!(currentPhase.targetDate && currentPhase.targetDate < todayStr && !currentPhase.diagnosticDone);
     return {
