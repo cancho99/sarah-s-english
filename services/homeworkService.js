@@ -122,8 +122,8 @@ window.SarahServices = window.SarahServices || {};
   function getMonthlyHomeworkStats(studentData, month) {
     const hw = getHomeworkForStudent("", "", studentData).filter((h) => h.dueDate && h.dueDate.startsWith(month));
     const total = hw.length;
-    const submitted = hw.filter((h) => h.submissionStatus === "submitted").length;
-    const notSubmitted = hw.filter((h) => h.submissionStatus === "not_submitted").length;
+    const submitted = hw.filter((h) => h.done).length;
+    const notSubmitted = hw.filter((h) => !h.done).length;
     const late = hw.filter((h) => h.late).length;
     const checked = hw.filter((h) => h.checked).length;
     return {

@@ -14163,13 +14163,6 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
   }
 
   const inMonth = (s) => s && s.startsWith(month);
-  const hwRows = (data.homework || []).filter((h) => inMonth(h.dueDate));
-  const hwDone = hwRows.filter((h) => h.done).length;
-  const hwRate = hwRows.length ? Math.round((hwDone / hwRows.length) * 100) : null;
-
-  const vcRows = (data.vocabLog || []).filter((v) => inMonth(v.date));
-  const vcPass = vcRows.filter((v) => v.passed).length;
-  const vcRate = vcRows.length ? Math.round((vcPass / vcRows.length) * 100) : null;
 
   const logRows = (data.logs || []).filter((l) => inMonth(l.date)).sort((a, b) => (a.date < b.date ? -1 : 1));
   const scheduledCount = ((student.monthlyInstances || {})[month] || []).length;
@@ -14213,12 +14206,14 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     if (s.selectedExamIds !== undefined) setSelectedExamIds(s.selectedExamIds);
   }, [month]);
 
+  const monthlyHwRate = svc.homeworkService.getMonthlyHomeworkStats(data, month).rate;
+  const monthlyVocabPassRate = svc.vocabularyService.getMonthlyVocabStats(data, month).passRate;
   const att = attendance || {
-    classDays: scheduledCount || attendedCount || "",
+    classDays: attendedCount || "",
     attended: attendedCount || "",
     absent: scheduledCount ? Math.max(scheduledCount - attendedCount, 0) : "",
-    hwRate: hwRate === null ? "" : hwRate + "%",
-    vocabRate: vcRate === null ? "" : vcRate + "%",
+    hwRate: monthlyHwRate === null ? "" : monthlyHwRate + "%",
+    vocabRate: monthlyVocabPassRate === null ? "" : monthlyVocabPassRate + "%",
   };
   const draftContent = content != null ? content : groupLogsByCategory(logRows);
 

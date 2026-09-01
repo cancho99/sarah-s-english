@@ -51,8 +51,14 @@ window.SarahServices = window.SarahServices || {};
     const count = results.length;
     const withPct = results.filter((r) => r.pct != null);
     const avgPct = withPct.length ? Math.round(withPct.reduce((s, r) => s + r.pct, 0) / withPct.length) : null;
-    const passed = withPct.filter((r) => r.pct >= passThreshold(r.title)).length;
-    const passRate = withPct.length ? Math.round((passed / withPct.length) * 100) : null;
+    const quizPassed = withPct.filter((r) => r.pct >= passThreshold(r.title)).length;
+    // 단어 통과율은 Question Bank 자동채점(vocabResults)만이 아니라 선생님이 직접 기록하는
+    // vocabLog(레거시 수기 채점 경로)까지 합쳐야 한다 — 두 경로 모두 실제로 쓰이고 있어서, 한쪽만
+    // 보면 학생이 실제로 본 단어시험보다 통과율이 낮게(혹은 표본이 작게) 잡힌다.
+    const logRows = getVocabLogForStudent(studentData).filter((v) => v.date && v.date.startsWith(month));
+    const logPassed = logRows.filter((v) => v.passed).length;
+    const passDenom = withPct.length + logRows.length;
+    const passRate = passDenom ? Math.round(((quizPassed + logPassed) / passDenom) * 100) : null;
     return { count, avgPct, passRate, results };
   }
 
