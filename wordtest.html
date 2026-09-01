@@ -711,7 +711,7 @@ async function extractPdfText(file) {
 // Splits full extracted text into { "1": "...text for day 1...", "2": "...", ... } based on "Day N" markers.
 function splitTextByDay(text) {
   const lines = text.split('\n');
-  const dayRe = /^\s*day\s*\.?\s*(\d+)\b/i;
+  const dayRe = /day\s*\.?\s*(\d+)\b/i;
   const result = {};
   let current = null;
   lines.forEach((line) => {
@@ -728,21 +728,40 @@ function splitTextByDay(text) {
   return out;
 }
 
-// Extracts {en, ko} pairs from a block of text using the first Hangul character as the split point,
-// which works regardless of whether the PDF used tabs, spaces, or numbering before the word.
+// Extracts {en, ko} pairs from a block of text. Primarily splits on the first Hangul character
+// (works regardless of tabs/spaces/numbering before the word), but also supports English-English
+// wordbook PDFs with no Hangul at all by splitting on the first comma (word, definition) — and
+// treats any line that matches neither shape as a wrapped continuation of the previous definition.
 function extractEnKoPairs(text) {
-  return text.split('\n')
+  const stripLeadingNum = (s) => s.replace(/^[\s\-•·]*\d+[\.\)]?\s*/, '').trim();
+  const pairs = [];
+  text.split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0)
-    .map((line) => {
-      const idx = line.search(/[\uAC00-\uD7A3]/);
-      if (idx <= 0) return null;
-      const en = line.slice(0, idx).replace(/^[\s\-•·]*\d+[\.\)]?\s*/, '').trim();
-      const ko = line.slice(idx).trim();
-      if (!en || !ko || en.length > 40) return null;
-      return { en, ko };
-    })
-    .filter(Boolean);
+    .forEach((line) => {
+      const hangulIdx = line.search(/[\uAC00-\uD7A3]/);
+      if (hangulIdx > 0) {
+        const en = stripLeadingNum(line.slice(0, hangulIdx));
+        const ko = line.slice(hangulIdx).trim();
+        if (en && ko && en.length <= 40) {
+          pairs.push({ en, ko });
+          return;
+        }
+      }
+      const commaIdx = line.indexOf(',');
+      if (commaIdx > 0) {
+        const en = stripLeadingNum(line.slice(0, commaIdx));
+        const ko = line.slice(commaIdx + 1).trim();
+        if (/^[A-Za-z][A-Za-z\s\-']*$/.test(en) && en.length <= 40 && ko) {
+          pairs.push({ en, ko });
+          return;
+        }
+      }
+      if (pairs.length > 0) {
+        pairs[pairs.length - 1].ko += ' ' + line;
+      }
+    });
+  return pairs;
 }
 
 function buildDayGrid(book, container, mode){
