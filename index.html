@@ -14453,7 +14453,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>0. 이번 달 한눈에 보기 (Student Progress 요약)</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
-        <${KpiTile} label="수업 횟수" value=${ps.classCount} sub="회 (학습기록 기준)" />
+        <${KpiTile} label="수업 횟수" value=${ps.classCount} sub="회 (출결 기준)" />
         <${KpiTile} label="총 학습 시간" value=${ps.studyMin} sub="분 (자습 타이머)" />
         <${KpiTile} label="숙제 이행률" value=${ps.hw.rate != null ? ps.hw.rate + "%" : "-"} sub=${"지난달 " + (ps.hwPrev.rate != null ? ps.hwPrev.rate + "%" : "-") + trendArrow(ps.hwPrev.rate, ps.hw.rate)} />
         <${KpiTile} label="Vocabulary 평균" value=${ps.vocab.avgPct != null ? ps.vocab.avgPct + "%" : "-"} sub=${"지난달 " + (ps.vocabPrev.avgPct != null ? ps.vocabPrev.avgPct + "%" : "-") + trendArrow(ps.vocabPrev.avgPct, ps.vocab.avgPct)} />
@@ -14755,7 +14755,7 @@ function MonthlyReportDashboard({ student, data }) {
       <//>
 
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 14 }}>
-        <${KpiTile} label="수업 횟수" value=${classCount} sub="회 (학습기록 기준)" />
+        <${KpiTile} label="수업 횟수" value=${classCount} sub="회 (출결 기준)" />
         <${KpiTile} label="총 학습 시간" value=${totalStudyMin} sub="분 (자습 타이머)" />
         <${KpiTile} label="숙제 이행률" value=${hw.rate != null ? hw.rate + "%" : "-"} sub=${"지난달 " + (hwPrev.rate != null ? hwPrev.rate + "%" : "-") + trendArrow(hwPrev.rate, hw.rate)} />
         <${KpiTile} label="Vocabulary 평균" value=${vocab.avgPct != null ? vocab.avgPct + "%" : "-"} sub=${"지난달 " + (vocabPrev.avgPct != null ? vocabPrev.avgPct + "%" : "-") + trendArrow(vocabPrev.avgPct, vocab.avgPct)} />

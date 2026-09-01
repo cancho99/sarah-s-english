@@ -79,18 +79,16 @@ window.SarahServices = window.SarahServices || {};
     return out;
   }
 
-  // Phase 4 STEP 1 fix: live "수업 횟수" (distinct 학습기록/logs dates this month) — the single
-  // shared computation both MonthlyReportDashboard (teacher) and ParentMonthlySummary (parent)
-  // now call, instead of each recomputing it inline. This intentionally does NOT compute
-  // "결석" — the old MonthlyReportView snapshot's `absent` was derived from
-  // `student.monthlyInstances[month].length`, which is only one-off/moved sessions, not the full
-  // recurring weekly schedule (that needs patternForMonth() + week-counting math this function
-  // does not attempt to redo). Rather than reintroduce a similarly approximate "결석" number,
-  // this only reports what logs actually prove happened.
+  // "수업 횟수" — 실제 출결 기록(data.attendance[date] = {status:"present"|"absent",
+  // makeupDone}, AttendanceOverview가 관리) 기준으로 이 달 "present" 처리된 날짜 수를 센다
+  // (2026-09-01, 사용자 요청 — 원래는 학습기록/logs 날짜 수를 썼는데, 출결 데이터가 이미
+  // 정확히 이 목적으로 쓰이고 있어서 그쪽으로 맞췄다). AttendanceOverview의 월간 요약
+  // (monthRows의 present 계산)과 정확히 같은 기준이라 두 화면 숫자가 어긋나지 않는다.
+  // 결석/보강 여부는 여기서 계산하지 않는다(AttendanceOverview에서 별도로 관리).
   function getMonthlyClassCount(studentData, month) {
-    const logs = (studentData && studentData.logs) || [];
-    const dates = new Set(logs.filter((l) => (l.date || "").startsWith(month)).map((l) => l.date));
-    return dates.size || null;
+    const attendance = (studentData && studentData.attendance) || {};
+    const count = Object.entries(attendance).filter(([dt, rec]) => dt.startsWith(month) && rec && rec.status === "present").length;
+    return count || null;
   }
 
   function getMonthlyReportsForStudent(studentData) {
