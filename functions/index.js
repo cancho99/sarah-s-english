@@ -851,7 +851,11 @@ function sanitizeTransformResult(parsed) {
 }
 
 exports.aiWorker = onRequest(
-  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 300 },
+  // readingAnalyze는 검증 실패 시 최대 2회(초기+재생성 1회) AI를 순차 호출하는데, 긴 지문에서
+  // max_tokens를 64000까지 올린 뒤로 두 호출 합산 시간이 기존 300초를 넘겨 Cloud Run이 응답 전에
+  // 연결을 끊어(클라이언트엔 JSON 에러도 없이 "Failed to fetch"만 보임) 실제로 재현된 문제라
+  // 540초로 올린다. Gen2(Cloud Run 기반)는 최대 3600초까지 허용.
+  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 540 },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
