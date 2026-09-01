@@ -8,7 +8,7 @@
 window.SarahServices = window.SarahServices || {};
 
 (function () {
-  const { getDoc, getAllDocs, getDocsWhere, addDocTo, setDocAt } = window.SarahServices.firebaseClient;
+  const { getDoc, getAllDocs, getDocsWhere, addDocTo, setDocAt, deleteDocAt } = window.SarahServices.firebaseClient;
 
   const ASSIGNMENTS_COLLECTION = "examAssignments";
 
@@ -89,6 +89,13 @@ window.SarahServices = window.SarahServices || {};
     return { ...assignment, ...patchOut };
   }
 
+  // 전체 시험 이력(AssessmentTimelineView) 삭제 버튼용(2026-09-01) — assignment 문서 자체를
+  // 지운다. 연결된 attempt는 별도로 examAttemptService.deleteAttempt가 지운다(이 함수는 그쪽을
+  // 모른다 — 두 컬렉션은 서로 독립적으로 소유된다는 기존 원칙 그대로).
+  async function deleteAssignment(id) {
+    await deleteDocAt(ASSIGNMENTS_COLLECTION, id);
+  }
+
   window.SarahServices.examAssignmentService = {
     ASSIGNMENTS_COLLECTION,
     canTransition,
@@ -98,5 +105,6 @@ window.SarahServices = window.SarahServices || {};
     listStudentAssignments,
     listExamPaperAssignments,
     updateAssignmentStatus,
+    deleteAssignment,
   };
 })();

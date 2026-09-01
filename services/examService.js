@@ -35,6 +35,7 @@ window.SarahServices = window.SarahServices || {};
     const titleById = {};
     mocks.forEach((m) => { titleById[m.id] = m.title; });
     return getMockExamResultsForStudent(studentData).map((r) => ({
+      id: r.id,
       kind: "mock",
       studentId, studentName,
       title: titleById[r.testId] || "모의고사",
@@ -48,6 +49,7 @@ window.SarahServices = window.SarahServices || {};
     const titleById = {};
     exams.forEach((e) => { titleById[e.id] = e.title; });
     return getExamResultsForStudent(studentData).map((r) => ({
+      id: r.id,
       kind: "exam",
       studentId, studentName,
       title: titleById[r.testId] || "시험",

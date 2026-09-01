@@ -5566,7 +5566,7 @@ const STUDENT_ASSESSMENT_SUBTABS = [
 // examAssignments+examAttempts 4계통을 하나의 목록으로 합쳐 보여주기만 하는 읽기 전용 뷰.
 // getUnifiedAssessmentTimeline()이 실제 조인/normalize를 전부 하고, 여기서는 결과를 표로
 // 그리기만 한다 — Firestore 접근은 그 함수 안에서만 일어난다.
-function AssessmentTimelineView({ student, data }) {
+function AssessmentTimelineView({ student, data, updateData }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -5581,6 +5581,36 @@ function AssessmentTimelineView({ student, data }) {
   }, [student.id]);
 
   const kindColor = { regular: C.navy, mock: C.gold, examTest: C.slate, examBuilder: "#7a5cc4" };
+
+  // 4개 계통을 합쳐서 보여주는 읽기 전용 뷰라 삭제 방식도 종류(kind)별로 다르다 — 각 계통의
+  // 실제 소유 컬렉션/서비스로 그대로 위임한다(regular/mock/examTest는 student 문서 필드,
+  // examBuilder는 examAssignments + examAttempts 두 컬렉션). 성공하면 rows(이 컴포넌트가 최초
+  // 한 번만 fetch해서 들고 있는 로컬 state — data prop이 바뀌어도 다시 안 불러온다)에서 그
+  // 줄만 직접 지워야 화면에 즉시 반영된다.
+  async function handleDelete(row) {
+    if (!confirm("이 기록을 삭제할까요?")) return;
+    try {
+      if (row.kind === "regular") {
+        await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).filter((x) => x.id !== row.rawId) }));
+      } else if (row.kind === "mock") {
+        await updateData((d) => ({ ...d, mockExamResults: (d.mockExamResults || []).filter((x) => x.id !== row.rawId) }));
+      } else if (row.kind === "examTest") {
+        await updateData((d) => ({ ...d, examResults: (d.examResults || []).filter((x) => x.id !== row.rawId) }));
+      } else if (row.kind === "examBuilder") {
+        await window.SarahServices.examAssignmentService.deleteAssignment(row.rawId);
+        if (row.attemptId) {
+          try {
+            await window.SarahServices.examAttemptService.deleteAttempt(row.attemptId);
+          } catch (e) {
+            console.warn("examAttempt 삭제 실패(assignment는 이미 삭제됨)", e);
+          }
+        }
+      }
+      setRows((rs) => rs.filter((x) => x.id !== row.id));
+    } catch (e) {
+      alert(friendlyErrorMessage(e));
+    }
+  }
 
   return html`
     <${Card}>
@@ -5600,6 +5630,7 @@ function AssessmentTimelineView({ student, data }) {
                   <th style=${{ padding: "6px 8px" }}>점수</th>
                   <th style=${{ padding: "6px 8px" }}>정답률</th>
                   <th style=${{ padding: "6px 8px" }}>상태</th>
+                  <th style=${{ padding: "6px 8px" }}>관리</th>
                 </tr>
               </thead>
               <tbody>
@@ -5611,6 +5642,9 @@ function AssessmentTimelineView({ student, data }) {
                     <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.score != null ? (r.total != null ? `${r.score}/${r.total}` : r.score) : "—"}</td>
                     <td style=${{ padding: "6px 8px", whiteSpace: "nowrap", fontWeight: r.percentage != null && r.percentage < 60 ? 700 : 400, color: r.percentage != null && r.percentage < 60 ? C.danger : C.ink }}>${r.percentage != null ? r.percentage + "%" : "—"}</td>
                     <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.status}</td>
+                    <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>
+                      <button onClick=${() => handleDelete(r)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 13 }}>✕</button>
+                    </td>
                   </tr>
                 `)}
               </tbody>
@@ -5625,7 +5659,7 @@ function StudentAssessmentTab({ student, data, updateData, examKeyLibrary, analy
   return html`
     <div>
       <${SubTabs} tabs=${STUDENT_ASSESSMENT_SUBTABS} active=${sub} onChange=${setSub} />
-      ${sub === "timeline" && html`<${AssessmentTimelineView} key=${student.id} student=${student} data=${data} />`}
+      ${sub === "timeline" && html`<${AssessmentTimelineView} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
       ${sub === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
       ${sub === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`}
       ${sub === "examTests" && html`<${ExamEditor} data=${data} updateData=${updateData} />`}
@@ -10587,48 +10621,60 @@ async function getTodaysGradedAssignmentResults(studentId, date) {
 async function getUnifiedAssessmentTimeline(studentId, studentName, studentData) {
   const svc = window.SarahServices;
   const regular = svc.examService.getRegularExamsForStudent(studentData).map((x) => ({
-    id: "regular_" + x.id, kind: "regular", kindLabel: x.examType || "내신/기타",
+    id: "regular_" + x.id, rawId: x.id, kind: "regular", kindLabel: x.examType || "내신/기타",
     title: x.examDetail || x.examType || "시험", date: x.date || null,
     score: x.score || (x.scoreNum != null ? String(x.scoreNum) : null), total: null, percentage: null,
     status: "기록됨",
   }));
-  const mock = svc.examService.getRecentMockResults(studentId, studentName, studentData).map((r, i) => ({
-    id: "mock_" + i, kind: "mock", kindLabel: "모의고사",
+  const mock = svc.examService.getRecentMockResults(studentId, studentName, studentData).map((r) => ({
+    id: "mock_" + r.id, rawId: r.id, kind: "mock", kindLabel: "모의고사",
     title: r.title, date: r.date, score: r.score, total: r.total,
     percentage: r.total ? Math.round((r.score / r.total) * 100) : null, status: "기록됨",
   }));
-  const examTest = svc.examService.getRecentExamResults(studentId, studentName, studentData).map((r, i) => ({
-    id: "examTest_" + i, kind: "examTest", kindLabel: "추가시험(퀴즈)",
+  const examTest = svc.examService.getRecentExamResults(studentId, studentName, studentData).map((r) => ({
+    id: "examTest_" + r.id, rawId: r.id, kind: "examTest", kindLabel: "추가시험(퀴즈)",
     title: r.title, date: r.date, score: r.score, total: r.total,
     percentage: r.total ? Math.round((r.score / r.total) * 100) : null, status: "기록됨",
   }));
 
+  // examBuilder 조회는 3개 컬렉션(assignments/attempts/papers)을 더 읽어야 해서, 이 함수를
+  // 교사 권한이 아닌 곳(2026-09-01, ParentMonthlyReportCard의 "시험 성적 추이")에서 부르면
+  // Firestore 규칙상 attempts/papers가 permission-denied로 막힐 수 있다. Promise.all이 하나만
+  // reject해도 전체가 reject되어 regular/mock/examTest까지 통째로 날아가고(호출부에 .catch가
+  // 없으면 로딩 스피너가 영원히 멈추지 않는 것으로 실제 재현됨), 이 함수를 부르는 다른 화면들
+  // (교사용 AssessmentTimelineView 등)도 같은 함정을 안게 된다. examBuilder만 조용히 빈
+  // 배열로 건너뛰고 나머지 3개 계통은 항상 정상 반환하도록 격리한다.
   const AS = svc.examAssignmentService, AT = svc.examAttemptService, EP = svc.examPaperService;
-  const [assignments, attempts, papers] = await Promise.all([
-    AS.listStudentAssignments(studentId), AT.listStudentAttempts(studentId), EP.listExamPapers(),
-  ]);
-  const paperTitleById = {};
-  papers.forEach((p) => { paperTitleById[p.id] = p.title; });
-  const attemptById = {};
-  attempts.forEach((a) => { attemptById[a.id] = a; });
-  function dateStrFromTs(ts) {
-    if (!ts) return null;
-    const d = new Date(ts);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  let examBuilder = [];
+  try {
+    const [assignments, attempts, papers] = await Promise.all([
+      AS.listStudentAssignments(studentId), AT.listStudentAttempts(studentId), EP.listExamPapers(),
+    ]);
+    const paperTitleById = {};
+    papers.forEach((p) => { paperTitleById[p.id] = p.title; });
+    const attemptById = {};
+    attempts.forEach((a) => { attemptById[a.id] = a; });
+    function dateStrFromTs(ts) {
+      if (!ts) return null;
+      const d = new Date(ts);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    examBuilder = assignments.map((a) => {
+      const attempt = a.attemptId ? attemptById[a.attemptId] : null;
+      const graded = a.status === "GRADED" && attempt && attempt.status === "GRADED";
+      const denom = graded ? (attempt.totalQuestions || 0) - (attempt.ungradedCount || 0) : 0;
+      const percentage = graded && denom > 0 ? Math.round((attempt.correctCount / denom) * 100) : null;
+      return {
+        id: "eb_" + a.id, rawId: a.id, attemptId: a.attemptId || null, kind: "examBuilder", kindLabel: "Exam Builder",
+        title: paperTitleById[a.examPaperId] || a.title || "시험지",
+        date: dateStrFromTs((attempt && attempt.submittedAt) || a.assignedAt),
+        score: graded ? attempt.correctCount : null, total: graded ? attempt.totalQuestions : null,
+        percentage, status: ASSIGNMENT_STATUS_LABEL[a.status] || a.status,
+      };
+    });
+  } catch (e) {
+    console.warn("getUnifiedAssessmentTimeline: Exam Builder 조회 실패(권한 등) — 나머지 3개 계통만 반환", e);
   }
-  const examBuilder = assignments.map((a) => {
-    const attempt = a.attemptId ? attemptById[a.attemptId] : null;
-    const graded = a.status === "GRADED" && attempt && attempt.status === "GRADED";
-    const denom = graded ? (attempt.totalQuestions || 0) - (attempt.ungradedCount || 0) : 0;
-    const percentage = graded && denom > 0 ? Math.round((attempt.correctCount / denom) * 100) : null;
-    return {
-      id: "eb_" + a.id, kind: "examBuilder", kindLabel: "Exam Builder",
-      title: paperTitleById[a.examPaperId] || a.title || "시험지",
-      date: dateStrFromTs((attempt && attempt.submittedAt) || a.assignedAt),
-      score: graded ? attempt.correctCount : null, total: graded ? attempt.totalQuestions : null,
-      percentage, status: ASSIGNMENT_STATUS_LABEL[a.status] || a.status,
-    };
-  });
 
   return [...regular, ...mock, ...examTest, ...examBuilder].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 }
@@ -13231,6 +13277,35 @@ function buildNeltTrendChartSVG(results) {
   </svg>`;
 }
 
+// 몬슬리 리포트 "시험 성적 추이"(2026-09-01) — getUnifiedAssessmentTimeline()이 반환하는
+// rows(date/title/kindLabel/percentage)를 그대로 받는다. buildNeltTrendChartSVG와 완전히 같은
+// 크기/폰트/선·점 색을 쓰지만, y축 방향만 다르다: NELT의 percentile은 숫자가 작을수록 좋은
+// 성적이라 그대로 비율을 썼지만, 여기 percentage는 정답률이라 숫자가 클수록 좋은 성적이므로
+// 위로 갈수록(=y가 작을수록) 높은 점수가 되도록 뒤집어서 계산한다 — 그대로 복사했다면 성적이
+// 좋을수록 그래프에서 아래로 내려가는, 보는 사람에게 정반대로 읽히는 그래프가 됐을 것이다.
+function buildExamTrendChartSVG(rows) {
+  const pts = (rows || [])
+    .filter((r) => r.percentage != null && r.date)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (pts.length < 2) return '<div style="font-size:12.5px;color:#8A8370;padding:10px 0;">시험을 2개 이상 선택하면 추이 그래프가 나타나요.</div>';
+  const W = 640, H = 170, padL = 20, padR = 20, padT = 26, padB = 30;
+  const xStep = pts.length > 1 ? (W - padL - padR) / (pts.length - 1) : 0;
+  const xOf = (i) => padL + i * xStep;
+  const yOf = (pct) => padT + (H - padT - padB) * (1 - Math.min(pct, 100) / 100);
+  const linePath = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xOf(i).toFixed(1)},${yOf(p.percentage).toFixed(1)}`).join(" ");
+  const points = pts.map((p, i) => `
+    <circle cx="${xOf(i).toFixed(1)}" cy="${yOf(p.percentage).toFixed(1)}" r="3.5" fill="#B8935A"/>
+    <text x="${xOf(i).toFixed(1)}" y="${(yOf(p.percentage) - 12).toFixed(1)}" font-size="11" fill="#1C2B4A" text-anchor="middle" font-weight="700">${p.percentage}%</text>
+    <text x="${xOf(i).toFixed(1)}" y="${(yOf(p.percentage) + 17).toFixed(1)}" font-size="10" fill="#B8935A" text-anchor="middle">${p.title}</text>
+    <text x="${xOf(i).toFixed(1)}" y="${H - 8}" font-size="9.5" fill="#8A8370" text-anchor="middle">${(p.date || "").slice(5)}</text>
+  `).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:640px;height:auto;font-family:'Noto Sans KR',sans-serif;">
+    <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#EDE9DD" stroke-width="1"/>
+    <path d="${linePath}" fill="none" stroke="#1C2B4A" stroke-width="2"/>
+    ${points}
+  </svg>`;
+}
+
 function NeltUploadSection({ data, updateData }) {
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -14067,6 +14142,25 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
   const [published, setPublished] = useState(saved.published || false);
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState("");
+  // 시험 이력 골라서 넣기 + 성적 추이(2026-09-01) — saved.selectedExamIds가 undefined면(이 달
+  // 리포트를 한 번도 저장한 적 없음) 아래 자동 선택 useEffect가 이번 달 시험으로 기본값을
+  // 채운다. 이미 배열이 저장돼 있으면(빈 배열이어도 — 선생님이 일부러 다 지운 것일 수 있음)
+  // 그 값을 그대로 쓰고 자동 선택으로 덮어쓰지 않는다.
+  const [selectedExamIds, setSelectedExamIds] = useState(saved.selectedExamIds || []);
+  const [timelineRows, setTimelineRows] = useState(null);
+  useEffect(() => {
+    getUnifiedAssessmentTimeline(student.id, student.name, data).then(setTimelineRows);
+  }, [student.id]);
+  useEffect(() => {
+    if (!timelineRows) return;
+    const s = (data.monthlyReports || {})[month] || {};
+    if (s.selectedExamIds !== undefined) return; // 이미 저장된 적 있으면(빈 배열 포함) 자동 선택하지 않는다
+    setSelectedExamIds(timelineRows.filter((r) => (r.date || "").startsWith(month)).map((r) => r.id));
+  }, [timelineRows, month]);
+  const selectedRows = (timelineRows || []).filter((r) => selectedExamIds.includes(r.id));
+  function toggleExam(id) {
+    setSelectedExamIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  }
 
   const inMonth = (s) => s && s.startsWith(month);
   const hwRows = (data.homework || []).filter((h) => inMonth(h.dueDate));
@@ -14113,6 +14207,10 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     setContent(normalizeReportContent(s.content));
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
     setNeltComment(s.neltComment || ""); setPublished(s.published || false); setGenErr("");
+    // 저장된 적 있으면(빈 배열 포함) 그 값 그대로. 저장된 적 없으면(undefined) 여기서는 손대지
+    // 않고 위 자동 선택 useEffect가 timelineRows를 보고 채우게 둔다 — 여기서 []로 초기화해
+    // 버리면 두 effect가 같은 렌더에서 서로 값을 덮어써 자동 선택이 씹힐 수 있다.
+    if (s.selectedExamIds !== undefined) setSelectedExamIds(s.selectedExamIds);
   }, [month]);
 
   const att = attendance || {
@@ -14128,7 +14226,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     const nextPublished = publishOverride != null ? publishOverride : published;
     await updateData((d) => ({
       ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, published: nextPublished } },
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, selectedExamIds, published: nextPublished } },
     }));
     setPublished(nextPublished);
   }
@@ -14286,6 +14384,14 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
           </table>
           <div style="font-size:10px;color:#8A8370;margin-top:8px;font-family:'Noto Sans KR',sans-serif;">* 평가는 수업 중 관찰, 과제 수행, 단어·구문 확인 결과를 종합한 담당 선생님의 정성 평가입니다.</div>
         </div>
+        ${selectedRows.length > 0 ? `
+        <div class="sec">
+          <div class="secttl"><span class="badge">2-1</span>시험 성적 추이</div>
+          <table><tr><th style="text-align:left;">시험명</th><th>날짜</th><th>점수</th></tr>
+          ${selectedRows.map((r) => `<tr><td class="catcell">${(r.title || "").replace(/</g, "&lt;")}</td><td style="text-align:center;">${r.date ? fmtDate(r.date) : "-"}</td><td style="text-align:center;">${r.score != null ? (r.total != null ? `${r.score}/${r.total}` : r.score) : (r.percentage != null ? r.percentage + "%" : "-")}</td></tr>`).join("")}
+          </table>
+          <div style="margin-top:10px;">${buildExamTrendChartSVG(selectedRows)}</div>
+        </div>` : ""}
         <div class="ft">Sarah's English · 학생 한 명, 한 달의 기록 · 1</div>
       </div>
       <div class="page">
@@ -14440,6 +14546,25 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
             </div>
           </div>
         `)}
+      <//>
+
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>2-1. 시험 성적 추이 (학부모님께 보여줄 시험 선택)</div>
+      <${Card} style=${{ marginBottom: 20 }}>
+        ${timelineRows === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` :
+          timelineRows.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 기록된 시험이 없어요.</div>` : html`
+          <div style=${{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 14 }}>
+            ${[...timelineRows].sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((r) => html`
+              <label key=${r.id} style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer", padding: "4px 0" }}>
+                <input type="checkbox" checked=${selectedExamIds.includes(r.id)} onChange=${() => toggleExam(r.id)} style=${{ width: 14, height: 14, flexShrink: 0, appearance: "auto" }} />
+                <span style=${{ color: C.slate, fontSize: 11, flexShrink: 0, width: 66 }}>${r.date ? fmtDate(r.date) : "—"}</span>
+                <span style=${{ fontSize: 10.5, fontWeight: 700, color: C.gold, flexShrink: 0 }}>${r.kindLabel}</span>
+                <span style=${{ flex: 1, minWidth: 0 }}>${r.title}</span>
+                <span style=${{ color: C.slate, fontSize: 11.5, flexShrink: 0 }}>${r.score != null ? (r.total != null ? `${r.score}/${r.total}` : r.score) : (r.percentage != null ? r.percentage + "%" : "—")}</span>
+              </label>
+            `)}
+          </div>
+          <div dangerouslySetInnerHTML=${{ __html: buildExamTrendChartSVG(selectedRows) }} />
+        `}
       <//>
 
       ${(data.notes || []).length > 0 && html`
@@ -19417,13 +19542,29 @@ function ParentDailyReportCard({ student, data, date, sinceDate, r, preloadedRea
 
 function ParentMonthlyReportCard({ month, report, student, data }) {
   const [y, m] = month.split("-");
+  // 크래시 수정(2026-09-01) — report.content는 과목별 객체({"문법": "...", ...}, 예전 데이터는
+  // 문자열일 수도 있음)인데, 아래 textFields는 전부 "라벨 하나 = 문자열 하나"를 가정하고
+  // 그대로 렌더링한다. content를 여기 그대로 넣으면 React가 객체를 자식으로 렌더링하려다
+  // "Objects are not valid as a React child" 에러로 백지 화면이 됐다(실사용 데이터로 재현
+  // 확인됨). MonthlyReportView/printReport가 이미 쓰는 normalizeReportContent(예전 문자열
+  // 포맷까지 호환)+orderedContentCategories 패턴을 그대로 재사용해 별도 블록으로 뺀다.
+  const contentObj = normalizeReportContent(report.content);
+  const contentCategories = orderedContentCategories(contentObj).filter((cat) => contentObj[cat] && contentObj[cat].trim());
   const textFields = [
-    ["이번 달 학습 내용", report.content],
     ["칭찬할 점", report.good],
     ["보완할 점", report.improve],
     ["선생님 종합 코멘트", report.comment],
     ["다음 달 학습 방향", report.nextMonth],
   ];
+  // 시험 성적 추이(2026-09-01) — 선생님이 이 리포트에 골라 넣은 시험(report.selectedExamIds)이
+  // 있을 때만 불러온다. AssessmentTimelineView/MonthlyReportView와 같은 로딩 패턴.
+  const [timelineRows, setTimelineRows] = useState(null);
+  const hasSelectedExams = !!(report.selectedExamIds && report.selectedExamIds.length > 0);
+  useEffect(() => {
+    if (!hasSelectedExams || !student || !data) { setTimelineRows(null); return; }
+    getUnifiedAssessmentTimeline(student.id, student.name, data).then(setTimelineRows);
+    /* eslint-disable-next-line */
+  }, [student && student.id, hasSelectedExams]);
   return html`
     <${Card} style=${{ marginBottom: 14 }}>
       <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 10 }}>${y}년 ${Number(m)}월 월말 리포트</div>
@@ -19441,6 +19582,25 @@ function ParentMonthlyReportCard({ month, report, student, data }) {
         <div style=${{ marginBottom: 12 }}>
           <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 4 }}>NELT 성적 비교</div>
           <div style=${{ fontSize: 12.5, whiteSpace: "pre-wrap", color: C.ink, lineHeight: 1.6 }}>${report.neltComment}</div>
+        </div>
+      `}
+      ${hasSelectedExams && html`
+        <div style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 4 }}>시험 성적 추이</div>
+          ${timelineRows === null ? html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>` : html`
+            <div dangerouslySetInnerHTML=${{ __html: buildExamTrendChartSVG(timelineRows.filter((r) => report.selectedExamIds.includes(r.id))) }} />
+          `}
+        </div>
+      `}
+      ${contentCategories.length > 0 && html`
+        <div style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 4 }}>이번 달 학습 내용</div>
+          ${contentCategories.map((cat) => html`
+            <div key=${cat} style=${{ marginBottom: 8 }}>
+              <div style=${{ fontSize: 10.5, fontWeight: 700, color: C.navy, marginBottom: 2 }}>${cat}</div>
+              <div style=${{ fontSize: 12.5, whiteSpace: "pre-wrap", color: C.ink, lineHeight: 1.6 }}>${contentObj[cat]}</div>
+            </div>
+          `)}
         </div>
       `}
       ${textFields.map(([label, val]) => val && html`

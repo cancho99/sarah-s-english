@@ -12,7 +12,7 @@
 window.SarahServices = window.SarahServices || {};
 
 (function () {
-  const { getDoc, getAllDocs, addDocTo, setDocAt } = window.SarahServices.firebaseClient;
+  const { getDoc, getAllDocs, addDocTo, setDocAt, deleteDocAt } = window.SarahServices.firebaseClient;
   const AS = window.SarahServices.examAssignmentService;
 
   const ATTEMPTS_COLLECTION = "examAttempts";
@@ -178,6 +178,12 @@ window.SarahServices = window.SarahServices || {};
       });
   }
 
+  // 전체 시험 이력(AssessmentTimelineView) 삭제 버튼용(2026-09-01) — attempt 문서 자체를 지운다.
+  // 연결된 assignment는 examAssignmentService.deleteAssignment가 별도로 지운다.
+  async function deleteAttempt(id) {
+    await deleteDocAt(ATTEMPTS_COLLECTION, id);
+  }
+
   window.SarahServices.examAttemptService = {
     ATTEMPTS_COLLECTION,
     startAttempt,
@@ -189,5 +195,6 @@ window.SarahServices = window.SarahServices || {};
     listStudentAttempts,
     listAttempts,
     getQuestionUsageHistory,
+    deleteAttempt,
   };
 })();
