@@ -3775,7 +3775,12 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
       ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
       ${tab === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
-      ${tab === "data" && html`<${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
+      ${tab === "data" && html`
+        <div>
+          <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
+          <${VocabOrphanCleanupPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />
+        </div>
+      `}
       ${tab === "legacyReading" && html`
         <div>
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>기존 Reading Question Bank(지문·문제) 보관용 화면이에요. 새 Reading 제작은 "Reading Analysis" 메뉴를 사용하세요 — 여기 데이터는 삭제되지 않고 그대로 남아있어요.</div>
@@ -3855,6 +3860,65 @@ function SettingsDataPanel({ roster, ensureData, dataCache, updateData, onSelect
         `)}
         <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} onClick=${bulkClearOldPhotos}>예전 방식 사진 한꺼번에 정리<//>
         <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 Overview 하단 "저장 공간" 탭에서 세부적으로 정리할 수도 있어요.</div>
+      `}
+    <//>
+  `;
+}
+
+// 단어시험 삭제 시 그 응시 기록(vocabResults)이 같이 안 지워지던 예전 버그(2026-09-01 수정)
+// 때문에 이미 쌓인 고아 기록을 정리하는 일회성 도구. "고아" = testId가 그 학생의 현재 vocabTests
+// 어디에도 없는 vocabResults 항목 — Daily/Monthly Report의 단어 합격율·평균 점수를 실제보다
+// 왜곡시키는 원인이었다. 실제로 존재하는 시험의 응시 기록은 절대 건드리지 않는다.
+function VocabOrphanCleanupPanel({ roster, ensureData, dataCache, updateData }) {
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      await Promise.all(roster.map((s) => ensureData(s.id)));
+      if (!cancelled) setLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const orphanInfo = roster.map((s) => {
+    const d = dataCache[s.id] || emptyData();
+    const testIds = new Set((d.vocabTests || []).map((t) => t.id));
+    const orphans = (d.vocabResults || []).filter((r) => !testIds.has(r.testId));
+    return { student: s, count: orphans.length };
+  }).filter((x) => x.count > 0);
+  const totalOrphans = orphanInfo.reduce((sum, x) => sum + x.count, 0);
+
+  async function cleanup() {
+    if (!confirm(`삭제된 단어 시험을 가리키는 고아 응시 기록 ${totalOrphans}건을 ${orphanInfo.length}명의 학생에게서 지울까요? 실제로 지금 존재하는 시험의 응시 기록은 전혀 건드리지 않아요.`)) return;
+    setBusy(true);
+    try {
+      for (const { student } of orphanInfo) {
+        await updateData(student.id, (d) => {
+          const testIds = new Set((d.vocabTests || []).map((t) => t.id));
+          return { ...d, vocabResults: (d.vocabResults || []).filter((r) => testIds.has(r.testId)) };
+        });
+      }
+      setDone(totalOrphans);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return html`
+    <${Card} style=${{ marginTop: 14 }}>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🧹 단어시험 고아 기록 정리</div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>시험을 삭제해도 응시 기록이 함께 지워지지 않던 예전 버그로 남은 기록을 찾아 정리해요. 지금 존재하는 시험의 응시 기록은 건드리지 않아요.</div>
+      ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : done != null ? html`
+        <div style=${{ fontSize: 12.5, color: C.navy }}>✓ ${done}건 정리 완료했어요.</div>
+      ` : orphanInfo.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>고아 기록이 없어요.</div>` : html`
+        ${orphanInfo.map((x) => html`
+          <div key=${x.student.id} style=${{ fontSize: 12.5, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
+            <span>${x.student.name}</span><span style=${{ color: C.danger, fontWeight: 700 }}>${x.count}건</span>
+          </div>
+        `)}
+        <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} disabled=${busy} onClick=${cleanup}>${busy ? "정리 중..." : `고아 기록 ${totalOrphans}건 정리`}<//>
       `}
     <//>
   `;
@@ -4645,19 +4709,21 @@ function computeHomeworkAxis(data) {
   if (hw.total === 0) return { status: null, pct: null, total: 0, done: 0 };
   return { status: pctToStatus(hw.pct), pct: hw.pct, total: hw.total, done: hw.done };
 }
-// Vocabulary 축 — 대표 지표(mainPct)는 "합격률"이 아니라 "여태까지 쌓아온 점수 평균"(사용자
-// 지시): 온라인 퀴즈(vocabResults, 교사가 "올려주는" 시험)와 vocabLog(교사가 "로그에 쓰는" 직접
-// 기록한 단어시험) 전체 이력(이번 달로 좁히지 않음)의 회차별 점수%를 퀴즈+로그 구분 없이 전부
-// 한 배열에 모아 평균한다 — 사용자가 실제 데이터(퀴즈 8건+로그 20건=28건)로 직접 검증 완료.
+// Vocabulary 축 — 대표 지표(mainPct)는 "합격률"이 아니라 "이번 달 쌓은 점수 평균"이다. 온라인
+// 퀴즈(vocabResults)와 vocabLog(교사가 직접 기록한 단어시험) 둘 다 이번 달 응시분만 모아 평균한다.
+// 원래는 전체 이력을 다 평균 냈었는데(사용자 지시로 그렇게 만들었던 것), 숙제 진행율
+// (homeworkStats)처럼 매달 리셋돼야 한다는 후속 지시(2026-09-01)로 월 단위 필터링으로 바꿨다 —
+// 안 그러면 몇 달 전에 끝난 나쁜(혹은 좋은) 점수가 이번 달 상태 판정에 계속 영향을 준다.
 function computeVocabAxis(data) {
-  const titleById = {};
-  (data.vocabTests || []).forEach((t) => { titleById[t.id] = t.title; });
+  const month = today().slice(0, 7);
   // vocabResults의 score는 맞은 개수(총점 대비 계산 필요), vocabLog의 score는 이미 반올림된
   // %(VocabLogEditor.add() 참고)라 그대로 쓴다 — 두 소스를 { pct } 한 모양으로 정규화.
   const quizPcts = (data.vocabResults || [])
+    .filter((r) => r.date && r.date.startsWith(month))
     .map((r) => (r.total > 0 ? Math.round((r.score / r.total) * 100) : null))
     .filter((p) => p != null);
   const logPcts = (data.vocabLog || [])
+    .filter((v) => v.date && v.date.startsWith(month))
     .map((v) => (typeof v.score === "number" ? v.score : (v.total > 0 ? Math.round((v.correct / v.total) * 100) : null)))
     .filter((p) => p != null);
   const allPcts = [...quizPcts, ...logPcts];
@@ -15562,7 +15628,10 @@ function VocabResultRow({ r, title, updateData }) {
         <div style=${{ marginTop: 8, background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 4, padding: 10 }}>
           ${r.breakdown.map((row, i) => html`
             <div key=${i} style=${{ padding: "6px 0", borderBottom: i < r.breakdown.length - 1 ? `1px dotted ${C.line}` : "none" }}>
-              <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${row.prompt}</div>
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap", display: "flex", alignItems: "center", gap: 6 }}>
+                <span>${i + 1}. ${row.prompt}</span>
+                ${row.suspectedAutofill && html`<span title="답 글자 수에 비해 실제 키 입력이 지나치게 적었어요 — 자동 채점/정오답에는 영향 없어요." style=${{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 20, background: "#FBF0DC", color: "#8A6A1E" }}>⌨️ 예측입력 의심</span>`}
+              </div>
               <div style=${{ fontSize: 12, marginTop: 2, color: row.ok ? C.navy : C.danger }}>학생 답: ${row.given} ${row.ok ? "✓" : "✗"}${row.manualOverride ? " (선생님 확인 정답 처리)" : ""}</div>
               ${!row.ok && html`
                 <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
@@ -15726,7 +15795,17 @@ function VocabEditor({ student, data, updateData }) {
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
     setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setCreating(false);
   }
-  async function removeTest(id) { await updateData((d) => ({ ...d, vocabTests: d.vocabTests.filter((t) => t.id !== id) })); }
+  // 시험을 지우면 그 시험을 본 학생들의 응시 기록(vocabResults)도 같이 지운다 — 안 지우면
+  // vocabTests에서만 사라진 testId를 가리키는 고아 vocabResults가 남아, Daily/Monthly Report의
+  // 단어 통계·최근 시험 카드에 지운 시험 결과가 계속 나타나는 원인이 된다.
+  async function removeTest(id) {
+    if (!confirm("이 시험을 삭제할까요? 이 시험을 본 학생들의 응시 기록도 함께 삭제됩니다.")) return;
+    await updateData((d) => ({
+      ...d,
+      vocabTests: d.vocabTests.filter((t) => t.id !== id),
+      vocabResults: (d.vocabResults || []).filter((r) => r.testId !== id),
+    }));
+  }
   // Mirrors homework's 기간만료 — for a 단어 시험 whose 재시험 예정일이 지났고 더 볼 일이 없는 경우.
   // Drops it out of the student/parent home "밀린" nagging list without deleting the test itself.
   async function toggleExpired(id) {
@@ -16614,7 +16693,7 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
           ${test.answerKey.map((_, i) => html`
             <div key=${i} style=${{ width: 62 }}>
               <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 3, textAlign: "center" }}>${i + 1}</div>
-              <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" value=${answers[i]} onChange=${(e) => pick(i, e.target.value.replace(/[^0-9]/g, ""))} />
+              <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" autocomplete="off" name=${`mock-ans-${test.id}-${i}`} value=${answers[i]} onChange=${(e) => pick(i, e.target.value.replace(/[^0-9]/g, ""))} />
             </div>
           `)}
         </div>
@@ -19146,6 +19225,17 @@ function gradeVocabQuestion(q, answer) {
   if (q.questionType === "w2m") return answer === q.correctIndex;
   return checkWordAnswer(answer || "", q.word, q.synonyms);
 }
+// 예측입력(키보드 자동완성) 의심 신호 — 브라우저 차원에서는 완전히 막을 수 없는, 기기 자체
+// 키보드의 단어 예측/스와이프 입력을 웹에서 직접 감지할 방법이 없어서, 대신 "실제로 누른 키
+// 횟수 대비 최종 답 글자 수"가 비정상적으로 적은지로 의심 신호만 남긴다 — 채점(정오답/점수)에는
+// 전혀 영향을 주지 않고 선생님이 나중에 참고하는 용도다. w2m(객관식, 클릭으로만 답함)은 애초에
+// 키 입력이 없는 게 정상이라 대상이 아니다.
+function isSuspectedAutofill(answer, keydownCount) {
+  if (typeof answer !== "string") return false;
+  const len = answer.trim().length;
+  if (len < 6) return false;
+  return (keydownCount || 0) <= len / 2;
+}
 function buildVocabQuestionOutcome(q, answer, timing) {
   return {
     wordId: q.wordId, questionType: q.questionType, answer,
@@ -19153,18 +19243,20 @@ function buildVocabQuestionOutcome(q, answer, timing) {
     startedAt: timing ? timing.startedAt : null,
     answeredAt: timing ? timing.answeredAt : null,
     duration: timing ? timing.duration : null,
+    suspectedAutofill: isSuspectedAutofill(answer, timing && timing.keydownCount),
   };
 }
 // 기존 TestTaker의 breakdown({prompt, given, correct, ok}) 모양을 그대로 따른다 — VocabResultRow가
 // 이미 이 모양을 그려주고 있어서(§14 호환성), 재사용하면 결과 화면을 새로 만들 필요가 없다.
-function buildVocabBreakdownRow(q, answer) {
+function buildVocabBreakdownRow(q, answer, timing) {
   const ok = gradeVocabQuestion(q, answer);
+  const suspectedAutofill = isSuspectedAutofill(answer, timing && timing.keydownCount);
   if (q.questionType === "w2m") {
     const given = answer != null ? q.choices[answer] : null;
-    return { prompt: q.word, given: given || "(선택 안 함)", correct: q.choices[q.correctIndex], ok };
+    return { prompt: q.word, given: given || "(선택 안 함)", correct: q.choices[q.correctIndex], ok, suspectedAutofill };
   }
   const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word} (${q.synonyms.join(", ")}도 정답)` : q.word;
-  return { prompt: q.meaning, given: answer || "(빈칸)", correct: correctDisplay, ok };
+  return { prompt: q.meaning, given: answer || "(빈칸)", correct: correctDisplay, ok, suspectedAutofill };
 }
 // Main Test + Instant Recall이 모두 끝난 시점에 vocabResults[] entry 하나를 완성한다.
 // score/total은 항상 Main Test 기준(기존 의미 그대로, §14) — recallScore/recallTotal/mastery/
@@ -19176,7 +19268,7 @@ function finalizeVocabTestEntry(test, sessionStartedAt, v, recallAnswers, recall
   const svc = window.SarahServices.vocabTestService;
   const questionsOut = v.questions.map((q, i) => buildVocabQuestionOutcome(q, v.answers[i], v.questionTimings[i]));
   const recallQuestionsOut = v.recall.questions.map((q, i) => buildVocabQuestionOutcome(q, recallAnswers[i], recallTimings[i]));
-  const breakdown = v.questions.map((q, i) => buildVocabBreakdownRow(q, v.answers[i]));
+  const breakdown = v.questions.map((q, i) => buildVocabBreakdownRow(q, v.answers[i], v.questionTimings[i]));
   return {
     id: uid(), testId: test.id, date: today(),
     score: v.mainScore, total: mainTotal, breakdown,
@@ -19209,6 +19301,7 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
   const [initError, setInitError] = useState("");
   const [showRecallIntro, setShowRecallIntro] = useState(false);
   const questionStartedAtRef = useRef(Date.now());
+  const keydownCountRef = useRef(0); // §예측입력 의심 신호 — 문제 전환마다 0으로 리셋
   const promptRef = useRef(null);
   const initializedRef = useRef(false);
 
@@ -19257,6 +19350,7 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
   useEffect(() => {
     setDraftAnswer(null);
     questionStartedAtRef.current = Date.now();
+    keydownCountRef.current = 0;
   }, [positionKey]);
 
   // ---- 페이지 이탈 기록(§8) — visibility/focus 각각 별도 카운터. 최근 20개까지만 exitEvents에
@@ -19288,7 +19382,7 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
     const qs = isRecall ? vocab.recall.questions : vocab.questions;
     const idx = isRecall ? vocab.recall.currentIndex : vocab.currentIndex;
     const isLast = idx === qs.length - 1;
-    const timing = { startedAt: questionStartedAtRef.current, answeredAt: Date.now(), duration: Math.round((Date.now() - questionStartedAtRef.current) / 1000) };
+    const timing = { startedAt: questionStartedAtRef.current, answeredAt: Date.now(), duration: Math.round((Date.now() - questionStartedAtRef.current) / 1000), keydownCount: keydownCountRef.current };
 
     setSaving(true);
     let savedEntry = null; // Recall의 마지막 문제일 때만 채워짐 — updateData의 트랜잭션 콜백은
@@ -19394,8 +19488,11 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
             `)}
           </div>
         ` : html`
-          <input style=${{ ...inputStyle, fontSize: 16, textAlign: "center" }} placeholder="영어 단어를 입력하세요" autocapitalize="off" autocorrect="off" spellcheck="false"
+          <input style=${{ ...inputStyle, fontSize: 16, textAlign: "center" }} placeholder="영어 단어를 입력하세요"
+            autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"
+            name=${`vocab-ans-${vocab.phase}-${idx}-${q.wordId || idx}`}
             value=${draftAnswer || ""} onChange=${(e) => setDraftAnswer(e.target.value)}
+            onKeyDown=${() => { keydownCountRef.current += 1; }}
             onPaste=${(e) => { e.preventDefault(); patchIntegrity((ig) => ({ ...ig, pasteAttemptCount: (ig.pasteAttemptCount || 0) + 1 })); }}
             onCopy=${(e) => e.preventDefault()} onCut=${(e) => e.preventDefault()}
           />
@@ -19495,9 +19592,13 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
         <${Card} key=${qi}>
           <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10, whiteSpace: "pre-wrap" }}>${qi + 1}. ${type === "vocab" ? (directions[qi] === "w2m" ? q.word : q.meaning) : q.q}</div>
           ${type === "vocab" ? html`
-            <input style=${inputStyle} placeholder=${directions[qi] === "w2m" ? "뜻을 입력하세요" : "영어 단어를 입력하세요"} value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
+            <input style=${inputStyle} placeholder=${directions[qi] === "w2m" ? "뜻을 입력하세요" : "영어 단어를 입력하세요"}
+              autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" name=${`test-ans-${test.id}-${qi}`}
+              value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
           ` : q.type === "subjective" ? html`
-            <input style=${inputStyle} placeholder="답을 입력하세요" value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
+            <input style=${inputStyle} placeholder="답을 입력하세요"
+              autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" name=${`test-ans-${test.id}-${qi}`}
+              value=${answers[qi]} onChange=${(e) => pick(qi, e.target.value)} />
           ` : q.choices.map((opt, oi) => {
             const selected = answers[qi] === oi;
             return html`
