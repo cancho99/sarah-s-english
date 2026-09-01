@@ -626,6 +626,42 @@ const EXAM_KEY_SYSTEM_PROMPT = `당신은 한국 영어 학원에서 쓰는 정�
 [JSON 스키마]
 [{"name":"01회","answers":[5,1,2,4,3,5,2,1,3,1,1,2]},{"name":"어법편 Ⅰ. 문장의 기초","answers":[3,4,5,3,5]},{"name":"어법편 Ⅰ. 문장의 기초 (경찰대/사관학교 입학시험)","answers":[5,3,5,2,2]}]`;
 
+// Question Bank "PDF에서 문제 가져오기" (Reading Analysis > Question Generator, 2026-09-01
+// 신규 기능) — 지문+선택지+정답이 이미 완성된 기존 문제집 PDF에서 "빈칸 추론" 유형 문항만
+// 추출해 구조화한다. EXAM_KEY_SYSTEM_PROMPT와 같은 PDF-비전 접근(클라이언트가 renderPdfPageTiles로
+// 미리 잘라 보낸 고해상도 열 단위 이미지)을 그대로 재사용하되, 목적이 다르다 — 정답 숫자만 읽는 게
+// 아니라 지문 원문·선택지 5개까지 있는 그대로 옮겨 적어야 하므로, "정답표는 책 맨 뒤에 별도로
+// 있다"는 이 문서 형식의 특징을 프롬프트에 명시하고 같은 호출 안에서 지문 추출과 정답 매칭을
+// 한 번에 처리한다(1차 범위는 빈칸 추론 하나뿐이라 문제-정답을 나누는 별도 AI 호출을 만들 이유가
+// 없다 — CLAUDE.md API 비용 정책: 같은 목적의 호출은 합칠 수 있으면 합친다).
+const BLANK_INFERENCE_EXTRACT_MODEL = "claude-sonnet-5";
+
+const BLANK_INFERENCE_EXTRACT_SYSTEM_PROMPT = `당신은 한국 영어 학원에서 쓰는 기존 문제집 PDF에서 "빈칸 추론"(빈칸 넣기, 빈칸 완성) 유형 문항만 골라내 구조화된 데이터로 바꿔주는 보조원입니다.
+주어진 PDF는 지문·선택지·정답이 이미 완성된 실제 문제집입니다. 이 PDF 안에는 빈칸 추론 말고도 문장 삽입, 글의 순서, 요약문 완성, 질문 찾기, 내용 일치·불일치 같은 다른 유형이 함께 섞여 있을 수 있습니다.
+
+[무엇을 뽑을지]
+- 오직 "빈칸 추론"(영어 지문을 읽고 빈칸에 들어갈 말을 5개 선택지 중 고르는 유형, 지문 안에 밑줄이나 빈칸 표시가 있고 ①~⑤ 선택지가 있는 형태)에 해당하는 문항만 추출하세요.
+- 다른 유형(문장 삽입 — 지문 안에 ( ① )( ② )처럼 위치 표시가 있는 것, 글의 순서 — (A)(B)(C) 배열, 요약문 완성, 내용 일치, 인터뷰 질문 찾기 등)은 절대 추출하지 말고 완전히 무시하세요. 빈칸 추론 유형이 PDF 안에 하나도 없으면 빈 배열 []을 반환하세요.
+- PDF 전체가 처음부터 끝까지 빈칸 추론 하나로만 구성되어 있다면 전체를 다 추출하세요.
+
+[각 문항에서 뽑을 정보]
+- number: 문제집에 인쇄된 문항 번호(예: "1", "01", "23") 그대로.
+- passage: 지문 원문 그대로(빈칸은 원문에 인쇄된 형태를 최대한 살려 "________"처럼 표시하세요). 지문 앞에 붙은 "다음 글을 읽고, 빈칸에 들어갈 말로 가장 적절한 것을 고르시오." 같은 지시문은 passage에 포함하지 마세요 — 지문 본문만 담습니다. 지문 하단의 어휘 각주(*로 시작하는 뜻풀이)가 있으면 passage 끝에 줄바꿈 후 그대로 포함하세요.
+- choices: 선택지 5개를 ①②③④⑤ 순서 그대로 문자열 배열로 담되, 원문의 ①~⑤ 기호 자체는 빼고 텍스트만 담으세요.
+
+[정답 매칭 — 매우 중요]
+- 이런 문제집은 정답을 각 문제 옆이 아니라 책 맨 뒤에 별도의 "정답" 표로 모아둡니다. 그 표에도 여러 유형 섹션이 있을 수 있으니, 반드시 "빈칸 추론" 섹션에 해당하는 정답 목록만 골라서, 같은 유형·같은 번호끼리 매칭하세요. 다른 유형 섹션의 같은 번호(예: 순서 유형의 5번)와 절대 혼동하지 마세요.
+- 정답표에서 그 번호에 해당하는 값을 찾았으면 answer에 1~5(①=1 ... ⑤=5)로 담으세요.
+- 정답표를 찾지 못했거나 그 번호의 정답을 확신할 수 없으면 answer를 null로 두세요 — 추측해서 아무 숫자나 넣지 마세요. 지문이나 선택지를 일부만 읽었거나 5개를 다 채우지 못한 경우에도, 문항 자체를 버리지 말고 읽은 만큼만 채워서 포함하세요(부족한 선택지는 빈 문자열로 둡니다).
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마(배열) 형식으로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
+- 같은 PDF를 여러 장의 겹치는 이미지 조각으로 나눠 받을 수 있습니다 — 같은 문항 번호를 두 번 넣지 마세요.
+- 답변에 <thinking> 같은 내부 태그나 메타 설명을 절대 포함하지 마세요. 오직 JSON 배열만 출력합니다.
+
+[JSON 스키마]
+[{"number":"1","passage":"One day a man saw his dog... From this story, we can say that illness may be a product of ________.","choices":["imagination","habit","laziness","overwork","uncleanness"],"answer":1}]`;
+
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
@@ -884,6 +920,10 @@ exports.aiWorker = onRequest(
     // Generator 2모드. Passage Variation은 새 모드 없이 기존 isTransform을 그대로 재사용한다.
     const isReadingAnalyze = mode === "readingAnalyze";
     const isReadingAnalysisGenerate = mode === "readingAnalysisGenerate";
+    // "PDF에서 문제 가져오기"(Question Generator, 2026-09-01) — 위 8모드와 완전히 별개, 기존
+    // 로직은 한 글자도 건드리지 않는다. 1차 범위는 빈칸 추론 유형뿐이라 모드 이름에도 그대로
+    // 반영했다(다른 유형은 나중에 유형별로 새 모드를 추가할 예정, 이 모드를 확장하지 않는다).
+    const isExtractBlankInference = mode === "extractBlankInferenceQuestions";
     // Reading Library 단어 클릭 뜻풀이(2026-08-26) — reading-library.html 전용, 위 8모드와 완전히 무관.
     const isWordMeaning = mode === "wordMeaning";
     // Reading Log 제출 검증(2026-08-26) — 역시 reading-library.html 전용, 완전히 별개 기능.
@@ -1001,6 +1041,66 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(ekParsed);
+      return;
+    }
+
+    if (isExtractBlankInference) {
+      if (!images || images.length === 0) {
+        res.status(400).json({ error: "PDF 이미지가 없습니다." });
+        return;
+      }
+      const beiContent = images.map((img) => ({ type: "image", source: { type: "base64", media_type: "image/png", data: img } }));
+      beiContent.push({
+        type: "text",
+        text: "이 이미지들은 같은 문제집 PDF의 각 페이지를 실제 인쇄 열(column) 경계에서 고해상도로 잘라낸 조각들입니다 (겹치는 부분 없음, 페이지 순서·좌에서 우로 정렬됨). 이 중 빈칸 추론 유형 문항과, 그 정답이 담긴 정답표 부분을 찾아 위 스키마대로 JSON 배열로만 답하세요.",
+      });
+      let beiRes;
+      try {
+        beiRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: BLANK_INFERENCE_EXTRACT_MODEL,
+            max_tokens: 16000,
+            thinking: { type: "disabled" },
+            system: BLANK_INFERENCE_EXTRACT_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: beiContent }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!beiRes.ok) {
+        const errText = await beiRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const beiData = await beiRes.json();
+      const beiText = (beiData.content || []).map((b) => b.text || "").join("");
+      let beiParsed;
+      try {
+        beiParsed = JSON.parse(stripFences(beiText));
+      } catch {
+        beiParsed = extractLastJsonArray(stripFences(beiText));
+      }
+      if (!Array.isArray(beiParsed)) {
+        res.status(502).json({
+          error: "AI 응답을 JSON으로 해석하지 못했습니다.",
+          raw: beiText,
+          debug: {
+            stop_reason: beiData.stop_reason,
+            usage: beiData.usage,
+            blockTypes: (beiData.content || []).map((b) => ({ type: b.type, len: (b.text || "").length })),
+          },
+        });
+        return;
+      }
+      res.status(200).json(beiParsed);
       return;
     }
 

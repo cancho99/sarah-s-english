@@ -135,9 +135,40 @@ window.SarahServices = window.SarahServices || {};
     return saved;
   }
 
+  // "PDF에서 문제 가져오기" (Question Generator, 2026-09-01) — 지문·선택지·정답이 이미 완성된
+  // 기존 문제집 PDF에서 문항을 추출한다. 위 3개 함수와 달리 결과를 즉시 저장하지 않는다 — 이
+  // 기능은 검토(수정 가능한 형태로 보여주고, 문항 단위로 저장에서 제외 가능) 후에만 저장하는
+  // 흐름이 명시적으로 요구돼서, 저장은 UI(PdfBlankQuestionImportPanel)가 readingAnalysisService/
+  // questionBankService를 직접 호출해서 한다(둘 다 AI를 부르지 않는 순수 CRUD라 여기서 굳이
+  // 감쌀 이유가 없다 — CLAUDE.md "서비스 레이어 분리" 원칙은 지키되 과설계는 피함).
+  //
+  // 1차 범위는 "빈칸 추론" 유형뿐(§CLAUDE.md 신규 기능 요청 원문) — 다른 5개 유형(문장삽입/
+  // 요약문완성/글의순서/질문찾기/내용일치)은 나중에 유형별로 별도 함수+aiWorker 모드를 추가할
+  // 예정이며, 이 함수를 확장해서 처리하지 않는다.
+  //
+  // opts: { images } — renderPdfPageTiles(index.html)가 만든 base64 PNG 타일 배열, examkey
+  // 모드와 동일한 PDF-비전 방식.
+  // 반환: [{ number, passage, choices:[5], answer(1~5 또는 null) }] — 저장되지 않은 원본 결과.
+  async function extractBlankInferenceQuestionsFromPdf(opts) {
+    const items = await callAiWorker({ mode: "extractBlankInferenceQuestions", images: opts.images || [] });
+    return items.map((it) => {
+      // AI 응답이 스키마대로 숫자 1~5여야 정상이지만, 가끔 "3" 같은 문자열로 오는 경우까지
+      // Number()로 한 번 더 받아준다 — 여기서 놓치면 answer가 잘못 null 처리돼서 멀쩡히 읽은
+      // 정답까지 검토 화면에서 "파싱 실패"로 표시되는 오탐이 생긴다.
+      const ansNum = Number(it.answer);
+      return {
+        number: String(it.number != null ? it.number : ""),
+        passage: it.passage || "",
+        choices: Array.isArray(it.choices) ? it.choices.slice(0, 5).map((c) => c || "") : [],
+        answer: Number.isInteger(ansNum) && ansNum >= 1 && ansNum <= 5 ? ansNum : null,
+      };
+    });
+  }
+
   window.SarahServices.questionGenerationService = {
     generateGrammarQuestions,
     generateReadingQuestions,
     generateReadingAnalysisQuestions,
+    extractBlankInferenceQuestionsFromPdf,
   };
 })();
