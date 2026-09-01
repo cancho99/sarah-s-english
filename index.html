@@ -8254,7 +8254,11 @@ function PassageAnalysisCreateForm({ analyses, onCreated, onCancel }) {
         body: JSON.stringify({ mode: "readingAnalyze", passage: text.trim(), grade, difficulty }),
       });
       const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error || "분석에 실패했어요.");
+      if (!res.ok || json.error) {
+        const base = json.error || "분석에 실패했어요.";
+        const detail = json.detail && !base.includes(json.detail) ? ` (${String(json.detail).slice(0, 200)})` : "";
+        throw new Error(base + detail);
+      }
       const doc = await RA.createAnalysis({
         title: json.title || text.trim().slice(0, 40),
         originalText: text.trim(),

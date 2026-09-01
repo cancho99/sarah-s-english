@@ -1162,21 +1162,31 @@ exports.aiWorker = onRequest(
           },
           body: JSON.stringify({
             model: MODEL,
-            max_tokens: 16000,
+            // 문장별 chunks/clauses/annotations를 전부 담는 스키마라 지문이 길면(20문장대) 응답이
+            // 16000토큰을 넘어 중간에 잘려 JSON.parse가 깨지는 사례가 실제로 있었다 — 32000으로
+            // 올려도 실사용 지문(4405자)에서 재발이 서버 로그로 확인돼, claude-haiku-4-5의 동기
+            // Messages API 최대치인 64000까지 올린다.
+            max_tokens: 64000,
             system: READING_ANALYZE_SYSTEM_PROMPT,
             messages: [{ role: "user", content: buildReadingAnalyzePrompt({ passage, grade, difficulty }) }],
           }),
         });
         if (!r.ok) {
           const errText = await r.text();
+          console.error("readingAnalyze API error:", r.status, errText.slice(0, 1000));
           throw new Error("AI 응답 오류: " + errText);
         }
         const data = await r.json();
         const text = (data.content || []).map((b) => b.text || "").join("");
+        if (data.stop_reason === "max_tokens") {
+          console.error("readingAnalyze truncated at max_tokens, passage length:", passage.length);
+          throw new Error("응답이 너무 길어 중간에 잘렸습니다(지문이 너무 길 수 있어요). 지문을 나눠서 다시 시도해 주세요.");
+        }
         let parsed;
         try {
           parsed = JSON.parse(stripFences(text));
-        } catch {
+        } catch (e) {
+          console.error("readingAnalyze JSON parse failed:", String(e.message || e), "raw tail:", text.slice(-500));
           throw new Error("AI 응답을 JSON으로 해석하지 못했습니다. raw: " + text.slice(0, 500));
         }
         return parsed;
@@ -1193,6 +1203,7 @@ exports.aiWorker = onRequest(
           validation = validateReadingAnalysis(raParsed);
         }
       } catch (e) {
+        console.error("readingAnalyze failed:", String(e.message || e));
         res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e.message || e) });
         return;
       }
