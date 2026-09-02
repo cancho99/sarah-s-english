@@ -981,7 +981,15 @@ function monthlyStudyMinutes(studyLog, month) {
 // were never counted in "this month"'s rate to begin with, so deleting them changes nothing here.
 function homeworkStats(data, month) {
   const targetMonth = month || today().slice(0, 7);
-  const list = ((data && data.homework) || []).filter((h) => (h.dueDate || "").slice(0, 7) === targetMonth);
+  const now = today();
+  // 2026-09-02 버그 수정 — dueDate가 아직 안 지난(미래인) 숙제까지 total에 잡혀서 진행율을
+  // 미리 깎아먹던 문제. dueDate < 오늘(기한이 실제로 지난 것)만 진행율 계산에 포함시킨다 —
+  // 기한이 오늘인 숙제는 오늘 하루 동안은 아직 봐줘야 하므로 total에서 제외하고, 그 다음
+  // 날부터(기한이 지난 뒤)만 포함시켜 미완료면 진행율이 깎인다. 과거 달을 볼 때는 그 달이
+  // 이미 다 지났으니 자연스럽게 전부 포함된다.
+  const list = ((data && data.homework) || []).filter(
+    (h) => (h.dueDate || "").slice(0, 7) === targetMonth && h.dueDate < now
+  );
   const total = list.length;
   const done = list.filter((h) => h.done).length;
   return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };

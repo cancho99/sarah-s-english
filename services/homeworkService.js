@@ -119,8 +119,17 @@ window.SarahServices = window.SarahServices || {};
   // Phase 3 (Report Center): monthly stats for the Monthly Report dashboard, keyed off dueDate
   // (matches how MonthlyReportView's existing hwRate already filters homework by dueDate-in-month
   // — this stays consistent with that, just adds the extra breakdown fields).
+  //
+  // 2026-09-02 버그 수정 — dueDate가 아직 안 지난(미래인) 숙제까지 total에 잡혀서 진행율을
+  // 미리 깎아먹던 문제. dueDate < 오늘(즉 기한이 실제로 지난 것)만 total/done 계산에
+  // 포함시킨다 — 기한이 오늘인 숙제는 오늘 하루 동안은 아직 봐줘야 하므로(당일까지는 미완료로
+  // 안 잡힘) total에서 제외하고, 그 다음 날(기한이 지난 뒤)부터 포함시켜 미완료면 진행율이
+  // 깎인다.
   function getMonthlyHomeworkStats(studentData, month) {
-    const hw = getHomeworkForStudent("", "", studentData).filter((h) => h.dueDate && h.dueDate.startsWith(month));
+    const today = todayStr();
+    const hw = getHomeworkForStudent("", "", studentData).filter(
+      (h) => h.dueDate && h.dueDate.startsWith(month) && h.dueDate < today
+    );
     const total = hw.length;
     const submitted = hw.filter((h) => h.done).length;
     const notSubmitted = hw.filter((h) => !h.done).length;
