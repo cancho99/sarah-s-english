@@ -269,6 +269,106 @@
     .rm-cms-center { width: 100%; border-right: none; border-bottom: 1px solid #E1DACB; }
     .rm-cms-detail { width: 100%; }
   }
+  /* ---- 🧪 Exam Studio (2026-09, Reading Analysis 완전 대체) — exam-studio-prototype.html의
+     CSS를 그대로 가져왔다. 전역 html/body 리셋(min-width 등)은 프로토타입 것을 쓰지 않고 이
+     사이트의 기존 반응형 레이아웃을 그대로 둔다 — .es-shell 내부에서만 데스크톱 전용
+     레이아웃(가로 스크롤로 대응)이 적용된다. ---- */
+  .es-shell { display: flex; min-height: 100vh; background: #FAF7F1; }
+  .es-sidebar { width: 232px; flex-shrink: 0; background: #F3F1EB; border-right: 1px solid #DCD8CF; min-height: 100vh; padding: 20px 0; }
+  .es-sidebar-logo { padding: 0 18px 16px; margin-bottom: 10px; border-bottom: 1px solid #DCD8CF; font-size: 15px; font-weight: 700; color: #1C2B4A; }
+  .es-sidebar-logo .sub { font-size: 10.5px; color: #5B6270; font-weight: 400; margin-top: 3px; }
+  .es-sidebar-menu { padding: 8px 0; }
+  .es-sidebar-item { display: flex; align-items: center; gap: 10px; padding: 11px 18px; font-size: 12.5px; color: #1C2B4A; cursor: pointer; border-left: 3px solid transparent; }
+  .es-sidebar-item:hover { background: rgba(255,255,255,0.6); }
+  .es-sidebar-item.active { background: #fff; font-weight: 700; border-left-color: #B8935A; }
+  .es-sidebar-item .lb { flex: 1; }
+  .es-sidebar-badge { font-size: 10.5px; font-weight: 700; background: #DCD8CF; color: #5B6270; border-radius: 20px; padding: 1px 8px; }
+  .es-sidebar-item.active .es-sidebar-badge { background: #B8935A; color: #fff; }
+  .es-main { flex: 1; min-width: 0; }
+  .es-topbar { padding: 14px 28px; border-bottom: 1px solid #DCD8CF; background: #fff; }
+  .es-breadcrumb { font-size: 12px; color: #5B6270; font-weight: 600; }
+  .es-breadcrumb .sep { margin: 0 6px; color: #B8935A; }
+  .es-content { padding: 24px 28px 60px; min-width: 1180px; overflow-x: auto; }
+  .es-folder-chips { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+  .es-chip-tab { padding: 7px 15px; border-radius: 20px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid #DCD8CF; background: #fff; color: #5B6270; }
+  .es-chip-tab.active { background: #1C2B4A; color: #fff; border-color: #1C2B4A; }
+  .es-chip-tab.disabled { opacity: 0.5; cursor: not-allowed; }
+  .es-panel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .es-type-category-title { font-size: 11px; font-weight: 700; color: #B8935A; letter-spacing: 0.5px; margin: 14px 0 6px; }
+  .es-type-category-title:first-child { margin-top: 0; }
+  .es-type-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 4px; }
+  .es-type-chip { display: flex; align-items: center; gap: 6px; padding: 9px 10px; border: 1px solid #DCD8CF; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .es-type-chip.checked { border-color: #B8935A; background: #FBF6EA; }
+  .es-type-chip input { width: 14px; height: 14px; flex: none; appearance: auto; }
+  .es-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; background: #fff; border: 1px solid #DCD8CF; border-radius: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+  .es-toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .es-toolbar-right { display: flex; align-items: center; gap: 8px; }
+  .es-toolbar-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5B6270; padding-right: 8px; border-right: 1px solid #DCD8CF; margin-right: 2px; }
+  .es-toolbar input[type=checkbox] { width: 14px; height: 14px; appearance: auto; flex: none; }
+  .es-toolbar-search { width: 200px; padding: 7px 10px; border: 1px solid #DCD8CF; border-radius: 4px; font-size: 12.5px; }
+  .es-toolbar-select { width: auto; padding: 7px 10px; border: 1px solid #DCD8CF; border-radius: 4px; font-size: 12.5px; background: #fff; }
+  .es-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .es-card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px; }
+  .es-card-head-left { display: flex; align-items: center; gap: 8px; }
+  .es-diff-badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 20px; color: #fff; border: none; cursor: pointer; appearance: auto; }
+  .es-type-label { font-size: 11px; color: #5B6270; font-weight: 700; white-space: nowrap; }
+  .es-card-trash { background: none; border: none; color: #5B6270; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+  .es-card-trash:hover { color: #A6473A; }
+  .es-passage-box { background: #F7F6F3; border: 1px solid #EDEAE2; border-radius: 4px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; color: #2b2e33; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 10px; max-height: 220px; overflow-y: auto; }
+  .es-choice-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .es-choice-circle { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .es-expl-toggle { font-size: 12px; color: #1C2B4A; cursor: pointer; text-decoration: underline; margin-top: 8px; display: inline-block; }
+  .es-expl-box { font-size: 12px; color: #5B6270; background: #FAF7F1; border-radius: 4px; padding: 8px 10px; margin-top: 6px; line-height: 1.5; }
+  .es-card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid #EDEAE2; }
+  .es-review-pill { font-size: 10.5px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+  .es-paper-grid { display: flex; gap: 24px; align-items: flex-start; }
+  .es-paper-left { width: 380px; flex-shrink: 0; }
+  .es-paper-right { flex: 1; min-width: 0; border-left: 1px solid #DCD8CF; padding-left: 24px; }
+  .es-plist-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border: 1px solid #DCD8CF; border-radius: 4px; background: #fff; cursor: grab; margin-bottom: 6px; }
+  .es-plist-item.active { border-color: #B8935A; background: #FBF6EA; }
+  .es-plist-item .txt { font-size: 12.5px; color: #1C2B4A; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .es-plist-item button { background: none; border: none; color: #5B6270; cursor: pointer; font-size: 13px; flex-shrink: 0; }
+  .es-plist-item button:hover { color: #A6473A; }
+  .analysis-toggle { display: inline-flex; align-items: center; gap: 14px; padding: 7px 12px; border: 1px solid #DCD8CF; background: #FBF6EA; margin: 10px 0 16px; cursor: pointer; border-radius: 3px; }
+  .analysis-toggle .t-name { font-size: 12.5px; font-weight: 600; color: #1C2B4A; }
+  .analysis-toggle .t-desc { font-size: 11px; color: #5B6270; margin-top: 2px; }
+  .switch { width: 36px; height: 20px; border-radius: 10px; background: #DCD8CF; position: relative; flex-shrink: 0; transition: background .15s; }
+  .switch::after { content: ""; width: 16px; height: 16px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: left .15s; }
+  .switch.on { background: #B8935A; }
+  .switch.on::after { left: 18px; }
+  .meta-block { padding: 18px 24px; border: 1px solid #DCD8CF; border-radius: 6px; background: #FDFBF6; margin-bottom: 16px; }
+  .meta-row { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+  .meta-box { flex: 1; min-width: 180px; border: 1px solid #DCD8CF; padding: 10px 14px; background: #fff; }
+  .meta-box .m-label { font-size: 10.5px; font-weight: 700; color: #1C2B4A; letter-spacing: .05em; margin-bottom: 4px; }
+  .meta-box .m-body { font-size: 12px; line-height: 1.7; color: #5B6270; }
+  .flow-row { display: flex; gap: 0; border: 1px solid #DCD8CF; }
+  .flow-col { flex: 1; padding: 10px 12px; border-right: 1px solid #DCD8CF; }
+  .flow-col:last-child { border-right: none; }
+  .flow-col .f-num { font-size: 10.5px; font-weight: 700; color: #B8935A; margin-bottom: 4px; }
+  .flow-col .f-body { font-size: 11.5px; line-height: 1.6; color: #5B6270; }
+  .analysis-card { padding: 20px 22px; border: 1px solid #DCD8CF; border-radius: 6px; background: #fff; margin-bottom: 16px; }
+  .analysis-card .a-title { font-size: 12px; font-weight: 700; color: #1C2B4A; margin-bottom: 18px; letter-spacing: .03em; }
+  .sent-block { margin-bottom: 26px; }
+  .sent-block:last-child { margin-bottom: 0; }
+  .sent-row-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .sent-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #1C2B4A; color: #fff; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .sent-row { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 16px; row-gap: 10px; font-size: 14.5px; color: #1C2B4A; }
+  .seg { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+  .seg .txt { padding: 0 2px 2px; white-space: normal; overflow-wrap: break-word; word-break: keep-all; }
+  .seg.tag .txt { border-bottom: 1.5px solid #1C2B4A; }
+  .seg .lbl { font-size: 10px; font-weight: 600; color: #1C2B4A; margin-top: 5px; min-height: 13px; letter-spacing: .01em; }
+  .seg.tag.v .lbl { color: #A6473A; }
+  .seg:not(.tag) .lbl { visibility: hidden; }
+  .interpret-line { font-size: 12.5px; color: #5B6270; margin: 0 0 4px; padding-left: 32px; }
+  .tip-line { font-size: 11.5px; color: #5B6270; background: #F1ECDD; padding: 6px 10px; margin-left: 32px; border-left: 2px solid #B8935A; }
+  .vocab-block { padding: 18px 22px; border: 1px solid #DCD8CF; border-radius: 6px; background: #fff; }
+  .vocab-block .a-title { font-size: 12px; font-weight: 700; color: #1C2B4A; margin-bottom: 12px; letter-spacing: .03em; }
+  .vocab-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; font-size: 12.5px; }
+  .vocab-grid .vw { font-weight: 600; color: #14161A; }
+  .vocab-grid .vw span { font-weight: 400; color: #5B6270; }
+  .passage-box { font-size: 13.5px; line-height: 1.9; color: #5B6270; border: 1px solid #DCD8CF; padding: 16px 18px; margin: 10px 0 14px; background: #FEFDFA; white-space: pre-wrap; }
+  .chg { background: #FBF0DC; color: #A6473A; font-weight: 700; border-bottom: 1.5px solid #B8935A; padding: 0 2px; }
+  .q-type-tag { display: inline-block; font-size: 10.5px; color: #B8935A; border: 1px solid #B8935A; padding: 1px 8px; border-radius: 10px; margin-left: 8px; font-weight: 500; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js" defer></script>
@@ -281,6 +381,7 @@
      before DOMContentLoaded — so window.__db is guaranteed ready by the time any of these
      functions are actually called from inside the app's DOMContentLoaded handler. -->
 <script src="services/firebaseClient.js" defer></script>
+<script src="services/examStudioService.js" defer></script>
 <script src="services/studentService.js" defer></script>
 <script src="services/backupService.js" defer></script>
 <script src="services/homeworkService.js" defer></script>
@@ -3591,7 +3692,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 배치한다. "Sarah's Original"과 같은 이유(Question Bank과 밀접하지만 독립적인 교사 콘텐츠
     // 제작 워크플로)로 최상위 항목을 하나 더 두되, 새 사이드바 카테고리를 임의로 늘리지 않고
     // 기존 IA 관례(Question Bank 옆에 독립 워크플로를 두는 패턴)를 그대로 따른다.
-    { key: "readingAnalysis", label: "Reading Analysis", icon: "🔬" },
+    { key: "readingAnalysis", label: "Exam Studio", icon: "🧪" },
     { key: "sarahsOriginal", label: "Sarah's Original", icon: "🏆" },
     { key: "reports", label: "Reports", icon: "📊" },
     { key: "readingArea", label: "Reading", icon: "📖" },
@@ -8348,965 +8449,1325 @@ function SarahsOriginalSection({ roster, onNavigateToExamBuilder }) {
   `;
 }
 
-// ---------- Reading Analysis (Teacher OS reconstruction, Phase C — 2026-08-26 설계 승인) ----------
-// Passage → Analysis → Question Generator / Passage Variation. 레거시 Reading Question Bank
-// (readingPassages/readingQuestions, Question Bank의 "Reading" 탭)와 완전히 분리된 신규 워크플로 —
-// readingAnalyses/readingAnalysisQuestions만 쓴다. 레거시 데이터/코드는 삭제하지 않고 그대로 두되
-// (Settings → Legacy Reading Bank), 이 신규 워크플로는 절대 그쪽을 읽거나 쓰지 않는다.
-const READING_ANALYSIS_TABS = [
-  { key: "analysis", icon: "🔬", label: "Passage Analysis" },
-  { key: "generator", icon: "✨", label: "Question Generator" },
-  { key: "variation", icon: "🔀", label: "Passage Variation" },
+// ---------- 🧪 Exam Studio (2026-09 — "리딩 애널리시스" 완전 대체) ----------
+// exam-studio-prototype.html(로컬 프로토타입)의 UI/로직을 그대로 옮기고, localStorage 저장 계층만
+// services/examStudioService.js(Firestore, 전용 컬렉션 4개)로 교체했다. 기존 3탭(Passage Analysis/
+// Question Generator/Passage Variation) 및 readingAnalyses/readingAnalysisQuestions 기반 워크플로는
+// 완전히 삭제 — School Exam Builder의 그쪽 연동이 깨지는 것은 의도된 트레이드오프(교사 확인 완료).
+// C/inputStyle/uid/Card/Button/Field/Empty/html/useState/useEffect/useRef/NELT_WORKER_URL/
+// extractPdfPlainText는 이 파일 상단에 이미 선언된 것을 그대로 재사용한다(중복 선언 금지 —
+// 재선언하면 전체 스크립트가 SyntaxError로 깨진다).
+
+// ---------- Question types (25유형) ----------
+const ES_TYPE_CATEGORIES = [
+  { key: "cat_gist", label: "대의 파악" },
+  { key: "cat_inference", label: "추론" },
+  { key: "cat_blank", label: "빈칸" },
+  { key: "cat_grammar", label: "어법·어휘" },
+  { key: "cat_flow", label: "글의 흐름" },
+  { key: "cat_content", label: "내용 파악" },
+  { key: "cat_long", label: "장문/복합" },
 ];
-
-// 시험유형 — 미분류(examType: "")를 3번째 select 옵션으로 명시. 새 값을 추가/변경할 땐 여기와
-// PassageAnalysisListTab의 카테고리 트리 둘 다 확인할 것(트리는 이 배열을 그대로 재사용한다).
-const READING_ANALYSIS_EXAM_TYPES = [
-  { key: "", label: "미분류" },
-  { key: "내신", label: "내신" },
-  { key: "모의고사", label: "모의고사" },
+const ES_TYPE_META = [
+  { key: "theme", icon: "🎯", label: "주제 추론", category: "cat_gist", defaultQuestionText: "다음 글의 주제로 가장 적절한 것은?" },
+  { key: "title", icon: "🏷️", label: "제목 추론", category: "cat_gist", defaultQuestionText: "다음 글의 제목으로 가장 적절한 것은?" },
+  { key: "gist", icon: "💡", label: "요지 추론", category: "cat_gist", defaultQuestionText: "다음 글의 요지로 가장 적절한 것은?" },
+  { key: "claim", icon: "📢", label: "주장 추론", category: "cat_gist", defaultQuestionText: "다음 글에서 필자가 주장하는 바로 가장 적절한 것은?" },
+  { key: "purpose", icon: "🚩", label: "목적 파악", category: "cat_gist", defaultQuestionText: "다음 글의 목적으로 가장 적절한 것은?" },
+  { key: "mood", icon: "🎭", label: "심경/분위기 파악", category: "cat_gist", defaultQuestionText: "다음 글에 드러난 필자의 심경으로 가장 적절한 것은?" },
+  { key: "implication", icon: "🔍", label: "함축 의미 추론", category: "cat_inference", defaultQuestionText: "다음 글에서 밑줄 친 부분이 의미하는 바로 가장 적절한 것은?" },
+  { key: "reference", icon: "👉", label: "지칭 추론", category: "cat_inference", defaultQuestionText: "다음 글에서 밑줄 친 부분이 가리키는 대상으로 가장 적절한 것은?" },
+  { key: "blankWord", icon: "🕳️", label: "빈칸 추론-단어", category: "cat_blank", defaultQuestionText: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?" },
+  { key: "blankPhrase", icon: "⬜", label: "빈칸 추론-구", category: "cat_blank", defaultQuestionText: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?" },
+  { key: "blankClause", icon: "📦", label: "빈칸 추론-절/문장", category: "cat_blank", defaultQuestionText: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?" },
+  { key: "grammarUnderline", icon: "✏️", label: "어법성 판단-밑줄", category: "cat_grammar", defaultQuestionText: "다음 글의 밑줄 친 부분 중, 어법상 틀린 것은?" },
+  { key: "grammarBox", icon: "🔲", label: "어법성 판단-네모", category: "cat_grammar", defaultQuestionText: "다음 글의 [ ] 표시된 부분 중, 어법상 가장 적절한 것은?" },
+  { key: "vocabAppropriate", icon: "📖", label: "어휘 적절성 판단", category: "cat_grammar", defaultQuestionText: "다음 글의 밑줄 친 부분 중, 문맥상 낱말의 쓰임이 적절하지 않은 것은?" },
+  { key: "contextualMeaning", icon: "💬", label: "문맥 속 의미", category: "cat_grammar", defaultQuestionText: "다음 글에서 밑줄 친 단어의 문맥상 의미로 가장 적절한 것은?" },
+  { key: "irrelevantSentence", icon: "🚫", label: "무관한 문장 찾기", category: "cat_flow", defaultQuestionText: "다음 글에서 전체 흐름과 관계 없는 문장은?" },
+  { key: "sentenceInsertion", icon: "➕", label: "문장 삽입", category: "cat_flow", defaultQuestionText: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳은?" },
+  { key: "paragraphOrder", icon: "🔀", label: "글의 순서", category: "cat_flow", defaultQuestionText: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?" },
+  { key: "summary", icon: "📝", label: "요약문 완성", category: "cat_flow", defaultQuestionText: "다음 글의 내용을 한 문장으로 요약할 때, 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?" },
+  { key: "contentMatch", icon: "✅", label: "내용 일치/불일치", category: "cat_content", defaultQuestionText: "다음 글의 내용과 일치하지 않는 것은?" },
+  { key: "practicalMatch", icon: "📋", label: "실용문 내용 일치", category: "cat_content", defaultQuestionText: "다음 안내문의 내용과 일치하지 않는 것은?" },
+  { key: "chartMatch", icon: "📊", label: "도표/실용자료 일치·불일치", category: "cat_content", defaultQuestionText: "다음 도표의 내용과 일치하지 않는 것은?" },
+  { key: "longTitle", icon: "📚", label: "장문 독해-제목", category: "cat_long", defaultQuestionText: "다음 글의 제목으로 가장 적절한 것은?" },
+  { key: "longVocab", icon: "📗", label: "장문 독해-어휘", category: "cat_long", defaultQuestionText: "다음 글의 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?" },
+  { key: "compoundParagraph", icon: "🧩", label: "복합 문단", category: "cat_long", defaultQuestionText: "다음 글을 읽고, 물음에 답하시오." },
 ];
+const ES_GROUP_TYPE_KEYS = ["longTitle", "longVocab", "compoundParagraph"];
+const ES_CIRC = ["①", "②", "③", "④", "⑤"];
+const ES_DIFFICULTY_OPTIONS = ["상급", "중급", "하급"];
+const ES_DIFFICULTY_COLOR = { "상급": C.danger, "중급": C.gold, "하급": C.slate };
+const LIBRARY_GRADES = ["1학년", "2학년", "3학년"];
+const ES_EXAM_TYPES = ["내신형", "수능형"];
+function esEmptyCategoryTag() { return { grade: null, publisher: null, examType: null }; }
 
-function PassageAnalysisCreateForm({ analyses, onCreated, onCancel }) {
-  const RA = window.SarahServices.readingAnalysisService;
-  const QB = window.SarahServices.questionBankService;
-  const [text, setText] = useState("");
-  const [grade, setGrade] = useState(QB.GRADES[0]);
-  const [difficulty, setDifficulty] = useState("BASIC");
-  const [publisher, setPublisher] = useState("");
-  const [examType, setExamType] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  const recentPublishers = Array.from(new Set((analyses || []).map((a) => a.publisher).filter(Boolean)));
-
-  async function handleAnalyze() {
-    if (text.trim().length < 20) { setErr("지문이 너무 짧아요 (20자 이상)."); return; }
-    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n지문 하나를 문장별/어휘/문법/문단/출제포인트까지 분석합니다. 계속할까요?")) return;
-    setBusy(true); setErr("");
-    try {
-      const res = await fetch(NELT_WORKER_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "readingAnalyze", passage: text.trim(), grade, difficulty }),
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        const base = json.error || "분석에 실패했어요.";
-        const detail = json.detail && !base.includes(json.detail) ? ` (${String(json.detail).slice(0, 200)})` : "";
-        throw new Error(base + detail);
-      }
-      const doc = await RA.createAnalysis({
-        title: json.title || text.trim().slice(0, 40),
-        originalText: text.trim(),
-        grade, difficulty, publisher: publisher.trim(), examType,
-        analysis: json,
-      });
-      onCreated(doc);
-    } catch (e) {
-      setErr("분석 실패: " + String(e.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return html`
-    <${Card}>
-      <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 10, fontSize: 13.5 }}>새 지문 분석</div>
-      <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회)</div>
-      <textarea style=${{ ...inputStyle, minHeight: 160 }} placeholder="영어 지문을 붙여넣으세요..." value=${text} onChange=${(e) => setText(e.target.value)} />
-      <datalist id="ra-publishers">${recentPublishers.map((v) => html`<option key=${v} value=${v} />`)}</datalist>
-      <div style=${{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-        <select style=${{ ...inputStyle, width: "auto" }} value=${grade} onChange=${(e) => setGrade(e.target.value)}>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
-        <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
-        <input list="ra-publishers" style=${{ ...inputStyle, width: "auto", flex: "1 1 140px" }} placeholder="출판사 (선택)" value=${publisher} onChange=${(e) => setPublisher(e.target.value)} />
-        <select style=${{ ...inputStyle, width: "auto" }} value=${examType} onChange=${(e) => setExamType(e.target.value)}>${READING_ANALYSIS_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
-        <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleAnalyze} disabled=${busy}>${busy ? "분석 중..." : "AI로 분석하기"}<//>
-        <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onCancel} disabled=${busy}>취소<//>
-      </div>
-      ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
-    <//>
-  `;
+// ---------- aiWorker 호출 (기존 NELT_WORKER_URL 재사용) ----------
+async function esCallAiWorker(body) {
+  const res = await fetch(NELT_WORKER_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error((json.error || "AI 생성에 실패했어요.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
+  if (!Array.isArray(json)) throw new Error("AI 응답 형식이 올바르지 않아요.");
+  return json;
+}
+async function esCallAiWorkerObject(body) {
+  const res = await fetch(NELT_WORKER_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error((json.error || "AI 요청에 실패했어요.") + (json.detail ? " / " + String(json.detail).slice(0, 200) : ""));
+  return json;
+}
+function esStripHtmlTags(htmlStr) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = htmlStr || "";
+  return tmp.textContent || tmp.innerText || "";
 }
 
-// ---------- 분석노트 (Reading Analysis "분석노트" 재설계, 2026-08-26 설계 승인) ----------
-// chunks[]/clauses[]를 화면·인쇄 양쪽에서 같은 방식으로 "/ 끊기 + bracket"으로 렌더링해야 해서,
-// 그 경계 계산(어느 chunk 앞/뒤에 어떤 절의 여는/닫는 bracket이 와야 하는지, 중첩 절 순서)만
-// 순수 함수로 뽑아 화면(React 렌더러)과 인쇄(HTML 문자열 빌더)가 같이 쓴다 — 문법적으로 절은
-// 서로 완전히 포함되거나 겹치지 않는다는 전제(교차 겹침 없음)로, 여는 bracket은 범위가 넓은
-// 절(바깥쪽)부터, 닫는 bracket은 범위가 좁은 절(안쪽)부터 나오도록 정렬한다.
-function computeClauseBoundaries(clauses) {
-  const opens = {}, closes = {};
-  (clauses || []).forEach((cl) => {
-    if (typeof cl.startChunkIdx !== "number" || typeof cl.endChunkIdx !== "number") return;
-    (opens[cl.startChunkIdx] = opens[cl.startChunkIdx] || []).push(cl);
-    (closes[cl.endChunkIdx] = closes[cl.endChunkIdx] || []).push(cl);
-  });
-  const span = (cl) => cl.endChunkIdx - cl.startChunkIdx;
-  Object.values(opens).forEach((arr) => arr.sort((x, y) => span(y) - span(x)));
-  Object.values(closes).forEach((arr) => arr.sort((x, y) => span(x) - span(y)));
-  return { opens, closes };
+function esNormalizeGeneratedItem(it) {
+  const meta = ES_TYPE_META.find((t) => t.key === it.questionType) || ES_TYPE_META[0];
+  const choices = Array.isArray(it.choices) ? [0, 1, 2, 3, 4].map((i) => it.choices[i] || "") : ["", "", "", "", ""];
+  const ansNum = Number(it.answer);
+  return {
+    localId: uid(), kind: "single", questionType: meta.key,
+    questionText: it.questionText || meta.defaultQuestionText,
+    contextNote: it.contextNote || "", displayPassage: it.displayPassage || "",
+    choices, answer: Number.isInteger(ansNum) && ansNum >= 0 && ansNum <= 4 ? ansNum : null,
+    explanation: it.explanation || "", difficulty: "중급", reviewed: false,
+  };
 }
-
-// 문장 하나에 달린 vocabAnnotation 중 단일 단어 표현은 passage 전체 vocabulary[] 사전과
-// word로 대조해서 품사(pos)를 찾아 보여준다 — 새 AI 필드를 만들지 않고 기존 vocabulary[]를
-// 재활용(스키마 변경 없음, §15 "과개발 금지").
-function lookupPos(expression, vocabulary) {
-  const word = String(expression || "").trim().toLowerCase();
-  if (!word || word.includes(" ")) return null;
-  const hit = (vocabulary || []).find((v) => String(v.word || "").trim().toLowerCase() === word);
-  return hit ? hit.pos : null;
+function esNormalizeGeneratedGroup(raw) {
+  const meta = ES_TYPE_META.find((t) => t.key === raw.questionType) || ES_TYPE_META[0];
+  return {
+    localId: uid(), kind: "group", questionType: meta.key,
+    sharedPassage: raw.sharedPassage || "", difficulty: "중급", reviewed: false,
+    questions: (Array.isArray(raw.questions) ? raw.questions : []).map((q) => {
+      const choices = Array.isArray(q.choices) ? [0, 1, 2, 3, 4].map((i) => q.choices[i] || "") : ["", "", "", "", ""];
+      const ansNum = Number(q.answer);
+      return {
+        localId: uid(), questionText: q.questionText || "", contextNote: q.contextNote || "",
+        choices, answer: Number.isInteger(ansNum) && ansNum >= 0 && ansNum <= 4 ? ansNum : null,
+        explanation: q.explanation || "",
+      };
+    }),
+  };
 }
-
-function ChunkedSentenceLine({ chunks, clauses }) {
-  const { opens, closes } = computeClauseBoundaries(clauses);
-  const nodes = [];
-  (chunks || []).forEach((c, i) => {
-    (opens[c.order] || []).forEach((cl, k) => nodes.push(html`<span key=${"o" + c.order + "-" + k} title=${cl.type} style=${{ color: C.navy, fontWeight: 700 }}>[</span>`));
-    nodes.push(html`<span key=${"c" + c.order}>${c.text}${c.role ? html`<sup style=${{ color: C.gold, fontWeight: 700, marginLeft: 2, fontSize: "0.75em" }}>(${c.role})</sup>` : ""}</span>`);
-    (closes[c.order] || []).forEach((cl, k) => nodes.push(html`<span key=${"x" + c.order + "-" + k} title=${cl.type} style=${{ color: C.navy, fontWeight: 700 }}>]</span>`));
-    if (i < chunks.length - 1) nodes.push(html`<span key=${"s" + c.order} style=${{ color: C.slate, margin: "0 3px" }}> / </span>`);
-  });
-  return html`<div style=${{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 15.5, lineHeight: 2 }}>${nodes}</div>`;
+function esNormalizeGeneratedRaw(raw) {
+  if (raw && typeof raw === "object" && Array.isArray(raw.questions) && typeof raw.sharedPassage === "string") return esNormalizeGeneratedGroup(raw);
+  return esNormalizeGeneratedItem(raw);
 }
-
-function SentenceAnalysisBlock({ s, vocabulary }) {
-  return html`
-    <div style=${{ padding: "16px 0", borderBottom: `1px solid ${C.line}` }}>
-      <div style=${{ display: "flex", gap: 8 }}>
-        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, flexShrink: 0, minWidth: 20 }}>${s.index}.</div>
-        <div style=${{ flex: 1, minWidth: 0 }}>
-          <${ChunkedSentenceLine} chunks=${s.chunks} clauses=${s.clauses} />
-          ${(s.clauses || []).length > 0 && html`
-            <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>
-              ${s.clauses.map((cl, i) => html`<div key=${i}>[ ] ${cl.type} — "${cl.text}"</div>`)}
-            </div>
-          `}
-          <div style=${{ fontSize: 13.5, color: C.ink, marginTop: 8 }}>${s.translation}</div>
-          ${(s.grammarAnnotations || []).length > 0 && html`
-            <div style=${{ marginTop: 8, borderLeft: `3px solid ${C.navy}`, paddingLeft: 10 }}>
-              ${s.grammarAnnotations.map((g, i) => html`<div key=${i} style=${{ fontSize: 12, color: C.navy, marginBottom: 3 }}>▸ <b>${g.point}</b> — ${g.explanation}</div>`)}
-            </div>
-          `}
-          ${(s.vocabAnnotations || []).length > 0 && html`
-            <div style=${{ marginTop: 6, borderLeft: `3px solid ${C.gold}`, paddingLeft: 10 }}>
-              ${s.vocabAnnotations.map((v, i) => {
-                const pos = lookupPos(v.expression, vocabulary);
-                return html`<div key=${i} style=${{ fontSize: 12, color: "#8A6414", marginBottom: 3 }}>💬 <b>${v.expression}</b>${pos ? html` <span style=${{ color: C.slate }}>(${pos})</span>` : ""} = ${v.meaning}</div>`;
-              })}
-            </div>
-          `}
-          ${(s.testablePoints || []).length > 0 && html`
-            <div style=${{ marginTop: 6, borderLeft: `3px solid ${C.danger}`, paddingLeft: 10 }}>
-              ${s.testablePoints.map((t, i) => html`<div key=${i} style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>✎ <b>${t.point}</b> — ${t.note}</div>`)}
-            </div>
-          `}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function PassageLevelPanel({ pl }) {
-  if (!pl) return null;
-  return html`
-    <div style=${{ position: "sticky", top: 80 }}>
-      <${Card}>
-        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 2 }}>주제</div>
-        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${pl.topicKo}</div>
-        ${pl.topicEn && html`<div style=${{ fontSize: 12, color: C.slate, fontStyle: "italic", marginTop: 2 }}>${pl.topicEn}</div>`}
-      <//>
-      <${Card}>
-        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>요약</div>
-        <div style=${{ fontSize: 12.5, lineHeight: 1.7 }}>${pl.summary}</div>
-      <//>
-      ${(pl.flow || []).length > 0 && html`
-        <${Card}>
-          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>글의 흐름</div>
-          ${pl.flow.map((f) => html`
-            <div key=${f.step} style=${{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <div style=${{ flexShrink: 0, width: 20, height: 20, borderRadius: "50%", background: C.navy, color: "#fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>${f.step}</div>
-              <div>
-                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>${f.label}</div>
-                <div style=${{ fontSize: 11.5, color: C.slate }}>${f.description}</div>
-              </div>
-            </div>
-          `)}
-        <//>
-      `}
-      ${(pl.levelGrammarPoints || []).length > 0 && html`
-        <${Card}>
-          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>학년별 문법 포인트</div>
-          ${pl.levelGrammarPoints.map((g, i) => html`
-            <div key=${i} style=${{ fontSize: 12, padding: "6px 0", borderBottom: i < pl.levelGrammarPoints.length - 1 ? `1px dashed ${C.line}` : "none" }}>
-              <b style=${{ color: C.navy }}>${g.category}</b>
-              <div style=${{ color: C.slate, marginTop: 2 }}>${g.description}</div>
-              ${(g.sentenceIndices || []).length > 0 && html`<div style=${{ color: C.gold, marginTop: 2 }}>→ 문장 ${g.sentenceIndices.join(", ")}</div>`}
-            </div>
-          `)}
-        <//>
-      `}
-    </div>
-  `;
-}
-
-// 인쇄 — printExamPaper()(ExamPaperDetail)와 동일한 패턴(새 창 + document.write + window.print,
-// CLAUDE.md "네 곳의 독립적 인쇄 구현" 중 하나 더 — iframe 안에서도 print 대화상자가 뜨도록).
-// 브라우저 기본 인쇄 기능만 쓰고 별도 PDF 생성 시스템은 만들지 않는다(§9). 페이지 번호는 CSS
-// Paged Media page-number 카운터가 Chrome에서 지원되지 않아(Prince/WeasyPrint 전용 기능), 대신
-// 안내 문구로 브라우저 인쇄 대화상자의 "머리글과 바닥글" 옵션을 켜도록 안내한다.
-function printAnalysisNotebook(doc) {
-  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const a = doc.analysis || {};
-  const pl = a.passageLevel || {};
-  const sentences = a.sentences || [];
-
-  function chunkLineHtml(chunks, clauses) {
-    const { opens, closes } = computeClauseBoundaries(clauses);
-    let out = "";
-    (chunks || []).forEach((c, i) => {
-      (opens[c.order] || []).forEach(() => { out += `<span class="br">[</span>`; });
-      out += `<span class="ck">${esc(c.text)}${c.role ? `<sup class="role">(${esc(c.role)})</sup>` : ""}</span>`;
-      (closes[c.order] || []).forEach(() => { out += `<span class="br">]</span>`; });
-      if (i < chunks.length - 1) out += `<span class="slash"> / </span>`;
-    });
-    return out;
-  }
-
-  const sentencesHtml = sentences.map((s) => `
-    <div class="sblock">
-      <div class="sline"><span class="sidx">${s.index}.</span><div class="schunks">${chunkLineHtml(s.chunks, s.clauses)}</div></div>
-      ${(s.clauses || []).length > 0 ? `<div class="sclauses">${s.clauses.map((cl) => `<div>[ ] ${esc(cl.type)} — "${esc(cl.text)}"</div>`).join("")}</div>` : ""}
-      <div class="strans">${esc(s.translation)}</div>
-      ${(s.grammarAnnotations || []).length > 0 ? `<div class="sanno grammar">${s.grammarAnnotations.map((g) => `<div>▸ <b>${esc(g.point)}</b> — ${esc(g.explanation)}</div>`).join("")}</div>` : ""}
-      ${(s.vocabAnnotations || []).length > 0 ? `<div class="sanno vocab">${s.vocabAnnotations.map((v) => {
-        const pos = lookupPos(v.expression, a.vocabulary);
-        return `<div>💬 <b>${esc(v.expression)}</b>${pos ? ` (${esc(pos)})` : ""} = ${esc(v.meaning)}</div>`;
-      }).join("")}</div>` : ""}
-      ${(s.testablePoints || []).length > 0 ? `<div class="sanno test">${s.testablePoints.map((t) => `<div>✎ <b>${esc(t.point)}</b> — ${esc(t.note)}</div>`).join("")}</div>` : ""}
-    </div>`).join("");
-
-  const flowHtml = (pl.flow || []).map((f) => `<div class="flow-item"><span class="flow-num">${f.step}</span><span><b>${esc(f.label)}</b> — ${esc(f.description)}</span></div>`).join("");
-  const lgpHtml = (pl.levelGrammarPoints || []).map((g) => `<div class="lgp-item"><b>${esc(g.category)}</b> — ${esc(g.description)}${(g.sentenceIndices || []).length ? ` (문장 ${g.sentenceIndices.join(", ")})` : ""}</div>`).join("");
-
-  const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(doc.title)} — 분석노트</title>
-    <style>
-      @page { size: A4 portrait; margin: 16mm 14mm; }
-      body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
-      .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;z-index:100;flex-wrap:wrap;}
-      .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;flex-shrink:0;}
-      .sheet{padding:20px 8px;max-width:760px;margin:0 auto;}
-      .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:12px;margin-bottom:14px;}
-      .hd .brand{font-size:11px;letter-spacing:1px;color:#8A6414;font-weight:700;}
-      .hd .sub{font-size:10.5px;color:#5B6270;margin-bottom:8px;}
-      .hd h1{font-size:18px;color:#1C2B4A;margin:2px 0 10px;}
-      .hd [contenteditable]{outline:none;border-radius:2px;}
-      .hd [contenteditable]:hover, .hd [contenteditable]:focus{outline:1px dashed #B8935A;}
-      @media print{ .hd [contenteditable]:hover, .hd [contenteditable]:focus{outline:none;} }
-      .meta{display:flex;justify-content:center;gap:18px;font-size:11.5px;flex-wrap:wrap;}
-      .meta .field{display:flex;align-items:center;gap:5px;}
-      .meta .field label{color:#5B6270;}
-      .meta .field input{border:none;border-bottom:1px solid #1B2A3D;padding:2px 4px;font-size:11.5px;width:90px;}
-      .plevel{background:#F7F5EE;border:1px solid #D8D2BE;border-radius:4px;padding:12px 14px;margin-bottom:18px;page-break-inside:avoid;break-inside:avoid;}
-      .plevel h2{font-size:12px;color:#1C2B4A;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.5px;}
-      .plevel .topic{font-weight:700;font-size:13.5px;}
-      .plevel .topic-en{font-size:11px;color:#5B6270;font-style:italic;margin-bottom:8px;}
-      .plevel .summary{font-size:12px;line-height:1.6;margin-bottom:10px;}
-      .flow-item{display:flex;gap:6px;font-size:11.5px;margin-bottom:5px;align-items:baseline;}
-      .flow-num{flex-shrink:0;width:16px;height:16px;border-radius:50%;background:#1C2B4A;color:#fff;font-size:9.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;}
-      .lgp-item{font-size:11.5px;margin-bottom:5px;}
-      .sblock{padding:12px 0;border-bottom:1px solid #D8D2BE;page-break-inside:avoid;break-inside:avoid;}
-      .sline{display:flex;gap:6px;font-family:Georgia,'Times New Roman',serif;font-size:14px;line-height:1.9;}
-      .sidx{flex-shrink:0;font-weight:700;color:#1C2B4A;font-family:'Noto Sans KR',sans-serif;font-size:12px;}
-      .schunks .br{color:#1C2B4A;font-weight:700;}
-      .schunks .role{color:#8A6414;font-weight:700;margin-left:1px;font-size:0.72em;}
-      .schunks .slash{color:#5B6270;margin:0 2px;}
-      .sclauses{font-size:10px;color:#5B6270;margin:4px 0 0 18px;}
-      .strans{font-size:12.5px;margin:6px 0 0 18px;}
-      .sanno{margin:5px 0 0 18px;padding-left:8px;font-size:11px;line-height:1.6;}
-      .sanno.grammar{border-left:3px solid #1C2B4A;}
-      .sanno.vocab{border-left:3px solid #B8935A;color:#8A6414;}
-      .sanno.test{border-left:3px solid #A33;color:#5B6270;}
-      @media print{ .toolbar{display:none !important;} }
-    </style></head><body>
-    <div class="toolbar">
-      <span>학생용 분석노트 인쇄 미리보기 — 제목/소제목을 클릭하면 직접 수정할 수 있어요. 페이지 번호가 필요하면 인쇄 대화상자에서 "머리글과 바닥글"을 켜주세요.</span>
-      <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
-    </div>
-    <div class="sheet">
-      <div class="hd">
-        <div class="brand">Sarah's English</div>
-        <div class="sub" contenteditable="true" spellcheck="false">Reading Analysis</div>
-        <h1 contenteditable="true" spellcheck="false">${esc(doc.title)}</h1>
-        <div class="meta">
-          <div class="field"><label>학년</label><span contenteditable="true" spellcheck="false">${esc(doc.grade)}</span></div>
-          <div class="field"><label>이름</label><input type="text" /></div>
-          <div class="field"><label>날짜</label><input type="text" /></div>
-        </div>
-      </div>
-      <div class="plevel">
-        <h2>Passage Analysis</h2>
-        <div class="topic">${esc(pl.topicKo)}</div>
-        ${pl.topicEn ? `<div class="topic-en">${esc(pl.topicEn)}</div>` : ""}
-        <div class="summary">${esc(pl.summary)}</div>
-        ${flowHtml}
-        ${lgpHtml ? `<div style="margin-top:8px;">${lgpHtml}</div>` : ""}
-      </div>
-      ${sentencesHtml}
-    </div>
-    </body></html>`;
-  const win = window.open("", "_blank");
-  if (!win) { alert("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
-  win.document.write(html_);
-  win.document.close();
-  win.focus();
-}
-
-function PassageAnalysisDetail({ doc, onBack, onGoGenerator, onGoVariation, onUpdated, onDeleted }) {
-  const RA = window.SarahServices.readingAnalysisService;
-  const QB = window.SarahServices.questionBankService;
-  const a = doc.analysis || {};
-  const pl = a.passageLevel || null;
-  const sentences = a.sentences || [];
-  const isNewSchema = !!pl && sentences.length > 0;
-
-  const [editing, setEditing] = useState(false);
-  const [editGrade, setEditGrade] = useState(doc.grade);
-  const [editPublisher, setEditPublisher] = useState(doc.publisher || "");
-  const [editExamType, setEditExamType] = useState(doc.examType || "");
-  const [savingEdit, setSavingEdit] = useState(false);
-  const [editErr, setEditErr] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [deleteErr, setDeleteErr] = useState("");
-
-  async function saveEdit() {
-    setSavingEdit(true); setEditErr("");
-    try {
-      const updated = await RA.updateAnalysis(doc, { grade: editGrade, publisher: editPublisher.trim(), examType: editExamType });
-      onUpdated(updated);
-      setEditing(false);
-    } catch (e) {
-      setEditErr("저장 실패: " + String(e.message || e));
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
-  async function handleDelete() {
-    setDeleting(true); setDeleteErr("");
-    try {
-      const allQuestions = await QB.listReadingAnalysisQuestions();
-      if (!RA.canDeleteAnalysis(doc, allQuestions)) {
-        setDeleteErr("연결된 문제가 있어 이 지문 분석은 삭제할 수 없어요. 먼저 문제를 정리해 주세요.");
-        return;
-      }
-      if (!confirm(`"${doc.title}" 지문 분석을 삭제할까요? 되돌릴 수 없어요.`)) return;
-      await RA.hardDeleteAnalysis(doc, allQuestions);
-      onDeleted();
-    } catch (e) {
-      setDeleteErr("삭제 실패: " + String(e.message || e));
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return html`
-    <div>
-      <${BackBtn} onClick=${onBack} />
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-        <div>
-          ${!editing ? html`
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>${doc.grade} · ${doc.publisher || "미분류"} · ${doc.examType || "미분류"} · ${doc.difficulty}</div>
-          ` : html`
-            <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-              <select style=${{ ...inputStyle, width: "auto" }} value=${editGrade} onChange=${(e) => setEditGrade(e.target.value)}>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
-              <input style=${{ ...inputStyle, width: "auto" }} placeholder="출판사 (선택)" value=${editPublisher} onChange=${(e) => setEditPublisher(e.target.value)} />
-              <select style=${{ ...inputStyle, width: "auto" }} value=${editExamType} onChange=${(e) => setEditExamType(e.target.value)}>${READING_ANALYSIS_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
-              <${Button} variant="gold" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${saveEdit} disabled=${savingEdit}>${savingEdit ? "저장 중..." : "저장"}<//>
-              <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => { setEditing(false); setEditErr(""); }} disabled=${savingEdit}>취소<//>
-            </div>
-            ${editErr && html`<div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 4 }}>${editErr}</div>`}
-          `}
-          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16 }}>${doc.title}</div>
-        </div>
-        <div style=${{ display: "flex", gap: 8 }}>
-          ${isNewSchema && html`<${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => printAnalysisNotebook(doc)}>🖨 분석노트 인쇄<//>`}
-          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onGoGenerator}>✨ 이 지문으로 문제 생성<//>
-          <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${onGoVariation}>🔀 지문 변형<//>
-          ${!editing && html`<${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setEditing(true)}>✏️ 분류 수정<//>`}
-          <${Button} variant="danger" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleDelete} disabled=${deleting}>${deleting ? "삭제 중..." : "🗑 삭제"}<//>
-        </div>
-      </div>
-      ${deleteErr && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${deleteErr}</div>`}
-      ${!isNewSchema && html`
-        <${Card}>
-          <div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>이 지문은 이전 스키마로 분석된 데이터라 새 분석노트로 표시할 수 없어요 — 원문만 보여드려요. 필요하면 "Passage Analysis" 탭에서 새로 분석해 주세요.</div>
-          <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Original Passage</div>
-          <div style=${{ whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.7 }}>${doc.originalText}</div>
-        <//>
-      `}
-      ${isNewSchema && html`
-        <div style=${{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style=${{ flex: "3 1 480px", minWidth: 0 }}>
-            <${Card}>
-              <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13 }}>Original Passage</div>
-              <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, color: C.slate, lineHeight: 1.6 }}>${doc.originalText}</div>
-            <//>
-            ${sentences.map((s) => html`<${SentenceAnalysisBlock} key=${s.index} s=${s} vocabulary=${a.vocabulary} />`)}
-          </div>
-          <div style=${{ flex: "1 1 260px", minWidth: 240 }}>
-            <${PassageLevelPanel} pl=${pl} />
-          </div>
-        </div>
-      `}
-    </div>
-  `;
-}
-
-// 출판사가 비어있는 지문을 묶는 트리 버킷 키 — CategoryTree의 "선택 안 됨"(빈 문자열)과
-// 겹치면 클릭해도 항상 "미선택" 취급돼 활성 표시/토글이 안 되므로, 빈 문자열이 아닌 전용
-// sentinel을 쓴다(실제 출판사명으로 나올 일이 없는 문자열).
-const READING_ANALYSIS_UNCLASSIFIED_PUBLISHER = "__unclassified__";
-// 시험유형도 같은 이유로 examType==="" (미분류)를 별도 sentinel로 매핑해서 트리 레벨3 키로 쓴다.
-const READING_ANALYSIS_UNCLASSIFIED_EXAM_TYPE = "__unclassified__";
-
-function PassageAnalysisListTab({ selectedId, onSelect, onGoGenerator, onGoVariation }) {
-  const RA = window.SarahServices.readingAnalysisService;
-  const [analyses, setAnalyses] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [err, setErr] = useState("");
-  const [selected, setSelected] = useState(["", "", ""]); // [grade, publisher, examType] — CategoryTree와 동일한 규약
-
-  function load() { RA.listAnalyses().then((list) => setAnalyses(list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)))).catch((e) => setErr(String(e.message || e))); }
-  useEffect(() => { load(); }, []);
-
-  const selectedDoc = analyses && analyses.find((a) => a.id === selectedId);
-
-  if (creating) {
-    return html`<${PassageAnalysisCreateForm} analyses=${analyses} onCancel=${() => setCreating(false)} onCreated=${(doc) => { setCreating(false); load(); onSelect(doc.id); }} />`;
-  }
-  if (selectedDoc) {
-    return html`<${PassageAnalysisDetail} doc=${selectedDoc} onBack=${() => onSelect(null)} onGoGenerator=${() => onGoGenerator(selectedDoc.id)} onGoVariation=${() => onGoVariation(selectedDoc.id)}
-      onUpdated=${(updated) => setAnalyses((list) => list.map((a) => (a.id === updated.id ? updated : a)))}
-      onDeleted=${() => { onSelect(null); load(); }} />`;
-  }
-
-  if (err) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${err}</div>`;
-  if (analyses === null) return html`<${Empty} text="불러오는 중..." />`;
-
-  const QB = window.SarahServices.questionBankService;
-  const publisherOf = (a) => a.publisher || READING_ANALYSIS_UNCLASSIFIED_PUBLISHER;
-  const examTypeOf = (a) => a.examType || READING_ANALYSIS_UNCLASSIFIED_EXAM_TYPE;
-  const examTypeLabel = (key) => (READING_ANALYSIS_EXAM_TYPES.find((t) => (t.key || READING_ANALYSIS_UNCLASSIFIED_EXAM_TYPE) === key) || {}).label || key;
-
-  // 학년 → 출판사 → 시험유형 카테고리 트리 — GrammarBankView/ExamKeyLibrarySection과 같은 패턴
-  // (§CategoryTree 주석 참고), 카운트는 항상 전체 analyses 기준.
-  const categoryTree = QB.GRADES.map((g) => {
-    const gq = analyses.filter((a) => a.grade === g);
-    const publishers = Array.from(new Set(gq.map(publisherOf))).sort((x, y) => {
-      if (x === READING_ANALYSIS_UNCLASSIFIED_PUBLISHER) return 1;
-      if (y === READING_ANALYSIS_UNCLASSIFIED_PUBLISHER) return -1;
-      return x.localeCompare(y, "ko");
-    });
-    return {
-      key: g, label: g, count: gq.length,
-      children: publishers.map((pub) => {
-        const pq = gq.filter((a) => publisherOf(a) === pub);
-        return {
-          key: pub, label: pub === READING_ANALYSIS_UNCLASSIFIED_PUBLISHER ? "미분류" : pub, count: pq.length,
-          children: Array.from(new Set(pq.map(examTypeOf))).map((et) => ({
-            key: et, label: examTypeLabel(et), count: pq.filter((a) => examTypeOf(a) === et).length,
-          })),
-        };
-      }),
-    };
-  });
-  function selectTreeLevel(level, key) {
-    setSelected((s) => {
-      if (level === 0) return [s[0] === key ? "" : key, "", ""];
-      if (level === 1) return [s[0], s[1] === key ? "" : key, ""];
-      return [s[0], s[1], s[2] === key ? "" : key];
-    });
-  }
-  const filtered = analyses.filter((a) => {
-    if (selected[0] && a.grade !== selected[0]) return false;
-    if (selected[1] && publisherOf(a) !== selected[1]) return false;
-    if (selected[2] && examTypeOf(a) !== selected[2]) return false;
-    return true;
-  });
-
-  return html`
-    <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style=${{ fontSize: 12, color: C.slate }}>지문 분석 ${analyses.length}개 · 조건에 맞는 지문 ${filtered.length}개</div>
-        <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCreating(true)}>+ 새 지문 분석<//>
-      </div>
-      <div className="ap-qb-shell">
-        <div className="ap-qb-tree-col">
-          <${CategoryTree} tree=${categoryTree} selected=${selected} onSelect=${selectTreeLevel}
-            onReset=${() => setSelected(["", "", ""])} totalCount=${analyses.length} />
-        </div>
-        <div className="ap-qb-main-col">
-          ${filtered.length === 0 ? html`<${Empty} text="조건에 맞는 지문 분석이 없어요." />` : html`
-            <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-              <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 560 }}>
-                <thead>
-                  <tr style=${{ background: C.ivory }}>
-                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>제목</th>
-                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학년</th>
-                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>출판사</th>
-                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>시험유형</th>
-                    <th style=${{ padding: "8px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>난이도</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${filtered.map((a) => html`
-                    <tr key=${a.id} onClick=${() => onSelect(a.id)} style=${{ borderTop: `1px solid ${C.line}`, cursor: "pointer" }}>
-                      <td style=${{ padding: "8px 10px", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${a.title}</td>
-                      <td style=${{ padding: "8px 10px", whiteSpace: "nowrap" }}>${a.grade}</td>
-                      <td style=${{ padding: "8px 10px", whiteSpace: "nowrap" }}>${a.publisher || "미분류"}</td>
-                      <td style=${{ padding: "8px 10px", whiteSpace: "nowrap" }}>${a.examType || "미분류"}</td>
-                      <td style=${{ padding: "8px 10px", whiteSpace: "nowrap" }}>${(QB.DIFFICULTIES.find((d) => d.key === a.difficulty) || {}).label || a.difficulty}</td>
-                    </tr>
-                  `)}
-                </tbody>
-              </table>
-            </div>
-          `}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function ReadingAnalysisQuestionCard({ QB, doc, onChanged, selected, onToggleSelect }) {
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
-  async function saveReview(draft) {
-    setSaving(true);
-    try {
-      const res = await QB.updateReadingAnalysisQuestion(doc, { review: { ...draft, reviewedAt: Date.now(), reviewedBy: "teacher" } });
-      onChanged(res.doc); setMsg("검토 내용을 저장했어요.");
-    } catch (e) { setMsg("저장 실패: " + String(e.message || e)); } finally { setSaving(false); }
-  }
-  async function changeStatus(key) {
-    setSaving(true);
-    try {
-      const updated = await QB.setReadingAnalysisQuestionStatus(doc, key);
-      onChanged(updated); setMsg(`상태를 "${(QB.STATUS_FLOW.find((s) => s.key === key) || {}).label}"(으)로 변경했어요.`);
-    } catch (e) { setMsg("상태 변경 실패: " + String(e.message || e)); } finally { setSaving(false); }
-  }
-  const typeLabel = (QB.READING_QUESTION_TYPES.find((t) => t.key === doc.questionType) || {}).label || doc.questionType;
-  return html`
-    <${Card} style=${{ marginBottom: 10 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
-        ${onToggleSelect && html`<div onClick=${(e) => e.stopPropagation()} style=${{ display: "flex", alignItems: "flex-start", paddingTop: 2 }}><input type="checkbox" checked=${!!selected} onChange=${onToggleSelect} style=${{ width: 14, height: 14, appearance: "auto" }} /></div>`}
-        <div style=${{ minWidth: 0, flex: 1 }}>
-          <div style=${{ fontSize: 11, color: C.slate, marginBottom: 3 }}>${typeLabel} · ${doc.grade}</div>
-          <div style=${{ fontSize: 13, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${doc.questionText}</div>
-        </div>
-        <div style=${{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-          <${QbQuickPublishButton} QB=${QB} doc=${doc} setStatusFn=${QB.setReadingAnalysisQuestionStatus} onPublished=${onChanged} />
-          <${QbBadge} status=${doc.status} />
-        </div>
-      </div>
-      ${open && html`
-        <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
-          ${doc.answerFormat === "mc" ? html`
-            <div>${(doc.choices || []).map((c, i) => html`<div key=${i} style=${{ padding: "4px 8px", fontSize: 12.5, background: i === Number(doc.answer) ? "#E1EEE4" : "transparent", fontWeight: i === Number(doc.answer) ? 700 : 400 }}>${i + 1}. ${c}</div>`)}</div>
-          ` : html`<div style=${{ fontSize: 12.5 }}><b>정답:</b> ${doc.answer}</div>`}
-          ${doc.explanation && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 6 }}><b>해설</b> — ${doc.explanation}</div>`}
-          <div style=${{ marginTop: 10 }}><${ReviewChecklistCard} items=${READING_REVIEW_ITEMS} review=${doc.review || {}} onSave=${saveReview} saving=${saving}
-            QB=${QB} doc=${doc} setStatusFn=${QB.setReadingAnalysisQuestionStatus} onPublished=${(updated) => { onChanged(updated); setMsg("확인하고 출제 가능 상태로 바꿨어요."); }} /></div>
-          <div style=${{ marginTop: 10 }}><${StatusChangeCard} QB=${QB} doc=${doc} onChange=${changeStatus} saving=${saving} /></div>
-          ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 6 }}>${msg}</div>`}
-        </div>
-      `}
-    <//>
-  `;
-}
-
-// ---------- "PDF에서 문제 가져오기" (Question Generator, 2026-09-01 신규 기능) ----------
-// 지문·선택지·정답이 이미 완성된 기존 문제집 PDF에서 "빈칸 추론" 유형 문항만 추출해 문제은행에
-// 등록한다. 기존 "AI로 이 지문에 문제 생성"(지문 하나를 골라 AI가 새 문제를 만드는 흐름)과는
-// 완전히 별개의 진입점 — 여기는 이미 만들어진 문제를 그대로 옮겨 담는 것뿐이라, 결과를 즉시
-// 저장하지 않고 검토(수정 가능 + 문항별 제외 체크) 후에만 저장한다(examkey 정답표 PDF 가져오기와
-// 같은 "AI가 읽은 결과는 저장 전에 반드시 확인" 원칙, ExamKeyLibrarySection의 pending/confirmSavePending
-// 패턴을 그대로 따름). readingAnalyses/readingAnalysisQuestions 기존 스키마만 쓰고 새 컬렉션을
-// 만들지 않는다 — 문항 하나당 readingAnalyses 지문 문서 1개 + readingAnalysisQuestions 문제 문서
-// 1개를 쌍으로 저장한다(지문이 여러 문항에 걸쳐 공유되는 구조가 아니라, 문제집의 빈칸 추론 문항은
-// 각자 자기 지문을 갖고 있어서 1:1이 자연스럽다).
-const PDF_IMPORT_CIRC = ["①", "②", "③", "④", "⑤"];
-
-function pdfImportItemIssues(it) {
+function esItemIssues(it) {
   const issues = [];
-  if (!(it.passage || "").trim()) issues.push("지문 없음");
-  if (!Array.isArray(it.choices) || it.choices.length !== 5 || it.choices.some((c) => !String(c || "").trim())) issues.push("선택지 5개 미완성");
-  if (!it.answer) issues.push("정답 미확인");
+  if (!(it.displayPassage || "").trim()) issues.push("지문 없음");
+  if (!Array.isArray(it.choices) || it.choices.length !== 5 || it.choices.some((c) => !String(c || "").trim())) issues.push("선택지 미완성");
+  if (it.answer == null) issues.push("정답 미확인");
   return issues;
 }
-
-function PdfBlankInferenceItemRow({ item, onUpdate, onToggleExclude }) {
-  const issues = pdfImportItemIssues(item);
+function esGroupIssues(group) {
+  const issues = [];
+  if (!(group.sharedPassage || "").trim()) issues.push("지문 없음");
+  if (!Array.isArray(group.questions) || group.questions.length === 0) {
+    issues.push("문항 없음");
+  } else {
+    group.questions.forEach((q, i) => {
+      if (!Array.isArray(q.choices) || q.choices.length !== 5 || q.choices.some((c) => !String(c || "").trim())) issues.push(`문항${i + 1} 선택지 미완성`);
+      if (q.answer == null) issues.push(`문항${i + 1} 정답 미확인`);
+    });
+  }
+  return issues;
+}
+function esEntryIssues(entry) { return entry.kind === "group" ? esGroupIssues(entry) : esItemIssues(entry); }
+function esMatchesQuery(it, q) {
+  if (!q.trim()) return true;
+  const hay = [it.questionText, it.displayPassage, it.explanation, ...(it.choices || [])].join(" ").toLowerCase();
+  return hay.includes(q.trim().toLowerCase());
+}
+function esEntryMatchesQuery(entry, q) {
+  if (entry.kind === "group") {
+    if (!q.trim()) return true;
+    const hay = [entry.sharedPassage, ...entry.questions.flatMap((qq) => [qq.questionText, qq.explanation, ...(qq.choices || [])])].join(" ").toLowerCase();
+    return hay.includes(q.trim().toLowerCase());
+  }
+  return esMatchesQuery(entry, q);
+}
+function esExtractAnalysisMarker(raw) {
+  const marker = raw.find((x) => x && x.questionType === "_analysis");
+  if (!marker) return { analysis: null, rest: raw };
+  return {
+    analysis: {
+      summary: (marker.summary && typeof marker.summary === "object") ? marker.summary : { topic: "", summary: "" },
+      flow: Array.isArray(marker.flow) ? marker.flow : [],
+      sentences: Array.isArray(marker.sentences) ? marker.sentences : [],
+      vocab: Array.isArray(marker.vocab) ? marker.vocab : [],
+    },
+    rest: raw.filter((x) => !(x && x.questionType === "_analysis")),
+  };
+}
+function EsAnalysisSection({ analysis }) {
+  if (!analysis) return null;
+  const hasMeta = (analysis.summary && (analysis.summary.topic || analysis.summary.summary)) || (analysis.flow && analysis.flow.length > 0);
+  const hasSentences = analysis.sentences && analysis.sentences.length > 0;
+  const hasVocab = analysis.vocab && analysis.vocab.length > 0;
+  if (!hasMeta && !hasSentences && !hasVocab) return null;
   return html`
-    <${Card} style=${{ marginBottom: 10, background: item.excluded ? "#F7F6F3" : C.white, opacity: item.excluded ? 0.75 : 1 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-        <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>${item.number || "?"}번</span>
-          ${issues.length > 0 && html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: "#FBE7E3", color: C.danger }}>파싱 미완성 — ${issues.join(", ")}</span>`}
+    <div style=${{ marginBottom: 24 }}>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 10 }}>📖 지문 분석</div>
+      ${hasMeta && html`
+        <div className="meta-block">
+          ${(analysis.summary && (analysis.summary.topic || analysis.summary.summary)) && html`
+            <div className="meta-row">
+              <div className="meta-box"><div className="m-label">주제</div><div className="m-body">${analysis.summary.topic || ""}</div></div>
+              <div className="meta-box"><div className="m-label">요약</div><div className="m-body">${analysis.summary.summary || ""}</div></div>
+            </div>
+          `}
+          ${analysis.flow && analysis.flow.length > 0 && html`
+            <div className="flow-row">
+              ${analysis.flow.map((f, i) => html`<div key=${i} className="flow-col"><div className="f-num">${f.stage || ""} (${f.range || ""})</div><div className="f-body">${f.desc || ""}</div></div>`)}
+            </div>
+          `}
         </div>
-        <label style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: C.slate, cursor: "pointer", whiteSpace: "nowrap" }}>
-          <input type="checkbox" checked=${!!item.excluded} onChange=${onToggleExclude} style=${{ width: 13, height: 13, appearance: "auto" }} />
-          저장에서 제외
-        </label>
-      </div>
-      <${Field} label="지문 (빈칸 포함)">
-        <textarea style=${{ ...inputStyle, minHeight: 90, fontSize: 12.5, lineHeight: 1.5 }}
-          value=${item.passage} onChange=${(e) => onUpdate({ passage: e.target.value })} />
-      <//>
-      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 8 }}>
-        ${item.choices.map((c, i) => html`
-          <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button type="button" onClick=${() => onUpdate({ answer: i + 1 })}
-              title="정답으로 표시"
-              style=${{
-                flex: "0 0 auto", width: 24, height: 24, borderRadius: "50%", cursor: "pointer",
-                border: `1.5px solid ${item.answer === i + 1 ? C.gold : C.line}`,
-                background: item.answer === i + 1 ? C.gold : C.white,
-                color: item.answer === i + 1 ? C.white : C.slate, fontWeight: 700, fontSize: 12,
-              }}>${PDF_IMPORT_CIRC[i]}<//>
-            <input style=${{ ...inputStyle, padding: "6px 8px", fontSize: 12.5 }} value=${c}
-              onChange=${(e) => onUpdate({ choices: item.choices.map((x, xi) => (xi === i ? e.target.value : x)) })} />
+      `}
+      ${hasSentences && html`
+        <div className="analysis-card">
+          <div className="a-title">지문 분석 · 구문 분석 노트</div>
+          ${analysis.sentences.map((s, i) => html`
+            <div key=${i} className="sent-block">
+              <div className="sent-row-wrap">
+                <span className="sent-num">${i + 1}</span>
+                <div className="sent-row">
+                  ${(s.segments || []).map((seg, si) => {
+                    const tag = (seg.tag || "").trim();
+                    const isTagged = !!tag;
+                    const isVerb = /^V/.test(tag);
+                    return html`<div key=${si} className=${"seg" + (isTagged ? " tag" : "") + (isVerb ? " v" : "")}><div className="txt">${seg.text}</div><div className="lbl">${isTagged ? tag : " "}</div></div>`;
+                  })}
+                </div>
+              </div>
+              <div className="interpret-line">해석: ${s.interpretation || ""}</div>
+              <div className="tip-line">▸ ${s.tip || ""}</div>
+            </div>
+          `)}
+        </div>
+      `}
+      ${hasVocab && html`
+        <div className="vocab-block">
+          <div className="a-title">중요 어휘</div>
+          <div className="vocab-grid">${analysis.vocab.map((v, i) => html`<div key=${i} className="vw">${v.word} <span>${v.meaning}</span></div>`)}</div>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+// ---------- Left sidebar navigation ----------
+function EsSidebar({ page, onNavigate, reviewCount, savedCount, paperCount, libraryCount }) {
+  const menu = [
+    { key: "setup", icon: "📝", label: "지문 입력 · 유형 선택" },
+    { key: "library", icon: "📚", label: "지문 보관함", badge: libraryCount },
+    { key: "review", icon: "🗂️", label: "생성 결과", badge: reviewCount },
+    { key: "saved", icon: "💾", label: "저장함", badge: savedCount },
+    { key: "examPapers", icon: "📄", label: "시험지 생성", badge: paperCount },
+  ];
+  return html`
+    <div className="es-sidebar">
+      <div className="es-sidebar-logo">🧪 Exam Studio<div className="sub">Reading Analysis</div></div>
+      <div className="es-sidebar-menu">
+        ${menu.map((m) => html`
+          <div key=${m.key} className=${"es-sidebar-item" + (page === m.key ? " active" : "")} onClick=${() => onNavigate(m.key)}>
+            <span>${m.icon}</span><span className="lb">${m.label}</span>
+            ${m.badge != null && html`<span className="es-sidebar-badge">${m.badge}</span>`}
           </div>
         `)}
       </div>
-      <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>정답으로 표시할 선택지의 동그라미 번호를 클릭하세요. ${item.answer ? `현재 정답: ${PDF_IMPORT_CIRC[item.answer - 1]}` : "정답이 아직 확인되지 않았어요."}</div>
-    <//>
-  `;
-}
-
-function PdfBlankQuestionImportPanel({ onImported }) {
-  const [expanded, setExpanded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState("");
-  const [items, setItems] = useState(null);
-  const [fileName, setFileName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveProgress, setSaveProgress] = useState(null);
-  const QB = window.SarahServices.questionBankService;
-
-  const [batchGrade, setBatchGrade] = useState(QB.GRADES[QB.GRADES.length - 1]);
-  const [batchDifficulty, setBatchDifficulty] = useState("BASIC");
-  const [batchPublisher, setBatchPublisher] = useState("");
-  const [batchExamType, setBatchExamType] = useState("");
-
-  function updateItem(localId, patch) {
-    setItems((list) => list.map((it) => (it.localId === localId ? { ...it, ...patch } : it)));
-  }
-  function toggleExclude(localId) {
-    setItems((list) => list.map((it) => (it.localId === localId ? { ...it, excluded: !it.excluded } : it)));
-  }
-
-  async function handleFile(e) {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!confirm("AI 사용 — API 비용이 발생해요.\n\nPDF를 읽어서 빈칸 추론 문항의 지문·선택지·정답을 찾아냅니다(다른 유형은 무시해요). 페이지가 많으면 1~2분 이상 걸릴 수 있어요. 계속할까요?")) return;
-    setBusy(true); setItems(null); setFileName(file.name);
-    setStatus("AI로 PDF를 읽는 중이에요 — 창을 닫지 말고 기다려 주세요...");
-    try {
-      const QG = window.SarahServices.questionGenerationService;
-      const images = await renderPdfPageTiles(file);
-      const raw = await QG.extractBlankInferenceQuestionsFromPdf({ images });
-      const mapped = raw.map((it) => {
-        const choices = [0, 1, 2, 3, 4].map((i) => (it.choices && it.choices[i]) || "");
-        const draft = { localId: uid(), number: it.number, passage: it.passage, choices, answer: it.answer };
-        return { ...draft, excluded: pdfImportItemIssues(draft).length > 0 };
-      });
-      if (mapped.length === 0) {
-        setStatus("빈칸 추론 문항을 찾지 못했어요. 이 PDF에 빈칸 추론 유형이 있는지, 또는 정답표가 함께 포함돼 있는지 확인해 주세요.");
-      } else {
-        setItems(mapped);
-        const incompleteCount = mapped.filter((m) => m.excluded).length;
-        setStatus(`${mapped.length}개 문항을 찾았어요.` + (incompleteCount ? ` 이 중 ${incompleteCount}개는 일부를 못 읽어서 기본적으로 저장 제외로 표시했어요 — 확인 후 직접 채워 넣고 포함시킬 수 있어요.` : "") + " 아래에서 내용을 검토하고 저장하세요.");
-      }
-    } catch (err) {
-      setStatus("AI 인식에 실패했어요: " + String(err.message || err).slice(0, 300));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSaveAll() {
-    if (saving) return;
-    const RA = window.SarahServices.readingAnalysisService;
-    const targets = (items || []).filter((it) => !it.excluded);
-    if (targets.length === 0) { setStatus("저장할 문항이 없어요 (모두 제외 처리됐어요)."); return; }
-    setSaving(true); setSaveProgress({ index: 0, total: targets.length });
-    let savedCount = 0;
-    const failed = [];
-    for (let i = 0; i < targets.length; i++) {
-      const it = targets[i];
-      const issues = pdfImportItemIssues(it);
-      if (issues.length > 0) {
-        failed.push(`${it.number}번 (${issues.join(", ")})`);
-      } else {
-        try {
-          const analysisDoc = await RA.createAnalysis({
-            title: it.passage.slice(0, 40) || `빈칸 추론 #${it.number}`,
-            originalText: it.passage,
-            grade: batchGrade, difficulty: batchDifficulty,
-            publisher: batchPublisher.trim(), examType: batchExamType,
-          });
-          await QB.createReadingAnalysisQuestion({
-            grade: batchGrade, difficulty: batchDifficulty, questionType: "blank",
-            questionText: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것을 고르시오.",
-            choices: it.choices, answer: it.answer - 1,
-            explanation: "", tags: [],
-            source: { type: "PAST_EXAM_REFERENCE", note: `PDF 가져오기${fileName ? " — " + fileName : ""} (원본 ${it.number}번)` },
-          }, analysisDoc.id);
-          savedCount++;
-        } catch (e) {
-          failed.push(`${it.number}번 (${String(e.message || e).slice(0, 60)})`);
-        }
-      }
-      setSaveProgress({ index: i + 1, total: targets.length });
-    }
-    setSaving(false); setSaveProgress(null);
-    setStatus(`${savedCount}개 저장했어요.` + (failed.length ? ` ${failed.length}개는 실패했어요: ${failed.join(", ")}` : ""));
-    if (savedCount > 0) {
-      setItems((list) => (list || []).filter((it) => it.excluded || pdfImportItemIssues(it).length > 0));
-      if (onImported) onImported();
-    }
-  }
-
-  const includedCount = (items || []).filter((it) => !it.excluded).length;
-
-  return html`
-    <${Card} style=${{ marginBottom: 14 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => setExpanded((v) => !v)}>
-        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>📄 PDF에서 문제 가져오기</div>
-        <div style=${{ fontSize: 12, color: C.slate }}>${expanded ? "접기 ▲" : "펼치기 ▼"}</div>
-      </div>
-      ${expanded && html`
-        <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 10 }}>
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>지문·선택지·정답이 이미 완성된 기존 문제집 PDF를 올리면, "빈칸 추론" 유형 문항만 찾아서 지문·선택지·정답을 자동으로 옮겨 담아요(다른 유형은 이번 버전에서는 지원하지 않아요). 정답은 보통 책 맨 뒤 정답표에서 매칭해요.</div>
-          <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (PDF 1개 업로드 = API 호출 1회)</div>
-          <input type="file" accept="application/pdf" onChange=${handleFile} disabled=${busy} />
-          ${status && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${status}</div>`}
-
-          ${items && items.length > 0 && html`
-            <div style=${{ marginTop: 16 }}>
-              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 8 }}>저장 시 전체 문항에 일괄 적용할 분류</div>
-              <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-                <select style=${{ ...inputStyle, width: "auto" }} value=${batchGrade} onChange=${(e) => setBatchGrade(e.target.value)}>${QB.GRADES.map((g) => html`<option key=${g} value=${g}>${g}</option>`)}</select>
-                <select style=${{ ...inputStyle, width: "auto" }} value=${batchDifficulty} onChange=${(e) => setBatchDifficulty(e.target.value)}>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
-                <input style=${{ ...inputStyle, width: "auto", flex: "1 1 140px" }} placeholder="출판사 (선택)" value=${batchPublisher} onChange=${(e) => setBatchPublisher(e.target.value)} />
-                <select style=${{ ...inputStyle, width: "auto" }} value=${batchExamType} onChange=${(e) => setBatchExamType(e.target.value)}>${READING_ANALYSIS_EXAM_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
-              </div>
-
-              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>총 ${items.length}개 문항 중 ${includedCount}개 저장 예정</div>
-              ${items.map((it) => html`<${PdfBlankInferenceItemRow} key=${it.localId} item=${it}
-                onUpdate=${(patch) => updateItem(it.localId, patch)}
-                onToggleExclude=${() => toggleExclude(it.localId)} />`)}
-
-              <${Button} variant="gold" style=${{ padding: "8px 16px", fontSize: 12.5, marginTop: 4 }} disabled=${saving || includedCount === 0} onClick=${handleSaveAll}>
-                ${saving ? `저장 중... (${saveProgress ? saveProgress.index : 0}/${saveProgress ? saveProgress.total : 0})` : `문제은행에 저장 (${includedCount}개)`}
-              <//>
-            </div>
-          `}
-        </div>
-      `}
-    <//>
-  `;
-}
-
-function ReadingAnalysisQuestionGeneratorTab({ selectedId, onSelectAnalysis }) {
-  const QB = window.SarahServices.questionBankService;
-  const RA = window.SarahServices.readingAnalysisService;
-  const [analyses, setAnalyses] = useState(null);
-  const [questions, setQuestions] = useState(null);
-  const [questionType, setQuestionType] = useState(QB.READING_QUESTION_TYPES[0].key);
-  const [difficulty, setDifficulty] = useState("BASIC");
-  const [count, setCount] = useState(5);
-  const [generating, setGenerating] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [selected, setSelected] = useState({});
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState(null);
-
-  useEffect(() => { RA.listAnalyses().then(setAnalyses).catch(() => setAnalyses([])); }, []);
-  useEffect(() => { QB.listReadingAnalysisQuestions().then(setQuestions).catch(() => setQuestions([])); }, [selectedId]);
-
-  if (analyses === null || questions === null) return html`<${Empty} text="불러오는 중..." />`;
-
-  const selectedAnalysis = analyses.find((a) => a.id === selectedId);
-  const linked = (questions || []).filter((q) => q.analysisId === selectedId);
-  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
-  const allChecked = linked.length > 0 && linked.every((q) => selected[q.id]);
-  function toggleAll() {
-    if (allChecked) { setSelected({}); return; }
-    const next = {};
-    linked.forEach((q) => { next[q.id] = true; });
-    setSelected(next);
-  }
-  function toggleOne(id) { setSelected((s) => ({ ...s, [id]: !s[id] })); }
-  async function runBulkPublish() {
-    const targets = linked.filter((q) => selected[q.id]);
-    if (targets.length === 0) return;
-    setBulkBusy(true); setBulkProgress({ index: 0, total: targets.length });
-    try {
-      await qbBulkPublish(QB, targets, QB.setReadingAnalysisQuestionStatus, (p) => {
-        setBulkProgress({ index: p.index, total: p.total });
-        if (!p.error && !p.skipped) setQuestions((qs) => qs.map((x) => (x.id === p.doc.id ? p.doc : x)));
-      });
-      setSelected({});
-    } finally {
-      setBulkBusy(false); setBulkProgress(null);
-    }
-  }
-
-  async function handleGenerate() {
-    const n = Math.max(1, Math.min(20, Number(count) || 5));
-    if (!confirm(`AI 사용 — API 비용이 발생해요.\n\n이 지문에 대해 1회 호출로 최대 ${n}개 문제를 생성합니다. 계속할까요?`)) return;
-    setGenerating(true); setMsg("");
-    try {
-      const QG = window.SarahServices.questionGenerationService;
-      const docs = await QG.generateReadingAnalysisQuestions({ analysis: selectedAnalysis, questionType, difficulty, count: n, tags: [] });
-      setQuestions((qs) => [...docs, ...qs]);
-      setMsg(`AI가 문제 ${docs.length}개를 생성해서 DRAFT로 저장했어요. 아래에서 바로 검수할 수 있어요.`);
-    } catch (e) {
-      setMsg("생성 실패: " + String(e.message || e));
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  return html`
-    <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>Passage Analysis에서 만든 지문을 골라 문제를 생성해요. 지문 자체는 AI로 다시 만들지 않아요.</div>
-      <${PdfBlankQuestionImportPanel} onImported=${() => {
-        RA.listAnalyses().then(setAnalyses).catch(() => {});
-        QB.listReadingAnalysisQuestions().then(setQuestions).catch(() => {});
-      }} />
-      <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedId || ""} onChange=${(e) => onSelectAnalysis(e.target.value || null)}>
-        <option value="">지문 선택...</option>
-        ${(analyses || []).map((a) => html`<option key=${a.id} value=${a.id}>${a.title} (${a.grade})</option>`)}
-      </select>
-      ${!selectedAnalysis
-        ? html`<${Empty} text="지문을 먼저 선택하세요. 지문이 없으면 Passage Analysis 탭에서 먼저 만들어 주세요." />`
-        : html`
-          <${Card} style=${{ marginBottom: 14, background: "#FBF6EA" }}>
-            <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회, 결과는 항상 DRAFT로 저장돼요)</div>
-            <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <select style=${{ ...inputStyle, width: "auto" }} value=${questionType} onChange=${(e) => setQuestionType(e.target.value)}>${QB.READING_QUESTION_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.label}</option>`)}</select>
-              <select style=${{ ...inputStyle, width: "auto" }} value=${difficulty} onChange=${(e) => setDifficulty(e.target.value)}>${QB.DIFFICULTIES.map((d) => html`<option key=${d.key} value=${d.key}>${d.label}</option>`)}</select>
-              <input type="number" style=${{ ...inputStyle, width: 70 }} value=${count} onChange=${(e) => setCount(e.target.value)} min="1" max="20" />
-              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleGenerate} disabled=${generating}>${generating ? "생성 중..." : "생성하기"}<//>
-            </div>
-            ${msg && html`<div style=${{ fontSize: 11.5, color: C.navy, marginTop: 8 }}>${msg}</div>`}
-          <//>
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>이 지문에 연결된 문제 ${linked.length}개</div>
-          ${linked.length === 0
-            ? html`<${Empty} text="아직 생성된 문제가 없어요." />`
-            : html`
-              <${QbBulkPublishBar} count=${selectedIds.length} allChecked=${allChecked} onToggleAll=${toggleAll} busy=${bulkBusy} progress=${bulkProgress} onRun=${runBulkPublish} />
-              ${linked.map((q) => html`<${ReadingAnalysisQuestionCard} key=${q.id} QB=${QB} doc=${q}
-                onChanged=${(doc) => setQuestions((qs) => qs.map((x) => (x.id === doc.id ? doc : x)))}
-                selected=${!!selected[q.id]} onToggleSelect=${() => toggleOne(q.id)} />`)}
-            `}
-        `}
     </div>
   `;
 }
 
-function PassageVariationTab({ selectedId, onSelectAnalysis }) {
-  const RA = window.SarahServices.readingAnalysisService;
-  const [analyses, setAnalyses] = useState(null);
-  const [level, setLevel] = useState("중3~고1 수준");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+// ---------- 공통 폴더 네비게이션 (학년 → 출판사 → 내신형/수능형) ----------
+function EsFolderNav({ sectionIcon, sectionLabel, folders, onAddFolder, onDeleteFolder, items, path, setPath, renderLeaf }) {
+  const [showAddFolder, setShowAddFolder] = useState(false);
+  const { grade, publisher, examType } = path;
 
-  useEffect(() => { RA.listAnalyses().then(setAnalyses).catch(() => setAnalyses([])); }, [selectedId]);
+  function countAt(g, p, e) {
+    return items.filter((it) => (!g || it.grade === g) && (!p || it.publisher === p) && (!e || it.examType === e)).length;
+  }
 
-  if (analyses === null) return html`<${Empty} text="불러오는 중..." />`;
-  const selectedAnalysis = analyses.find((a) => a.id === selectedId);
+  const crumbParts = [sectionLabel, grade, publisher, publisher ? (examType || ES_EXAM_TYPES[0]) : null].filter(Boolean);
+  const breadcrumb = html`<div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>${crumbParts.join(" › ")}</div>`;
 
-  async function handleTransform() {
-    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n이 지문의 어휘/문장구조 난이도를 조정한 변형판을 만듭니다(내용·논리는 유지). 계속할까요?")) return;
-    setBusy(true); setErr("");
-    try {
-      const res = await fetch(NELT_WORKER_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "transform", passage: selectedAnalysis.originalText, level }),
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) throw new Error(json.error || "변형에 실패했어요.");
-      const updated = await RA.saveVariation(selectedAnalysis, { level, transformedHtml: json.transformed_html || "", changes: json.changes || [] });
-      setAnalyses((list) => list.map((a) => (a.id === updated.id ? updated : a)));
-    } catch (e) {
-      setErr("변형 실패: " + String(e.message || e));
-    } finally {
-      setBusy(false);
-    }
+  if (!grade) {
+    return html`
+      <div>
+        ${breadcrumb}
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>${sectionIcon} ${sectionLabel}</div>
+        <div className="es-card-grid">
+          ${LIBRARY_GRADES.map((g) => html`
+            <${Card} key=${g} onClick=${() => setPath({ grade: g, publisher: null, examType: null })} style=${{ margin: 0, cursor: "pointer", textAlign: "center", padding: 24 }}>
+              <div style=${{ fontSize: 28, marginBottom: 8 }}>📁</div>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${g}</div>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${countAt(g, null, null)}개</div>
+            <//>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
+  if (!publisher) {
+    const pubFolders = folders[grade] || [];
+    return html`
+      <div>
+        ${breadcrumb}
+        <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5, marginBottom: 14 }} onClick=${() => setPath(esEmptyCategoryTag())}>‹ 학년으로<//>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>${sectionIcon} ${sectionLabel}</div>
+        ${pubFolders.length === 0 && html`<div style=${{ marginBottom: 16 }}><${Empty} text="아직 만든 출판사 폴더가 없어요. 아래에서 폴더를 추가해보세요." /></div>`}
+        <div className="es-card-grid">
+          ${pubFolders.map((pub) => html`
+            <${Card} key=${pub} onClick=${() => setPath({ grade, publisher: pub, examType: ES_EXAM_TYPES[0] })} style=${{ margin: 0, cursor: "pointer" }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style=${{ fontSize: 22 }}>📁</div>
+                <button type="button" className="es-card-trash" title="이 폴더 삭제" onClick=${(e) => { e.stopPropagation(); onDeleteFolder(grade, pub); }}>🗑</button>
+              </div>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginTop: 8 }}>${pub}</div>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${countAt(grade, pub, null)}개</div>
+            <//>
+          `)}
+          <${Card} onClick=${() => setShowAddFolder(true)} style=${{ margin: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: `1.5px dashed ${C.line}`, color: C.slate, minHeight: 100 }}>
+            <div style=${{ fontSize: 22 }}>+</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 600, marginTop: 6 }}>폴더 추가</div>
+          <//>
+        </div>
+        ${showAddFolder && html`<${EsAddFolderModal} onClose=${() => setShowAddFolder(false)} onAdd=${(name) => { onAddFolder(grade, name); setShowAddFolder(false); }} />`}
+      </div>
+    `;
+  }
+
+  const currentExamType = examType || ES_EXAM_TYPES[0];
+  return html`
+    <div>
+      ${breadcrumb}
+      <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5, marginBottom: 14 }} onClick=${() => setPath({ grade, publisher: null, examType: null })}>‹ 출판사 목록으로<//>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 12 }}>${sectionIcon} ${sectionLabel}</div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 18 }}>
+        ${ES_EXAM_TYPES.map((t) => html`
+          <button key=${t} type="button" onClick=${() => setPath({ grade, publisher, examType: t })}
+            style=${{ padding: "7px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${currentExamType === t ? C.navy : C.line}`, background: currentExamType === t ? C.navy : C.white, color: currentExamType === t ? C.white : C.slate }}>${t}<//>
+        `)}
+      </div>
+      ${renderLeaf({ grade, publisher, examType: currentExamType })}
+    </div>
+  `;
+}
+function EsAddFolderModal({ onClose, onAdd }) {
+  const [name, setName] = useState("");
+  return html`
+    <div style=${{ position: "fixed", inset: 0, background: "rgba(20,22,26,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style=${{ background: C.white, borderRadius: 6, padding: 24, width: 340, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>📁 출판사 폴더 추가</div>
+        <${Field} label="출판사 이름"><input style=${inputStyle} placeholder="예: 능률교육" value=${name} onChange=${(e) => setName(e.target.value)} autoFocus /><//>
+        <div style=${{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${onClose}>취소<//>
+          <${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12.5 }} disabled=${!name.trim()} onClick=${() => name.trim() && onAdd(name.trim())}>추가<//>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ---------- 지문 보관함 ----------
+function EsPassageLibraryCard({ passage, onUse, onDelete }) {
+  const preview = passage.text.replace(/\s+/g, " ").slice(0, 160);
+  return html`
+    <${Card} style=${{ margin: 0 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${passage.title}</div>
+        <button type="button" className="es-card-trash" title="이 지문 삭제" onClick=${onDelete}>🗑</button>
+      </div>
+      <div className="es-passage-box" style=${{ maxHeight: "none", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${preview}</div>
+      <div style=${{ fontSize: 11, color: C.slate, margin: "8px 0 12px" }}>저장일 ${new Date(passage.createdAt).toLocaleDateString("ko-KR")}</div>
+      <${Button} variant="primary" style=${{ width: "100%", justifyContent: "center", padding: "8px 14px", fontSize: 12.5 }} onClick=${onUse}>✏️ 이 지문으로 문제 만들기<//>
+    <//>
+  `;
+}
+function EsAddPassageModal({ initialText, currentSetupText, onConsumePending, onClose, onSave }) {
+  const [text, setText] = useState(initialText || "");
+  const [title, setTitle] = useState("");
+  useEffect(() => { if (initialText) onConsumePending(); }, []);
+  function handleSave() {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    onSave({ title: title.trim() || trimmed.slice(0, 40), text: trimmed });
+  }
+  return html`
+    <div style=${{ position: "fixed", inset: 0, background: "rgba(20,22,26,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style=${{ background: C.white, borderRadius: 6, padding: 24, width: 460, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>📄 지문 추가</div>
+        <${Field} label="지문 내용"><textarea style=${{ ...inputStyle, minHeight: 160, fontSize: 13, lineHeight: 1.5 }} placeholder="영어 지문을 붙여넣으세요..." value=${text} onChange=${(e) => setText(e.target.value)} /><//>
+        ${currentSetupText && currentSetupText.trim() && html`<${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 12, marginBottom: 14 }} onClick=${() => setText(currentSetupText.trim())}>📋 현재 입력창 내용 가져오기<//>`}
+        <${Field} label="제목 (선택 — 비워두면 지문 앞부분을 자동으로 사용)"><input style=${inputStyle} placeholder=${text.trim().slice(0, 40) || "제목 없음"} value=${title} onChange=${(e) => setTitle(e.target.value)} /><//>
+        <div style=${{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${onClose}>취소<//>
+          <${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12.5 }} disabled=${!text.trim()} onClick=${handleSave}>저장<//>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function EsPassageLibraryLeaf({ scope, library, pendingLibraryText, onConsumePending, currentSetupText, onAddPassage, onUseInSetup, onDeletePassage }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const passages = library.filter((p) => p.grade === scope.grade && p.publisher === scope.publisher && p.examType === scope.examType);
+  return html`
+    <div>
+      ${passages.length === 0 && html`<div style=${{ marginBottom: 16 }}><${Empty} text="이 폴더에 저장된 지문이 없어요. 아래에서 지문을 추가해보세요." /></div>`}
+      <div className="es-card-grid">
+        ${passages.map((p) => html`<${EsPassageLibraryCard} key=${p.localId} passage=${p} onUse=${() => onUseInSetup(p)} onDelete=${() => onDeletePassage(p.localId)} />`)}
+        <${Card} onClick=${() => setShowAdd(true)} style=${{ margin: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: `1.5px dashed ${C.line}`, color: C.slate, minHeight: 140 }}>
+          <div style=${{ fontSize: 22 }}>+</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 600, marginTop: 6 }}>추가지문</div>
+        <//>
+      </div>
+      ${showAdd && html`<${EsAddPassageModal} initialText=${pendingLibraryText || ""} currentSetupText=${currentSetupText} onConsumePending=${onConsumePending} onClose=${() => setShowAdd(false)}
+        onSave=${(meta) => { onAddPassage({ grade: scope.grade, publisher: scope.publisher, examType: scope.examType, ...meta }); setShowAdd(false); }} />`}
+    </div>
+  `;
+}
+
+// ---------- 지문 변형 결과 ----------
+function EsTransformResultSection({ result, onUseAsNewPassage, onSaveToLibrary }) {
+  if (!result) return null;
+  return html`
+    <${Card} style=${{ marginTop: 20 }}>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 14 }}>🔀 지문 변형 결과${result.title_kr ? html` <span style=${{ fontWeight: 400, color: C.slate, fontSize: 12.5 }}>(${result.title_kr})</span>` : ""}</div>
+      <div className="analysis-card" style=${{ padding: 0, border: "none" }}>
+        <div className="a-title">변형된 지문</div>
+        <div className="passage-box" dangerouslySetInnerHTML=${{ __html: result.transformed_html || "" }}></div>
+      </div>
+      ${result.changes && result.changes.length > 0 && html`
+        <div className="vocab-block" style=${{ padding: 0 }}>
+          <div className="a-title">변경 지점 (원래 → 변형, 이유)</div>
+          ${result.changes.map((c, i) => html`
+            <div key=${i} style=${{ marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid #DCD8CF" }}>
+              <span className="q-type-tag" style=${{ marginLeft: 0 }}>${c.type || ""}</span>
+              <span style=${{ fontSize: 13.5, marginLeft: 8 }}><b>${c.original || ""}</b> → <b style=${{ color: C.danger }}>${c.changed || ""}</b></span>
+              <div style=${{ fontSize: 12, color: C.slate, marginTop: 4 }}>${c.explanation || ""}</div>
+            </div>
+          `)}
+        </div>
+      `}
+      <div style=${{ display: "flex", gap: 10, marginTop: 4 }}>
+        <${Button} variant="primary" style=${{ padding: "7px 12px", fontSize: 12.5 }} onClick=${onUseAsNewPassage}>✏️ 이 변형 지문으로 문제 생성<//>
+        <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} onClick=${onSaveToLibrary}>📚 변형본 보관함에 저장<//>
+      </div>
+    <//>
+  `;
+}
+
+// ---------- ① 지문 입력 · 유형 선택 ----------
+function EsPassageAndTypesPanel({
+  passageText, setPassageText, pdfBusy, pdfStatus, onPdfFile,
+  selectedTypes, toggleType, typeCounts, setTypeCount,
+  includeAnalysis, setIncludeAnalysis,
+  genBusy, genStatus, onGenerate, onAnalysisOnly, onTransform,
+  folders, setupGrade, setSetupGrade, setupPublisher, setSetupPublisher, setupExamType, setSetupExamType,
+  onAddFolder, onSaveToLibrary,
+}) {
+  const [addingPublisher, setAddingPublisher] = useState(false);
+  const [newPublisherName, setNewPublisherName] = useState("");
+  const totalCount = [...selectedTypes].reduce((sum, key) => sum + (typeCounts[key] || 1), 0);
+  const publisherOptions = setupGrade ? (folders[setupGrade] || []) : [];
+
+  function handlePublisherChange(e) {
+    const v = e.target.value;
+    if (v === "__new__") { setAddingPublisher(true); return; }
+    setSetupPublisher(v || null);
+  }
+  function confirmNewPublisher() {
+    const name = newPublisherName.trim();
+    if (!name || !setupGrade) return;
+    onAddFolder(setupGrade, name);
+    setSetupPublisher(name);
+    setAddingPublisher(false);
+    setNewPublisherName("");
   }
 
   return html`
-    <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>내용·논리·정답 근거는 그대로 유지하면서 어휘/문장구조 난이도만 조정해요.</div>
-      <select style=${{ ...inputStyle, width: "auto", marginBottom: 10 }} value=${selectedId || ""} onChange=${(e) => onSelectAnalysis(e.target.value || null)}>
-        <option value="">지문 선택...</option>
-        ${(analyses || []).map((a) => html`<option key=${a.id} value=${a.id}>${a.title} (${a.grade})</option>`)}
-      </select>
-      ${!selectedAnalysis
-        ? html`<${Empty} text="지문을 먼저 선택하세요." />`
-        : html`
-          <${Card} style=${{ marginBottom: 14, background: "#FBF6EA" }}>
-            <div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 8 }}>⚠ AI 사용 — API 비용 발생 (버튼 1회 클릭 = API 호출 1회)</div>
-            <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <select style=${{ ...inputStyle, width: "auto" }} value=${level} onChange=${(e) => setLevel(e.target.value)}>
-                <option value="중1~2 수준">중1~2 수준</option>
-                <option value="중3~고1 수준">중3~고1 수준</option>
-                <option value="고2~수능 수준">고2~수능 수준</option>
-              </select>
-              <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${handleTransform} disabled=${busy}>${busy ? "변형 중..." : "AI로 변형"}<//>
-            </div>
-            ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
-          <//>
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8 }}>변형 이력 ${(selectedAnalysis.variations || []).length}개</div>
-          ${(selectedAnalysis.variations || []).length === 0
-            ? html`<${Empty} text="아직 변형 결과가 없어요." />`
-            : [...selectedAnalysis.variations].reverse().map((v) => html`
-              <${Card} key=${v.id} style=${{ marginBottom: 10 }}>
-                <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>${v.level} · ${fmtDateTime(v.createdAt)}</div>
-                <div style=${{ fontSize: 13, lineHeight: 1.7 }} dangerouslySetInnerHTML=${{ __html: (v.transformedHtml || "").replace(/<span class="chg">/g, '<span style="background:#FBEFC6;font-weight:700;">') }}></div>
-                ${(v.changes || []).length > 0 && html`
-                  <div style=${{ marginTop: 10, borderTop: `1px dashed ${C.line}`, paddingTop: 8 }}>
-                    ${v.changes.map((c, i) => html`<div key=${i} style=${{ fontSize: 12, marginBottom: 4 }}><b>${c.type}</b> — "${c.original}" → "${c.changed}": ${c.explanation}</div>`)}
-                  </div>
-                `}
-              <//>
+    <${Card} style=${{ marginBottom: 20 }}>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 14 }}>① 지문 입력 · 유형 선택</div>
+      <div style=${{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16, paddingBottom: 16, borderBottom: `1px dashed ${C.line}` }}>
+        <${Field} label="학년">
+          <select style=${{ ...inputStyle, width: "auto" }} value=${setupGrade || ""} onChange=${(e) => { setSetupGrade(e.target.value || null); setSetupPublisher(null); setAddingPublisher(false); }}>
+            <option value="">학년 선택</option>
+            ${LIBRARY_GRADES.map((g) => html`<option key=${g} value=${g}>${g}<//>`)}
+          </select>
+        <//>
+        <${Field} label="출판사">
+          ${!addingPublisher
+            ? html`<select style=${{ ...inputStyle, width: "auto" }} value=${setupPublisher || ""} disabled=${!setupGrade} onChange=${handlePublisherChange}>
+                <option value="">출판사 선택</option>
+                ${publisherOptions.map((p) => html`<option key=${p} value=${p}>${p}<//>`)}
+                <option value="__new__">+ 새 출판사</option>
+              </select>`
+            : html`<div style=${{ display: "flex", gap: 6 }}>
+                <input style=${{ ...inputStyle, width: 140 }} placeholder="출판사명" value=${newPublisherName} onChange=${(e) => setNewPublisherName(e.target.value)} autoFocus />
+                <${Button} variant="primary" style=${{ padding: "7px 10px", fontSize: 12 }} disabled=${!newPublisherName.trim()} onClick=${confirmNewPublisher}>추가<//>
+              </div>`}
+        <//>
+        <${Field} label="시험 구분">
+          <div style=${{ display: "flex", gap: 6 }}>
+            ${ES_EXAM_TYPES.map((t) => html`
+              <button key=${t} type="button" onClick=${() => setSetupExamType(t)}
+                style=${{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${setupExamType === t ? C.navy : C.line}`, background: setupExamType === t ? C.navy : C.white, color: setupExamType === t ? C.white : C.slate }}>${t}<//>
             `)}
-        `}
+          </div>
+        <//>
+      </div>
+
+      <div className="es-panel-grid">
+        <div>
+          <${Field} label="지문 붙여넣기">
+            <textarea style=${{ ...inputStyle, minHeight: 220, fontSize: 13, lineHeight: 1.5 }} placeholder="영어 지문을 붙여넣으세요..." value=${passageText} onChange=${(e) => setPassageText(e.target.value)} />
+          <//>
+          <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style=${{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.navy, cursor: "pointer" }}>
+              <span style=${{ padding: "7px 12px", border: `1px solid ${C.line}`, borderRadius: 3, background: C.white, fontWeight: 600 }}>📄 PDF에서 지문 가져오기</span>
+              <input type="file" accept="application/pdf" onChange=${onPdfFile} disabled=${pdfBusy} style=${{ display: "none" }} />
+            </label>
+            <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} disabled=${!passageText.trim()} onClick=${onSaveToLibrary}>📚 지문 보관함에 저장<//>
+          </div>
+          ${pdfStatus && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 6 }}>${pdfStatus}</div>`}
+          <div className="analysis-toggle" onClick=${() => setIncludeAnalysis((v) => !v)}>
+            <div>
+              <div className="t-name">지문 분석 포함</div>
+              <div className="t-desc">구문분석(밑줄+품사 표시) · 직독직해 · 요약 · 글의 흐름 · 어휘</div>
+            </div>
+            <div className=${"switch" + (includeAnalysis ? " on" : "")}></div>
+          </div>
+        </div>
+
+        <div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 5, fontWeight: 600 }}>생성할 유형 (여러 개 선택 가능, 총 25유형) — 체크박스 옆 숫자는 그 유형의 생성 개수</div>
+          ${ES_TYPE_CATEGORIES.map((cat) => html`
+            <div key=${cat.key}>
+              <div className="es-type-category-title">${cat.label}</div>
+              <div className="es-type-grid3">
+                ${ES_TYPE_META.filter((t) => t.category === cat.key).map((t) => {
+                  const checked = selectedTypes.has(t.key);
+                  return html`
+                    <label key=${t.key} className=${"es-type-chip" + (checked ? " checked" : "")}>
+                      <input type="checkbox" checked=${checked} onChange=${() => toggleType(t.key)} />
+                      <span style=${{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${t.icon} ${t.label}</span>
+                      <select value=${typeCounts[t.key] || 1} disabled=${!checked} onClick=${(e) => e.stopPropagation()} onChange=${(e) => setTypeCount(t.key, Number(e.target.value))}
+                        style=${{ width: 38, flexShrink: 0, padding: "2px 1px", fontSize: 11, textAlign: "center", border: `1px solid ${C.line}`, borderRadius: 3, background: C.white, color: C.ink, opacity: checked ? 1 : 0.5 }}>
+                        ${[1, 2, 3, 4, 5].map((n) => html`<option key=${n} value=${n}>${n}<//>`)}
+                      </select>
+                    </label>
+                  `;
+                })}
+              </div>
+            </div>
+          `)}
+        </div>
+      </div>
+
+      <div style=${{ display: "flex", flexDirection: "column", alignItems: "flex-start", marginTop: 6, borderTop: `1px dashed ${C.line}`, paddingTop: 14 }}>
+        <div style=${{ display: "flex", gap: 10 }}>
+          <${Button} variant="primary" style=${{ padding: "7px 12px", fontSize: 12.5 }} disabled=${genBusy} onClick=${onGenerate}>${genBusy ? "생성 중..." : "🪄 문제 생성"}<//>
+          <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} disabled=${genBusy} onClick=${onAnalysisOnly}>📖 지문 분석<//>
+          <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} disabled=${genBusy} onClick=${onTransform}>🔀 지문 변형<//>
+        </div>
+        <div style=${{ fontSize: 11.5, color: C.danger, marginTop: 10 }}>⚠ AI 사용 — API 비용 발생 (선택한 ${selectedTypes.size}개 유형, 총 ${totalCount}개 생성${includeAnalysis ? " + 지문 분석" : ""})</div>
+        ${genStatus && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 6 }}>${genStatus}</div>`}
+      </div>
+    <//>
+  `;
+}
+
+// ---------- Bulk-action toolbar ----------
+function EsToolbar({ allChecked, onToggleAll, selectedCount, onBulkPrimary, primaryLabel, onBulkReview, onBulkDelete, searchQuery, setSearchQuery, typeFilter, setTypeFilter }) {
+  return html`
+    <div className="es-toolbar">
+      <div className="es-toolbar-left">
+        <label className="es-toolbar-check"><input type="checkbox" checked=${allChecked} onChange=${onToggleAll} />전체선택${selectedCount > 0 ? ` (${selectedCount})` : ""}</label>
+        ${onBulkPrimary && html`<${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12 }} disabled=${selectedCount === 0} onClick=${onBulkPrimary}>${primaryLabel}<//>`}
+        <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12 }} disabled=${selectedCount === 0} onClick=${onBulkReview}>✅ 검수완료<//>
+        <${Button} variant="danger" style=${{ padding: "7px 14px", fontSize: 12 }} disabled=${selectedCount === 0} onClick=${onBulkDelete}>🗑 삭제<//>
+      </div>
+      <div className="es-toolbar-right">
+        <select className="es-toolbar-select" value=${typeFilter} onChange=${(e) => setTypeFilter(e.target.value)}>
+          <option value="all">🔎 전체 유형</option>
+          ${ES_TYPE_CATEGORIES.map((cat) => html`<optgroup key=${cat.key} label=${cat.label}>${ES_TYPE_META.filter((t) => t.category === cat.key).map((t) => html`<option key=${t.key} value=${t.key}>${t.icon} ${t.label}<//>`)}<//>`)}
+        </select>
+        <input className="es-toolbar-search" placeholder="🔍 검색 (지문·발문·선택지)" value=${searchQuery} onChange=${(e) => setSearchQuery(e.target.value)} />
+      </div>
+    </div>
+  `;
+}
+
+// ---------- 단일 문항 카드 ----------
+function EsQuestionCard({ item, checked, onToggleCheck, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const meta = ES_TYPE_META.find((t) => t.key === item.questionType) || ES_TYPE_META[0];
+  const issues = esItemIssues(item);
+  return html`
+    <${Card} style=${{ margin: 0 }}>
+      <div className="es-card-head">
+        <div className="es-card-head-left">
+          <input type="checkbox" checked=${checked} onChange=${onToggleCheck} style=${{ width: 15, height: 15, appearance: "auto" }} />
+          <select className="es-diff-badge" style=${{ background: ES_DIFFICULTY_COLOR[item.difficulty] || C.slate }} value=${item.difficulty} onChange=${(e) => onUpdate({ difficulty: e.target.value })}>
+            ${ES_DIFFICULTY_OPTIONS.map((d) => html`<option key=${d} value=${d}>${d}<//>`)}
+          </select>
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="es-type-label">${meta.icon} ${meta.label}</span>
+          <button type="button" className="es-card-trash" title="이 문항 삭제" onClick=${onDelete}>🗑</button>
+        </div>
+      </div>
+      ${issues.length > 0 && html`<div style=${{ fontSize: 11, color: C.danger, fontWeight: 700, marginBottom: 8 }}>⚠ ${issues.join(", ")}</div>`}
+      ${!editing ? html`
+        <div>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${item.questionText}</div>
+          ${item.contextNote && html`<div style=${{ fontSize: 12, color: C.navy, background: C.ivory, borderRadius: 4, padding: "6px 10px", marginTop: 8 }}>${item.contextNote}</div>`}
+          <div className="es-passage-box">${item.displayPassage || "(지문 없음)"}</div>
+          <div>
+            ${item.choices.map((c, i) => html`
+              <div key=${i} className="es-choice-row">
+                <span className="es-choice-circle" style=${{ background: item.answer === i ? C.navy : "transparent", border: `1.5px solid ${item.answer === i ? C.navy : C.line}`, color: item.answer === i ? C.white : C.slate }}>${ES_CIRC[i]}</span>
+                <span>${c || html`<span style=${{ color: C.slate }}>(미입력)</span>`}</span>
+              </div>
+            `)}
+          </div>
+          <${ExplanationToggle} explanation=${item.explanation} />
+        </div>
+      ` : html`
+        <div>
+          <${Field} label="발문"><input style=${inputStyle} value=${item.questionText} onChange=${(e) => onUpdate({ questionText: e.target.value })} /><//>
+          <${Field} label="부가 정보 (선택 — 예: 문장삽입 유형의 '주어진 문장')"><textarea style=${{ ...inputStyle, minHeight: 50, fontSize: 13 }} value=${item.contextNote} onChange=${(e) => onUpdate({ contextNote: e.target.value })} /><//>
+          <${Field} label="지문 (학생에게 보여줄 형태)"><textarea style=${{ ...inputStyle, minHeight: 140, fontSize: 13, lineHeight: 1.55, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }} value=${item.displayPassage} onChange=${(e) => onUpdate({ displayPassage: e.target.value })} /><//>
+          <${Field} label="선택지 · 정답">
+            <div style=${{ display: "flex", flexDirection: "column", gap: 6 }}>
+              ${item.choices.map((c, i) => html`
+                <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <button type="button" title="정답으로 표시" onClick=${() => onUpdate({ answer: i })}
+                    style=${{ flex: "0 0 auto", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", border: `1.5px solid ${item.answer === i ? C.navy : C.line}`, background: item.answer === i ? C.navy : C.white, color: item.answer === i ? C.white : C.slate, fontWeight: 700, fontSize: 12.5 }}>${ES_CIRC[i]}<//>
+                  <input style=${{ ...inputStyle, padding: "7px 9px", fontSize: 13 }} value=${c} onChange=${(e) => onUpdate({ choices: item.choices.map((x, xi) => (xi === i ? e.target.value : x)) })} />
+                </div>
+              `)}
+            </div>
+          <//>
+          <${Field} label="해설"><textarea style=${{ ...inputStyle, minHeight: 60, fontSize: 13 }} value=${item.explanation} onChange=${(e) => onUpdate({ explanation: e.target.value })} /><//>
+        </div>
+      `}
+      <div className="es-card-foot">
+        <span className="es-review-pill" style=${{ background: item.reviewed ? C.navy : "#FBE7E3", color: item.reviewed ? C.white : C.danger }}>${item.reviewed ? "검수완료" : "미검수"}</span>
+        <${Button} variant=${editing ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setEditing((v) => !v)}>${editing ? "완료" : "수정하기"}<//>
+      </div>
+    <//>
+  `;
+}
+
+// ---------- 장문·복합 세트 카드 ----------
+function EsGroupCard({ entry, checked, onToggleCheck, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const meta = ES_TYPE_META.find((t) => t.key === entry.questionType) || ES_TYPE_META[0];
+  const issues = esGroupIssues(entry);
+  function updateQuestion(qLocalId, patch) {
+    onUpdate({ questions: entry.questions.map((q) => (q.localId === qLocalId ? { ...q, ...patch } : q)) });
+  }
+  return html`
+    <${Card} style=${{ margin: 0 }}>
+      <div className="es-card-head">
+        <div className="es-card-head-left">
+          <input type="checkbox" checked=${checked} onChange=${onToggleCheck} style=${{ width: 15, height: 15, appearance: "auto" }} />
+          <select className="es-diff-badge" style=${{ background: ES_DIFFICULTY_COLOR[entry.difficulty] || C.slate }} value=${entry.difficulty} onChange=${(e) => onUpdate({ difficulty: e.target.value })}>
+            ${ES_DIFFICULTY_OPTIONS.map((d) => html`<option key=${d} value=${d}>${d}<//>`)}
+          </select>
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="es-type-label">${meta.icon} ${meta.label} · 장문세트 (${entry.questions.length}문항)</span>
+          <button type="button" className="es-card-trash" title="이 세트 삭제" onClick=${onDelete}>🗑</button>
+        </div>
+      </div>
+      ${issues.length > 0 && html`<div style=${{ fontSize: 11, color: C.danger, fontWeight: 700, marginBottom: 8 }}>⚠ ${issues.slice(0, 3).join(", ")}${issues.length > 3 ? ` 외 ${issues.length - 3}건` : ""}</div>`}
+      ${!editing
+        ? html`<div className="es-passage-box">${entry.sharedPassage || "(지문 없음)"}</div>`
+        : html`<${Field} label="공유 지문"><textarea style=${{ ...inputStyle, minHeight: 140, fontSize: 13, lineHeight: 1.55, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }} value=${entry.sharedPassage} onChange=${(e) => onUpdate({ sharedPassage: e.target.value })} /><//>`}
+      ${entry.questions.map((q, qi) => html`
+        <div key=${q.localId} style=${{ marginTop: 14, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+          <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, marginBottom: 6 }}>문항 ${qi + 1}</div>
+          ${!editing ? html`
+            <div>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${q.questionText}</div>
+              ${q.contextNote && html`<div style=${{ fontSize: 12, color: C.navy, background: C.ivory, borderRadius: 4, padding: "6px 10px", marginTop: 6 }}>${q.contextNote}</div>`}
+              <div>${q.choices.map((c, i) => html`<div key=${i} className="es-choice-row"><span className="es-choice-circle" style=${{ background: q.answer === i ? C.navy : "transparent", border: `1.5px solid ${q.answer === i ? C.navy : C.line}`, color: q.answer === i ? C.white : C.slate }}>${ES_CIRC[i]}</span><span>${c || html`<span style=${{ color: C.slate }}>(미입력)</span>`}</span></div>`)}</div>
+              <${ExplanationToggle} explanation=${q.explanation} />
+            </div>
+          ` : html`
+            <${Field} label="발문"><input style=${inputStyle} value=${q.questionText} onChange=${(e) => updateQuestion(q.localId, { questionText: e.target.value })} /><//>
+            <${Field} label="부가 정보 (선택)"><textarea style=${{ ...inputStyle, minHeight: 44, fontSize: 13 }} value=${q.contextNote} onChange=${(e) => updateQuestion(q.localId, { contextNote: e.target.value })} /><//>
+            <${Field} label="선택지 · 정답">
+              <div style=${{ display: "flex", flexDirection: "column", gap: 6 }}>
+                ${q.choices.map((c, i) => html`
+                  <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <button type="button" onClick=${() => updateQuestion(q.localId, { answer: i })} style=${{ flex: "0 0 auto", width: 26, height: 26, borderRadius: "50%", cursor: "pointer", border: `1.5px solid ${q.answer === i ? C.navy : C.line}`, background: q.answer === i ? C.navy : C.white, color: q.answer === i ? C.white : C.slate, fontWeight: 700, fontSize: 12.5 }}>${ES_CIRC[i]}<//>
+                    <input style=${{ ...inputStyle, padding: "7px 9px", fontSize: 13 }} value=${c} onChange=${(e) => updateQuestion(q.localId, { choices: q.choices.map((x, xi) => (xi === i ? e.target.value : x)) })} />
+                  </div>
+                `)}
+              </div>
+            <//>
+            <${Field} label="해설"><textarea style=${{ ...inputStyle, minHeight: 50, fontSize: 13 }} value=${q.explanation} onChange=${(e) => updateQuestion(q.localId, { explanation: e.target.value })} /><//>
+          `}
+        </div>
+      `)}
+      <div className="es-card-foot">
+        <span className="es-review-pill" style=${{ background: entry.reviewed ? C.navy : "#FBE7E3", color: entry.reviewed ? C.white : C.danger }}>${entry.reviewed ? "검수완료" : "미검수"}</span>
+        <${Button} variant=${editing ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setEditing((v) => !v)}>${editing ? "완료" : "수정하기"}<//>
+      </div>
+    <//>
+  `;
+}
+function EsCardGrid({ list, selectedIds, onToggleCheck, onUpdate, onDelete }) {
+  if (list.length === 0) return html`<${Empty} text="조건에 맞는 문항이 없어요." />`;
+  return html`
+    <div className="es-card-grid">
+      ${list.map((it) => it.kind === "group"
+        ? html`<${EsGroupCard} key=${it.localId} entry=${it} checked=${selectedIds.has(it.localId)} onToggleCheck=${() => onToggleCheck(it.localId)} onUpdate=${(patch) => onUpdate(it.localId, patch)} onDelete=${() => onDelete(it.localId)} />`
+        : html`<${EsQuestionCard} key=${it.localId} item=${it} checked=${selectedIds.has(it.localId)} onToggleCheck=${() => onToggleCheck(it.localId)} onUpdate=${(patch) => onUpdate(it.localId, patch)} onDelete=${() => onDelete(it.localId)} />`)}
+    </div>
+  `;
+}
+function EsTaggedItemsLeaf({ scope, items, selectedIds, toggleCheck, toggleCheckAll, searchQuery, setSearchQuery, typeFilter, setTypeFilter, onBulkPrimary, primaryLabel, onBulkReview, onBulkDelete, onUpdate, onDelete, emptyText }) {
+  const scoped = items.filter((it) => it.grade === scope.grade && it.publisher === scope.publisher && it.examType === scope.examType);
+  const filteredList = scoped.filter((it) => (typeFilter === "all" || it.questionType === typeFilter) && esEntryMatchesQuery(it, searchQuery));
+  const allChecked = filteredList.length > 0 && filteredList.every((it) => selectedIds.has(it.localId));
+  if (scoped.length === 0) return html`<${Empty} text=${emptyText} />`;
+  return html`
+    <div>
+      <${EsToolbar} allChecked=${allChecked} onToggleAll=${() => toggleCheckAll(filteredList)} selectedCount=${selectedIds.size}
+        onBulkPrimary=${onBulkPrimary} primaryLabel=${primaryLabel} onBulkReview=${onBulkReview} onBulkDelete=${onBulkDelete}
+        searchQuery=${searchQuery} setSearchQuery=${setSearchQuery} typeFilter=${typeFilter} setTypeFilter=${setTypeFilter} />
+      <${EsCardGrid} list=${filteredList} selectedIds=${selectedIds} onToggleCheck=${toggleCheck} onUpdate=${onUpdate} onDelete=${onDelete} />
+    </div>
+  `;
+}
+
+// ---------- 시험지 생성 — 순수 헬퍼 함수들 ----------
+function esComputeNumberedEntries(entries) {
+  let n = 1;
+  return entries.map((e) => {
+    if (e.kind === "group") return { ...e, questions: e.questions.map((q) => ({ ...q, number: n++ })) };
+    return { ...e, number: n++ };
+  });
+}
+function esCountPaperQuestions(paper) {
+  return (paper.entries || []).reduce((sum, e) => sum + (e.kind === "group" ? e.questions.length : 1), 0);
+}
+function esCloneEntryForPaper(entry) {
+  const copy = JSON.parse(JSON.stringify(entry));
+  copy.localId = uid();
+  if (copy.kind === "group") copy.questions = copy.questions.map((q) => ({ ...q, localId: uid() }));
+  return copy;
+}
+function esEscapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function esWrapPrintDoc(title, bodyHtml) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(title)}</title>
+<style>
+  body{font-family:'Malgun Gothic',-apple-system,sans-serif;color:#14161A;padding:28px;max-width:800px;margin:0 auto;}
+  h1{font-size:18px;margin-bottom:20px;}
+  .ep-block{margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid #eee;page-break-inside:avoid;}
+  .ep-qtext{font-weight:700;margin-bottom:6px;font-size:14px;}
+  .ep-note{font-size:12.5px;color:#333;background:#f5f5f0;padding:6px 10px;border-radius:4px;margin-bottom:8px;}
+  .ep-passage{font-size:13px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px;}
+  .ep-choices div{font-size:13px;margin-bottom:4px;}
+  .ep-ans-row{font-size:13px;margin-bottom:10px;line-height:1.6;}
+  @media print { body{padding:0;} }
+</style></head><body><h1>${esEscapeHtml(title)}</h1>${bodyHtml}</body></html>`;
+}
+function esBuildQuestionPaperHtml(paper) {
+  const numbered = esComputeNumberedEntries(paper.entries || []);
+  const blocks = numbered.map((e) => {
+    if (e.kind === "group") {
+      const qHtml = e.questions.map((q) => `
+        <div class="ep-q">
+          <div class="ep-qtext"><b>${q.number}.</b> ${esEscapeHtml(q.questionText)}</div>
+          ${q.contextNote ? `<div class="ep-note">${esEscapeHtml(q.contextNote)}</div>` : ""}
+          <div class="ep-choices">${q.choices.map((c, i) => `<div>${ES_CIRC[i]} ${esEscapeHtml(c)}</div>`).join("")}</div>
+        </div>`).join("");
+      return `<div class="ep-block"><div class="ep-passage">${esEscapeHtml(e.sharedPassage).replace(/\n/g, "<br/>")}</div>${qHtml}</div>`;
+    }
+    return `<div class="ep-block">
+      <div class="ep-qtext"><b>${e.number}.</b> ${esEscapeHtml(e.questionText)}</div>
+      ${e.contextNote ? `<div class="ep-note">${esEscapeHtml(e.contextNote)}</div>` : ""}
+      <div class="ep-passage">${esEscapeHtml(e.displayPassage).replace(/\n/g, "<br/>")}</div>
+      <div class="ep-choices">${e.choices.map((c, i) => `<div>${ES_CIRC[i]} ${esEscapeHtml(c)}</div>`).join("")}</div>
+    </div>`;
+  }).join("");
+  return esWrapPrintDoc(paper.title || "제목 없는 시험지", blocks);
+}
+function esBuildAnswerSheetHtml(paper) {
+  const numbered = esComputeNumberedEntries(paper.entries || []);
+  const rows = [];
+  numbered.forEach((e) => {
+    if (e.kind === "group") e.questions.forEach((q) => rows.push({ number: q.number, answer: q.answer, explanation: q.explanation }));
+    else rows.push({ number: e.number, answer: e.answer, explanation: e.explanation });
+  });
+  const body = rows.map((r) => `<div class="ep-ans-row"><b>${r.number}.</b> 정답 ${r.answer != null ? ES_CIRC[r.answer] : "-"} — ${esEscapeHtml(r.explanation || "(해설 없음)")}</div>`).join("");
+  return esWrapPrintDoc((paper.title || "제목 없는 시험지") + " - 정답 및 해설", body);
+}
+function esOpenPrintWindow(htmlContent) {
+  const win = window.open("", "_blank");
+  if (!win) { alert("팝업이 차단됐어요. 이 사이트의 팝업을 허용한 뒤 다시 시도해주세요."); return; }
+  win.document.open();
+  win.document.write(htmlContent);
+  win.document.close();
+  setTimeout(() => { win.focus(); win.print(); }, 250);
+}
+
+function EsExamPaperEntryList({ numberedEntries, focusedId, onFocus, onReorder, onRemove }) {
+  const dragFrom = useRef(null);
+  return html`
+    <div>
+      ${numberedEntries.map((e, idx) => html`
+        <div key=${e.localId} draggable="true" onDragStart=${() => { dragFrom.current = idx; }} onDragOver=${(ev) => ev.preventDefault()}
+          onDrop=${() => { const from = dragFrom.current; if (from != null && from !== idx) onReorder(from, idx); dragFrom.current = null; }}
+          onClick=${() => onFocus(e.localId)} className=${"es-plist-item" + (focusedId === e.localId ? " active" : "")}>
+          <span className="txt">${e.kind === "group"
+            ? `${e.questions[0] ? e.questions[0].number : "?"}~${e.questions.length ? e.questions[e.questions.length - 1].number : "?"}. (묶음 ${e.questions.length}문항) ${e.sharedPassage.replace(/\s+/g, " ").slice(0, 24)}`
+            : `${e.number}. ${e.questionText.replace(/\s+/g, " ").slice(0, 28)}`}</span>
+          <button type="button" title="시험지에서 빼기" onClick=${(ev) => { ev.stopPropagation(); onRemove(e.localId); }}>✕</button>
+        </div>
+      `)}
+    </div>
+  `;
+}
+function EsEntryStudentPreview({ entry }) {
+  if (entry.kind === "group") {
+    return html`
+      <div>
+        <div className="es-passage-box" style=${{ maxHeight: "none" }}>${entry.sharedPassage || "(지문 없음)"}</div>
+        ${entry.questions.map((q) => html`
+          <div key=${q.localId} style=${{ marginTop: 16, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${q.number}. ${q.questionText}</div>
+            ${q.contextNote && html`<div style=${{ fontSize: 12, color: C.navy, background: C.ivory, borderRadius: 4, padding: "6px 10px", marginTop: 6 }}>${q.contextNote}</div>`}
+            <div style=${{ marginTop: 8 }}>${q.choices.map((c, i) => html`<div key=${i} className="es-choice-row"><span className="es-choice-circle" style=${{ border: `1.5px solid ${C.line}`, color: C.slate }}>${ES_CIRC[i]}</span><span>${c}</span></div>`)}</div>
+          </div>
+        `)}
+      </div>
+    `;
+  }
+  return html`
+    <div>
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>${entry.number}. ${entry.questionText}</div>
+      ${entry.contextNote && html`<div style=${{ fontSize: 12, color: C.navy, background: C.ivory, borderRadius: 4, padding: "6px 10px", marginTop: 8 }}>${entry.contextNote}</div>`}
+      <div className="es-passage-box" style=${{ maxHeight: "none" }}>${entry.displayPassage || "(지문 없음)"}</div>
+      <div>${entry.choices.map((c, i) => html`<div key=${i} className="es-choice-row"><span className="es-choice-circle" style=${{ border: `1.5px solid ${C.line}`, color: C.slate }}>${ES_CIRC[i]}</span><span>${c}</span></div>`)}</div>
+    </div>
+  `;
+}
+function EsAddFromSavedPicker({ savedItemsInScope, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  function toggle(id) {
+    setCheckedIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  function handleAdd() {
+    const entries = savedItemsInScope.filter((it) => checkedIds.has(it.localId));
+    if (entries.length === 0) return;
+    onAdd(entries);
+    setCheckedIds(new Set());
+    setOpen(false);
+  }
+  if (!open) return html`<${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5, marginBottom: 16 }} onClick=${() => setOpen(true)}>➕ 저장함에서 문제 추가<//>`;
+  return html`
+    <${Card} style=${{ marginBottom: 16 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>저장함에서 문제 추가 (같은 폴더 항목만 표시)</div>
+        <button type="button" onClick=${() => setOpen(false)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13 }}>닫기</button>
+      </div>
+      ${savedItemsInScope.length === 0 ? html`<${Empty} text="이 폴더의 저장함에 담긴 문제가 없어요." />` : html`
+        <div style=${{ maxHeight: 260, overflowY: "auto", marginBottom: 10 }}>
+          ${savedItemsInScope.map((it) => html`
+            <label key=${it.localId} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "6px 4px", fontSize: 12.5, cursor: "pointer" }}>
+              <input type="checkbox" checked=${checkedIds.has(it.localId)} onChange=${() => toggle(it.localId)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+              <span style=${{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${it.kind === "group" ? `[장문세트] ${(it.sharedPassage || "").replace(/\s+/g, " ").slice(0, 50)}` : (it.questionText || "").replace(/\s+/g, " ").slice(0, 50) || (it.displayPassage || "").slice(0, 50)}</span>
+            </label>
+          `)}
+        </div>
+        <${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12.5 }} disabled=${checkedIds.size === 0} onClick=${handleAdd}>선택한 ${checkedIds.size || ""}개 추가<//>
+      `}
+    <//>
+  `;
+}
+function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate, onBack, onReorder, onRemoveEntry, onDeletePaper }) {
+  const [focusedId, setFocusedId] = useState(paper.entries[0] ? paper.entries[0].localId : null);
+  const numbered = esComputeNumberedEntries(paper.entries);
+  const focused = numbered.find((e) => e.localId === focusedId) || numbered[0] || null;
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${onBack}>← 시험지 목록<//>
+        <${Button} variant="danger" style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${onDeletePaper}>이 시험지 삭제<//>
+      </div>
+      <input style=${{ ...inputStyle, fontSize: 18, fontWeight: 700, marginBottom: 16, border: "none", borderBottom: `2px solid ${C.line}`, borderRadius: 0, padding: "6px 2px" }}
+        value=${paper.title} placeholder="제목 없는 시험지" onChange=${(e) => onUpdate({ title: e.target.value })} />
+      <${EsAddFromSavedPicker} savedItemsInScope=${savedItemsInScope} onAdd=${(entries) => onAddFromSaved(entries)} />
+      <div className="es-paper-grid">
+        <div className="es-paper-left">
+          <div style=${{ fontSize: 12, color: C.slate, fontWeight: 700, marginBottom: 8 }}>담긴 문제 (${esCountPaperQuestions(paper)}문항) — 드래그로 순서 변경</div>
+          ${paper.entries.length === 0
+            ? html`<${Empty} text="아직 담긴 문제가 없어요. 위 '저장함에서 문제 추가'로 이 시험지에 담아보세요." />`
+            : html`<${EsExamPaperEntryList} numberedEntries=${numbered} focusedId=${focused ? focused.localId : null} onFocus=${setFocusedId} onReorder=${onReorder} onRemove=${onRemoveEntry} />`}
+        </div>
+        <div className="es-paper-right">
+          ${focused ? html`<${EsEntryStudentPreview} entry=${focused} />` : html`<${Empty} text="왼쪽에서 문항을 선택하면 여기에 미리보기가 떠요." />`}
+        </div>
+      </div>
+      <div style=${{ display: "flex", gap: 10, marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+        <${Button} variant="primary" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildQuestionPaperHtml(paper))}>🖨 문제지 인쇄/저장<//>
+        <${Button} variant="ghost" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildAnswerSheetHtml(paper))}>🖨 정답 및 해설지 인쇄/저장<//>
+      </div>
+    </div>
+  `;
+}
+function EsExamPaperList({ papers, onOpen, onCreate, onDelete }) {
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15 }}>이 폴더의 시험지</div>
+        <${Button} variant="primary" onClick=${onCreate}>+ 새 시험지<//>
+      </div>
+      ${papers.length === 0 ? html`<${Empty} text="아직 만든 시험지가 없어요. 위 '+ 새 시험지'로 시작해보세요." />` : papers.map((p) => html`
+        <${Card} key=${p.localId} onClick=${() => onOpen(p.localId)} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${p.title || "제목 없는 시험지"}</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>${esCountPaperQuestions(p)}문항 · ${new Date(p.updatedAt).toLocaleString("ko-KR")}</div>
+          </div>
+          <button type="button" onClick=${(e) => { e.stopPropagation(); onDelete(p.localId); }} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 13 }}>삭제</button>
+        <//>
+      `)}
+    </div>
+  `;
+}
+function EsExamPaperLeaf({ scope, examPapers, savedItems, openPaperId, setOpenPaperId, onCreateBlank, onUpdate, onDeletePaper, onReorder, onRemoveEntry, onAddFromSaved }) {
+  const scopedPapers = examPapers.filter((p) => p.grade === scope.grade && p.publisher === scope.publisher && p.examType === scope.examType);
+  const openPaper = openPaperId ? scopedPapers.find((p) => p.localId === openPaperId) : null;
+  if (openPaper) {
+    const savedItemsInScope = savedItems.filter((it) => it.grade === scope.grade && it.publisher === scope.publisher && it.examType === scope.examType);
+    return html`<${ESExamPaperBuilder} paper=${openPaper} savedItemsInScope=${savedItemsInScope}
+      onAddFromSaved=${(entries) => onAddFromSaved(openPaper.localId, entries)} onUpdate=${(patch) => onUpdate(openPaper.localId, patch)}
+      onBack=${() => setOpenPaperId(null)} onReorder=${(from, to) => onReorder(openPaper.localId, from, to)}
+      onRemoveEntry=${(id) => onRemoveEntry(openPaper.localId, id)} onDeletePaper=${() => onDeletePaper(openPaper.localId)} />`;
+  }
+  return html`<${EsExamPaperList} papers=${scopedPapers} onOpen=${setOpenPaperId} onCreate=${() => onCreateBlank(scope)} onDelete=${onDeletePaper} />`;
+}
+
+// ---------- 최상위 Exam Studio 화면 (구 App(), Firestore 연동) ----------
+function ExamStudioSection() {
+  const ES = window.SarahServices.examStudioService;
+  const [loaded, setLoaded] = useState(false);
+  const [page, setPage] = useState("setup");
+  const [passageText, setPassageText] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState("");
+  const [selectedTypes, setSelectedTypes] = useState(() => new Set());
+  const [typeCounts, setTypeCounts] = useState(() => ({}));
+  const [genBusy, setGenBusy] = useState(false);
+  const [genStatus, setGenStatus] = useState("");
+  const [questions, setQuestions] = useState([]); // stage: "review" | "saved"
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [examPapers, setExamPapers] = useState([]);
+  const [openPaperId, setOpenPaperId] = useState(null);
+  const [includeAnalysis, setIncludeAnalysis] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [transformResult, setTransformResult] = useState(null);
+  const [passageLibrary, setPassageLibrary] = useState([]);
+  const [passageFolders, setPassageFolders] = useState(() => { const o = {}; LIBRARY_GRADES.forEach((g) => { o[g] = []; }); return o; });
+  const [setupGrade, setSetupGrade] = useState(null);
+  const [setupPublisher, setSetupPublisher] = useState(null);
+  const [setupExamType, setSetupExamType] = useState(ES_EXAM_TYPES[0]);
+  const [libraryPath, setLibraryPath] = useState(() => esEmptyCategoryTag());
+  const [reviewPath, setReviewPath] = useState(() => esEmptyCategoryTag());
+  const [savedPath, setSavedPath] = useState(() => esEmptyCategoryTag());
+  const [paperPath, setPaperPath] = useState(() => esEmptyCategoryTag());
+  const [pendingLibraryText, setPendingLibraryText] = useState(null);
+
+  const items = questions.filter((q) => q.stage === "review");
+  const savedItems = questions.filter((q) => q.stage === "saved");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [folders, passages, qs, papers] = await Promise.all([ES.loadFolders(), ES.listPassages(), ES.listQuestions(), ES.listExamPapers()]);
+        if (cancelled) return;
+        setPassageFolders(folders);
+        setPassageLibrary(passages);
+        setQuestions(qs);
+        setExamPapers(papers);
+      } catch (e) {
+        if (!cancelled) setGenStatus("데이터를 불러오는 중 오류가 발생했어요: " + String(e.message || e));
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => { setSelectedIds(new Set()); setSearchQuery(""); setTypeFilter("all"); }, [page]);
+
+  function onSidebarNavigate(key) {
+    if (key === "library") setLibraryPath(esEmptyCategoryTag());
+    if (key === "review") setReviewPath(esEmptyCategoryTag());
+    if (key === "saved") setSavedPath(esEmptyCategoryTag());
+    if (key === "examPapers") { setPaperPath(esEmptyCategoryTag()); setOpenPaperId(null); }
+    setPage(key);
+  }
+
+  async function addFolder(grade, name) {
+    try {
+      const next = await ES.addFolder(passageFolders, grade, name);
+      setPassageFolders(next);
+    } catch (e) { alert("폴더 추가에 실패했어요: " + String(e.message || e)); }
+  }
+  async function deleteFolder(grade, publisher) {
+    const passageCount = passageLibrary.filter((p) => p.grade === grade && p.publisher === publisher).length;
+    const msg = passageCount > 0 ? `이 폴더와 안에 있는 ${passageCount}개 지문이 모두 삭제됩니다. 계속할까요?` : "이 폴더를 삭제할까요?";
+    if (!confirm(msg)) return;
+    try {
+      const toDelete = passageLibrary.filter((p) => p.grade === grade && p.publisher === publisher);
+      await Promise.all(toDelete.map((p) => ES.deletePassage(p.localId)));
+      const next = await ES.deleteFolder(passageFolders, grade, publisher);
+      setPassageFolders(next);
+      setPassageLibrary((prev) => prev.filter((p) => !(p.grade === grade && p.publisher === publisher)));
+    } catch (e) { alert("폴더 삭제에 실패했어요: " + String(e.message || e)); }
+  }
+
+  async function savePassageToLibrary({ grade, publisher, examType, title, text }) {
+    try {
+      const doc = await ES.createPassage({ grade, publisher, examType, title, text });
+      setPassageLibrary((prev) => [doc, ...prev]);
+    } catch (e) { alert("지문 저장에 실패했어요: " + String(e.message || e)); }
+  }
+  function useLibraryPassage(passage) {
+    setPassageText(passage.text);
+    setSetupGrade(passage.grade);
+    setSetupPublisher(passage.publisher);
+    setSetupExamType(passage.examType || ES_EXAM_TYPES[0]);
+    setPage("setup");
+  }
+  async function deletePassageFromLibrary(id) {
+    if (!confirm("이 지문을 보관함에서 삭제할까요? (되돌릴 수 없어요)")) return;
+    try {
+      await ES.deletePassage(id);
+      setPassageLibrary((prev) => prev.filter((p) => p.localId !== id));
+    } catch (e) { alert("지문 삭제에 실패했어요: " + String(e.message || e)); }
+  }
+  function saveCurrentToLibrary() {
+    setPendingLibraryText(passageText.trim());
+    setLibraryPath({
+      grade: setupGrade || null,
+      publisher: setupGrade && setupPublisher ? setupPublisher : null,
+      examType: setupGrade && setupPublisher ? (setupExamType || ES_EXAM_TYPES[0]) : null,
+    });
+    setPage("library");
+  }
+  function consumePendingLibraryText() { setPendingLibraryText(null); }
+
+  function toggleType(key) {
+    const isChecking = !selectedTypes.has(key);
+    setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; });
+    if (isChecking) setTypeCounts((prev) => ({ ...prev, [key]: 1 }));
+  }
+  function setTypeCount(key, count) { setTypeCounts((prev) => ({ ...prev, [key]: count })); }
+
+  async function onPdfFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setPdfBusy(true);
+    setPdfStatus("PDF에서 텍스트를 읽는 중이에요...");
+    try {
+      const text = await extractPdfPlainText(file);
+      setPassageText(text.trim());
+      setPdfStatus(`"${file.name}"에서 텍스트를 가져왔어요. 아래에서 내용을 확인·수정한 뒤 유형을 선택하세요.`);
+    } catch (err) {
+      setPdfStatus("PDF 읽기에 실패했어요: " + String(err.message || err).slice(0, 200));
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
+  async function onGenerate() {
+    const trimmed = passageText.trim();
+    if (trimmed.length < 20) { setGenStatus("지문을 20자 이상 입력해주세요."); return; }
+    if (!setupGrade || !setupPublisher || !setupExamType) { setGenStatus("학년/출판사/유형을 선택해주세요."); return; }
+    const typeList = ES_TYPE_META.filter((t) => selectedTypes.has(t.key));
+    if (typeList.length === 0) { setGenStatus("유형을 하나 이상 선택해주세요."); return; }
+    const requestTypes = typeList.map((t) => ({ key: t.key, label: t.label, count: Math.max(1, Math.min(5, Number(typeCounts[t.key]) || 1)) }));
+    const totalCount = requestTypes.reduce((sum, t) => sum + t.count, 0);
+    const analysisNote = includeAnalysis ? "\n지문 분석(구문분석·직독직해·요약·글의 흐름·어휘)도 함께 만듭니다." : "";
+    if (!confirm(`AI 사용 — API 비용이 발생해요.\n\n[${setupGrade} · ${setupPublisher} · ${setupExamType}]\n${requestTypes.map((t) => `${t.label} ${t.count}개`).join(", ")} — 총 ${totalCount}개 문제를 생성합니다.${analysisNote} 계속할까요?`)) return;
+    setGenBusy(true);
+    setGenStatus("AI가 문제를 만드는 중이에요 — 창을 닫지 말고 기다려 주세요...");
+    try {
+      const raw = await esCallAiWorker({ mode: "generateMultiTypeQuestions", passageText: trimmed, types: requestTypes, includeAnalysis, grade: setupGrade });
+      const { analysis: newAnalysis, rest } = esExtractAnalysisMarker(raw);
+      if (newAnalysis) setAnalysis(newAnalysis);
+      const tag = { grade: setupGrade, publisher: setupPublisher, examType: setupExamType };
+      const normalized = rest.map(esNormalizeGeneratedRaw);
+      const saved = await ES.createQuestions(normalized, tag);
+      setQuestions((prev) => [...prev, ...saved]);
+      setReviewPath(tag);
+      setGenStatus(`${saved.length}개 항목을 생성했어요.${newAnalysis ? " 지문 분석도 함께 만들었어요." : ""} '생성 결과'에서 검토 후 저장하세요.`);
+      setPage("review");
+    } catch (err) {
+      setGenStatus("생성에 실패했어요: " + String(err.message || err).slice(0, 300));
+    } finally {
+      setGenBusy(false);
+    }
+  }
+
+  async function onAnalysisOnly() {
+    const trimmed = passageText.trim();
+    if (trimmed.length < 20) { setGenStatus("지문을 20자 이상 입력해주세요."); return; }
+    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n문제 생성 없이 지문 분석(구문분석·직독직해·요약·글의 흐름·어휘)만 만듭니다. 계속할까요?")) return;
+    setGenBusy(true);
+    setGenStatus("AI가 지문을 분석하는 중이에요 — 창을 닫지 말고 기다려 주세요...");
+    try {
+      const raw = await esCallAiWorker({ mode: "generateMultiTypeQuestions", passageText: trimmed, types: [], includeAnalysis: true, grade: setupGrade });
+      const { analysis: newAnalysis } = esExtractAnalysisMarker(raw);
+      setAnalysis(newAnalysis);
+      setGenStatus(newAnalysis ? "지문 분석을 완료했어요. '생성 결과'에서 확인하세요." : "분석 결과를 받지 못했어요.");
+      setPage("review");
+    } catch (err) {
+      setGenStatus("분석에 실패했어요: " + String(err.message || err).slice(0, 300));
+    } finally {
+      setGenBusy(false);
+    }
+  }
+
+  async function onTransform() {
+    const trimmed = passageText.trim();
+    if (trimmed.length < 20) { setGenStatus("지문을 20자 이상 입력해주세요."); return; }
+    if (!setupGrade || !setupPublisher || !setupExamType) { setGenStatus("학년/출판사/유형을 선택해주세요."); return; }
+    if (!confirm("AI 사용 — API 비용이 발생해요.\n\n지문을 어법·어휘 학습용으로 변형합니다. 계속할까요?")) return;
+    setGenBusy(true);
+    setGenStatus("AI가 지문을 변형하는 중이에요 — 창을 닫지 말고 기다려 주세요...");
+    try {
+      const result = await esCallAiWorkerObject({ mode: "transform", passage: trimmed, grade: setupGrade });
+      setTransformResult(result);
+      setGenStatus("지문 변형을 완료했어요. 아래에서 확인하세요.");
+    } catch (err) {
+      setGenStatus("변형에 실패했어요: " + String(err.message || err).slice(0, 300));
+    } finally {
+      setGenBusy(false);
+    }
+  }
+  function useTransformedAsPassage() {
+    if (!transformResult) return;
+    setPassageText(esStripHtmlTags(transformResult.transformed_html));
+    setTransformResult(null);
+    setGenStatus("변형된 지문을 지문 입력창에 채웠어요.");
+  }
+  async function saveTransformedToLibrary() {
+    if (!transformResult) return;
+    if (!setupGrade || !setupPublisher || !setupExamType) { setGenStatus("학년/출판사/유형을 선택해주세요."); return; }
+    const text = esStripHtmlTags(transformResult.transformed_html).trim();
+    const baseTitle = (transformResult.title_kr || transformResult.title || text.slice(0, 40)).trim();
+    await savePassageToLibrary({ grade: setupGrade, publisher: setupPublisher, examType: setupExamType, title: `${baseTitle} (변형본)`, text });
+    setGenStatus("변형 지문을 지문 보관함에 저장했어요.");
+  }
+
+  async function updateQuestionItem(localId, patch) {
+    setQuestions((prev) => prev.map((x) => (x.localId === localId ? { ...x, ...patch } : x)));
+    try { await ES.updateQuestion(localId, patch); } catch (e) { setGenStatus("저장에 실패했어요: " + String(e.message || e)); }
+  }
+  async function deleteQuestionItem(localId) {
+    if (!confirm("이 문항을 삭제할까요? (되돌릴 수 없어요)")) return;
+    setQuestions((prev) => prev.filter((x) => x.localId !== localId));
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(localId); return n; });
+    try { await ES.deleteQuestion(localId); } catch (e) { setGenStatus("삭제에 실패했어요: " + String(e.message || e)); }
+  }
+  function removeFromSaved(localId) {
+    if (!confirm("저장함에서 이 문항을 제거할까요? (되돌릴 수 없어요)")) return;
+    setQuestions((prev) => prev.filter((x) => x.localId !== localId));
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(localId); return n; });
+    ES.deleteQuestion(localId).catch((e) => setGenStatus("삭제에 실패했어요: " + String(e.message || e)));
+  }
+
+  function toggleCheck(localId) {
+    setSelectedIds((prev) => { const next = new Set(prev); if (next.has(localId)) next.delete(localId); else next.add(localId); return next; });
+  }
+  function toggleCheckAll(filtered) {
+    const allChecked = filtered.length > 0 && filtered.every((it) => selectedIds.has(it.localId));
+    setSelectedIds(allChecked ? new Set() : new Set(filtered.map((it) => it.localId)));
+  }
+
+  async function bulkMoveToSaved() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setQuestions((prev) => prev.map((x) => (selectedIds.has(x.localId) ? { ...x, stage: "saved" } : x)));
+    setSelectedIds(new Set());
+    try { await ES.setQuestionsStage(ids, "saved"); } catch (e) { setGenStatus("저장함 이동에 실패했어요: " + String(e.message || e)); }
+  }
+  async function bulkMarkReviewed() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setQuestions((prev) => prev.map((x) => (selectedIds.has(x.localId) ? { ...x, reviewed: true } : x)));
+    try { await ES.setQuestionsReviewed(ids, true); } catch (e) { setGenStatus("검수 처리에 실패했어요: " + String(e.message || e)); }
+  }
+  async function bulkDelete() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!confirm(`선택한 ${ids.length}개 문항을 삭제할까요? (되돌릴 수 없어요)`)) return;
+    setQuestions((prev) => prev.filter((x) => !selectedIds.has(x.localId)));
+    setSelectedIds(new Set());
+    try { await ES.deleteQuestions(ids); } catch (e) { setGenStatus("삭제에 실패했어요: " + String(e.message || e)); }
+  }
+
+  async function createExamPaperFromSelection(sourceEntries, tag) {
+    try {
+      const clonedEntries = sourceEntries.map(esCloneEntryForPaper);
+      const paper = await ES.createExamPaper(tag, clonedEntries);
+      setExamPapers((prev) => [...prev, paper]);
+      setOpenPaperId(paper.localId);
+      setPaperPath(tag);
+      setPage("examPapers");
+    } catch (e) { alert("시험지 생성에 실패했어요: " + String(e.message || e)); }
+  }
+  function bulkCreateExamPaper() {
+    const toAdd = savedItems.filter((x) => selectedIds.has(x.localId));
+    if (toAdd.length === 0) return;
+    createExamPaperFromSelection(toAdd, { grade: savedPath.grade, publisher: savedPath.publisher, examType: savedPath.examType });
+    setSelectedIds(new Set());
+  }
+  async function createBlankExamPaper(tag) {
+    try {
+      const paper = await ES.createExamPaper(tag, []);
+      setExamPapers((prev) => [...prev, paper]);
+      setOpenPaperId(paper.localId);
+    } catch (e) { alert("시험지 생성에 실패했어요: " + String(e.message || e)); }
+  }
+  async function addSavedEntriesToPaper(paperId, entries) {
+    const clonedEntries = entries.map(esCloneEntryForPaper);
+    let nextEntries;
+    setExamPapers((prev) => prev.map((p) => {
+      if (p.localId !== paperId) return p;
+      nextEntries = [...p.entries, ...clonedEntries];
+      return { ...p, entries: nextEntries, updatedAt: new Date().toISOString() };
+    }));
+    try { await ES.updateExamPaper(paperId, { entries: nextEntries }); } catch (e) { setGenStatus("시험지 저장에 실패했어요: " + String(e.message || e)); }
+  }
+  async function updateExamPaper(paperId, patch) {
+    setExamPapers((prev) => prev.map((p) => (p.localId === paperId ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p)));
+    try { await ES.updateExamPaper(paperId, patch); } catch (e) { setGenStatus("시험지 저장에 실패했어요: " + String(e.message || e)); }
+  }
+  async function deleteExamPaper(paperId) {
+    if (!confirm("이 시험지를 삭제할까요? (되돌릴 수 없어요)")) return;
+    setExamPapers((prev) => prev.filter((p) => p.localId !== paperId));
+    setOpenPaperId((cur) => (cur === paperId ? null : cur));
+    try { await ES.deleteExamPaper(paperId); } catch (e) { setGenStatus("시험지 삭제에 실패했어요: " + String(e.message || e)); }
+  }
+  async function reorderPaperEntries(paperId, fromIdx, toIdx) {
+    let nextEntries;
+    setExamPapers((prev) => prev.map((p) => {
+      if (p.localId !== paperId) return p;
+      const next = [...p.entries];
+      const [moved] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, moved);
+      nextEntries = next;
+      return { ...p, entries: next, updatedAt: new Date().toISOString() };
+    }));
+    if (nextEntries) { try { await ES.updateExamPaper(paperId, { entries: nextEntries }); } catch (e) { setGenStatus("시험지 저장에 실패했어요: " + String(e.message || e)); } }
+  }
+  async function removeEntryFromPaper(paperId, entryLocalId) {
+    let nextEntries;
+    setExamPapers((prev) => prev.map((p) => {
+      if (p.localId !== paperId) return p;
+      nextEntries = p.entries.filter((e) => e.localId !== entryLocalId);
+      return { ...p, entries: nextEntries, updatedAt: new Date().toISOString() };
+    }));
+    if (nextEntries) { try { await ES.updateExamPaper(paperId, { entries: nextEntries }); } catch (e) { setGenStatus("시험지 저장에 실패했어요: " + String(e.message || e)); } }
+  }
+
+  const breadcrumbMap = { setup: "지문 입력", library: "지문 보관함", review: "생성 결과", saved: "저장함", examPapers: "시험지 생성" };
+
+  if (!loaded) {
+    return html`<div style=${{ padding: 40, textAlign: "center", color: C.slate }}>불러오는 중...</div>`;
+  }
+
+  return html`
+    <div className="es-shell">
+      <${EsSidebar} page=${page} onNavigate=${onSidebarNavigate} reviewCount=${items.length} savedCount=${savedItems.length} paperCount=${examPapers.length} libraryCount=${passageLibrary.length} />
+      <div className="es-main">
+        <div className="es-topbar"><div className="es-breadcrumb">문제 생성<span className="sep">·</span>${breadcrumbMap[page]}</div></div>
+        <div className="es-content">
+          ${page === "setup" && html`
+            <${EsPassageAndTypesPanel}
+              passageText=${passageText} setPassageText=${setPassageText}
+              pdfBusy=${pdfBusy} pdfStatus=${pdfStatus} onPdfFile=${onPdfFile}
+              selectedTypes=${selectedTypes} toggleType=${toggleType}
+              typeCounts=${typeCounts} setTypeCount=${setTypeCount}
+              includeAnalysis=${includeAnalysis} setIncludeAnalysis=${setIncludeAnalysis}
+              genBusy=${genBusy} genStatus=${genStatus} onGenerate=${onGenerate} onAnalysisOnly=${onAnalysisOnly} onTransform=${onTransform}
+              folders=${passageFolders}
+              setupGrade=${setupGrade} setSetupGrade=${setSetupGrade}
+              setupPublisher=${setupPublisher} setSetupPublisher=${setSetupPublisher}
+              setupExamType=${setupExamType} setSetupExamType=${setSetupExamType}
+              onAddFolder=${addFolder} onSaveToLibrary=${saveCurrentToLibrary} />
+            <${EsTransformResultSection} result=${transformResult} onUseAsNewPassage=${useTransformedAsPassage} onSaveToLibrary=${saveTransformedToLibrary} />
+          `}
+          ${page === "library" && html`
+            <${EsFolderNav} sectionIcon="📚" sectionLabel="지문 보관함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+              items=${passageLibrary} path=${libraryPath} setPath=${setLibraryPath}
+              renderLeaf=${(scope) => html`<${EsPassageLibraryLeaf} scope=${scope} library=${passageLibrary}
+                pendingLibraryText=${pendingLibraryText} onConsumePending=${consumePendingLibraryText}
+                currentSetupText=${passageText}
+                onAddPassage=${savePassageToLibrary} onUseInSetup=${useLibraryPassage} onDeletePassage=${deletePassageFromLibrary} />`} />
+          `}
+          ${page === "review" && html`
+            <div>
+              <${EsAnalysisSection} analysis=${analysis} />
+              <${EsFolderNav} sectionIcon="🗂️" sectionLabel="생성 결과" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+                items=${items} path=${reviewPath} setPath=${setReviewPath}
+                renderLeaf=${(scope) => html`<${EsTaggedItemsLeaf} scope=${scope} items=${items}
+                  selectedIds=${selectedIds} toggleCheck=${toggleCheck} toggleCheckAll=${toggleCheckAll}
+                  searchQuery=${searchQuery} setSearchQuery=${setSearchQuery} typeFilter=${typeFilter} setTypeFilter=${setTypeFilter}
+                  onBulkPrimary=${bulkMoveToSaved} primaryLabel="💾 선택 항목 저장함으로 이동"
+                  onBulkReview=${bulkMarkReviewed} onBulkDelete=${bulkDelete}
+                  onUpdate=${updateQuestionItem} onDelete=${deleteQuestionItem}
+                  emptyText="이 폴더에는 아직 생성된 문항이 없어요." />`} />
+            </div>
+          `}
+          ${page === "saved" && html`
+            <${EsFolderNav} sectionIcon="💾" sectionLabel="저장함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+              items=${savedItems} path=${savedPath} setPath=${setSavedPath}
+              renderLeaf=${(scope) => html`<${EsTaggedItemsLeaf} scope=${scope} items=${savedItems}
+                selectedIds=${selectedIds} toggleCheck=${toggleCheck} toggleCheckAll=${toggleCheckAll}
+                searchQuery=${searchQuery} setSearchQuery=${setSearchQuery} typeFilter=${typeFilter} setTypeFilter=${setTypeFilter}
+                onBulkPrimary=${bulkCreateExamPaper} primaryLabel="📄 선택 항목으로 시험지 만들기"
+                onBulkReview=${bulkMarkReviewed} onBulkDelete=${bulkDelete}
+                onUpdate=${updateQuestionItem} onDelete=${removeFromSaved}
+                emptyText="이 폴더에는 아직 저장된 문항이 없어요." />`} />
+          `}
+          ${page === "examPapers" && html`
+            <${EsFolderNav} sectionIcon="📄" sectionLabel="시험지 생성" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+              items=${examPapers} path=${paperPath} setPath=${setPaperPath}
+              renderLeaf=${(scope) => html`<${EsExamPaperLeaf} scope=${scope} examPapers=${examPapers} savedItems=${savedItems}
+                openPaperId=${openPaperId} setOpenPaperId=${setOpenPaperId}
+                onCreateBlank=${createBlankExamPaper} onUpdate=${updateExamPaper} onDeletePaper=${deleteExamPaper}
+                onReorder=${reorderPaperEntries} onRemoveEntry=${removeEntryFromPaper} onAddFromSaved=${addSavedEntriesToPaper} />`} />
+          `}
+        </div>
+      </div>
     </div>
   `;
 }
 
 function ReadingAnalysisSection() {
-  const [tab, setTab] = useState("analysis");
-  const [selectedAnalysisId, setSelectedAnalysisId] = useState(null);
-  return html`
-    <div>
-      <${Tabs} tabs=${READING_ANALYSIS_TABS} active=${tab} onChange=${setTab} />
-      ${tab === "analysis" && html`<${PassageAnalysisListTab} selectedId=${selectedAnalysisId} onSelect=${setSelectedAnalysisId}
-        onGoGenerator=${(id) => { setSelectedAnalysisId(id); setTab("generator"); }}
-        onGoVariation=${(id) => { setSelectedAnalysisId(id); setTab("variation"); }} />`}
-      ${tab === "generator" && html`<${ReadingAnalysisQuestionGeneratorTab} selectedId=${selectedAnalysisId} onSelectAnalysis=${setSelectedAnalysisId} />`}
-      ${tab === "variation" && html`<${PassageVariationTab} selectedId=${selectedAnalysisId} onSelectAnalysis=${setSelectedAnalysisId} />`}
-    </div>
-  `;
+  return html`<${ExamStudioSection} />`;
 }
 
 function GrammarBankView({ initialSelectedId, roster }) {
