@@ -3463,6 +3463,49 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   // Teacher OS STEP 9 — Learning → Reading의 "View Growth Report" 버튼이 ReadingAreaSection의
   // Growth 탭에 학생을 미리 선택해서 넘길 때 쓴다. reportsTarget과 완전히 같은 패턴.
   const [readingTarget, setReadingTarget] = useState(null);
+  // 읽기 자료실 관리(iframe, reading-library.html)가 "용어집 없는 책 전체 일괄 생성"처럼 오래
+  // 걸리는 작업을 실행 중일 때, 다른 화면/탭으로 전환하면 그 iframe이 통째로 unmount되면서 안의
+  // JS 실행(fetch 루프)까지 취소돼버려 작업이 멈추는 문제(2026-09-03 사용자 제보) — iframe은
+  // 별도 브라우징 컨텍스트라 DOM에서 빠지는 순간 그 안의 실행이 전부 취소된다.
+  //
+  // React Portal의 container를 매 렌더 다른 DOM 노드로 바꿔치기하는 방식은 실제로는 안 통한다
+  // (격리된 테스트 하네스로 직접 확인 — container가 바뀌는 순간 React가 자식을 그 자리에서
+  // unmount 후 즉시 다시 mount한다, "portal은 container가 바뀌어도 인스턴스를 보존한다"는
+  // 통념과 다르게 동작함). 그래서 <${ReadingLibraryAdminSection}/>은 TeacherDash 생애주기
+  // (로그인~로그아웃) 동안 단 하나의, 절대 안 바뀌는 고정 컨테이너(document.body에 매단
+  // position:fixed div)로만 포탈하고 — 컨테이너 자체는 한 번도 안 바뀌므로 컴포넌트도 한 번도
+  // unmount되지 않는다 — 화면에 보여야 할 때는 body가 남겨둔 "#reading-library-slot" 앵커의
+  // 위치·크기에 맞춰 매 프레임(rAF) 이 컨테이너의 CSS만 옮겨 붙이고, 앵커가 없으면(다른
+  // 화면/탭) display:none으로 숨긴다.
+  const readingLibraryContainerRef = useRef(null);
+  if (!readingLibraryContainerRef.current) {
+    const el = document.createElement("div");
+    el.style.position = "fixed";
+    el.style.zIndex = "40";
+    el.style.display = "none";
+    document.body.appendChild(el);
+    readingLibraryContainerRef.current = el;
+  }
+  useEffect(() => {
+    const el = readingLibraryContainerRef.current;
+    let raf;
+    const sync = () => {
+      const anchor = document.getElementById("reading-library-slot");
+      if (anchor) {
+        const r = anchor.getBoundingClientRect();
+        el.style.display = "block";
+        el.style.top = r.top + "px";
+        el.style.left = r.left + "px";
+        el.style.width = r.width + "px";
+        el.style.height = r.height + "px";
+      } else {
+        el.style.display = "none";
+      }
+      raf = requestAnimationFrame(sync);
+    };
+    raf = requestAnimationFrame(sync);
+    return () => { cancelAnimationFrame(raf); document.body.removeChild(el); };
+  }, []);
   // Teacher OS STEP 10 — Reading → Growth Report의 "View Vocabulary" 버튼이 학생 상세의
   // Learning → Reading(Vocabulary)까지 딥링크할 때 쓴다. { studentId, tab: "study",
   // studySub: "reading", nonce } — StudentDetailSection/StudentStudyTab 참고. 이 경로 하나만
@@ -3643,7 +3686,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "examkeys") {
     body = html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`;
   } else if (section === "readingLibrary") {
-    body = html`<${ReadingLibraryAdminSection} />`;
+    // 실제 컴포넌트는 아래 readingLibraryContainerRef를 통해 Portal로 렌더링된다(위 주석 참고) —
+    // 여기서는 그 Portal이 붙을 자리(앵커)만 남긴다.
+    body = html`<div id="reading-library-slot" style=${{ width: "100%", height: "82vh" }} />`;
   } else if (section === "questionBank") {
     // Teacher OS STEP 4 — "Question Bank" 최상위 메뉴. Grammar/Reading/Vocabulary/Answer Keys/
     // Question Review/Exam Builder/Assignments & Results 7개 탭을 이제 QuestionBankSection 하나가
@@ -3732,6 +3777,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
           `)}
         </div>
         <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>${body}</div>
+        ${ReactDOM.createPortal(html`<${ReadingLibraryAdminSection} />`, readingLibraryContainerRef.current)}
       </div>
     `;
   }
@@ -3750,6 +3796,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
           </div>
         `}
       >${body}<//>
+      ${ReactDOM.createPortal(html`<${ReadingLibraryAdminSection} />`, readingLibraryContainerRef.current)}
     </div>
   `;
 }
@@ -6387,7 +6434,7 @@ function ReadingAreaSection({ roster, initialTarget, onOpenStudentVocabulary }) 
         { key: "log", icon: "📋", label: "Reading Log" },
         { key: "growth", icon: "📈", label: "Growth Report" },
       ]} active=${tab} onChange=${setTab} />
-      ${tab === "library" && html`<${ReadingLibraryAdminSection} />`}
+      ${tab === "library" && html`<div id="reading-library-slot" style=${{ width: "100%", height: "82vh" }} />`}
       ${tab === "log" && html`<${ReadingLogOverview} roster=${roster || []} onOpenStudentVocabulary=${onOpenStudentVocabulary} />`}
       ${tab === "growth" && html`<${ReadingGrowthReportSection} roster=${roster || []} initialTarget=${initialTarget} onOpenStudentVocabulary=${onOpenStudentVocabulary} />`}
     </div>
