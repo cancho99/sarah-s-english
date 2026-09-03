@@ -15318,6 +15318,13 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
   const [nextMonth, setNextMonth] = useState(saved.nextMonth || "");
   const [neltComment, setNeltComment] = useState(saved.neltComment || "");
   const [published, setPublished] = useState(saved.published || false);
+  // "이번 달은 작성 안 함"(2026-09-02) — Today 대시보드 "📊 월말 리포트 미작성" 카드가 이미 쓰고
+  // 있던 monthlyReports[month].dismissed를 그대로 재사용한다(새 "skipped" 필드를 따로 만들지
+  // 않음 — 두 필드가 의미상 완전히 같은데도 어디서 껐는지에 따라 이름이 달라지면 나중에
+  // missingMonthlyReportsForRoster가 어느 쪽을 봐야 하는지 헷갈리는 문제가 생긴다). 여기서는
+  // saveReport()의 "저장" 버튼과 별개로 체크 즉시 저장한다(Today 카드의 "작성 안 함" 버튼과 같은
+  // 즉시 반영 UX) — published/content 등 나머지 필드는 절대 건드리지 않는다.
+  const [dismissed, setDismissedState] = useState(saved.dismissed || false);
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState("");
   // 시험 이력 골라서 넣기 + 성적 추이(2026-09-01) — saved.selectedExamIds가 undefined면(이 달
@@ -15377,7 +15384,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     setAttendance(s.attendance || null);
     setContent(normalizeReportContent(s.content));
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
-    setNeltComment(s.neltComment || ""); setPublished(s.published || false); setGenErr("");
+    setNeltComment(s.neltComment || ""); setPublished(s.published || false); setDismissedState(s.dismissed || false); setGenErr("");
     // 저장된 적 있으면(빈 배열 포함) 그 값 그대로. 저장된 적 없으면(undefined) 여기서는 손대지
     // 않고 위 자동 선택 useEffect가 timelineRows를 보고 채우게 둔다 — 여기서 []로 초기화해
     // 버리면 두 effect가 같은 렌더에서 서로 값을 덮어써 자동 선택이 씹힐 수 있다.
@@ -15399,12 +15406,22 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     const nextPublished = publishOverride != null ? publishOverride : published;
     await updateData((d) => ({
       ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, selectedExamIds, published: nextPublished } },
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, selectedExamIds, published: nextPublished, dismissed } },
     }));
     setPublished(nextPublished);
   }
   async function publishReport() { await saveReport(true); }
   async function unpublishReport() { await saveReport(false); }
+  // 체크박스 전용 — saveReport()의 "저장" 버튼을 누르지 않아도 즉시 반영되고, 되돌리기도(체크
+  // 해제) 똑같이 즉시 반영된다. saveReport()도 위에서 dismissed를 같이 써주므로, 이 토글 이후
+  // "저장"을 눌러도 값이 덮어써지지 않는다.
+  async function setDismissed(next) {
+    setDismissedState(next);
+    await updateData((d) => ({
+      ...d,
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ...(d.monthlyReports || {})[month], dismissed: next } },
+    }));
+  }
 
   function setRating(key, val) { setRatings((r) => ({ ...r, [key]: val })); }
   function setAtt(key, val) { setAttendance({ ...att, [key]: val }); }
@@ -15626,6 +15643,10 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
             ? html`<${Button} variant="ghost" onClick=${unpublishReport}>비공개로 되돌리기<//>`
             : html`<${Button} variant="gold" onClick=${publishReport}>✔ 작성 완료 (학부모께 공개)<//>`}
         </div>
+        <label style=${{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12, color: C.slate, cursor: "pointer" }}>
+          <input type="checkbox" checked=${dismissed} onChange=${(e) => setDismissed(e.target.checked)} style=${{ width: 13, height: 13, appearance: "auto" }} />
+          이번 달(${month})은 작성 안 함 — Today 화면 "월말 리포트 미작성" 알림에서 이 학생만 제외해요
+        </label>
       <//>
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>0. 이번 달 한눈에 보기 (Student Progress 요약)</div>
