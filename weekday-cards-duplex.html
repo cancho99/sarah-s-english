@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>요일 영어 카드 — 양면 인쇄</title>
+<style>
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Arial Rounded MT Bold", "Arial", "Apple SD Gothic Neo", sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sheet {
+    width: 210mm; height: 297mm; padding: 9mm 10mm;
+    display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr);
+    gap: 3mm 4mm; page-break-after: always;
+  }
+  .sheet:last-child { page-break-after: auto; }
+  .card {
+    position: relative; border: .45mm dashed #7b8794; border-radius: 4mm;
+    overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #fff;
+  }
+  .cut { position: absolute; color: #7b8794; font: 2.7mm Arial, sans-serif; }
+  .tl { top: 2.5mm; left: 3.5mm; } .br { bottom: 2.5mm; right: 3.5mm; }
+  .day { font-size: 14.5mm; line-height: 1; letter-spacing: .4mm; color: #172554; }
+  .pronunciation { margin-top: 4mm; font-family: Arial, sans-serif; font-size: 4.2mm; letter-spacing: .35mm; color: #475569; }
+  .number { position: absolute; right: 5mm; bottom: 4mm; width: 8mm; height: 8mm; border-radius: 50%; display: grid; place-items: center; color: #fff; font: bold 3.5mm Arial, sans-serif; }
+  .mon .number, .mon .stripe { background: #ef4444; } .tue .number, .tue .stripe { background: #f97316; }
+  .wed .number, .wed .stripe { background: #eab308; } .thu .number, .thu .stripe { background: #22c55e; }
+  .fri .number, .fri .stripe { background: #3b82f6; } .sat .number, .sat .stripe { background: #8b5cf6; }
+  .sun .number, .sun .stripe { background: #ec4899; }
+  .stripe { position: absolute; left: 0; top: 0; right: 0; height: 5mm; }
+  .back .korean { font-size: 12.8mm; line-height: 1; color: #172554; }
+  .blank { border-color: #cbd5e1; background: repeating-linear-gradient(45deg, #fff, #fff 5mm, #f8fafc 5mm, #f8fafc 10mm); }
+  .blank span { font-size: 4mm; color: #94a3b8; }
+</style>
+</head>
+<body>
+<!-- 앞면: 영어 요일 -->
+<section class="sheet front">
+  <div class="card mon"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">MONDAY</div><div class="pronunciation">MON · DAY</div><div class="number">1</div></div>
+  <div class="card tue"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">TUESDAY</div><div class="pronunciation">TUES · DAY</div><div class="number">2</div></div>
+  <div class="card wed"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">WEDNESDAY</div><div class="pronunciation">WED · NES · DAY</div><div class="number">3</div></div>
+  <div class="card thu"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">THURSDAY</div><div class="pronunciation">THURS · DAY</div><div class="number">4</div></div>
+  <div class="card fri"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">FRIDAY</div><div class="pronunciation">FRI · DAY</div><div class="number">5</div></div>
+  <div class="card sat"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">SATURDAY</div><div class="pronunciation">SAT · UR · DAY</div><div class="number">6</div></div>
+  <div class="card sun"><div class="stripe"></div><span class="cut tl">✂</span><div class="day">SUNDAY</div><div class="pronunciation">SUN · DAY</div><div class="number">7</div></div>
+  <div class="card blank"><span>WEEKDAY CARDS</span></div>
+</section>
+<!-- 뒷면: 긴 쪽 넘김 기준. 앞면의 좌우 카드와 짝이 맞도록 배치 -->
+<section class="sheet back">
+  <div class="card tue"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">화요일</div><div class="number">2</div></div>
+  <div class="card mon"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">월요일</div><div class="number">1</div></div>
+  <div class="card thu"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">목요일</div><div class="number">4</div></div>
+  <div class="card wed"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">수요일</div><div class="number">3</div></div>
+  <div class="card sat"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">토요일</div><div class="number">6</div></div>
+  <div class="card fri"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">금요일</div><div class="number">5</div></div>
+  <div class="card blank"><span>뒷면 빈 카드</span></div>
+  <div class="card sun"><div class="stripe"></div><span class="cut tl">✂</span><div class="korean">일요일</div><div class="number">7</div></div>
+</section>
+</body>
+</html>
