@@ -9848,12 +9848,99 @@ function gbMakeDummyQuestions(cat, sub) {
   }
   return { mc, sa };
 }
+// 2026-09-03 — 실제 문항 채우기 시작(1차: 중1 · be동사 4개 소주제, 소주제당 객관식 2 + 주관식 1).
+// 나머지 소주제는 아직 gbMakeDummyQuestions()의 샘플 더미로 남아있다 — 순차적으로 이 객체에
+// 추가해 나갈 예정. 형식은 { grade: { cat: { sub: { mc:[...], sa:[...] } } } }, 항목 shape은
+// gbMakeDummyQuestions()가 만드는 것과 동일({type,q,opts?,ans}).
+const GB_REAL_QUESTIONS = {
+  "중1": {
+    "be동사": {
+      "긍정문": {
+        mc: [
+          { type: "mc", q: "빈칸에 알맞은 be동사를 고르시오. She ___ a nurse.", opts: ["① am", "② is", "③ are", "④ be"], ans: "② is" },
+          { type: "mc", q: "다음 중 어법상 올바른 문장은?", opts: ["① I is a student.", "② You am my friend.", "③ They are happy.", "④ He are tired."], ans: "③ They are happy." },
+        ],
+        sa: [
+          { type: "sa", q: "괄호 안의 단어를 이용해 문장을 완성하시오. My brother ___ very ___. (be, tall)", ans: "is / tall (My brother is very tall.)" },
+        ],
+      },
+      "부정문": {
+        mc: [
+          { type: "mc", q: "다음 문장을 부정문으로 바르게 고친 것은? She is busy.", opts: ["① She not is busy.", "② She isn't busy.", "③ She don't busy.", "④ She aren't busy."], ans: "② She isn't busy." },
+          { type: "mc", q: "빈칸에 알맞은 것을 고르시오. They ___ at home now.", opts: ["① isn't", "② aren't", "③ am not", "④ don't"], ans: "② aren't" },
+        ],
+        sa: [
+          { type: "sa", q: "다음 문장을 부정문으로 바꿔 쓰시오. I am ready.", ans: "I am not ready. (= I'm not ready.)" },
+        ],
+      },
+      "의문문": {
+        mc: [
+          { type: "mc", q: "다음 문장을 의문문으로 바르게 바꾼 것은? You are hungry.", opts: ["① Are you hungry?", "② You are hungry?", "③ Do you hungry?", "④ Is you hungry?"], ans: "① Are you hungry?" },
+          { type: "mc", q: "빈칸에 알맞은 것은? ___ your parents at home?", opts: ["① Is", "② Are", "③ Do", "④ Does"], ans: "② Are" },
+        ],
+        sa: [
+          { type: "sa", q: "다음 질문에 완전한 문장으로 대답하시오. Is he your teacher? (Yes로 대답)", ans: "Yes, he is." },
+        ],
+      },
+      "축약형": {
+        mc: [
+          { type: "mc", q: "다음 중 축약형이 바르게 쓰인 것은?", opts: ["① I am → I'm", "② She is → She're", "③ They are → They's", "④ You are → You'm"], ans: "① I am → I'm" },
+          { type: "mc", q: "빈칸에 들어갈 축약형으로 알맞은 것은? ___ not a doctor. (She is)", opts: ["① She's", "② Her's", "③ Shes'", "④ She're"], ans: "① She's" },
+        ],
+        sa: [
+          { type: "sa", q: "다음 문장을 축약형을 사용해 다시 쓰시오. I am not busy today.", ans: "I'm not busy today." },
+        ],
+      },
+    },
+    "일반동사": {
+      "긍정문": {
+        mc: [
+          { type: "mc", q: "다음 우리말과 일치하도록 빈칸에 알맞은 것을 고르시오. 나는 매일 아침 커피를 마신다. → I ___ coffee every morning.", opts: ["① drinks", "② drink", "③ drinking", "④ am drink"], ans: "② drink" },
+          { type: "mc", q: "다음 중 어법상 틀린 문장을 고르시오.", opts: ["① I like pizza.", "② She like coffee.", "③ We play soccer.", "④ They study English."], ans: "② She like coffee." },
+        ],
+        sa: [
+          { type: "sa", q: "주어진 말을 배열하여 문장을 완성하시오. 내 여동생은 개를 한 마리 키운다. (a, has, sister, my, dog)", ans: "My sister has a dog." },
+        ],
+      },
+      "부정문": {
+        mc: [
+          { type: "mc", q: "빈칸에 알맞은 것은? He ___ eat meat.", opts: ["① don't", "② doesn't", "③ isn't", "④ not"], ans: "② doesn't" },
+          { type: "mc", q: "다음 중 어법상 틀린 문장은?", opts: ["① I don't like fish.", "② She doesn't likes musicals.", "③ We don't have time.", "④ They don't live here."], ans: "② She doesn't likes musicals." },
+        ],
+        sa: [
+          { type: "sa", q: "다음 문장을 부정문으로 바꿔 쓰시오. My mom cooks dinner every day.", ans: "My mom doesn't cook dinner every day." },
+        ],
+      },
+      "의문문": {
+        mc: [
+          { type: "mc", q: "다음 문장을 의문문으로 바르게 바꾼 것은? You like pizza.", opts: ["① Do you like pizza?", "② Does you like pizza?", "③ Are you like pizza?", "④ You like pizza?"], ans: "① Do you like pizza?" },
+          { type: "mc", q: "빈칸에 순서대로 들어갈 말로 알맞은 것은? ___ your brother ___ basketball on weekends?", opts: ["① Do, play", "② Does, play", "③ Does, plays", "④ Do, plays"], ans: "② Does, play" },
+        ],
+        sa: [
+          { type: "sa", q: "다음 대답에 알맞은 질문의 빈칸을 채우시오. A: ___ your parents speak English? B: Yes, they do.", ans: "Do" },
+        ],
+      },
+      "3인칭 단수 -s": {
+        mc: [
+          { type: "mc", q: "다음 중 어법상 틀린 것은?", opts: ["① He goes to school by bus.", "② She watches TV at night.", "③ It rain a lot in summer.", "④ My dog barks loudly."], ans: "③ It rain a lot in summer." },
+          { type: "mc", q: "다음 중 -es를 붙여야 하는 동사는?", opts: ["① play", "② go", "③ eat", "④ come"], ans: "② go" },
+        ],
+        sa: [
+          { type: "sa", q: "괄호 안의 동사를 알맞은 형태로 바꾸시오. My brother ___ (study) English every day.", ans: "studies" },
+        ],
+      },
+    },
+  },
+};
 const GB_BANK = {};
 Object.keys(GB_GRAMMAR_TREE).forEach((grade) => {
   GB_BANK[grade] = {};
   GB_GRAMMAR_TREE[grade].forEach(({ cat, subs }) => {
     GB_BANK[grade][cat] = {};
-    subs.forEach((sub) => { GB_BANK[grade][cat][sub] = gbMakeDummyQuestions(cat, sub); });
+    subs.forEach((sub) => {
+      const real = GB_REAL_QUESTIONS[grade] && GB_REAL_QUESTIONS[grade][cat] && GB_REAL_QUESTIONS[grade][cat][sub];
+      GB_BANK[grade][cat][sub] = real || gbMakeDummyQuestions(cat, sub);
+    });
   });
 });
 function gbShuffle(arr) {
@@ -9933,7 +10020,7 @@ function GrammarBankPrototype() {
         <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setGrade(null)}>학년 다시 선택<//>
       </div>
       <div style=${{ fontSize: 11.5, color: "#8a6f2e", background: "#F1ECDD", borderLeft: `2px solid ${C.gold}`, padding: "7px 12px", marginBottom: 14 }}>
-        아래 문항수는 학습용 <b>샘플 더미 문제</b> 기준이에요. 실제 문항 데이터가 채워지면 숫자가 자동으로 갱신됩니다.
+        중1 · be동사·일반동사는 실제 문항이 채워졌고, 나머지 카테고리는 아직 <b>샘플 더미 문제</b>예요. 계속 순차적으로 채워나갈게요.
       </div>
       <div style=${{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20, alignItems: "start" }}>
 
@@ -18105,12 +18192,10 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
           `)}
         </div>
 
-        ${false /* 리딩 자료실 정비 끝날 때까지 학생 홈에서 임시로 숨김(2026-09-03, 사용자 지시) — false만 true로 되돌리면 복귀 */ && html`
         <a href=${`reading-library.html?student=${encodeURIComponent(student.id)}&name=${encodeURIComponent(student.name)}`} target="_blank" rel="noopener noreferrer" style=${{ width: "100%", boxSizing: "border-box", background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer", marginBottom: 18, textDecoration: "none" }}>
           <span style=${{ fontSize: 18 }}>📚</span>
           <span style=${{ fontSize: 13, fontWeight: 700, color: C.ink }}>영어 동화 · 소설 읽기</span>
         </a>
-        `}
       </div>
     `;
   }
