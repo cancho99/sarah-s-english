@@ -41,7 +41,7 @@ window.SarahServices = window.SarahServices || {};
   const QUESTIONS_COLLECTION = "examStudioQuestions";
   const EXAM_PAPERS_COLLECTION = "examStudioExamPapers";
 
-  const LIBRARY_GRADES = ["1학년", "2학년", "3학년"];
+  const LIBRARY_GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
 
   function emptyFolders() {
     const out = {};
