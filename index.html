@@ -3917,10 +3917,9 @@ const SETTINGS_SUBTABS = [
   // 같은 이유(전체 학생 공용, 특정 학생 소속이 아님)로 이번엔 Settings에 옮긴다.
   { key: "materials", icon: "📁", label: "Shared Materials" },
   { key: "data", icon: "🗄", label: "Data" },
-  // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §8-1) — 레거시 Reading Question Bank
-  // (readingPassages/readingQuestions)를 Question Bank 탭에서는 빼고 여기 하나로만 남긴다.
-  // 컴포넌트(ReadingQuestionBankView 등)와 데이터는 그대로, 진입 경로만 이동.
-  { key: "legacyReading", icon: "📖", label: "Legacy Reading" },
+  // 2026-09-03 — 레거시 Reading Question Bank(ReadingQuestionBankView) 진입점 제거. 컴포넌트
+  // 정의와 Firestore 데이터(readingPassages/readingQuestions)는 그대로 남아있지만, 더 이상
+  // 사이드바/설정 어디에서도 도달할 수 없다.
 ];
 function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureData, dataCache, updateData, announcement, saveAnnouncement, onSelectStudent, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const [tab, setTab] = useState("profile");
@@ -3935,12 +3934,6 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
         <div>
           <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
           <${VocabOrphanCleanupPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />
-        </div>
-      `}
-      ${tab === "legacyReading" && html`
-        <div>
-          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>기존 Reading Question Bank(지문·문제) 보관용 화면이에요. 새 Reading 제작은 "Reading Analysis" 메뉴를 사용하세요 — 여기 데이터는 삭제되지 않고 그대로 남아있어요.</div>
-          <${ReadingQuestionBankView} roster=${roster} />
         </div>
       `}
     </div>
@@ -9770,6 +9763,274 @@ function ReadingAnalysisSection() {
   return html`<${ExamStudioSection} />`;
 }
 
+// ---------- Grammar Bank (프로토타입 교체, 2026-09-03) ----------
+// 기존 GrammarBankView(아래, questionBankService.js 연동)를 대체한다 — 사용자가 요청한 새 UI
+// 시안(학년 선택 → 카테고리 트리 + 문항수 설정 + 미리보기)을 우선 더미 문항으로 붙인 것으로,
+// 아직 Firestore/questionBankService와는 연결되어 있지 않다. GrammarBankView 자체는 삭제하지
+// 않고 아래 그대로 남겨뒀다(더 이상 어디서도 호출하지 않음).
+const GB_GRAMMAR_TREE = {
+  "중1": [
+    { cat: "문장 구조", subs: ["평서문", "의문문", "부정문", "명령문", "감탄문"] },
+    { cat: "be동사", subs: ["긍정문", "부정문", "의문문", "축약형"] },
+    { cat: "일반동사", subs: ["긍정문", "부정문", "의문문", "3인칭 단수 -s"] },
+    { cat: "시제", subs: ["현재시제", "과거시제(규칙/불규칙)", "현재진행형", "과거진행형", "미래시제(will/be going to)"] },
+    { cat: "명사", subs: ["셀 수 있는/없는 명사", "명사의 복수형", "관사 a/an/the"] },
+    { cat: "대명사", subs: ["인칭대명사", "소유격·소유대명사", "지시대명사(this/that/these/those)", "it의 다양한 용법"] },
+    { cat: "형용사", subs: ["수량형용사(many/much/some/any)", "형용사의 어순"] },
+    { cat: "부사", subs: ["빈도부사", "부사의 위치", "형용사→부사 전환"] },
+    { cat: "전치사", subs: ["장소 전치사", "시간 전치사"] },
+    { cat: "조동사", subs: ["can", "will", "must/may", "should 기초"] },
+    { cat: "비교", subs: ["원급", "비교급", "최상급"] },
+    { cat: "접속사", subs: ["and/but/or/so", "because", "when"] },
+  ],
+  "중2": [
+    { cat: "시제", subs: ["현재완료(경험/완료/계속/결과)", "현재완료 vs 과거", "과거완료 기초"] },
+    { cat: "조동사", subs: ["should", "have to / must", "used to", "would", "조동사+have+p.p. 기초"] },
+    { cat: "수동태", subs: ["기본 형태(be+p.p.)", "능동태→수동태 전환", "조동사가 있는 수동태"] },
+    { cat: "to부정사", subs: ["명사적 용법", "형용사적 용법", "부사적 용법", "의미상 주어"] },
+    { cat: "동명사", subs: ["기본 용법", "동명사 vs to부정사"] },
+    { cat: "분사", subs: ["현재분사/과거분사", "분사의 형용사적 용법"] },
+    { cat: "접속사", subs: ["종속접속사(when/while/if/because/although)", "상관접속사 기초"] },
+    { cat: "관계대명사", subs: ["주격 who/which/that", "목적격 who(m)/which/that", "관계대명사 what"] },
+    { cat: "명사절", subs: ["접속사 that절", "간접의문문(의문사절)"] },
+    { cat: "비교", subs: ["비교급 강조", "배수 비교", "the 비교급~ the 비교급"] },
+    { cat: "특수구문", subs: ["감탄문", "부가의문문"] },
+  ],
+  "중3": [
+    { cat: "시제", subs: ["과거완료", "시제일치", "미래완료 기초"] },
+    { cat: "수동태", subs: ["4형식·5형식 수동태", "by 이외 전치사를 쓰는 수동태"] },
+    { cat: "to부정사", subs: ["원형부정사", "too~to / enough to", "독립부정사"] },
+    { cat: "동명사", subs: ["동명사의 의미상 주어", "동명사 관용표현"] },
+    { cat: "분사", subs: ["분사구문 기초(시간/이유/조건)"] },
+    { cat: "관계사", subs: ["관계대명사 계속적 용법", "관계부사(where/when/why/how)", "복합관계대명사 기초"] },
+    { cat: "명사절", subs: ["접속사 that vs 관계대명사 what", "간접화법"] },
+    { cat: "가정법", subs: ["가정법 과거", "I wish / as if 기초"] },
+    { cat: "도치", subs: ["부정어 도치", "there/here 도치"] },
+    { cat: "강조", subs: ["It is ~ that 강조구문"] },
+    { cat: "생략", subs: ["반복 어구 생략", "관계대명사 생략"] },
+    { cat: "동격", subs: ["동격의 that절"] },
+    { cat: "문장 구조", subs: ["5형식 문장 심화", "간접목적어/직접목적어"] },
+  ],
+  "고등": [
+    { cat: "문장 구조", subs: ["5형식 심화", "문장 성분 파악"] },
+    { cat: "동사", subs: ["자동사/타동사 구별", "혼동하기 쉬운 동사(lie/lay, rise/raise 등)"] },
+    { cat: "시제", subs: ["시제 일치의 예외", "완료시제 심화"] },
+    { cat: "조동사", subs: ["조동사+have+p.p.(추측/후회)", "조동사 관용표현"] },
+    { cat: "수동태", subs: ["지각동사·사역동사의 수동태", "get 수동태"] },
+    { cat: "준동사", subs: ["to부정사/동명사/분사 구별", "분사구문 심화(수동/완료/접속사 남긴 분사구문)"] },
+    { cat: "관계사", subs: ["관계사 심화", "복합관계사", "관계대명사 vs 접속사"] },
+    { cat: "접속사", subs: ["상관접속사 심화", "명사절·부사절 접속사 구별"] },
+    { cat: "가정법", subs: ["가정법 과거완료", "혼합가정법", "without/but for 가정법"] },
+    { cat: "비교", subs: ["비교구문 심화", "원급/비교급 관용표현"] },
+    { cat: "일치", subs: ["수일치(주어-동사)", "인칭/시제 일치"] },
+    { cat: "도치", subs: ["장소부사구 도치", "so/neither 도치"] },
+    { cat: "강조", subs: ["do 강조", "재귀대명사 강조 용법"] },
+    { cat: "생략", subs: ["접속사절에서의 생략", "부사절 생략"] },
+    { cat: "병렬", subs: ["등위접속사 병렬구조", "상관접속사 병렬구조"] },
+    { cat: "동격", subs: ["동격 구문 심화"] },
+    { cat: "어법 고난도 구문", subs: ["수능 어법 밑줄 판단 유형"] },
+  ],
+};
+const GB_GRADE_DESC = {
+  "중1": "기초 문장 구조와 기본 시제·품사",
+  "중2": "완료시제·준동사 입문 · 관계대명사",
+  "중3": "관계사·가정법·특수구문",
+  "고등": "수능 어법 · 고난도 구문 심화",
+};
+function gbMakeDummyQuestions(cat, sub) {
+  const mc = [];
+  const sa = [];
+  for (let i = 1; i <= 6; i++) {
+    mc.push({ type: "mc", q: `[${cat} > ${sub}] 다음 빈칸에 들어갈 말로 가장 적절한 것은? (샘플 ${i})`, opts: ["① sample A", "② sample B", "③ sample C", "④ sample D"], ans: "③ sample C" });
+  }
+  for (let i = 1; i <= 6; i++) {
+    sa.push({ type: "sa", q: `[${cat} > ${sub}] 다음 문장을 어법에 맞게 고쳐 쓰시오. (샘플 ${i})`, ans: "(샘플 정답 문장)" });
+  }
+  return { mc, sa };
+}
+const GB_BANK = {};
+Object.keys(GB_GRAMMAR_TREE).forEach((grade) => {
+  GB_BANK[grade] = {};
+  GB_GRAMMAR_TREE[grade].forEach(({ cat, subs }) => {
+    GB_BANK[grade][cat] = {};
+    subs.forEach((sub) => { GB_BANK[grade][cat][sub] = gbMakeDummyQuestions(cat, sub); });
+  });
+});
+function gbShuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+function GrammarBankPrototype() {
+  const [grade, setGrade] = useState(null);
+  const [expanded, setExpanded] = useState({});
+  const [selected, setSelected] = useState({}); // "cat|sub" -> true
+  const [mcCount, setMcCount] = useState(5);
+  const [saCount, setSaCount] = useState(5);
+  const [cols, setCols] = useState(1);
+  const [previewMode, setPreviewMode] = useState(null);
+  const [previewItems, setPreviewItems] = useState([]);
+
+  function pickGrade(g) {
+    setGrade(g);
+    const exp = {}; const sel = {};
+    GB_GRAMMAR_TREE[g].forEach((c, i) => { exp[c.cat] = i === 0; c.subs.forEach((s) => { sel[c.cat + "|" + s] = true; }); });
+    setExpanded(exp); setSelected(sel); setPreviewMode(null); setPreviewItems([]);
+  }
+  function toggleCat(cat) { setExpanded((e) => ({ ...e, [cat]: !e[cat] })); }
+  function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
+  function toggleCatAll(cat, subs, checked) {
+    setSelected((s) => { const next = { ...s }; subs.forEach((sub) => { next[cat + "|" + sub] = checked; }); return next; });
+  }
+  function selectAll(checked) {
+    if (!grade) return;
+    const sel = {};
+    GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((s) => { sel[c.cat + "|" + s] = checked; }));
+    setSelected(sel);
+  }
+  function getPool() {
+    const mcPool = [], saPool = [];
+    if (!grade) return { mcPool, saPool };
+    GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((sub) => {
+      if (selected[c.cat + "|" + sub]) {
+        const q = GB_BANK[grade][c.cat][sub];
+        mcPool.push(...q.mc); saPool.push(...q.sa);
+      }
+    }));
+    return { mcPool, saPool };
+  }
+  const { mcPool, saPool } = getPool();
+  const pickedCount = Object.values(selected).filter(Boolean).length;
+
+  function runPreview(mode) {
+    const mcN = Math.min(mcCount, mcPool.length);
+    const saN = Math.min(saCount, saPool.length);
+    setPreviewItems([...gbShuffle(mcPool).slice(0, mcN), ...gbShuffle(saPool).slice(0, saN)]);
+    setPreviewMode(mode);
+  }
+
+  if (!grade) {
+    return html`
+      <div>
+        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>학년을 선택하면 그 학년의 문법 카테고리가 나타나요. (현재는 샘플 더미 문항으로 동작하는 프로토타입입니다.)</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, maxWidth: 760 }}>
+          ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
+            <div key=${g} onClick=${() => pickGrade(g)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: "20px 16px", cursor: "pointer", textAlign: "center" }}>
+              <div style=${{ ...serif, fontSize: 18, fontWeight: 700, color: C.navy }}>${g}</div>
+              <div style=${{ fontSize: 11, color: C.slate, marginTop: 6, lineHeight: 1.5 }}>${GB_GRADE_DESC[g]}</div>
+            </div>
+          `)}
+        </div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div style=${{ fontSize: 12, color: C.slate }}>학년: <b style=${{ color: C.navy }}>${grade}</b> · 선택된 소주제 ${pickedCount}개</div>
+        <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setGrade(null)}>학년 다시 선택<//>
+      </div>
+      <div style=${{ fontSize: 11.5, color: "#8a6f2e", background: "#F1ECDD", borderLeft: `2px solid ${C.gold}`, padding: "7px 12px", marginBottom: 14 }}>
+        아래 문항수는 학습용 <b>샘플 더미 문제</b> 기준이에요. 실제 문항 데이터가 채워지면 숫자가 자동으로 갱신됩니다.
+      </div>
+      <div style=${{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20, alignItems: "start" }}>
+
+        <${Card}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>CATEGORY</div>
+            <span onClick=${() => selectAll(true)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
+          </div>
+          <div style=${{ maxHeight: 560, overflowY: "auto" }}>
+            ${GB_GRAMMAR_TREE[grade].map((c) => html`
+              <div key=${c.cat} style=${{ borderBottom: `1px solid #EDEAE2` }}>
+                <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: C.navy }} onClick=${() => toggleCat(c.cat)}>
+                  <span style=${{ fontSize: 10, color: C.slate, width: 10, display: "inline-block", transform: expanded[c.cat] ? "rotate(90deg)" : "none" }}>▶</span>
+                  <input type="checkbox" checked=${c.subs.every((s) => selected[c.cat + "|" + s])} onClick=${(e) => e.stopPropagation()} onChange=${(e) => toggleCatAll(c.cat, c.subs, e.target.checked)} />
+                  <span>${c.cat}</span>
+                </div>
+                ${expanded[c.cat] && html`
+                  <div style=${{ padding: "0 0 8px 26px" }}>
+                    ${c.subs.map((sub) => {
+                      const key = c.cat + "|" + sub; const checked = !!selected[key];
+                      const total = GB_BANK[grade][c.cat][sub].mc.length + GB_BANK[grade][c.cat][sub].sa.length;
+                      return html`
+                        <label key=${sub} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: `1px solid ${checked ? C.gold : C.line}`, background: checked ? "#FBF6EA" : "#fff", borderRadius: 4, cursor: "pointer", fontSize: 12, marginBottom: 6 }}>
+                          <input type="checkbox" checked=${checked} onChange=${() => toggleSub(c.cat, sub)} />
+                          <span style=${{ flex: 1 }}>${sub}</span>
+                          <span style=${{ fontSize: 10.5, color: "#9a9488" }}>${total}문항</span>
+                        </label>
+                      `;
+                    })}
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        <//>
+
+        <div>
+          <${Card}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 수 설정</div>
+            <${Field} label="총 문항수">
+              <div style=${{ fontSize: 13.5, color: C.navy, fontWeight: 700 }}>${mcCount + saCount}문항</div>
+            <//>
+            <${Field} label="객관식">
+              <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input type="number" min="0" value=${mcCount} onChange=${(e) => setMcCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 80 }} />
+                <span style=${{ fontSize: 11, color: parseInt(mcCount) > mcPool.length ? C.danger : C.slate }}>(출제 가능한 문항수: ${mcPool.length})</span>
+              </div>
+            <//>
+            <${Field} label="주관식">
+              <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                <input type="number" min="0" value=${saCount} onChange=${(e) => setSaCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 80 }} />
+                <span style=${{ fontSize: 11, color: parseInt(saCount) > saPool.length ? C.danger : C.slate }}>(출제 가능한 문항수: ${saPool.length})</span>
+              </div>
+            <//>
+            <${Field} label="단 나누기">
+              <div style=${{ display: "flex", gap: 8 }}>
+                <${Button} variant=${cols === 1 ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCols(1)}>1단<//>
+                <${Button} variant=${cols === 2 ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCols(2)}>2단<//>
+              </div>
+            <//>
+          <//>
+
+          <${Card}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>미리보기</div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("q")}>문제 보기<//>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("a")}>정답 보기<//>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("qa")}>문제+정답 보기<//>
+            </div>
+            <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6", padding: 16, minHeight: 140, columnCount: cols === 2 ? 2 : 1, columnGap: 24 }}>
+              ${previewItems.length === 0 && html`<div style=${{ textAlign: "center", color: "#9a9488", fontSize: 12.5, padding: "44px 0" }}>카테고리를 선택하고 미리보기를 눌러주세요.</div>`}
+              ${previewItems.map((item, idx) => html`
+                <div key=${idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid" }}>
+                  <div style=${{ display: "flex", gap: 8, fontSize: 13.5, color: C.ink, lineHeight: 1.6 }}>
+                    <span style=${{ display: "inline-flex", width: 20, height: 20, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
+                    <span>${item.q}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span></span>
+                  </div>
+                  ${previewMode !== "a" && item.type === "mc" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>${item.opts.join("   ")}</div>`}
+                  ${previewMode !== "a" && item.type === "sa" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>______________________________</div>`}
+                  ${previewMode !== "q" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 12.5, color: C.gold, fontWeight: 700 }}>정답: ${item.ans}</div>`}
+                </div>
+              `)}
+            </div>
+          <//>
+
+          <div style=${{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+            <${Button} variant="ghost" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("워드(.docx) 내보내기는 실제 문항 데이터 연결 후 지원됩니다.")}>📄 Word<//>
+            <${Button} variant="ghost" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("한글(.hwp) 내보내기는 실제 문항 데이터 연결 후 지원됩니다.")}>📝 한글<//>
+            <${Button} variant="primary" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => window.print()}>🖨 출력하기<//>
+            <${Button} variant="gold" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("저장되었습니다. (프로토타입 — 실제 저장은 아직 연결되지 않았어요)")}>💾 저장하기<//>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function GrammarBankView({ initialSelectedId, roster }) {
   const QB = window.SarahServices.questionBankService;
   const [questions, setQuestions] = useState(null); // null = loading
@@ -11892,33 +12153,24 @@ function ExamAssignmentManager({ roster, updateData }) {
 // STEP4에서 여기 있었지만, STEP5에서 사용자 지시로 Classes → Assessments로 옮겼다 — "Question
 // Bank는 문제·시험지를 만드는 공간, Classes는 실제 학생 수업/평가를 운영하는 공간"이라는 구분.
 function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary }) {
-  const [bank, setBank] = useState(initialBank || "grammar");
-  // 검수 대기 큐에서 항목을 클릭하면 해당 은행 탭으로 전환 + 그 문제 상세로 바로 진입한다(§14.9).
-  const [pendingSelection, setPendingSelection] = useState(null); // { bank, id } | null
-  // Reading Analysis 재설계(Phase C) — Question Review 큐(아래 ReviewQueueView)는 Reading Analysis
-  // 문제도 함께 보여주지만, "readingAnalysis"는 이 컨테이너가 렌더링하는 탭이 아니다(Reading Analysis는
-  // 별도 최상위 사이드바 항목, §readingAnalysis 참고). 여기서 딥링크 가능한 건 이 컨테이너가 실제로
-  // 가진 grammar/reading(legacy) 탭뿐 — readingAnalysis 항목 클릭은 조용히 무시한다(화면 깨짐 방지).
-  function jumpTo(targetBank, id) {
-    if (targetBank !== "grammar" && targetBank !== "reading") return;
-    setPendingSelection({ bank: targetBank, id });
-    setBank(targetBank);
-  }
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "review", "examBuilder"];
+  // 2026-09-03 — 문법/리딩 문제뱅크 전면 교체: Question Review·Exam Builder 탭(둘 다 옛
+  // questionBankService.js 데이터 기반)을 제거했다. Grammar 탭은 새 GrammarBankPrototype(더미
+  // 데이터, 위에서 정의)으로 교체 — 실제 데이터 연결 전까지는 화면만 제공한다. Vocabulary/Answer
+  // Keys는 문법·리딩 문제뱅크와 무관한 별개 기능이라 그대로 둔다. 배정·결과 관리는 추후 새로 만들
+  // 예정이라 이 탭 목록에서도 함께 뺐다. initialBank로 옛 "examBuilder"/"review"가 넘어와도
+  // (예: Sarah's Original의 "Add to Exam" 버튼) 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys"];
+  const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
   return html`
     <div>
       <${Tabs} tabs=${[
         { key: "grammar", icon: "📐", label: "Grammar" },
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
-        { key: "review", icon: "🔍", label: "Question Review" },
-        { key: "examBuilder", icon: "🧪", label: "Exam Builder" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
-      ${bank === "grammar" && html`<${GrammarBankView} initialSelectedId=${pendingSelection && pendingSelection.bank === "grammar" ? pendingSelection.id : null} roster=${roster} />`}
+      ${bank === "grammar" && html`<${GrammarBankPrototype} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
-      ${bank === "examBuilder" && html`<${ExamBuilderView} roster=${roster} />`}
-      ${bank === "review" && html`<${ReviewQueueView} onSelect=${jumpTo} />`}
     </div>
   `;
 }
