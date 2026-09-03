@@ -5534,6 +5534,10 @@ const INTEGRITY_BADGE_COLORS = {
 // services/readingService.js의 computeIntegrityStatus(선생님 확인용 신호, 자동 판정 아님)가
 // 한다. VocabResultRow(같은 파일, ~14713줄 부근)의 Instant Recall/Integrity 표시와 같은 계열의
 // 스타일을 쓴다.
+// 2026-09-03 재구성 — 예전엔 12.5px 안팎의 얇은 한 줄(제목+날짜)로 목록이 쭉 붙어있어 훑어보기
+// 불편했다(사용자 제보). 레이아웃만 카드형으로 다시 짰고, 데이터 로직(정렬/그룹핑/vocab 계산 등
+// 이 컴포넌트 밖의 로직)은 전혀 건드리지 않았다 — svc.computeIntegrityStatus가 반환하는 상태값과
+// entry/vocabGroup의 필드 의미도 그대로다.
 function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken }) {
   const [open, setOpen] = useState(false);
   const svc = window.SarahServices.readingService;
@@ -5542,6 +5546,9 @@ function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken })
   const badge = svc.INTEGRITY_BADGE[status];
   const badgeColors = INTEGRITY_BADGE_COLORS[badge.cls];
   const isRed = status === "RED";
+  // integrity 데이터 자체가 없는(이 기능 이전에 제출된) 기록은 뱃지를 아예 안 보여준다 — "기록
+  // 없음"이라는 뱃지를 매번 붙이면 오히려 노이즈라 사용자가 명시적으로 뺀 요구사항.
+  const showBadge = status !== "NO_DATA";
   const hasVocab = vocabGroup && vocabGroup.words.length > 0;
   const metrics = [
     { label: "작성 시간", value: integrity ? fmtVocabDuration(integrity.writingDurationSec) : "-" },
@@ -5552,37 +5559,46 @@ function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken })
     { label: "워터마크 세션", value: (integrity && integrity.watermarkSessionId) || "-" },
   ];
   return html`
-    <${Card} onClick=${() => setOpen((v) => !v)} style=${{ marginBottom: 8, padding: 12, cursor: "pointer", ...(open && isRed ? { border: `1px solid ${C.danger}` } : {}) }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <div style=${{ fontSize: 13, fontWeight: 700, color: C.ink }}>${entry.storyTitle}</div>
-        ${open
-          ? html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: badgeColors.bg, color: badgeColors.fg, whiteSpace: "nowrap" }}>${badge.emoji} ${badge.label}</span>`
-          : html`<span style=${{ fontSize: 15, lineHeight: 1 }}>${badge.emoji}</span>`}
-      </div>
-      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3 }}>
-        ${entry.level != null ? `Lv.${entry.level}` : ""}${entry.level != null && entry.submittedAt ? " · " : ""}${entry.submittedAt ? fmtMD(new Date(entry.submittedAt)) : ""}${hasVocab ? ` · 🔤 단어 ${vocabGroup.words.length}개` : ""}
+    <${Card} onClick=${() => setOpen((v) => !v)} style=${{
+      marginBottom: 14, padding: 16, cursor: "pointer",
+      border: `1px solid ${open && isRed ? C.danger : C.line}`,
+    }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div>
+          <div style=${{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span style=${{ fontSize: 15, fontWeight: 800, color: C.ink }}>${entry.storyTitle}</span>
+            ${entry.level != null && html`<span style=${{ fontSize: 11.5, fontWeight: 700, color: C.gold }}>Lv.${entry.level}</span>`}
+          </div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>
+            ${entry.submittedAt ? fmtMD(new Date(entry.submittedAt)) : ""}${hasVocab ? ` · 🔤 단어 ${vocabGroup.words.length}개` : ""}
+          </div>
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          ${showBadge && html`<span style=${{ fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: badgeColors.bg, color: badgeColors.fg, whiteSpace: "nowrap" }}>${badge.emoji} ${badge.label}</span>`}
+          <span style=${{ fontSize: 12, color: C.slate }}>${open ? "▲" : "▼"}</span>
+        </div>
       </div>
       ${open && html`
-        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
-          ${metrics.map((m, i) => html`
-            <div key=${m.label} style=${{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i === 0 ? "none" : `1px dotted ${C.line}` }}>
-              <span style=${{ fontSize: 11.5, color: C.slate }}>${m.label}</span>
-              <span style=${{ fontSize: 12, color: C.ink, fontWeight: 600 }}>${m.value}</span>
+        <div style=${{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+          ${(entry.answers || []).map((qa, i) => html`
+            <div key=${i} style=${{ marginBottom: i === (entry.answers || []).length - 1 ? 0 : 12 }}>
+              <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>${qa.q}</div>
+              <div style=${{ fontSize: 13, color: C.ink, whiteSpace: "pre-wrap", background: C.ivory, border: `1px solid ${C.line}`, borderRadius: 6, padding: "10px 12px" }}>${qa.a || "-"}</div>
             </div>
           `)}
-          <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 6 }}>자동 판정이 아닌 선생님 확인용 신호입니다.</div>
         </div>
-        <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
-          ${(entry.answers || []).map((qa, i) => html`
-            <div key=${i} style=${{ marginBottom: 8 }}>
-              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 2 }}>${qa.q}</div>
-              <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap" }}>${qa.a || "-"}</div>
+        <div style=${{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>확인용 신호 (자동 판정 아님)</div>
+          ${metrics.map((m, i) => html`
+            <div key=${m.label} style=${{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderTop: i === 0 ? "none" : `1px dotted ${C.line}` }}>
+              <span style=${{ fontSize: 12, color: C.slate }}>${m.label}</span>
+              <span style=${{ fontSize: 13, color: C.ink, fontWeight: 600 }}>${m.value}</span>
             </div>
           `)}
         </div>
         ${hasVocab && html`
-          <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.line}` }}>
-            <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🔤 이 책에서 모은 단어</div>
+          <div style=${{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
+            <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🔤 이 책에서 모은 단어</div>
             <${ReadingCardVocabBlock} group=${vocabGroup} updateData=${updateData} studentFcmToken=${studentFcmToken} />
           </div>
         `}
