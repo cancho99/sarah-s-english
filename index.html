@@ -9174,10 +9174,30 @@ function esCloneEntryForPaper(entry) {
 function esEscapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-function esWrapPrintDoc(title, bodyHtml) {
+// Shared print-document letterhead (logo + subtitle) — used by both Exam Studio's print docs
+// (esWrapPrintDoc, below) and Grammar Bank's buildGrammarPrintHtml. Reuses the app's existing
+// LOGO_DATA_URI (already inlined as base64 for the Monthly Report / invoice prints, see
+// ".logowrap" usages) instead of a new "assets/logo-navy.png" file reference — a popup print
+// window opened via esOpenPrintWindow's window.open("", "_blank") + document.write() has no
+// base URL of its own, so any relative image path would 404 in that window; a data URI has no
+// such problem and needs no extra file in the repo.
+const ES_LETTERHEAD_CSS = `
+  .doc-letterhead{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:12px;margin-bottom:18px;border-bottom:2px solid #1C2B4A;}
+  .doc-logo{display:flex;align-items:center;}
+  .doc-logo img{display:block;height:36px;width:auto;}
+  .doc-logo-sub{font-size:12.5px;font-weight:700;color:#5B6270;letter-spacing:0.02em;white-space:nowrap;}
+`;
+function esBuildLetterheadHtml(subtitle) {
+  return `<div class="doc-letterhead">
+    <div class="doc-logo"><img src="${LOGO_DATA_URI}" alt="Sarah's English" /></div>
+    <div class="doc-logo-sub">${esEscapeHtml(subtitle || "")}</div>
+  </div>`;
+}
+function esWrapPrintDoc(title, bodyHtml, subtitle = "Exam Studio") {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(title)}</title>
 <style>
   body{font-family:'Malgun Gothic',-apple-system,sans-serif;color:#14161A;padding:28px;max-width:800px;margin:0 auto;}
+  ${ES_LETTERHEAD_CSS}
   h1{font-size:18px;margin-bottom:20px;}
   .ep-block{margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid #eee;page-break-inside:avoid;}
   .ep-qtext{font-weight:700;margin-bottom:6px;font-size:14px;}
@@ -9185,8 +9205,10 @@ function esWrapPrintDoc(title, bodyHtml) {
   .ep-passage{font-size:13px;line-height:1.7;white-space:pre-wrap;margin-bottom:10px;}
   .ep-choices div{font-size:13px;margin-bottom:4px;}
   .ep-ans-row{font-size:13px;margin-bottom:10px;line-height:1.6;}
+  .qs-2col{column-count:2;column-gap:28px;}
+  .qs-2col .ep-block{break-inside:avoid-column;}
   @media print { body{padding:0;} }
-</style></head><body><h1>${esEscapeHtml(title)}</h1>${bodyHtml}</body></html>`;
+</style></head><body>${esBuildLetterheadHtml(subtitle)}<h1>${esEscapeHtml(title)}</h1>${bodyHtml}</body></html>`;
 }
 function esBuildQuestionPaperHtml(paper) {
   const numbered = esComputeNumberedEntries(paper.entries || []);
@@ -9207,7 +9229,8 @@ function esBuildQuestionPaperHtml(paper) {
       <div class="ep-choices">${e.choices.map((c, i) => `<div>${ES_CIRC[i]} ${esEscapeHtml(c)}</div>`).join("")}</div>
     </div>`;
   }).join("");
-  return esWrapPrintDoc(paper.title || "제목 없는 시험지", blocks);
+  const bodyHtml = paper.layout === "2col" ? `<div class="qs-2col">${blocks}</div>` : blocks;
+  return esWrapPrintDoc(paper.title || "제목 없는 시험지", bodyHtml, paper.subtitle || "Exam Studio");
 }
 function esBuildAnswerSheetHtml(paper) {
   const numbered = esComputeNumberedEntries(paper.entries || []);
@@ -9217,7 +9240,7 @@ function esBuildAnswerSheetHtml(paper) {
     else rows.push({ number: e.number, answer: e.answer, explanation: e.explanation });
   });
   const body = rows.map((r) => `<div class="ep-ans-row"><b>${r.number}.</b> 정답 ${r.answer != null ? ES_CIRC[r.answer] : "-"} — ${esEscapeHtml(r.explanation || "(해설 없음)")}</div>`).join("");
-  return esWrapPrintDoc((paper.title || "제목 없는 시험지") + " - 정답 및 해설", body);
+  return esWrapPrintDoc((paper.title || "제목 없는 시험지") + " - 정답 및 해설", body, paper.subtitle || "Exam Studio");
 }
 function esOpenPrintWindow(htmlContent) {
   const win = window.open("", "_blank");
@@ -9313,8 +9336,12 @@ function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate
         <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${onBack}>← 시험지 목록<//>
         <${Button} variant="danger" style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${onDeletePaper}>이 시험지 삭제<//>
       </div>
-      <input style=${{ ...inputStyle, fontSize: 18, fontWeight: 700, marginBottom: 16, border: "none", borderBottom: `2px solid ${C.line}`, borderRadius: 0, padding: "6px 2px" }}
-        value=${paper.title} placeholder="제목 없는 시험지" onChange=${(e) => onUpdate({ title: e.target.value })} />
+      <div style=${{ display: "flex", gap: 10, marginBottom: 16, alignItems: "flex-end" }}>
+        <input style=${{ ...inputStyle, flex: 2, fontSize: 18, fontWeight: 700, border: "none", borderBottom: `2px solid ${C.line}`, borderRadius: 0, padding: "6px 2px" }}
+          value=${paper.title} placeholder="제목 없는 시험지" onChange=${(e) => onUpdate({ title: e.target.value })} />
+        <input style=${{ ...inputStyle, flex: 1, fontSize: 12.5, color: C.slate, border: "none", borderBottom: `1px solid ${C.line}`, borderRadius: 0, padding: "6px 2px" }}
+          value=${paper.subtitle || ""} placeholder="소제목 (예: Exam Studio)" onChange=${(e) => onUpdate({ subtitle: e.target.value })} />
+      </div>
       <${EsAddFromSavedPicker} savedItemsInScope=${savedItemsInScope} onAdd=${(entries) => onAddFromSaved(entries)} />
       <div className="es-paper-grid">
         <div className="es-paper-left">
@@ -9327,7 +9354,14 @@ function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate
           ${focused ? html`<${EsEntryStudentPreview} entry=${focused} />` : html`<${Empty} text="왼쪽에서 문항을 선택하면 여기에 미리보기가 떠요." />`}
         </div>
       </div>
-      <div style=${{ display: "flex", gap: 10, marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 24, borderTop: `1px solid ${C.line}`, paddingTop: 18 }}>
+        <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600 }}>문제지 단 나누기 (지문 포함, 정답지는 항상 1단)</span>
+          <${Button} variant=${paper.layout === "2col" ? "ghost" : "primary"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => onUpdate({ layout: "1col" })}>1단<//>
+          <${Button} variant=${paper.layout === "2col" ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => onUpdate({ layout: "2col" })}>2단<//>
+        </div>
+      </div>
+      <div style=${{ display: "flex", gap: 10, marginTop: 14 }}>
         <${Button} variant="primary" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildQuestionPaperHtml(paper))}>🖨 문제지 인쇄/저장<//>
         <${Button} variant="ghost" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildAnswerSheetHtml(paper))}>🖨 정답 및 해설지 인쇄/저장<//>
       </div>
@@ -10091,6 +10125,12 @@ function GrammarBankPrototype() {
   const [mcCount, setMcCount] = useState(5);
   const [saCount, setSaCount] = useState(5);
   const [cols, setCols] = useState(1);
+  // 2026-09-04 — 인쇄 대제목/소제목을 사용자가 직접 입력할 수 있게. 빈 값이면 buildGrammarPrintHtml이
+  // 현재 grade/문항수 기준 기본값으로 채운다(placeholder로 그 기본값을 미리 보여준다) — 입력값이
+  // 아니라 placeholder로 기본을 보여주는 이유는 grade/문항수가 바뀔 때마다 기본값도 같이 바뀌어야
+  // 하는데, state에 기본값을 그대로 써넣으면 그 갱신이 사용자가 직접 지운 것과 구분이 안 되기 때문.
+  const [printTitle, setPrintTitle] = useState("");
+  const [printSubtitle, setPrintSubtitle] = useState("");
   const [previewMode, setPreviewMode] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
   // 2026-09-03 — 교사가 직접 문항을 등록할 수 있는 폼 추가. 등록된 문항은 Firestore
@@ -10194,7 +10234,9 @@ function GrammarBankPrototype() {
   // 2026-09-03 — "출력하기"가 현재 화면(사이드바·폼·카드 전부 포함) 그대로 window.print()를
   // 호출해서 인쇄물이 엉망으로 나오던 버그 수정. Exam Studio가 쓰는 것과 같은 패턴(별도 인쇄
   // 전용 창을 열고 그 창에만 깨끗한 문제지 HTML을 넣은 뒤 esOpenPrintWindow로 인쇄)으로 바꿨다.
-  function buildGrammarPrintHtml(items, showAnswers) {
+  function buildGrammarPrintHtml(items, showAnswers, titleText, subtitleText) {
+    const effectiveTitle = (titleText || "").trim() || "문법 문제뱅크";
+    const effectiveSubtitle = (subtitleText || "").trim() || `${grade} · ${items.length}문항`;
     const qBlocks = items.map((item, idx) => {
       let inner = `<div class="gp-qtext"><b>${idx + 1}.</b> ${esEscapeHtml(item.q)}</div>`;
       if (item.type === "mc") {
@@ -10205,10 +10247,11 @@ function GrammarBankPrototype() {
       if (showAnswers) inner += `<div class="gp-ans">정답: ${esEscapeHtml(item.ans)}</div>`;
       return `<div class="gp-q">${inner}</div>`;
     }).join("");
-    return `<!doctype html><html><head><meta charset="utf-8"><title>문법 문제뱅크 — ${grade}</title>
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(effectiveTitle)}</title>
 <style>
   @page { size: A4; margin: 18mm 16mm; }
   body{font-family:'Malgun Gothic',-apple-system,sans-serif;color:#14161A;margin:0;padding:20px;}
+  ${ES_LETTERHEAD_CSS}
   .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:flex-end;gap:12px;z-index:100;}
   .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;}
   .gp-title{font-size:18px;font-weight:700;color:#1C2B4A;border-bottom:2px solid #1C2B4A;padding:0 0 12px;margin:0 0 18px;}
@@ -10221,13 +10264,14 @@ function GrammarBankPrototype() {
   @media print{ .toolbar{display:none !important;} }
 </style></head><body>
   <div class="toolbar"><button onclick="window.print()">🖨 인쇄 / PDF 저장</button></div>
-  <div class="gp-title">문법 문제뱅크 — ${esEscapeHtml(grade)} (${items.length}문항)</div>
+  ${esBuildLetterheadHtml(effectiveSubtitle)}
+  <div class="gp-title">${esEscapeHtml(effectiveTitle)}</div>
   <div class="gp-body">${qBlocks}</div>
 </body></html>`;
   }
   function printGrammarBank() {
     if (previewItems.length === 0) { alert("먼저 미리보기(문제 보기 등)를 눌러 인쇄할 문항을 만들어주세요."); return; }
-    esOpenPrintWindow(buildGrammarPrintHtml(previewItems, previewMode !== "q"));
+    esOpenPrintWindow(buildGrammarPrintHtml(previewItems, previewMode !== "q", printTitle, printSubtitle));
   }
 
   function runPreview(mode) {
@@ -10369,6 +10413,14 @@ function GrammarBankPrototype() {
                   <${Button} variant=${cols === 1 ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => setCols(1)}>1단<//>
                   <${Button} variant=${cols === 2 ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => setCols(2)}>2단<//>
                 </div>
+              </div>
+              <div style=${{ padding: "10px 0 0" }}>
+                <${Field} label="인쇄 대제목">
+                  <input value=${printTitle} onChange=${(e) => setPrintTitle(e.target.value)} placeholder="문법 문제뱅크" style=${{ ...inputStyle, fontSize: 12.5 }} />
+                <//>
+                <${Field} label="인쇄 소제목">
+                  <input value=${printSubtitle} onChange=${(e) => setPrintSubtitle(e.target.value)} placeholder=${`${grade} · ${previewItems.length}문항`} style=${{ ...inputStyle, fontSize: 12.5 }} />
+                <//>
               </div>
             <//>
           </div>

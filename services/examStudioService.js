@@ -134,7 +134,8 @@ window.SarahServices = window.SarahServices || {};
   async function createExamPaper(tag, entries) {
     const now = new Date().toISOString();
     const doc = {
-      title: "제목 없는 시험지", grade: tag.grade || "", publisher: tag.publisher || "", examType: tag.examType || "",
+      title: "제목 없는 시험지", subtitle: "", layout: "1col",
+      grade: tag.grade || "", publisher: tag.publisher || "", examType: tag.examType || "",
       entries: entries || [], createdAt: now, updatedAt: now,
     };
     const id = await FS.addDocTo(EXAM_PAPERS_COLLECTION, doc);
