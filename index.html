@@ -8995,6 +8995,18 @@ function EsToolbar({ allChecked, onToggleAll, selectedCount, onBulkPrimary, prim
   `;
 }
 
+// Shared "해설 보기 ▾ / 해설 접기 ▴" toggle — used by both a single-question card and each
+// sub-question inside a 장문·복합 세트 card, so this behavior is written once.
+function ExplanationToggle({ explanation }) {
+  const [open, setOpen] = useState(false);
+  return html`
+    <div>
+      <div className="es-expl-toggle" onClick=${() => setOpen((v) => !v)}>${open ? "해설 접기 ▴" : "해설 보기 ▾"}</div>
+      ${open && html`<div className="es-expl-box">${explanation || "(해설 없음)"}</div>`}
+    </div>
+  `;
+}
+
 // ---------- 단일 문항 카드 ----------
 function EsQuestionCard({ item, checked, onToggleCheck, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
