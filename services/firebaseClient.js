@@ -68,5 +68,23 @@ window.SarahServices = window.SarahServices || {};
     await window.__deleteDoc(window.__doc(db(), collectionName, id));
   }
 
-  window.SarahServices.firebaseClient = { getDoc, getAllDocs, getDocsWhere, docSizeBytes, addDocTo, setDocAt, deleteDocAt };
+  // 섀도잉 녹음(2026-09-03) — reading-library.html이 Storage에 올린
+  // shadowingRecordings/{studentId}/{storyId}/latest.webm을 교사 화면(ReadingHistoryEntry)이
+  // 재생하기 위해서만 쓰는 읽기 전용 헬퍼. 녹음이 없는 게 정상 상태(대부분의 지문 기록에는 아직
+  // 녹음이 없다)라, "object-not-found"는 에러가 아니라 그냥 null로 돌려준다 — 호출부가 매번
+  // try/catch를 반복하지 않도록 여기서 흡수한다. window.__storage가 없으면(Storage init 자체가
+  // fail-soft로 실패한 환경) 마찬가지로 조용히 null.
+  async function getShadowingRecordingUrl(studentIdVal, storyId) {
+    if (!window.__storage || !studentIdVal || !storyId) return null;
+    try {
+      const path = `shadowingRecordings/${studentIdVal}/${storyId}/latest.webm`;
+      return await window.__getDownloadURL(window.__storageRef(window.__storage, path));
+    } catch (e) {
+      if (e && e.code === "storage/object-not-found") return null;
+      console.warn("섀도잉 녹음 URL 조회 실패", e);
+      return null;
+    }
+  }
+
+  window.SarahServices.firebaseClient = { getDoc, getAllDocs, getDocsWhere, docSizeBytes, addDocTo, setDocAt, deleteDocAt, getShadowingRecordingUrl };
 })();

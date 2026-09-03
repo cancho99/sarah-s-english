@@ -1,0 +1,19 @@
+// Firebase Storage rules for the "sarah-s-english" project.
+//
+// 2026-09-03 — first use of Cloud Storage in this project (everything else stores files as
+// base64 inside Firestore docs, per CLAUDE.md). reading-library.html has no Firebase Auth session
+// at all (see CLAUDE.md "No Firebase Authentication") — student/teacher identity there is just a
+// URL param, never a request.auth claim — so this can't gate access by auth like firestore.rules
+// does for index.html's collections. It uses the same fully-open trust model as every
+// reading-library.html-owned Firestore collection (readingLibrary/readingVocab/readingJournal/...).
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Shadowing (읽기 따라 말하기) practice recordings, one file per student+story
+    // (shadowingRecordings/{studentId}/{storyId}/latest.webm) — reading-library.html uploads,
+    // index.html's teacher view (ReadingHistoryEntry) only reads.
+    match /shadowingRecordings/{studentId}/{storyId}/{fileName} {
+      allow read, write: if true;
+    }
+  }
+}
