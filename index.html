@@ -413,10 +413,6 @@
   // Phase 9-A — Teacher 로그인 백그라운드 Auth 세션용. 기존 passcode 로그인 흐름/Student·Parent
   // 로그인은 전혀 참조하지 않는다(syncTeacherFirebaseAuth에서만 사용).
   import { getAuth, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  // 섀도잉 녹음 재생(2026-09-03) — reading-library.html이 학생 녹음을 Firebase Storage
-  // (shadowingRecordings/{studentId}/{storyId}/latest.webm)에 올려두면, 교사 화면(ReadingHistoryEntry)이
-  // 그 URL만 읽어와 재생한다. 이 파일은 Storage에 쓰지 않는다 — 읽기(getDownloadURL) 전용.
-  import { getStorage, ref as storageRef, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   const firebaseConfig = {
     apiKey: "AIzaSyAj45YlZPyJmsDha4p9rqFSjQUdnHeg-PU",
     authDomain: "sarah-s-english.firebaseapp.com",
@@ -456,15 +452,6 @@
     window.__onFcmMessage = onMessage;
   } catch (e) {
     console.warn("Firebase Messaging unavailable:", e);
-  }
-  // 섀도잉 녹음 재생 — 실패해도(Storage 미설정 등) 나머지 앱은 그대로 동작해야 하므로 위 두
-  // 블록과 동일하게 fail-soft.
-  try {
-    window.__storage = getStorage(firebaseApp);
-    window.__storageRef = storageRef;
-    window.__getDownloadURL = getDownloadURL;
-  } catch (e) {
-    console.warn("Firebase Storage unavailable:", e);
   }
 </script>
 </head>
@@ -5630,7 +5617,7 @@ function StudentReadingLogTab({ studentId, studentFcmToken, updateData, onViewGr
           : weekGroups.map((g, gi) => html`
             <div key=${g.label} style=${{ marginTop: gi === 0 ? 0 : 16 }}>
               <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6, letterSpacing: 0.2 }}>${g.label}</div>
-              ${g.entries.map((e, i) => html`<${ReadingHistoryEntry} key=${e.id || i} entry=${e} vocabGroup=${vocabGroupByTitle.get(e.storyTitle) || null} updateData=${updateData} studentFcmToken=${studentFcmToken} studentId=${studentId} />`)}
+              ${g.entries.map((e, i) => html`<${ReadingHistoryEntry} key=${e.id || i} entry=${e} vocabGroup=${vocabGroupByTitle.get(e.storyTitle) || null} updateData=${updateData} studentFcmToken=${studentFcmToken} />`)}
             </div>
           `)}
       <//>
@@ -5692,31 +5679,7 @@ const INTEGRITY_BADGE_COLORS = {
 // 불편했다(사용자 제보). 레이아웃만 카드형으로 다시 짰고, 데이터 로직(정렬/그룹핑/vocab 계산 등
 // 이 컴포넌트 밖의 로직)은 전혀 건드리지 않았다 — svc.computeIntegrityStatus가 반환하는 상태값과
 // entry/vocabGroup의 필드 의미도 그대로다.
-// 섀도잉(따라 말하기) 녹음 재생 — reading-library.html이 Storage에 자동 업로드해둔
-// shadowingRecordings/{studentId}/{storyId}/latest.webm을 확인해서, 있을 때만 재생 컨트롤을
-// 보여준다(대부분의 기록엔 아직 녹음이 없는 게 정상이라 조용히 아무것도 렌더링하지 않는다).
-// ReadingHistoryEntry가 펼쳐질 때만 마운트되므로(아래 호출부), 접혀 있는 카드는 이 조회 자체를
-// 하지 않는다 — 목록 전체를 한 번에 열 때 N개의 Storage 조회가 한꺼번에 나가는 걸 피한다.
-function ShadowingPlaybackButton({ studentId, storyId }) {
-  const [url, setUrl] = useState(undefined); // undefined=확인 중, null=없음, string=재생 가능
-  useEffect(() => {
-    let cancelled = false;
-    window.SarahServices.firebaseClient.getShadowingRecordingUrl(studentId, storyId).then((u) => {
-      if (!cancelled) setUrl(u);
-    });
-    return () => { cancelled = true; };
-    /* eslint-disable-next-line */
-  }, [studentId, storyId]);
-  if (!url) return null;
-  return html`
-    <div style=${{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
-      <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>🎙 학생 섀도잉 녹음</div>
-      <audio controls src=${url} style=${{ width: "100%", height: 34 }} onClick=${(e) => e.stopPropagation()} />
-    </div>
-  `;
-}
-
-function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken, studentId }) {
+function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken }) {
   const [open, setOpen] = useState(false);
   const svc = window.SarahServices.readingService;
   const integrity = entry.integrity || null;
@@ -5780,7 +5743,6 @@ function ReadingHistoryEntry({ entry, vocabGroup, updateData, studentFcmToken, s
             <${ReadingCardVocabBlock} group=${vocabGroup} updateData=${updateData} studentFcmToken=${studentFcmToken} />
           </div>
         `}
-        <${ShadowingPlaybackButton} studentId=${studentId} storyId=${entry.storyId} />
       `}
     <//>
   `;
@@ -9996,12 +9958,44 @@ function GrammarBankPrototype() {
   const [cols, setCols] = useState(1);
   const [previewMode, setPreviewMode] = useState(null);
   const [previewItems, setPreviewItems] = useState([]);
+  // 2026-09-03 — 교사가 직접 문항을 등록할 수 있는 폼 추가. 등록된 문항은 Firestore
+  // grammarBankQuestions 컬렉션에 저장되고(문서당 1문항), 여기서 로드해 GB_BANK의 더미/실제
+  // 문항과 합쳐서 문항수 계산·미리보기·전체 목록에 반영한다. GB_BANK(코드에 하드코딩된 것)는
+  // 읽기 전용으로 다루고, 삭제는 Firestore에서 불러온 항목에만 허용한다(id가 있는 항목).
+  const [myQuestions, setMyQuestions] = useState([]); // [{id, grade, cat, sub, type, q, opts, ans}]
+  const [loadingMy, setLoadingMy] = useState(true);
+  const [formCat, setFormCat] = useState("");
+  const [formSub, setFormSub] = useState("");
+  const [formType, setFormType] = useState("mc");
+  const [formQ, setFormQ] = useState("");
+  const [formOpts, setFormOpts] = useState(["", "", "", ""]);
+  const [formAnsIdx, setFormAnsIdx] = useState(0);
+  const [formAns, setFormAns] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const FC = window.SarahServices.firebaseClient;
+        const docs = await FC.getAllDocs("grammarBankQuestions");
+        if (cancelled) return;
+        setMyQuestions(Object.entries(docs).map(([id, d]) => ({ id, ...d })));
+      } catch (e) {
+        console.error("grammarBankQuestions load failed", e);
+      } finally {
+        if (!cancelled) setLoadingMy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   function pickGrade(g) {
     setGrade(g);
     const exp = {}; const sel = {};
     GB_GRAMMAR_TREE[g].forEach((c, i) => { exp[c.cat] = i === 0; c.subs.forEach((s) => { sel[c.cat + "|" + s] = true; }); });
     setExpanded(exp); setSelected(sel); setPreviewMode(null); setPreviewItems([]);
+    setFormCat(GB_GRAMMAR_TREE[g][0].cat); setFormSub(GB_GRAMMAR_TREE[g][0].subs[0]);
   }
   function toggleCat(cat) { setExpanded((e) => ({ ...e, [cat]: !e[cat] })); }
   function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
@@ -10014,6 +10008,9 @@ function GrammarBankPrototype() {
     GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((s) => { sel[c.cat + "|" + s] = checked; }));
     setSelected(sel);
   }
+  function myQuestionsFor(cat, sub) {
+    return myQuestions.filter((m) => m.grade === grade && m.cat === cat && m.sub === sub);
+  }
   function getPool() {
     const mcPool = [], saPool = [];
     if (!grade) return { mcPool, saPool };
@@ -10021,6 +10018,7 @@ function GrammarBankPrototype() {
       if (selected[c.cat + "|" + sub]) {
         const q = GB_BANK[grade][c.cat][sub];
         mcPool.push(...q.mc); saPool.push(...q.sa);
+        myQuestionsFor(c.cat, sub).forEach((m) => { (m.type === "mc" ? mcPool : saPool).push(m); });
       }
     }));
     return { mcPool, saPool };
@@ -10028,11 +10026,48 @@ function GrammarBankPrototype() {
   const { mcPool, saPool } = getPool();
   const pickedCount = Object.values(selected).filter(Boolean).length;
 
+  async function submitQuestion() {
+    if (!formQ.trim()) { alert("문제 내용을 입력해주세요."); return; }
+    if (formType === "mc" && formOpts.some((o) => !o.trim())) { alert("보기 4개를 모두 입력해주세요."); return; }
+    if (formType === "sa" && !formAns.trim()) { alert("정답을 입력해주세요."); return; }
+    setSaving(true);
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      const numerals = ["①", "②", "③", "④"];
+      const data = formType === "mc"
+        ? { grade, cat: formCat, sub: formSub, type: "mc", q: formQ.trim(), opts: formOpts.map((o, i) => `${numerals[i]} ${o.trim()}`), ans: `${numerals[formAnsIdx]} ${formOpts[formAnsIdx].trim()}` }
+        : { grade, cat: formCat, sub: formSub, type: "sa", q: formQ.trim(), ans: formAns.trim() };
+      const id = await FC.addDocTo("grammarBankQuestions", data);
+      setMyQuestions((prev) => [...prev, { id, ...data }]);
+      setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAns("");
+    } catch (e) {
+      alert("저장에 실패했어요: " + (e && e.message ? e.message : e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function deleteMyQuestion(id) {
+    if (!confirm("이 문항을 삭제할까요?")) return;
+    try {
+      await window.SarahServices.firebaseClient.deleteDocAt("grammarBankQuestions", id);
+      setMyQuestions((prev) => prev.filter((m) => m.id !== id));
+    } catch (e) {
+      alert("삭제에 실패했어요: " + (e && e.message ? e.message : e));
+    }
+  }
+
   function runPreview(mode) {
     const mcN = Math.min(mcCount, mcPool.length);
     const saN = Math.min(saCount, saPool.length);
     setPreviewItems([...gbShuffle(mcPool).slice(0, mcN), ...gbShuffle(saPool).slice(0, saN)]);
     setPreviewMode(mode);
+  }
+  // "전체 목록 보기" — 위 미리보기(문제보기/정답보기)는 총 문항수 설정에 맞춰 무작위로 뽑은
+  // 일부만 보여주는데, 실제로 등록된 문항을 전부 훑어보고 싶다는 요청(2026-09-03)으로 추가했다.
+  // 셔플 없이 카테고리 순서 그대로, 선택된 소주제의 객관식+주관식 전 문항을 보여준다.
+  function showAllQuestions() {
+    setPreviewItems([...mcPool, ...saPool]);
+    setPreviewMode("qa");
   }
 
   if (!grade) {
@@ -10079,7 +10114,7 @@ function GrammarBankPrototype() {
                   <div style=${{ padding: "0 0 8px 26px" }}>
                     ${c.subs.map((sub) => {
                       const key = c.cat + "|" + sub; const checked = !!selected[key];
-                      const total = GB_BANK[grade][c.cat][sub].mc.length + GB_BANK[grade][c.cat][sub].sa.length;
+                      const total = GB_BANK[grade][c.cat][sub].mc.length + GB_BANK[grade][c.cat][sub].sa.length + myQuestionsFor(c.cat, sub).length;
                       return html`
                         <label key=${sub} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: `1px solid ${checked ? C.gold : C.line}`, background: checked ? "#FBF6EA" : "#fff", borderRadius: 4, cursor: "pointer", fontSize: 12, marginBottom: 6 }}>
                           <input type="checkbox" checked=${checked} onChange=${() => toggleSub(c.cat, sub)} />
@@ -10096,6 +10131,40 @@ function GrammarBankPrototype() {
         <//>
 
         <div>
+          <${Card}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 직접 등록</div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <select value=${formCat} onChange=${(e) => { setFormCat(e.target.value); setFormSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1 }}>
+                ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
+              </select>
+              <select value=${formSub} onChange=${(e) => setFormSub(e.target.value)} style=${{ ...inputStyle, flex: 1 }}>
+                ${(GB_GRAMMAR_TREE[grade].find((c) => c.cat === formCat) || { subs: [] }).subs.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
+              </select>
+            </div>
+            <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <${Button} variant=${formType === "mc" ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setFormType("mc")}>객관식<//>
+              <${Button} variant=${formType === "sa" ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setFormType("sa")}>주관식<//>
+            </div>
+            <${Field} label="문제">
+              <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 56 }} placeholder="문제 내용을 입력하세요" />
+            <//>
+            ${formType === "mc" ? html`
+              <${Field} label="보기 (정답에 표시)">
+                ${formOpts.map((opt, i) => html`
+                  <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} />
+                    <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle }} placeholder=${`보기 ${i + 1}`} />
+                  </div>
+                `)}
+              <//>
+            ` : html`
+              <${Field} label="정답">
+                <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${inputStyle} placeholder="정답을 입력하세요" />
+              <//>
+            `}
+            <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : "+ 이 소주제에 문항 등록"}<//>
+          <//>
+
           <${Card}>
             <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 수 설정</div>
             <${Field} label="총 문항수">
@@ -10122,7 +10191,10 @@ function GrammarBankPrototype() {
           <//>
 
           <${Card}>
-            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>미리보기</div>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>미리보기</div>
+              <span onClick=${showAllQuestions} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>선택한 소주제 전체 목록 보기 (${mcPool.length + saPool.length}문항)</span>
+            </div>
             <div style=${{ display: "flex", gap: 8, marginBottom: 12 }}>
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("q")}>문제 보기<//>
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("a")}>정답 보기<//>
@@ -10131,10 +10203,11 @@ function GrammarBankPrototype() {
             <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6", padding: 16, minHeight: 140, columnCount: cols === 2 ? 2 : 1, columnGap: 24 }}>
               ${previewItems.length === 0 && html`<div style=${{ textAlign: "center", color: "#9a9488", fontSize: 12.5, padding: "44px 0" }}>카테고리를 선택하고 미리보기를 눌러주세요.</div>`}
               ${previewItems.map((item, idx) => html`
-                <div key=${idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid" }}>
+                <div key=${item.id || idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid" }}>
                   <div style=${{ display: "flex", gap: 8, fontSize: 13.5, color: C.ink, lineHeight: 1.6 }}>
                     <span style=${{ display: "inline-flex", width: 20, height: 20, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
-                    <span>${item.q}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span></span>
+                    <span style=${{ flex: 1 }}>${item.q}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${item.id && html`<span style=${{ fontSize: 10.5, color: C.navy, border: `1px solid ${C.navy}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>내가 등록</span>`}</span>
+                    ${item.id && html`<span onClick=${() => deleteMyQuestion(item.id)} style=${{ color: C.slate, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>삭제</span>`}
                   </div>
                   ${previewMode !== "a" && item.type === "mc" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>${item.opts.join("   ")}</div>`}
                   ${previewMode !== "a" && item.type === "sa" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>______________________________</div>`}
@@ -15318,13 +15391,6 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
   const [nextMonth, setNextMonth] = useState(saved.nextMonth || "");
   const [neltComment, setNeltComment] = useState(saved.neltComment || "");
   const [published, setPublished] = useState(saved.published || false);
-  // "이번 달은 작성 안 함"(2026-09-02) — Today 대시보드 "📊 월말 리포트 미작성" 카드가 이미 쓰고
-  // 있던 monthlyReports[month].dismissed를 그대로 재사용한다(새 "skipped" 필드를 따로 만들지
-  // 않음 — 두 필드가 의미상 완전히 같은데도 어디서 껐는지에 따라 이름이 달라지면 나중에
-  // missingMonthlyReportsForRoster가 어느 쪽을 봐야 하는지 헷갈리는 문제가 생긴다). 여기서는
-  // saveReport()의 "저장" 버튼과 별개로 체크 즉시 저장한다(Today 카드의 "작성 안 함" 버튼과 같은
-  // 즉시 반영 UX) — published/content 등 나머지 필드는 절대 건드리지 않는다.
-  const [dismissed, setDismissedState] = useState(saved.dismissed || false);
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState("");
   // 시험 이력 골라서 넣기 + 성적 추이(2026-09-01) — saved.selectedExamIds가 undefined면(이 달
@@ -15384,7 +15450,7 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     setAttendance(s.attendance || null);
     setContent(normalizeReportContent(s.content));
     setGood(s.good || ""); setImprove(s.improve || ""); setComment(s.comment || ""); setNextMonth(s.nextMonth || "");
-    setNeltComment(s.neltComment || ""); setPublished(s.published || false); setDismissedState(s.dismissed || false); setGenErr("");
+    setNeltComment(s.neltComment || ""); setPublished(s.published || false); setGenErr("");
     // 저장된 적 있으면(빈 배열 포함) 그 값 그대로. 저장된 적 없으면(undefined) 여기서는 손대지
     // 않고 위 자동 선택 useEffect가 timelineRows를 보고 채우게 둔다 — 여기서 []로 초기화해
     // 버리면 두 effect가 같은 렌더에서 서로 값을 덮어써 자동 선택이 씹힐 수 있다.
@@ -15406,22 +15472,12 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
     const nextPublished = publishOverride != null ? publishOverride : published;
     await updateData((d) => ({
       ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, selectedExamIds, published: nextPublished, dismissed } },
+      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ratings, attendance: att, content: draftContent, good, improve, comment, nextMonth, neltComment, selectedExamIds, published: nextPublished } },
     }));
     setPublished(nextPublished);
   }
   async function publishReport() { await saveReport(true); }
   async function unpublishReport() { await saveReport(false); }
-  // 체크박스 전용 — saveReport()의 "저장" 버튼을 누르지 않아도 즉시 반영되고, 되돌리기도(체크
-  // 해제) 똑같이 즉시 반영된다. saveReport()도 위에서 dismissed를 같이 써주므로, 이 토글 이후
-  // "저장"을 눌러도 값이 덮어써지지 않는다.
-  async function setDismissed(next) {
-    setDismissedState(next);
-    await updateData((d) => ({
-      ...d,
-      monthlyReports: { ...(d.monthlyReports || {}), [month]: { ...(d.monthlyReports || {})[month], dismissed: next } },
-    }));
-  }
 
   function setRating(key, val) { setRatings((r) => ({ ...r, [key]: val })); }
   function setAtt(key, val) { setAttendance({ ...att, [key]: val }); }
@@ -15643,10 +15699,6 @@ function MonthlyReportView({ student, data, updateData, initialMonth, initialMon
             ? html`<${Button} variant="ghost" onClick=${unpublishReport}>비공개로 되돌리기<//>`
             : html`<${Button} variant="gold" onClick=${publishReport}>✔ 작성 완료 (학부모께 공개)<//>`}
         </div>
-        <label style=${{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12, color: C.slate, cursor: "pointer" }}>
-          <input type="checkbox" checked=${dismissed} onChange=${(e) => setDismissed(e.target.checked)} style=${{ width: 13, height: 13, appearance: "auto" }} />
-          이번 달(${month})은 작성 안 함 — Today 화면 "월말 리포트 미작성" 알림에서 이 학생만 제외해요
-        </label>
       <//>
 
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>0. 이번 달 한눈에 보기 (Student Progress 요약)</div>
