@@ -50,13 +50,33 @@ const TYPE_INSTRUCTIONS = {
   "장문": "지문을 두 문항짜리 장문 세트로 구성 — 예: (1) 제목/주제 추론 + (2) 내용일치. 문항 2개를 함께 생성.",
 };
 
+// exam-studio-prototype.html의 generateMultiTypeQuestions 모드(2026-09-03)도 이 규칙을 그대로
+// 재사용한다 — "question" 모드의 includeAnalysis 스키마/규칙을 복사해서 두 벌 만들지 않기 위해
+// 이 함수 하나로 뺐다. 텍스트 내용은 원래 SYSTEM_PROMPT에 있던 두 줄과 완전히 동일하다(순수
+// 추출, 문구 변경 없음) — 아래 SYSTEM_PROMPT와 MULTI_TYPE_SYSTEM_PROMPT 둘 다 이 함수를 호출한다.
+function buildAnalysisPromptSection() {
+  return `- 구문분석의 "tag"는 반드시 영어 문법 약어만 사용하세요 (예: S, V, V (passive), O, C, Prep. Phrase, To-inf, Adv). 한글 단어(주어, 동사 등)를 절대 섞지 마세요.
+- 구문분석은 지문의 문장을 원칙적으로 빠짐없이 분석하세요. 지문이 8문장을 넘어가면, 문법적으로 설명할 가치가 낮은 아주 짧고 단순한 문장(예: 단순 접속어만 있는 문장)은 생략할 수 있지만, 그 외에는 모든 문장을 다루세요.
+- vocab(중요 어휘)은 요청에 학년 정보가 있으면 그 학년 학생 기준으로 "지금 새로 익혀야 할 핵심 단어"를 우선 선택하세요 — 그 학년 학생이면 이미 당연히 아는 쉬운 단어는 제외합니다. 학년 정보가 없으면 중3~고1 수준을 기준으로 판단하세요.`;
+}
+// summary/flow/sentences/vocab을 안전한 기본값으로 정규화 — "question" 모드의 최종 응답과
+// generateMultiTypeQuestions의 "_analysis" 마커 아이템 둘 다 이 함수로 만든다(형태를 두 곳에서
+// 따로 손보지 않도록).
+function parseAnalysisFields(parsed) {
+  return {
+    summary: (parsed && parsed.summary && typeof parsed.summary === "object") ? parsed.summary : { topic: "", summary: "" },
+    flow: Array.isArray(parsed && parsed.flow) ? parsed.flow : [],
+    sentences: Array.isArray(parsed && parsed.sentences) ? parsed.sentences : [],
+    vocab: Array.isArray(parsed && parsed.vocab) ? parsed.vocab : [],
+  };
+}
+
 const SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 표준화 시험 문항을 제작하는 전문 교육 평가 개발자입니다.
 이 요청은 정식 학교 시험 대비 학습 자료(정답이 있는 객관식 평가 문항)를 만들기 위한 것입니다. 주어진 영어 지문을 분석하고, 요청받은 유형의 평가 문항(정답 1개 + 오답 선택지 4개로 구성된 표준 객관식 문항)을 만듭니다.
 
 [중요 규칙]
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
-- 구문분석의 "tag"는 반드시 영어 문법 약어만 사용하세요 (예: S, V, V (passive), O, C, Prep. Phrase, To-inf, Adv). 한글 단어(주어, 동사 등)를 절대 섞지 마세요.
-- 구문분석은 지문의 문장을 원칙적으로 빠짐없이 분석하세요. 지문이 8문장을 넘어가면, 문법적으로 설명할 가치가 낮은 아주 짧고 단순한 문장(예: 단순 접속어만 있는 문장)은 생략할 수 있지만, 그 외에는 모든 문장을 다루세요.
+${buildAnalysisPromptSection()}
 - "어법"과 "어휘" 유형을 만들 때는 실제 학교 내신·수능 출제자처럼, 지문 전체에서 다음 기준으로 변형할 지점을 스스로 골라내세요: (어법) 수 일치, 능동/수동태, 시제, 관계대명사/관계부사, 분사구문, 병렬구조, to부정사 vs 동명사, 접속사 등 오답으로 만들기 좋은 문법 포인트가 있는 문장. (어휘) 문맥상 정확한 뜻 구분이 필요한 다의어, 반의어로 바꾸면 문맥이 확 달라지는 핵심 어휘. 지문에서 아무 문장이나 고르지 말고, 이런 기준에 맞는 문장/단어를 우선적으로 선택하세요.
 - 문제의 정답 선택지 번호(answer_index)는 0부터 시작하는 인덱스입니다.
 - 모든 해석과 해설, 문제 지문 설명은 자연스러운 한국어로 작성합니다.
@@ -112,6 +132,16 @@ const TRANSFORM_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내�
   "transformed_html": "지문 전체 텍스트, 변형 지점은 <span class=\\"chg\\">...</span>로 표시",
   "changes": [ { "type": "어법|어휘", "original": "원래 표현", "changed": "변형된 표현", "explanation": "구체적인 문법/어휘 개념 + 왜 이 지점을 변형했는지 한국어로 설명" } ]
 }`;
+
+// exam-studio-prototype.html은 자유 텍스트 level 대신 학년(1학년/2학년/3학년) 값을 보낸다 —
+// level이 명시적으로 오면(passage-transform.html의 기존 방식) 그걸 그대로 우선하고, 없으면
+// 이 매핑으로 자연스러운 난이도 설명으로 바꿔서 프롬프트에 쓴다.
+function gradeToTransformLevel(grade) {
+  if (grade === "1학년") return "중1~2 수준 — 쉬운 어휘와 단문 위주";
+  if (grade === "2학년") return "중3~고1 수준 — 한 단계 위 어휘, 복문 시작";
+  if (grade === "3학년") return "고2~수능 수준 — 수능형 복문과 고난도 추상 어휘";
+  return null;
+}
 
 function buildTransformPrompt({ passage, level }) {
   return `[지문]
@@ -720,43 +750,101 @@ const BLANK_INFERENCE_EXTRACT_SYSTEM_PROMPT = `당신은 한국 영어 학원에
 // Bank/Reading Analysis 화면 어디에도 연결되지 않음, 실험용). SMOAT류 "지문 하나 → 여러 유형
 // 동시 생성" 흐름을 검증하기 위한 신규 모드. 기존 8개 모드(위 grammarGenerate/readingGenerate/
 // readingAnalysisGenerate 등)와 완전히 독립적이며, 그것들의 로직/프롬프트는 한 글자도 건드리지
-// 않는다. 6개 유형(빈칸추론/어법판단/글의순서/문장삽입/주제추론/내용일치)이 서로 다른 렌더링
-// 규칙을 갖지만, 프로토타입 검증 단계에서는 하나의 통일된 스키마(questionType/questionText/
-// contextNote/displayPassage/choices[5]/answer/explanation)로 단순화해 받는다 — 실제 사이트에
-// 통합하기로 결정되면 유형별로 스키마를 분리할지는 그때 다시 설계한다.
+// 않는다. 25개 유형(2026-09-03 확장, 아래 [유형별 규칙] 참고)이 서로 다른 렌더링 규칙을 갖지만,
+// 프로토타입 검증 단계에서는 22개 유형을 하나의 통일된 스키마(questionType/questionText/
+// contextNote/displayPassage/choices[5]/answer/explanation)로 단순화해 받는다 — 나머지 3개
+// (longTitle/longVocab/compoundParagraph, "장문·복합 세트")만 지문 하나를 여러 문항이 공유하는
+// 별도 그룹 스키마를 쓴다(아래 [장문·복합 세트 스키마] 참고). 실제 사이트에 통합하기로 결정되면
+// 유형별로 스키마를 더 세분화할지는 그때 다시 설계한다.
 const MULTI_TYPE_MODEL = "claude-sonnet-5";
 
 const MULTI_TYPE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 독해 문제를 만드는 전문 교육 평가 개발자입니다.
 주어진 지문 하나로, 요청받은 여러 유형의 객관식 문제를 동시에 만들어야 합니다. 각 유형마다 몇 개씩 만들지는 요청에 명시된 개수를 그대로 따르세요.
 
-모든 문제는 유형이 달라도 항상 아래와 같은 하나의 통일된 JSON 형태로 반환합니다:
-{"questionType":"blank","questionText":"...","contextNote":"","displayPassage":"...","choices":["...","...","...","...","..."],"answer":0,"explanation":"..."}
+longTitle/longVocab/compoundParagraph 세 유형을 제외한 나머지 22개 유형은 유형이 달라도 항상 아래와 같은 하나의 통일된 JSON 형태로 반환합니다(이 세 유형의 예외 스키마는 맨 아래 [장문·복합 세트 스키마] 참고):
+{"questionType":"theme","questionText":"...","contextNote":"","displayPassage":"...","choices":["...","...","...","...","..."],"answer":0,"explanation":"..."}
 
-- questionType: 요청받은 유형 키(blank/grammar/order/insert/theme/match) 중 하나를 그대로 담습니다.
+- questionType: 요청받은 유형 키 중 하나를 그대로 담습니다(전체 목록은 아래 [유형별 규칙] 참고).
 - questionText: 학생에게 보여줄 발문(지시문) 한 줄 — 아래 유형별 기본값을 그대로 쓰거나 자연스럽게 다듬어 쓰세요.
-- contextNote: 특별히 강조해서 따로 보여줄 부가 정보가 있을 때만 채우고(예: 문장삽입 유형의 "삽입할 문장"), 필요 없는 유형은 빈 문자열로 둡니다.
+- contextNote: 특별히 강조해서 따로 보여줄 부가 정보가 있을 때만 채우고(예: 문장삽입 유형의 "삽입할 문장", 요약문 완성 유형의 요약 문장), 필요 없는 유형은 빈 문자열로 둡니다.
 - displayPassage: 학생에게 실제로 보여줄 지문 본문. 원문을 그대로 쓰거나, 아래 유형별 규칙대로 가공합니다.
 - choices: 선택지 정확히 5개, 문자열 배열.
 - answer: 정답 선택지의 0-based 인덱스(0~4, 즉 0이 ①번).
 - explanation: 정답 해설 2~3문장.
 
-[유형별 규칙]
-1) blank(빈칸추론): displayPassage 안에서 지문 내용 중 핵심 어구·문장을 하나 골라 "_____"로 가려서 표시하세요. choices는 그 빈칸에 들어갈 말 5개(정답 1개 + 그럴듯한 오답 4개). questionText 기본값: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?"
-2) grammar(어법판단): displayPassage 안에서 문법적으로 검토할 만한 표현 5곳을 골라 각 표현 앞에 ①~⑤ 기호를 붙이고, 그 중 정확히 한 곳만 문법적으로 틀리게(원문을 살짝 바꿔서) 만드세요. choices에는 "① [해당 표현 그대로]" 형태로 5곳의 표현을 담고, answer는 틀린 표현의 인덱스. questionText 기본값: "다음 글의 밑줄 친 부분 중, 어법상 틀린 것은?"
-3) order(글의순서): 지문을 자연스러운 흐름이 끊기도록 (A),(B),(C) 세 부분으로 나누고, displayPassage에는 "주어진 글" 부분 다음에 "(A)\\n...\\n(B)\\n...\\n(C)\\n..." 형태로 순서를 뒤섞어 보여주세요. choices 5개는 "(B) - (A) - (C)"처럼 배열 순서 조합 문자열이어야 하며 그 중 정답 조합 1개를 포함하세요. questionText 기본값: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?"
-4) insert(문장삽입): 지문에서 자연스러운 문장 하나를 골라 contextNote에 "주어진 문장: ..."으로 담고, displayPassage에는 그 문장을 뺀 나머지 지문에서 삽입 가능한 5개 지점을 ①~⑤로 표시하세요. choices는 "①","②","③","④","⑤" 그대로, answer는 원래 그 문장이 있던 자리의 인덱스. questionText 기본값: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳은?"
-5) theme(주제추론): displayPassage는 원문 그대로. choices 5개는 지문 주제로 그럴듯한 문장/구 5개(정답 1개 + 오답 4개). questionText 기본값: "다음 글의 주제로 가장 적절한 것은?"
-6) match(내용일치): displayPassage는 원문 그대로. choices 5개는 지문 내용에 대한 서술 5개이며, 그 중 정확히 하나만 지문 내용과 일치하지 않아야 합니다(answer는 그 하나의 인덱스). questionText 기본값: "다음 글의 내용과 일치하지 않는 것은?"
+[유형별 규칙 — 대의 파악]
+1) theme(주제 추론): displayPassage는 원문 그대로. choices 5개는 지문 주제로 그럴듯한 문장/구 5개(정답 1개 + 오답 4개). questionText 기본값: "다음 글의 주제로 가장 적절한 것은?"
+2) title(제목 추론): displayPassage는 원문 그대로. choices 5개는 제목으로 그럴듯한 짧은 영어 명사구 5개(정답 1개 + 오답 4개), 실제 수능 제목 선택지처럼 작성하세요. questionText 기본값: "다음 글의 제목으로 가장 적절한 것은?"
+3) gist(요지 추론): displayPassage는 원문 그대로. choices 5개는 지문의 요지를 한국어 문장으로 요약한 것 5개(정답 1개 + 오답 4개). questionText 기본값: "다음 글의 요지로 가장 적절한 것은?"
+4) claim(주장 추론): displayPassage는 필자의 주장이 뚜렷하게 드러나는 논설문 형태로 작성하세요. choices 5개는 필자의 주장을 한국어 문장으로 요약한 것 5개. questionText 기본값: "다음 글에서 필자가 주장하는 바로 가장 적절한 것은?"
+5) purpose(목적 파악): displayPassage는 편지·공지·이메일 등 목적이 뚜렷한 실용문 형태로 작성하세요. choices 5개는 글의 목적을 한국어 문장으로 서술한 것 5개. questionText 기본값: "다음 글의 목적으로 가장 적절한 것은?"
+6) mood(심경/분위기 파악): displayPassage는 등장인물의 감정·분위기가 드러나는 서사문 형태로 작성하세요. choices 5개는 심경 변화를 나타내는 영어 형용사 조합(예: "nervous → relieved") 5개. questionText 기본값: "다음 글에 드러난 필자의 심경으로 가장 적절한 것은?"
+
+[유형별 규칙 — 추론]
+7) implication(함축 의미 추론): displayPassage 안에서 비유적이거나 함축적인 표현 하나를 원문 그대로 두되(밑줄 표시는 텍스트로 하지 않아도 됩니다), questionText에서 "밑줄 친 부분"이라고 지칭하세요. choices 5개는 그 표현이 실제로 의미하는 바를 풀어 쓴 문장 5개. questionText 기본값: "다음 글에서 밑줄 친 부분이 의미하는 바로 가장 적절한 것은?"
+8) reference(지칭 추론): displayPassage 안의 대명사·지시어 하나를 questionText에서 "밑줄 친 부분"으로 지칭하세요. choices 5개는 그것이 가리킬 수 있는 지문 속 명사구 5개. questionText 기본값: "다음 글에서 밑줄 친 부분이 가리키는 대상으로 가장 적절한 것은?"
+
+[유형별 규칙 — 빈칸]
+9) blankWord(빈칸 추론-단어): displayPassage 안에서 핵심 단어 하나를 "_____"로 가려서 표시하세요. choices는 그 자리에 들어갈 단어 5개(품사를 통일해서, 정답 1개 + 오답 4개). questionText 기본값: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?"
+10) blankPhrase(빈칸 추론-구): displayPassage 안에서 핵심 구(2~4단어) 하나를 "_____"로 가려서 표시하세요. choices는 그 자리에 들어갈 구 5개. questionText 기본값: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?"
+11) blankClause(빈칸 추론-절/문장): displayPassage 안에서 핵심 절 또는 문장 하나를 "_____"로 가려서 표시하세요. choices는 그 자리에 들어갈 절/문장 5개. questionText 기본값: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?"
+
+[유형별 규칙 — 어법·어휘]
+12) grammarUnderline(어법성 판단-밑줄): displayPassage 안에서 문법적으로 검토할 만한 표현 5곳을 골라 각 표현 앞에 ①~⑤ 기호를 붙이고, 그 중 정확히 한 곳만 문법적으로 틀리게(원문을 살짝 바꿔서) 만드세요. choices에는 "① [해당 표현 그대로]" 형태로 5곳의 표현을 담고, answer는 틀린 표현의 인덱스. questionText 기본값: "다음 글의 밑줄 친 부분 중, 어법상 틀린 것은?"
+13) grammarBox(어법성 판단-네모): displayPassage 안에서 문법적으로 검토할 만한 표현 5곳을 골라 각각 대괄호([ ])로 표시하고, 그 중 정확히 한 곳만 문맥·어법상 올바르게(나머지 4곳은 그럴듯하지만 어법상 틀리게) 만드세요. choices에는 "① [해당 표현 그대로]" 형태로 5곳을 담고, answer는 어법상 올바른 표현의 인덱스입니다 — grammarUnderline과 반대로 "맞는 것"을 찾는 유형이니 헷갈리지 마세요. questionText 기본값: "다음 글의 [ ] 표시된 부분 중, 어법상 가장 적절한 것은?"
+14) vocabAppropriate(어휘 적절성 판단): displayPassage 안에서 검토할 만한 낱말 5곳을 골라 각 낱말 앞에 ①~⑤ 기호를 붙이고, 그 중 정확히 한 곳만 문맥에 맞지 않는 낱말로(주로 반의어나 어색한 단어로) 바꾸세요. choices에는 "① [해당 낱말]" 형태로 담고, answer는 문맥에 맞지 않는 낱말의 인덱스. questionText 기본값: "다음 글의 밑줄 친 부분 중, 문맥상 낱말의 쓰임이 적절하지 않은 것은?"
+15) contextualMeaning(문맥 속 의미): displayPassage 안에서 다의어나 문맥 의존적 단어 하나를 그대로 두고, questionText에서 "밑줄 친 단어"로 지칭하세요. choices 5개는 그 단어의 문맥상 의미로 그럴듯한 뜻풀이 5개. questionText 기본값: "다음 글에서 밑줄 친 단어의 문맥상 의미로 가장 적절한 것은?"
+
+[유형별 규칙 — 글의 흐름]
+16) irrelevantSentence(무관한 문장 찾기): displayPassage를 자연스러운 문장 5개로 나누어 각 문장 앞에 ①~⑤ 기호를 붙이고, 그 중 정확히 한 문장만 전체 흐름과 무관한 내용으로 만드세요. choices는 "①","②","③","④","⑤" 그대로, answer는 무관한 문장의 인덱스. questionText 기본값: "다음 글에서 전체 흐름과 관계 없는 문장은?"
+17) sentenceInsertion(문장 삽입 — 기존 insert 유형과 동일한 로직): 지문에서 자연스러운 문장 하나를 골라 contextNote에 "주어진 문장: ..."으로 담고, displayPassage에는 그 문장을 뺀 나머지 지문에서 삽입 가능한 5개 지점을 ①~⑤로 표시하세요. choices는 "①","②","③","④","⑤" 그대로, answer는 원래 그 문장이 있던 자리의 인덱스. questionText 기본값: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳은?"
+18) paragraphOrder(글의 순서 — 기존 order 유형과 동일한 로직): 지문을 자연스러운 흐름이 끊기도록 (A),(B),(C) 세 부분으로 나누고, displayPassage에는 "주어진 글" 부분 다음에 "(A)\\n...\\n(B)\\n...\\n(C)\\n..." 형태로 순서를 뒤섞어 보여주세요. choices 5개는 "(B) - (A) - (C)"처럼 배열 순서 조합 문자열이어야 하며 그 중 정답 조합 1개를 포함하세요. questionText 기본값: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?"
+19) summary(요약문 완성): displayPassage는 원문 그대로. contextNote에 빈칸 두 개 (A), (B)가 있는 한 문장짜리 영어 요약문을 담으세요(예: "The passage suggests that ______(A)______ can help people ______(B)______."). choices 5개는 "(A) [단어] - (B) [단어]" 형태의 (A),(B) 단어 쌍 5개(정답 1개 + 오답 4개). questionText 기본값: "다음 글의 내용을 한 문장으로 요약할 때, 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?"
+
+[유형별 규칙 — 내용 파악]
+20) contentMatch(내용 일치/불일치 — 기존 match 유형과 동일한 로직): displayPassage는 원문 그대로. choices 5개는 지문 내용에 대한 서술 5개이며, 그 중 정확히 하나만 지문 내용과 일치하지 않아야 합니다(answer는 그 하나의 인덱스). questionText 기본값: "다음 글의 내용과 일치하지 않는 것은?"
+21) practicalMatch(실용문 내용 일치): displayPassage에 안내문·공고문 형식의 텍스트(제목, 일시, 장소, 참가 방법, 유의사항 등 항목이 나열된 실제 안내문처럼)를 채우세요. choices 5개는 그 안내문 내용에 대한 서술 5개이며, 정확히 하나만 안내문 내용과 일치하지 않아야 합니다. questionText 기본값: "다음 안내문의 내용과 일치하지 않는 것은?"
+22) chartMatch(도표/실용자료 일치·불일치): displayPassage에 도표 데이터를 마크다운 표 형식("| 항목 | 값 |" 같은 파이프 구분)으로 채우고, 표 위에 도표를 설명하는 한두 문장을 덧붙이세요. choices 5개는 그 표 내용에 대한 서술 5개이며, 정확히 하나만 표 내용과 일치하지 않아야 합니다. questionText 기본값: "다음 도표의 내용과 일치하지 않는 것은?"
+
+[유형별 규칙 — 장문/복합 — 아래 [장문·복합 세트 스키마]를 따르는 예외 유형]
+23) longTitle(장문 독해-제목): 500단어 내외의 긴 지문 하나(sharedPassage)에 제목을 묻는 문항을 questions에 담으세요. choices 5개는 제목으로 그럴듯한 영어 명사구 5개. questionText 기본값: "다음 글의 제목으로 가장 적절한 것은?"
+24) longVocab(장문 독해-어휘): 500단어 내외의 긴 지문 하나(sharedPassage)에서, 문맥상 쓰임이 적절하지 않은 낱말을 찾는 문항을 questions에 담으세요. sharedPassage 안에서 검토할 낱말 5곳을 (a)~(e)로 표시하고, choices에는 "(a) [낱말]" 형태로 5곳을 담되 그 중 정확히 하나만 문맥에 맞지 않게 만드세요. questionText 기본값: "다음 글의 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?"
+25) compoundParagraph(복합 문단): 500단어 내외의 긴 지문 하나(sharedPassage)에 서로 다른 하위 유형(어휘 적절성/글의 순서/내용 일치 등)의 질문 2~3개를 questions에 담으세요. 각 질문의 questionText에 어떤 하위 유형을 묻는지 자연스럽게 드러나게 쓰세요.
+
+[장문·복합 세트 스키마 — longTitle/longVocab/compoundParagraph 전용]
+위 23~25번 세 유형은 다른 22개 유형과 달리 단일 객체 스키마를 쓰지 않고, 아래처럼 지문 하나를 여러 문항이 공유하는 "세트" 형태로 반환합니다:
+{"questionType":"longTitle","sharedPassage":"(긴 지문 전체, 여러 문항이 공유)","questions":[{"questionText":"...","contextNote":"","choices":["...","...","...","...","..."],"answer":0,"explanation":"..."},{"questionText":"...","contextNote":"","choices":["...","...","...","...","..."],"answer":0,"explanation":"..."}]}
+- sharedPassage: 이 세트가 공유하는 지문 전체입니다. displayPassage 필드는 이 세 유형에서는 절대 사용하지 마세요(문항마다 지문을 반복해서 넣지 마세요, sharedPassage 하나면 충분합니다).
+- questions: 이 지문에 딸린 하위 문항 배열. 각 문항은 questionText/contextNote/choices/answer/explanation 필드만 가지며(다른 22개 유형의 단일 객체와 필드 이름이 동일), displayPassage와 questionType 필드는 넣지 않습니다.
+- 이 3개 유형에서는 요청된 개수(N)가 "세트를 몇 개 만들지"가 아니라 "그 세트 안에 하위 문항을 몇 개 넣을지"를 의미합니다 — 세트(지문)는 유형당 1개만 만들고, questions 배열에 정확히 요청된 개수만큼의 하위 문항을 넣으세요.
+
+[지문 분석 — 요청에 includeAnalysis:true가 포함될 때만]
+위 유형별 문제들과 별도로, 이 지문 전체에 대한 구문분석·요약·글의 흐름·어휘 분석을 아래 형태의 객체 하나로 만들어 배열에 추가하세요(questionType이 "_analysis"인 것으로 다른 원소들과 구분합니다. sharedPassage/questions 필드는 없습니다):
+{"questionType":"_analysis","summary":{"topic":"주제 한 줄","summary":"전체 요약 2~3문장"},"flow":[{"stage":"도입|전개|마무리","range":"문장 범위 예: 1~2","desc":"설명"}],"sentences":[{"segments":[{"text":"구간 텍스트","tag":"S 또는 null"}],"interpretation":"해석","tip":"문법 설명"}],"vocab":[{"word":"단어","meaning":"뜻"}]}
+${buildAnalysisPromptSection()}
+- 요청된 유형이 하나도 없으면(유형별 문제 요청이 비어 있으면) 다른 유형 문제는 전혀 만들지 말고, 이 "_analysis" 객체 하나만 담은 배열을 반환하세요.
+- includeAnalysis 요청이 없으면 이 "_analysis" 객체를 아예 만들지 마세요.
 
 [중요 규칙]
-- 반드시 위 스키마 객체들을 담은 JSON 배열 하나로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
-- 요청된 각 유형마다 정확히 요청된 개수만큼 만드세요. 같은 유형끼리는 배열에서 연달아 두고, 유형 순서는 요청받은 순서를 따르세요.
-- 선택지는 항상 정확히 5개, 정답은 항상 1개여야 합니다.
+- 반드시 위 스키마 객체들(22개 유형의 단일 객체 + 3개 장문·복합 세트 객체 + 선택적 "_analysis" 객체)을 담은 JSON 배열 하나로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
+- 요청된 각 유형마다 정확히 요청된 개수만큼 만드세요(장문·복합 세트 3개 유형은 위 예외 규칙대로 세트 1개 + 하위 문항 N개). 같은 유형끼리는 배열에서 연달아 두고, 유형 순서는 요청받은 순서를 따르세요.
+- 단일 객체 유형의 선택지는 항상 정확히 5개, 정답은 항상 1개여야 합니다.
 - 답변에 <thinking> 같은 내부 태그나 메타 설명을 절대 포함하지 마세요. 오직 JSON 배열만 출력합니다.`;
 
-function buildMultiTypePrompt({ passageText, types, countPerType }) {
-  const typeLines = types.map((t) => `- ${t.key} (${t.label}): ${countPerType}개`).join("\n");
-  return `[지문]\n${passageText}\n\n[요청 유형과 개수]\n${typeLines}\n\n위 지문 하나로 요청된 모든 유형의 문제를 각각 개수만큼 만들어 JSON 배열로 반환하세요.`;
+// includeAnalysis(2026-09-03 추가) — types가 비어 있어도(지문 분석만 요청) 호출 가능하다.
+// 2026-09-04 — 전체 공통 countPerType 대신 각 유형(types[].count)이 자기 개수를 갖는다.
+// grade(2026-09-07 추가) — exam-studio-prototype.html의 ① 화면 학년 select 값("1학년"/"2학년"/
+// "3학년")을 그대로 실어 보낸다. 25유형 생성 자체는 이 값을 안 쓰지만, includeAnalysis의 vocab
+// 추출이 이 값을 학년 기준으로 참고한다(위 [지문 분석] buildAnalysisPromptSection 규칙 참고).
+function buildMultiTypePrompt({ passageText, types, includeAnalysis, grade }) {
+  const gradeLine = grade ? `\n[학년] ${grade}` : "";
+  const typeSection = types.length > 0
+    ? `[요청 유형과 개수]\n${types.map((t) => `- ${t.key} (${t.label}): ${t.count}개`).join("\n")}\n\n위 지문 하나로 요청된 각 유형을 정확히 그 유형에 지정된 개수만큼 만들어 JSON 배열로 반환하세요.`
+    : `[요청 유형과 개수]\n(선택된 유형 없음 — 유형별 문제는 만들지 마세요)`;
+  const analysisSection = includeAnalysis
+    ? `\n\n[지문 분석 요청]\n위 [지문 분석] 규칙대로 "_analysis" 객체를 만들어 배열에 포함하세요.`
+    : "";
+  return `[지문]\n${passageText}${gradeLine}\n\n${typeSection}${analysisSection}`;
 }
 
 function corsHeaders(origin) {
@@ -1212,16 +1300,22 @@ exports.aiWorker = onRequest(
 
     if (isGenerateMultiType) {
       const passageInput = (passageText || "").trim();
-      const reqTypes = Array.isArray(types) ? types.filter((t) => t && t.key) : [];
+      // 2026-09-04 — 전체 공통 countPerType 하나를 곱하던 방식에서, 유형마다 각자 지정한 개수
+      // (t.count)를 쓰는 방식으로 변경. 각 항목의 count는 1~5로 방어적으로 clamp한다(기존에
+      // 전체 공통 개수를 clamp하던 것과 같은 범위).
+      const reqTypes = Array.isArray(types)
+        ? types.filter((t) => t && t.key).map((t) => ({ key: t.key, label: t.label || "", count: Math.max(1, Math.min(5, Number(t.count) || 1)) }))
+        : [];
       if (passageInput.length < 20) {
         res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
         return;
       }
-      if (reqTypes.length === 0) {
-        res.status(400).json({ error: "생성할 유형을 하나 이상 선택해주세요." });
+      // includeAnalysis(2026-09-03 추가, "question" 모드와 이미 공유하는 body 필드)가 true면
+      // 유형을 하나도 안 골라도(지문 분석만 요청) 통과시킨다.
+      if (reqTypes.length === 0 && !includeAnalysis) {
+        res.status(400).json({ error: "생성할 유형을 하나 이상 선택하거나, 지문 분석을 요청해주세요." });
         return;
       }
-      const n = Math.max(1, Math.min(5, Number(countPerType) || 2));
       let mtRes;
       try {
         mtRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1235,7 +1329,7 @@ exports.aiWorker = onRequest(
             model: MULTI_TYPE_MODEL,
             max_tokens: 12000,
             system: MULTI_TYPE_SYSTEM_PROMPT,
-            messages: [{ role: "user", content: buildMultiTypePrompt({ passageText: passageInput, types: reqTypes, countPerType: n }) }],
+            messages: [{ role: "user", content: buildMultiTypePrompt({ passageText: passageInput, types: reqTypes, includeAnalysis: !!includeAnalysis, grade }) }],
           }),
         });
       } catch (e) {
@@ -1806,7 +1900,7 @@ exports.aiWorker = onRequest(
     }
 
     const userPrompt = isTransform
-      ? buildTransformPrompt({ passage, level })
+      ? buildTransformPrompt({ passage, level: level || gradeToTransformLevel(grade) })
       : buildPrompt({ passage, includeAnalysis, questionTypes, level, countPerType });
 
     let aiRes;
@@ -1847,7 +1941,7 @@ exports.aiWorker = onRequest(
       return;
     }
 
-    res.status(200).json(isTransform ? sanitizeTransformResult(parsed) : parsed);
+    res.status(200).json(isTransform ? sanitizeTransformResult(parsed) : { ...parsed, ...parseAnalysisFields(parsed) });
   }
 );
 
