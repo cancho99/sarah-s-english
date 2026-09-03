@@ -508,6 +508,60 @@ function buildWordMeaningPrompt({ word, sentence }) {
 위 문장에서 "${word}"가 실제로 쓰인 의미를 분석해 JSON으로만 답하세요.`;
 }
 
+// Reading Library 책 전용 용어집 사전 생성(2026-09-03) — 예전엔 학생이 단어를 클릭할 때마다
+// wordMeaning을 실시간으로 불렀는데(위, Firestore 캐시로 재호출은 줄였지만 "처음 클릭"은 항상
+// 실시간 AI 호출이었다), 이제는 책이 등록/처음 열릴 때 한 번(교사가 트리거) 지문 전체를 통째로
+// 넘겨 그 안의 낯선 단어를 문장과 함께 폭넓게 미리 뽑아두고, 학생이 읽는 동안은 그 결과만
+// 조회한다(AI 호출 0회가 목표). wordMeaning의 "문맥 속 실제 의미를 판단한다"는 원칙은 그대로
+// 가져오되, 한 단어가 아니라 지문 전체에서 여러 단어를 한 번에 뽑도록 스키마만 배열로 바꿨다.
+const BOOK_GLOSSARY_SYSTEM_PROMPT = `당신은 한국 중·고등학생의 영어 리딩 학습을 돕는 사전 도우미입니다. 주어진 영어 지문 전체를 읽고, 그 학생 레벨 기준으로 낯설거나 어려울 수 있는 단어를 그 단어가 실제로 등장한 문장과 함께 최대한 폭넓게 뽑아, 문맥에 맞는 뜻을 판단하세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- "word"는 지문에 등장한 표면형 그대로(원형으로 바꾸지 말고 대소문자·철자 그대로) 옮겨 적으세요.
+- "sentence"는 그 단어가 실제로 포함된 문장을 지문에서 한 글자도 바꾸지 않고 그대로 옮겨 적으세요(요약·번역 금지, 학생이 클릭했을 때 화면에서 추출되는 문장과 정확히 매칭돼야 합니다).
+- "lemma"에는 사전 원형(기본형)을, "partOfSpeech"에는 그 문장에서 실제로 쓰인 품사를 다음 중 하나의 영어 약어로 쓰세요: n., v., adj., adv., prep., conj., pron., interj., phrase.
+- "meaningKo"에는 그 문장 속 의미에 정확히 맞는 아주 짧은 한국어 뜻만 쓰세요(1~6글자 안팎, 문장 번역이 아닙니다).
+- 같은 단어라도 지문 안에서 뜻이 다르게 여러 번 쓰였다면 각각 별도 항목으로 뽑으세요.
+- 관사·대명사·be동사·조동사·아주 쉬운 최고빈도 단어(is, the, and, to, in, said 등)는 대부분 이미 알고 있으므로 뽑지 마세요 — 실제로 낯설 수 있는 어휘·숙어에 집중하세요.
+- 학생이 나중에 다시 AI를 부르지 않고 이 결과만으로 지문 대부분의 단어를 찾아볼 수 있어야 하는 것이 목표입니다 — 인색하게 뽑지 말고, 그 레벨 기준 조금이라도 낯설 수 있으면 포함하세요.
+- 뜻을 확신할 수 없는 단어는 억지로 지어내지 말고 그냥 목록에서 빼세요.
+
+[JSON 스키마]
+[{ "word": "지문에 등장한 표면형", "sentence": "그 단어가 포함된 원문 문장 그대로", "lemma": "사전 원형", "partOfSpeech": "n.|v.|adj.|adv.|prep.|conj.|pron.|interj.|phrase", "meaningKo": "문맥에 맞는 짧은 한국어 뜻" }, ...]`;
+
+function buildBookGlossaryPrompt({ passageChunk, level, bookTitle }) {
+  return `학생 레벨: ${level || "중학생 수준"}
+${bookTitle ? `책 제목: ${bookTitle}\n` : ""}지문:
+"""
+${passageChunk}
+"""
+
+위 지문에서 이 학생 레벨 기준으로 낯설 수 있는 단어를 문장과 함께 최대한 폭넓게 뽑아 JSON 배열로만 답하세요.`;
+}
+
+// 지문이 아주 길면(고학년 장문) 한 번의 호출로 응답이 max_tokens를 넘어 잘릴 수 있어 문단 경계
+// 기준으로 청크를 나눈다 — 문장 중간이 아니라 문단(빈 줄) 경계에서만 자르므로, 각 청크 안의
+// "sentence"는 항상 원문 그대로 온전하다. 문단 하나가 그 자체로 이미 한도를 넘으면(드묾) 어쩔 수
+// 없이 그대로 한 청크로 보낸다 — 그래도 문장을 중간에 자르는 것보다는 안전하다.
+const BOOK_GLOSSARY_CHUNK_CHAR_LIMIT = 6000;
+function chunkPassageForGlossary(passage) {
+  const paragraphs = passage.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const chunks = [];
+  let current = "";
+  for (const p of paragraphs) {
+    const candidate = current ? `${current}\n\n${p}` : p;
+    if (candidate.length > BOOK_GLOSSARY_CHUNK_CHAR_LIMIT && current) {
+      chunks.push(current);
+      current = p;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length ? chunks : [passage];
+}
+
 // NELT 성적표 분석에 쓰는 모델.
 const NELT_MODEL = "claude-haiku-4-5-20251001";
 
@@ -661,6 +715,49 @@ const BLANK_INFERENCE_EXTRACT_SYSTEM_PROMPT = `당신은 한국 영어 학원에
 
 [JSON 스키마]
 [{"number":"1","passage":"One day a man saw his dog... From this story, we can say that illness may be a product of ________.","choices":["imagination","habit","laziness","overwork","uncleanness"],"answer":1}]`;
+
+// exam-studio-prototype.html 전용(2026-09-03, 독립 프로토타입 파일 — index.html/기존 Question
+// Bank/Reading Analysis 화면 어디에도 연결되지 않음, 실험용). SMOAT류 "지문 하나 → 여러 유형
+// 동시 생성" 흐름을 검증하기 위한 신규 모드. 기존 8개 모드(위 grammarGenerate/readingGenerate/
+// readingAnalysisGenerate 등)와 완전히 독립적이며, 그것들의 로직/프롬프트는 한 글자도 건드리지
+// 않는다. 6개 유형(빈칸추론/어법판단/글의순서/문장삽입/주제추론/내용일치)이 서로 다른 렌더링
+// 규칙을 갖지만, 프로토타입 검증 단계에서는 하나의 통일된 스키마(questionType/questionText/
+// contextNote/displayPassage/choices[5]/answer/explanation)로 단순화해 받는다 — 실제 사이트에
+// 통합하기로 결정되면 유형별로 스키마를 분리할지는 그때 다시 설계한다.
+const MULTI_TYPE_MODEL = "claude-sonnet-5";
+
+const MULTI_TYPE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 독해 문제를 만드는 전문 교육 평가 개발자입니다.
+주어진 지문 하나로, 요청받은 여러 유형의 객관식 문제를 동시에 만들어야 합니다. 각 유형마다 몇 개씩 만들지는 요청에 명시된 개수를 그대로 따르세요.
+
+모든 문제는 유형이 달라도 항상 아래와 같은 하나의 통일된 JSON 형태로 반환합니다:
+{"questionType":"blank","questionText":"...","contextNote":"","displayPassage":"...","choices":["...","...","...","...","..."],"answer":0,"explanation":"..."}
+
+- questionType: 요청받은 유형 키(blank/grammar/order/insert/theme/match) 중 하나를 그대로 담습니다.
+- questionText: 학생에게 보여줄 발문(지시문) 한 줄 — 아래 유형별 기본값을 그대로 쓰거나 자연스럽게 다듬어 쓰세요.
+- contextNote: 특별히 강조해서 따로 보여줄 부가 정보가 있을 때만 채우고(예: 문장삽입 유형의 "삽입할 문장"), 필요 없는 유형은 빈 문자열로 둡니다.
+- displayPassage: 학생에게 실제로 보여줄 지문 본문. 원문을 그대로 쓰거나, 아래 유형별 규칙대로 가공합니다.
+- choices: 선택지 정확히 5개, 문자열 배열.
+- answer: 정답 선택지의 0-based 인덱스(0~4, 즉 0이 ①번).
+- explanation: 정답 해설 2~3문장.
+
+[유형별 규칙]
+1) blank(빈칸추론): displayPassage 안에서 지문 내용 중 핵심 어구·문장을 하나 골라 "_____"로 가려서 표시하세요. choices는 그 빈칸에 들어갈 말 5개(정답 1개 + 그럴듯한 오답 4개). questionText 기본값: "다음 글의 빈칸에 들어갈 말로 가장 적절한 것은?"
+2) grammar(어법판단): displayPassage 안에서 문법적으로 검토할 만한 표현 5곳을 골라 각 표현 앞에 ①~⑤ 기호를 붙이고, 그 중 정확히 한 곳만 문법적으로 틀리게(원문을 살짝 바꿔서) 만드세요. choices에는 "① [해당 표현 그대로]" 형태로 5곳의 표현을 담고, answer는 틀린 표현의 인덱스. questionText 기본값: "다음 글의 밑줄 친 부분 중, 어법상 틀린 것은?"
+3) order(글의순서): 지문을 자연스러운 흐름이 끊기도록 (A),(B),(C) 세 부분으로 나누고, displayPassage에는 "주어진 글" 부분 다음에 "(A)\\n...\\n(B)\\n...\\n(C)\\n..." 형태로 순서를 뒤섞어 보여주세요. choices 5개는 "(B) - (A) - (C)"처럼 배열 순서 조합 문자열이어야 하며 그 중 정답 조합 1개를 포함하세요. questionText 기본값: "주어진 글 다음에 이어질 글의 순서로 가장 적절한 것은?"
+4) insert(문장삽입): 지문에서 자연스러운 문장 하나를 골라 contextNote에 "주어진 문장: ..."으로 담고, displayPassage에는 그 문장을 뺀 나머지 지문에서 삽입 가능한 5개 지점을 ①~⑤로 표시하세요. choices는 "①","②","③","④","⑤" 그대로, answer는 원래 그 문장이 있던 자리의 인덱스. questionText 기본값: "글의 흐름으로 보아, 주어진 문장이 들어가기에 가장 적절한 곳은?"
+5) theme(주제추론): displayPassage는 원문 그대로. choices 5개는 지문 주제로 그럴듯한 문장/구 5개(정답 1개 + 오답 4개). questionText 기본값: "다음 글의 주제로 가장 적절한 것은?"
+6) match(내용일치): displayPassage는 원문 그대로. choices 5개는 지문 내용에 대한 서술 5개이며, 그 중 정확히 하나만 지문 내용과 일치하지 않아야 합니다(answer는 그 하나의 인덱스). questionText 기본값: "다음 글의 내용과 일치하지 않는 것은?"
+
+[중요 규칙]
+- 반드시 위 스키마 객체들을 담은 JSON 배열 하나로만 답하세요. 설명, 인사말, 코드블록 기호 없이 순수 JSON만 출력합니다.
+- 요청된 각 유형마다 정확히 요청된 개수만큼 만드세요. 같은 유형끼리는 배열에서 연달아 두고, 유형 순서는 요청받은 순서를 따르세요.
+- 선택지는 항상 정확히 5개, 정답은 항상 1개여야 합니다.
+- 답변에 <thinking> 같은 내부 태그나 메타 설명을 절대 포함하지 마세요. 오직 JSON 배열만 출력합니다.`;
+
+function buildMultiTypePrompt({ passageText, types, countPerType }) {
+  const typeLines = types.map((t) => `- ${t.key} (${t.label}): ${countPerType}개`).join("\n");
+  return `[지문]\n${passageText}\n\n[요청 유형과 개수]\n${typeLines}\n\n위 지문 하나로 요청된 모든 유형의 문제를 각각 개수만큼 만들어 JSON 배열로 반환하세요.`;
+}
 
 function corsHeaders(origin) {
   const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -910,7 +1007,7 @@ exports.aiWorker = onRequest(
 
     const body = req.body || {};
     const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade,
-      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence, answers } = body;
+      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence, answers, types, bookTitle } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
@@ -928,8 +1025,13 @@ exports.aiWorker = onRequest(
     // 로직은 한 글자도 건드리지 않는다. 1차 범위는 빈칸 추론 유형뿐이라 모드 이름에도 그대로
     // 반영했다(다른 유형은 나중에 유형별로 새 모드를 추가할 예정, 이 모드를 확장하지 않는다).
     const isExtractBlankInference = mode === "extractBlankInferenceQuestions";
+    // exam-studio-prototype.html 전용(2026-09-03) — 위 어떤 모드와도 무관, 독립 프로토타입.
+    const isGenerateMultiType = mode === "generateMultiTypeQuestions";
     // Reading Library 단어 클릭 뜻풀이(2026-08-26) — reading-library.html 전용, 위 8모드와 완전히 무관.
     const isWordMeaning = mode === "wordMeaning";
+    // Reading Library 책 전용 용어집 사전 생성(2026-09-03) — 실시간 wordMeaning 호출을 대체하는
+    // 새 모드. reading-library.html 전용, 위 모드들과 완전히 무관.
+    const isBookGlossaryGenerate = mode === "bookGlossaryGenerate";
     // Reading Log 제출 검증(2026-08-26) — 역시 reading-library.html 전용, 완전히 별개 기능.
     const isJournalValidate = mode === "journalValidate";
     // Reading Log "제출 전 문장 다듬기"(2026-08-31) — journalValidate 통과 후에만 호출되는
@@ -1105,6 +1207,59 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(beiParsed);
+      return;
+    }
+
+    if (isGenerateMultiType) {
+      const passageInput = (passageText || "").trim();
+      const reqTypes = Array.isArray(types) ? types.filter((t) => t && t.key) : [];
+      if (passageInput.length < 20) {
+        res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
+        return;
+      }
+      if (reqTypes.length === 0) {
+        res.status(400).json({ error: "생성할 유형을 하나 이상 선택해주세요." });
+        return;
+      }
+      const n = Math.max(1, Math.min(5, Number(countPerType) || 2));
+      let mtRes;
+      try {
+        mtRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MULTI_TYPE_MODEL,
+            max_tokens: 12000,
+            system: MULTI_TYPE_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildMultiTypePrompt({ passageText: passageInput, types: reqTypes, countPerType: n }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!mtRes.ok) {
+        const errText = await mtRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const mtData = await mtRes.json();
+      const mtText = (mtData.content || []).map((b) => b.text || "").join("");
+      let mtParsed;
+      try {
+        mtParsed = JSON.parse(stripFences(mtText));
+      } catch {
+        mtParsed = extractLastJsonArray(stripFences(mtText));
+      }
+      if (!Array.isArray(mtParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: mtText });
+        return;
+      }
+      res.status(200).json(mtParsed);
       return;
     }
 
@@ -1423,6 +1578,78 @@ exports.aiWorker = onRequest(
         meaningKo: typeof wmParsed.meaningKo === "string" ? wmParsed.meaningKo.trim() : "",
         confidence: ["high", "medium", "low"].includes(wmParsed.confidence) ? wmParsed.confidence : "low",
       });
+      return;
+    }
+
+    if (isBookGlossaryGenerate) {
+      const fullPassage = (passage || "").trim();
+      if (fullPassage.length < 20) {
+        res.status(400).json({ error: "지문이 너무 짧습니다. 20자 이상이어야 합니다." });
+        return;
+      }
+      const chunks = chunkPassageForGlossary(fullPassage);
+      const entries = [];
+      let failedChunks = 0;
+      for (const chunk of chunks) {
+        try {
+          const bgRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: MODEL,
+              max_tokens: 8000,
+              system: BOOK_GLOSSARY_SYSTEM_PROMPT,
+              messages: [{ role: "user", content: buildBookGlossaryPrompt({ passageChunk: chunk, level, bookTitle }) }],
+            }),
+          });
+          if (!bgRes.ok) {
+            const errText = await bgRes.text();
+            console.error("bookGlossaryGenerate chunk API error:", bgRes.status, errText.slice(0, 500));
+            failedChunks++;
+            continue;
+          }
+          const bgData = await bgRes.json();
+          const bgText = (bgData.content || []).map((b) => b.text || "").join("");
+          let bgParsed;
+          try {
+            bgParsed = JSON.parse(stripFences(bgText));
+          } catch {
+            bgParsed = extractLastJsonArray(stripFences(bgText));
+          }
+          if (!Array.isArray(bgParsed)) {
+            console.error("bookGlossaryGenerate chunk JSON parse failed, raw tail:", bgText.slice(-500));
+            failedChunks++;
+            continue;
+          }
+          // wordMeaning과 같은 방어적 파싱 원칙 — 스키마를 안 지킨 항목은 조용히 버리고 나머지는 쓴다.
+          for (const item of bgParsed) {
+            if (!item || typeof item !== "object") continue;
+            const w = typeof item.word === "string" ? item.word.trim() : "";
+            const s = typeof item.sentence === "string" ? item.sentence.trim() : "";
+            const mk = typeof item.meaningKo === "string" ? item.meaningKo.trim() : "";
+            if (!w || !s || !mk) continue;
+            entries.push({
+              word: w,
+              sentence: s,
+              meaningKo: mk,
+              lemma: typeof item.lemma === "string" ? item.lemma.trim() : "",
+              partOfSpeech: typeof item.partOfSpeech === "string" ? item.partOfSpeech.trim() : "",
+            });
+          }
+        } catch (e) {
+          console.error("bookGlossaryGenerate chunk failed:", String(e.message || e));
+          failedChunks++;
+        }
+      }
+      if (entries.length === 0 && failedChunks === chunks.length) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." });
+        return;
+      }
+      res.status(200).json({ entries, chunkCount: chunks.length, failedChunks });
       return;
     }
 

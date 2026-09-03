@@ -101,9 +101,14 @@
   }
   .msg{ font-size:12px; color:var(--navy); margin-top:8px; }
   .story-row{ display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
-  .story-row .actions button{ background:none; border:none; cursor:pointer; font-size:11.5px; }
+  .story-row .actions{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
+  .story-row .actions button{ background:none; border:none; cursor:pointer; font-size:11.5px; white-space:nowrap; }
   .story-row .actions .edit{ color:var(--gold); }
   .story-row .actions .del{ color:var(--danger); font-size:14px; }
+  /* 2026-09-03 추가 — 용어집 버튼에 색을 안 주면 .edit/.del과 달리 그냥 텍스트처럼 보여서
+     실제로 "버튼을 못 찾겠다"는 제보가 있었다. 파란 배경 pill로 확실히 튀게 만든다. */
+  .story-row .actions .glossary{ color:var(--navy); font-weight:700; background:#EFF3F9; border-radius:999px; padding:4px 10px; }
+  .story-row .actions .glossary:hover{ background:#E1E9F5; }
 
   /* Reading Assessment Integrity — 선생님(#admin) 확인용 신호 배지일 뿐, 학생 화면에는 노출되지
      않는다(journal-admin-panel 전용). */
@@ -160,6 +165,10 @@
       <button class="primary" id="f-submit">등록</button>
       <button class="primary" id="f-cancel" style="background:var(--line); color:var(--ink); display:none; margin-left:8px;">취소</button>
       <div class="msg" id="f-msg"></div>
+    </div>
+    <div style="margin-top:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      <button class="primary" id="glossary-bulk-btn" title="AI 사용 — API 비용 발생">📚 용어집 없는 책 전체 일괄 생성</button>
+      <span class="msg" id="glossary-bulk-msg"></span>
     </div>
     <div id="admin-list" style="margin-top:20px;"></div>
   </details>
@@ -238,8 +247,9 @@ const db = getFirestore(app);
 const readingCol = collection(db, "readingLibrary");
 
 // index.html/passage-transform.html과 같은 Cloud Function(functions/index.js의 aiWorker) — 단어 뜻
-// 조회 전용 모드("wordMeaning")를 그쪽에 새로 추가해서 쓴다. 이 파일이 aiWorker를 부르는 건 이번이
-// 처음이다(2026-08-26 이전엔 reading-library.html이 AI 백엔드와 완전히 무관했다).
+// 조회 전용 모드("wordMeaning", 이제 관리자 "다시 찾기" 전용)와 책 용어집 사전 생성 모드
+// ("bookGlossaryGenerate", 2026-09-03 추가 — 학생 실시간 조회를 대체)를 그쪽에 추가해서 쓴다.
+// 이 파일이 aiWorker를 부르는 건 2026-08-26이 처음이었다(그 전엔 AI 백엔드와 완전히 무관했다).
 const WORKER_URL = "https://us-central1-sarah-s-english.cloudfunctions.net/aiWorker";
 
 // 학생 홈 화면 버튼이 ?student=<id>&name=<name>을 붙여서 이 페이지를 연다. 이 값이 있어야만 "나의
@@ -304,9 +314,9 @@ function getContextPhrase(target) {
   return (shortBefore + target.textContent + shortAfter).replace(/\s+/g, " ").trim();
 }
 
-// 구글 번역 공개 엔드포인트 — 공식 API 키 없이도 쓸 수 있는, 널리 쓰이는 방식. 이제 단어 뜻의
-// 1차 판단은 아래 lookupWordMeaning(AI)이 맡고, 여기는 그게 실패했을 때(네트워크/쿼터 등 인프라
-// 문제)만 쓰는 안전망 + 관리자 화면의 "다시 찾기" 보조용으로 남겨둔다.
+// 구글 번역 공개 엔드포인트 — 공식 API 키 없이도 쓸 수 있는, 널리 쓰이는 방식. 실시간 학생
+// 조회 경로에서는 더 이상 안 쓰인다(아래 §단어 뜻 사전 생성 참고) — 이제 관리자 화면의 "다시
+// 찾기"(fetchWordMeaningFromAI)가 AI 인프라 문제로 실패했을 때만의 보조 안전망으로만 남는다.
 async function fetchGoogleTranslate(text, dt) {
   const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=${dt}&q=${encodeURIComponent(text)}`);
   return res.json();
@@ -321,22 +331,13 @@ async function translateToKorean(text) {
   }
 }
 
-// 2026-08-26 교체 — 예전엔 "문장 전체 번역"과 "단어의 사전 후보 뜻 목록"을 각각 구글 번역에 따로
-// 물어본 뒤, 후보 중 문장 번역과 우연히 앞 1~2글자가 겹치는 걸 골라 쓰는 휴리스틱이었다. 이 방식은
-// 활용형(studies/ran/children처럼 사전 후보 자체가 안 나오는 표면형)에서 통째로 실패하고, 다의어는
-// "우연히 겹치는 후보"를 고르다 보니 문맥과 다르거나 품사가 틀린 뜻이 뽑히는 게 원인이 명확한
-// 구조적 문제였다(같은 근본 원인이 "가끔 랜덤하게 실패하는 것처럼 보인다"는 증상도 설명한다).
-// 지금은 AI(aiWorker의 wordMeaning 모드)에게 "이 문장에서 이 단어가 실제로 쓰인 의미"를 원형
-// (lemma)·품사와 함께 한 번에 판단하게 한다 — 활용형 처리와 다의어 문맥 판단을 같은 호출에서
-// 같이 해결한다. word+sentence 조합으로 세션 동안만 캐싱해서, 같은 문맥에서 같은 단어를 다시
-// 클릭해도 매번 AI를 다시 부르지 않는다(문맥이 다르면 캐시 키도 달라지므로 다의어 오염 없음).
-// 실패(빈 뜻)는 캐싱하지 않는다 — 나중에 다시 클릭했을 때 재시도할 수 있어야 한다.
-const meaningCache = new Map(); // key: `${word.toLowerCase()}||${sentence}` -> { meaningKo, lemma, partOfSpeech, confidence }
-
-async function lookupWordMeaning(word, sentence) {
-  const key = `${word.toLowerCase()}||${sentence}`;
-  if (meaningCache.has(key)) return meaningCache.get(key);
-
+// 관리자 화면의 "선택한 단어 뜻 다시 찾기" 전용 — 교사가 명시적으로 누르는 버튼에서만 호출된다
+// (CLAUDE.md API 비용 정책: AI는 명시적 클릭에서만). 예전엔 학생이 단어를 탭할 때마다 이 방식
+// (word+sentence를 매번 실시간으로 AI에 물어봄)을 썼지만, 2026-09-03부로 실시간 조회 자체를
+// 없애고 "책 등록 시 미리 만들어두는 용어집"(아래 bookGlossaries 관련 함수들)으로 바꿨다 — 학생이
+// 실제로 리딩하는 동안에는 AI 호출이 전혀 없는 게 목표라서, 캐싱으로 줄이는 방식(세션 메모리 +
+// Firestore 영구 캐시, 2026-09-03 오전에 잠깐 있었다가 바로 이 구조로 대체됨)조차 더 이상 안 쓴다.
+async function fetchWordMeaningFromAI(word, sentence) {
   let result = null;
   try {
     const res = await fetch(WORKER_URL, {
@@ -353,39 +354,106 @@ async function lookupWordMeaning(word, sentence) {
   } catch (e) {
     console.error(`단어 뜻 조회 실패(AI, 네트워크 오류): "${word}"`, e);
   }
-
-  // AI 인프라 문제(네트워크/쿼터 등)로 위가 완전히 실패했을 때만의 보조 안전망 — 문맥은 못
-  // 살리지만 완전히 빈 손보다는 낫다. 하나라도 뜻을 얻었으면 여기로 안 온다.
   if (!result || !result.meaningKo) {
     const fallback = await translateToKorean(word).catch(() => "");
     if (fallback && fallback.trim().toLowerCase() !== word.toLowerCase()) {
       result = { meaningKo: fallback.trim(), lemma: "", partOfSpeech: "", confidence: "low" };
     }
   }
-
   if (!result || !result.meaningKo) {
     console.warn(`단어 뜻을 찾지 못함: "${word}" (문맥: "${sentence}")`);
     return { meaningKo: "", lemma: "", partOfSpeech: "", confidence: "low" };
   }
-
-  meaningCache.set(key, result);
   return result;
 }
 
-async function addToVocab(word, source, contextPhrase, readingId) {
-  const { meaningKo, lemma, partOfSpeech } = await lookupWordMeaning(word, contextPhrase || word);
-  if (meaningKo) {
-    vocabWords = [
-      { word, meaning: meaningKo, lemma, partOfSpeech, contextSentence: contextPhrase || "", source, readingId: readingId || "", addedAt: Date.now() },
-      ...vocabWords.filter((v) => v.word.toLowerCase() !== word.toLowerCase()),
-    ];
+// ── 책 전용 용어집(사전 생성 방식, 2026-09-03) ──────────────────────────────────────────
+// 예전(2026-08-26~2026-09-03 오전)엔 학생이 단어를 탭할 때마다 aiWorker(wordMeaning)를 실시간
+// 호출했다(세션/Firestore 캐시로 재호출은 줄였지만 "처음 클릭"은 항상 AI 호출이었다). 이제는
+// 책이 등록될 때(또는 관리자가 버튼을 눌렀을 때) 지문 전체를 한 번(또는 청크 단위로 최소 횟수)
+// aiWorker(bookGlossaryGenerate)에 넘겨 그 안의 낯선 단어를 문장과 함께 미리 뽑아
+// bookGlossaries/{storyId} 문서 하나에 저장해두고, 학생은 그 저장된 결과만 조회한다 —
+// 리딩 중에는 AI 호출이 0회다. 용어집에 없는 단어는 실시간 AI로 보충하지 않고 "아직 준비되지
+// 않았어요"로 안내한다(§4, 실시간 fallback 경로를 만들지 않는 게 핵심 요구사항).
+function lookupInGlossary(glossary, word, sentence) {
+  if (!glossary || !glossary.entries) return null;
+  const list = glossary.entries[word.toLowerCase()];
+  if (!list || !list.length) return null;
+  const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const target = norm(sentence);
+  // 사전 생성 때 AI가 옮겨 적은 문장과 학생 화면에서 DOM으로 추출한 문장이 공백 등에서 완전히
+  // 똑같지 않을 수 있어 정규화 후 비교하고, 그래도 안 맞으면(문맥이 여러 개일 때) 그 단어의
+  // 첫 번째 뜻으로 보수적으로 대체한다 — 실시간 AI 호출 없이 최대한 커버리지를 유지하기 위해서다.
+  return list.find((e) => norm(e.sentence) === target) || list[0];
+}
+
+// 현재 리더 화면에 열린 책의 용어집. render()가 새 책을 열 때마다 loadGlossaryForStory로 갱신한다.
+let currentGlossary = null;
+let currentGlossaryStoryId = null;
+let glossaryLoadPromise = null;
+function loadGlossaryForStory(storyId) {
+  currentGlossary = null;
+  currentGlossaryStoryId = storyId;
+  glossaryLoadPromise = (async () => {
     try {
-      await saveVocab();
+      const snap = await getDoc(doc(db, "bookGlossaries", storyId));
+      if (currentGlossaryStoryId === storyId) currentGlossary = snap.exists() ? snap.data() : null;
     } catch (e) {
-      console.error("단어장 저장 실패", e);
+      console.error("용어집 불러오기 실패", e);
     }
+  })();
+}
+
+// 교사가 "용어집 만들기"(개별/일괄)를 눌렀을 때 실제로 AI를 부르고 결과를 저장하는 함수 —
+// aiWorker는 Firestore를 건드리지 않는 stateless proxy이므로(CLAUDE.md) 저장은 호출한 쪽인
+// 여기서 한다. 반환된 entries(평평한 배열)를 word 기준으로 묶어서 저장한다 — 같은 단어가
+// 지문 안에서 다른 문맥으로 여러 번 등장하면 배열에 여러 항목이 쌓이고, lookupInGlossary가
+// 그 중 문맥이 맞는 걸 고른다.
+async function generateBookGlossary(story) {
+  const res = await fetch(WORKER_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode: "bookGlossaryGenerate", passage: story.text, level: levelLabel(story.level), bookTitle: story.title }),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`용어집 생성 실패(HTTP ${res.status}): ${errText.slice(0, 300)}`);
   }
-  return meaningKo;
+  const data = await res.json();
+  const items = Array.isArray(data.entries) ? data.entries : [];
+  const entries = {};
+  items.forEach((it) => {
+    const key = (it.word || "").toLowerCase();
+    if (!key || !it.sentence || !it.meaningKo) return;
+    if (!entries[key]) entries[key] = [];
+    entries[key].push({ sentence: it.sentence, meaningKo: it.meaningKo, lemma: it.lemma || "", partOfSpeech: it.partOfSpeech || "" });
+  });
+  await setDoc(doc(db, "bookGlossaries", story.id), {
+    storyId: story.id,
+    entries,
+    wordCount: Object.keys(entries).length,
+    generatedAt: Date.now(),
+  });
+  if (currentGlossaryStoryId === story.id) currentGlossary = { entries }; // 지금 열려 있는 책이면 즉시 반영
+  return Object.keys(entries).length;
+}
+
+// 학생이 단어를 탭했을 때 호출 — AI를 부르지 않고 미리 만들어둔 용어집에서만 찾는다. 용어집에
+// 없으면(사전 생성이 아직 안 됐거나, 그 단어를 못 뽑았거나) null을 돌려주고 호출부가 "아직
+// 준비되지 않았어요"를 보여준다(§4, 실시간 fallback 없음).
+async function addToVocabFromGlossary(word, source, contextPhrase, readingId, glossary) {
+  const hit = lookupInGlossary(glossary, word, contextPhrase || word);
+  if (!hit || !hit.meaningKo) return null;
+  vocabWords = [
+    { word, meaning: hit.meaningKo, lemma: hit.lemma || "", partOfSpeech: hit.partOfSpeech || "", contextSentence: contextPhrase || "", source, readingId: readingId || "", addedAt: Date.now() },
+    ...vocabWords.filter((v) => v.word.toLowerCase() !== word.toLowerCase()),
+  ];
+  try {
+    await saveVocab();
+  } catch (e) {
+    console.error("단어장 저장 실패", e);
+  }
+  return hit.meaningKo;
 }
 
 function displayMeaning(word, meaning) {
@@ -1366,6 +1434,7 @@ function render() {
   if (studentId && nextReaderId && nextReaderId !== activeReaderStoryId) {
     ensureActivityStarted(nextReaderId); // Firestore 쓰기 없이 시간 측정만 시작
     watermarkSessionId = genWatermarkSessionId(); // Reader를 다시 열 때만 새로 발급(§5)
+    loadGlossaryForStory(nextReaderId); // AI 호출 없이 미리 생성된 용어집만 읽어온다
   }
   activeReaderStoryId = nextReaderId;
   // Reading Log 작성 세션 리스너(visibilitychange 등)도 화면이 바뀔 때마다 한 곳에서 정리한다 —
@@ -1391,9 +1460,10 @@ if (studentId) {
 // 본문 안의 단어(.w)를 클릭하면 그 자리에서 뜻을 바로 보여주고 단어장에 저장 — 문단마다 새로
 // 리스너를 달지 않도록 #view에 한 번만 위임해서 건다. 이미 이 스토리에서 저장된 단어(.saved,
 // wrapWords가 이미 이 스토리 기준으로만 표시한다)를 다시 누르면 새로 조회하지 않고 저장된 뜻을
-// 그대로 다시 보여준다. 뜻 찾기에 실패하면(빈 값) "saved"를 붙이지 않는다 — 그래야 학생이
-// 나중에 같은 단어를 다시 눌렀을 때 재시도가 된다(예전엔 실패해도 바로 saved 처리돼서 그 세션
-// 내내 그 단어는 영영 재시도가 안 됐다).
+// 그대로 다시 보여준다. 2026-09-03부로 AI를 실시간으로 부르지 않는다 — 미리 만들어둔 용어집
+// (currentGlossary)에서만 찾고, 없으면 "saved"를 붙이지 않은 채 "아직 준비되지 않았어요"만
+// 보여준다(§4, 실시간 fallback 없음). 그래야 나중에 그 책 용어집이 다시 생성된 뒤 같은 단어를
+// 다시 눌렀을 때 정상적으로 뜻이 보인다.
 const pendingWords = new Set(); // 같은 단어를 빠르게 여러 번 눌러도 조회가 중복으로 나가지 않게 막는다
 document.getElementById("view").addEventListener("click", async (e) => {
   const target = e.target.closest(".w");
@@ -1408,12 +1478,17 @@ document.getElementById("view").addEventListener("click", async (e) => {
   }
   if (pendingWords.has(word)) return;
   pendingWords.add(word);
-  showWordTooltip(target, "뜻 찾는 중...");
+  showWordTooltip(target, "확인 중...");
+  if (glossaryLoadPromise) await glossaryLoadPromise; // 방금 책을 연 직후의 첫 클릭 레이스 방지
   const contextPhrase = getContextPhrase(target);
-  const meaning = await addToVocab(word, story ? story.title : "", contextPhrase, story ? story.id : "");
+  const meaning = await addToVocabFromGlossary(word, story ? story.title : "", contextPhrase, story ? story.id : "", currentGlossary);
   pendingWords.delete(word);
-  if (meaning) target.classList.add("saved");
-  showWordTooltip(target, displayMeaning(word, meaning));
+  if (meaning) {
+    target.classList.add("saved");
+    showWordTooltip(target, displayMeaning(word, meaning));
+  } else {
+    showWordTooltip(target, "아직 준비되지 않았어요");
+  }
 });
 
 // ---------- 관리(추가/수정/삭제) — 학생에게 링크되는 기본 화면(#admin 없이 접속)에는 이 패널
@@ -1459,6 +1534,24 @@ function resetForm() {
   fCancel.style.display = "none";
   fMsg.textContent = "";
 }
+// 등록된 책 중 이미 용어집(bookGlossaries)이 있는 storyId 집합 — renderAdminList의 상태 표시,
+// fSubmit의 자동 생성 판단("이미 있으면 재생성 안 함", §5), 일괄 생성 버튼의 대상 필터링에 쓰인다.
+let glossaryStoryIds = new Set();
+async function loadGlossaryStatuses() {
+  // 이 조회 하나가 실패해도(예: firestore.rules에 bookGlossaries 규칙이 아직 배포 안 된 상태)
+  // 책 목록 자체(loadItems/render)는 반드시 정상 동작해야 한다 — 실제로 이 함수를 try/catch
+  // 없이 최상위 await 체인에 그대로 뒀다가 permission-denied 한 번에 render() 호출 자체가
+  // 통째로 막혀 관리자 화면의 책 목록이 안 보이는 버그가 났었다(2026-09-03). 실패 시 그냥
+  // glossaryStoryIds를 빈 Set인 채로 두면 모든 책이 "용어집 없음"으로만 보일 뿐, 목록 자체는
+  // 정상 렌더링된다.
+  try {
+    const snap = await getDocs(collection(db, "bookGlossaries"));
+    glossaryStoryIds = new Set(snap.docs.map((d) => d.id));
+  } catch (e) {
+    console.error("용어집 상태 조회 실패 — firestore.rules에 bookGlossaries 규칙이 배포됐는지 확인하세요.", e);
+  }
+}
+
 if (isAdmin) {
   resetForm();
   fCancel.onclick = resetForm;
@@ -1470,15 +1563,36 @@ if (isAdmin) {
       text: fText.value.trim(), vocabulary: parseVocabLines(fVocab.value), journalLevel: journalTierForLevel(level),
     };
     if (!entry.title || !entry.source || !entry.text) { fMsg.textContent = "제목·출처·본문은 필수예요."; return; }
+    const wasEdit = !!editingId;
+    let savedId = editingId;
     try {
       if (editingId) await updateDoc(doc(db, "readingLibrary", editingId), entry);
-      else await addDoc(readingCol, { ...entry, createdAt: serverTimestamp() });
-      fMsg.textContent = editingId ? "수정했어요." : "등록했어요.";
+      else { const ref = await addDoc(readingCol, { ...entry, createdAt: serverTimestamp() }); savedId = ref.id; }
+      fMsg.textContent = wasEdit ? "수정했어요." : "등록했어요.";
       resetForm();
       await loadItems();
       render();
     } catch (e) {
       fMsg.textContent = "저장에 실패했어요: " + String(e.message || e).slice(0, 200);
+      return;
+    }
+    // 책 등록/수정 시 용어집 자동 생성(§1) — 이미 용어집이 있으면 재생성하지 않는다(§5, 교사가
+    // 목록에서 "다시 만들기"를 누르는 경우만 예외). 학생이 읽는 동안엔 절대 AI를 안 부르는 게
+    // 목표라, 등록/수정이라는 명시적 교사 행동에 얹어서 여기서 미리 만들어둔다.
+    if (savedId && !glossaryStoryIds.has(savedId)) {
+      const story = items.find((x) => x.id === savedId);
+      if (story) {
+        fMsg.textContent += " 용어집 생성 중...";
+        try {
+          const n = await generateBookGlossary(story);
+          glossaryStoryIds.add(savedId);
+          fMsg.textContent = (wasEdit ? "수정했어요." : "등록했어요.") + ` 용어집 생성 완료(${n}단어).`;
+          renderAdminList();
+        } catch (e) {
+          fMsg.textContent = (wasEdit ? "수정했어요." : "등록했어요.") + " 용어집 생성 실패 — 목록에서 다시 시도하세요.";
+          console.error("자동 용어집 생성 실패", e);
+        }
+      }
     }
   };
 }
@@ -1491,18 +1605,35 @@ function renderAdminList() {
     row.className = "card";
     row.style.cursor = "default";
     const num = storyNumberById.get(it.id);
+    const hasGlossary = glossaryStoryIds.has(it.id);
     row.innerHTML = `
       <div class="story-row">
         <div>
           <div class="t">${num ? `<span class="num">#${num}</span> ` : ""}${it.title}</div>
-          <div class="m">${levelLabel(it.level)}${it.category ? " · " + it.category : ""}${it.genre ? " · " + it.genre : ""} · ${it.source || ""}</div>
+          <div class="m">${levelLabel(it.level)}${it.category ? " · " + it.category : ""}${it.genre ? " · " + it.genre : ""} · ${it.source || ""} · ${hasGlossary ? '<span style="color:var(--gold);">📚 용어집 있음</span>' : '<span style="color:#999;">📚 용어집 없음</span>'}</div>
         </div>
         <div class="actions">
+          <button class="glossary" title="AI 사용 — API 비용 발생">${hasGlossary ? "🔄 다시 만들기" : "🧠 용어집 만들기"}</button>
           <button class="edit">수정</button>
           <button class="del">✕</button>
         </div>
       </div>
     `;
+    row.querySelector(".glossary").onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "생성 중...";
+      try {
+        await generateBookGlossary(it);
+        glossaryStoryIds.add(it.id);
+        renderAdminList();
+      } catch (e) {
+        alert(`"${it.title}" 용어집 생성 실패: ` + String(e.message || e).slice(0, 200));
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    };
     row.querySelector(".edit").onclick = () => {
       editingId = it.id;
       fTitle.value = it.title || ""; fLevel.value = it.level || 1; fCategory.value = it.category || "Fiction"; fGenre.value = it.genre || "";
@@ -1522,6 +1653,41 @@ function renderAdminList() {
     };
     el.appendChild(row);
   });
+}
+
+// 이미 등록된 책들을 한 번에 처리하기 위한 일괄 생성(§ 추가 요청, 2026-09-03) — 개별 "용어집
+// 만들기" 버튼과 완전히 같은 generateBookGlossary()를 재사용하고, 이 함수는 그 위에 "용어집
+// 없는 책만 골라 순서대로 하나씩 호출"하는 래퍼만 얹는다. 동시에 여러 권을 부르지 않는 이유는
+// 서버 부하를 줄이고, 실패했을 때 "몇 번째 책까지 갔다가 실패했는지"를 단순하게 추적하기
+// 위해서다 — 책 하나가 실패해도 나머지는 계속 진행하고(하나 실패로 전체를 멈추지 않음), 끝나면
+// 성공/실패 권수를 요약해서 보여준다.
+if (isAdmin) {
+  document.getElementById("glossary-bulk-btn").onclick = async () => {
+    const btn = document.getElementById("glossary-bulk-btn");
+    const msgEl = document.getElementById("glossary-bulk-msg");
+    const targets = items.filter((it) => !glossaryStoryIds.has(it.id));
+    if (targets.length === 0) { msgEl.textContent = "용어집이 없는 책이 없어요 — 이미 전부 있어요."; return; }
+    if (!confirm(`용어집이 없는 책 ${targets.length}권에 대해 순서대로 AI를 호출할까요? (AI 사용 — API 비용 발생)`)) return;
+    btn.disabled = true;
+    let ok = 0, fail = 0;
+    const failedTitles = [];
+    for (const it of targets) {
+      msgEl.textContent = `${ok + fail}/${targets.length}권 완료 중... (${it.title} 처리 중)`;
+      try {
+        await generateBookGlossary(it);
+        glossaryStoryIds.add(it.id);
+        ok++;
+      } catch (e) {
+        fail++;
+        failedTitles.push(it.title);
+        console.error(`"${it.title}" 용어집 일괄 생성 실패`, e);
+      }
+      msgEl.textContent = `${ok + fail}/${targets.length}권 완료`;
+      renderAdminList();
+    }
+    btn.disabled = false;
+    msgEl.textContent = `일괄 생성 끝 — 성공 ${ok}권, 실패 ${fail}권${failedTitles.length ? ` (실패: ${failedTitles.join(", ")})` : ""}`;
+  };
 }
 
 // ---------- 관리자용 학생 단어장 보기/프린트 — readingVocab(학생이 본문에서 단어를 눌러 쌓은
@@ -1695,7 +1861,7 @@ if (isAdmin) {
     // 한다 — 예전 데이터라 contextSentence가 없으면(마이그레이션 없이 그대로 둔 옛 항목) 단어만으로
     // 조회한다(정확도는 떨어지지만 완전히 실패하는 것보단 낫다).
     for (const v of sel) {
-      const { meaningKo } = await lookupWordMeaning(v.word, v.contextSentence || v.word);
+      const { meaningKo } = await fetchWordMeaningFromAI(v.word, v.contextSentence || v.word);
       if (meaningKo) v.meaning = meaningKo;
     }
     await setDoc(doc(db, "readingVocab", sid), { words: vaWords });
@@ -1969,6 +2135,7 @@ if (isAdmin) {
   await loadVocab();
   await loadJournal();
   await loadActivities();
+  if (isAdmin) { await loadGlossaryStatuses(); }
   render();
 })();
 </script>

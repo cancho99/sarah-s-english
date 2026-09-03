@@ -139,6 +139,12 @@ service cloud.firestore {
     // 소유)만 이 "완전 개방" 목록에서 누락돼 있었다. 형제 컬렉션(readingLibrary/readingVocab/
     // readingJournal)과 똑같이 취급한다 — 다른 규칙/컬렉션은 건드리지 않음.
     match /readingActivity/{id} { allow read, write: if true; }
+    // 2026-09-03 — 단어 뜻 실시간 캐시(wordMeaningCache)는 같은 날 안에 "책 등록 시 미리 만드는
+    // 용어집(bookGlossaries)" 방식으로 완전히 대체되어 컬렉션 자체가 코드에서 없어졌다(실시간
+    // wordMeaning 호출을 아예 없애는 게 목적이라 캐시로 줄이는 접근 자체를 대체함) — 이 규칙도
+    // 함께 제거. bookGlossaries는 storyId당 문서 1개(단어→문장별 뜻 배열)로, reading-library.html
+    // 전체가 로그인 없이 두드리는 것과 같은 신뢰 모델이라 형제 컬렉션들과 동일하게 완전 개방.
+    match /bookGlossaries/{id} { allow read, write: if true; }
     match /materialsLibrary/{id} { allow read, write: if true; }
     match /sharedMaterialsLibrary/{id} { allow read, write: if true; }
     match /materialDownloadLog/{id} { allow read, write: if true; }
