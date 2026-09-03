@@ -10269,12 +10269,15 @@ function GrammarBankPrototype() {
       <div style=${{ fontSize: 11.5, color: "#8a6f2e", background: "#F1ECDD", borderLeft: `2px solid ${C.gold}`, padding: "7px 12px", marginBottom: 14 }}>
         중1 · be동사·일반동사·문장 구조·시제·명사는 실제 문항이 채워졌어요. 나머지 카테고리(대명사, 형용사, 부사, 전치사, 조동사, 비교, 접속사)와 중2·중3·고등은 아직 <b>샘플 더미 문제</b>예요 — 계속 순서대로 채워나갈게요.
       </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 20, alignItems: "start" }}>
+      <div style=${{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 20, alignItems: "start" }}>
 
         <${Card}>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6 }}>
             <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>CATEGORY</div>
-            <span onClick=${() => selectAll(true)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
+            <div style=${{ display: "flex", gap: 4 }}>
+              <span onClick=${() => selectAll(true)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
+              <span onClick=${() => selectAll(false)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체해제</span>
+            </div>
           </div>
           <div style=${{ maxHeight: 560, overflowY: "auto" }}>
             ${GB_GRAMMAR_TREE[grade].map((c) => html`
@@ -10305,66 +10308,72 @@ function GrammarBankPrototype() {
         <//>
 
         <div>
-          <${Card}>
-            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 직접 등록</div>
-            <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <select value=${formCat} onChange=${(e) => { setFormCat(e.target.value); setFormSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1 }}>
-                ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
-              </select>
-              <select value=${formSub} onChange=${(e) => setFormSub(e.target.value)} style=${{ ...inputStyle, flex: 1 }}>
-                ${(GB_GRAMMAR_TREE[grade].find((c) => c.cat === formCat) || { subs: [] }).subs.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
-              </select>
-            </div>
-            <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <${Button} variant=${formType === "mc" ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setFormType("mc")}>객관식<//>
-              <${Button} variant=${formType === "sa" ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setFormType("sa")}>주관식<//>
-            </div>
-            <${Field} label="문제">
-              <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 56 }} placeholder="문제 내용을 입력하세요" />
-            <//>
-            ${formType === "mc" ? html`
-              <${Field} label="보기 (정답에 표시)">
-                ${formOpts.map((opt, i) => html`
-                  <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} />
-                    <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle }} placeholder=${`보기 ${i + 1}`} />
+          <div style=${{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 14, alignItems: "start" }}>
+            <${Card}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 직접 등록</div>
+              <div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <select value=${formCat} onChange=${(e) => { setFormCat(e.target.value); setFormSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                  ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
+                </select>
+                <select value=${formSub} onChange=${(e) => setFormSub(e.target.value)} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                  ${(GB_GRAMMAR_TREE[grade].find((c) => c.cat === formCat) || { subs: [] }).subs.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
+                </select>
+                <${Button} variant=${formType === "mc" ? "primary" : "ghost"} style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${() => setFormType("mc")}>객관식<//>
+                <${Button} variant=${formType === "sa" ? "primary" : "ghost"} style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${() => setFormType("sa")}>주관식<//>
+              </div>
+              <${Field} label="문제">
+                <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 40, padding: "6px 8px", fontSize: 12.5 }} placeholder="문제 내용을 입력하세요" />
+              <//>
+              ${formType === "mc" ? html`
+                <${Field} label="보기 (정답에 표시)">
+                  <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 8px" }}>
+                    ${formOpts.map((opt, i) => html`
+                      <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} />
+                        <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle, padding: "6px 8px", fontSize: 12.5 }} placeholder=${`보기 ${i + 1}`} />
+                      </div>
+                    `)}
                   </div>
-                `)}
-              <//>
-            ` : html`
-              <${Field} label="정답">
-                <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${inputStyle} placeholder="정답을 입력하세요" />
-              <//>
-            `}
-            <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : "+ 이 소주제에 문항 등록"}<//>
-          <//>
+                <//>
+              ` : html`
+                <${Field} label="정답">
+                  <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${{ ...inputStyle, padding: "6px 8px", fontSize: 12.5 }} placeholder="정답을 입력하세요" />
+                <//>
+              `}
+              <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : "+ 이 소주제에 문항 등록"}<//>
+            <//>
 
-          <${Card}>
-            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 수 설정</div>
-            <${Field} label="총 문항수">
-              <div style=${{ fontSize: 13.5, color: C.navy, fontWeight: 700 }}>${mcCount + saCount}문항</div>
-            <//>
-            <${Field} label="객관식">
-              <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input type="number" min="0" value=${mcCount} onChange=${(e) => setMcCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 80 }} />
-                <span style=${{ fontSize: 11, color: parseInt(mcCount) > mcPool.length ? C.danger : C.slate }}>(출제 가능한 문항수: ${mcPool.length})</span>
+            <${Card}>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 수 설정</div>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #EDEAE2" }}>
+                <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600 }}>총 문항수</span>
+                <span style=${{ fontSize: 13.5, color: C.navy, fontWeight: 700 }}>${mcCount + saCount}문항</span>
+              </div>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #EDEAE2", gap: 8 }}>
+                <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600, flexShrink: 0 }}>객관식</span>
+                <div style=${{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                  <input type="number" min="0" value=${mcCount} onChange=${(e) => setMcCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 56, padding: "5px 6px", fontSize: 12.5 }} />
+                  <span style=${{ fontSize: 10.5, color: parseInt(mcCount) > mcPool.length ? C.danger : C.slate, whiteSpace: "nowrap" }}>(가능: ${mcPool.length})</span>
+                </div>
+              </div>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #EDEAE2", gap: 8 }}>
+                <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600, flexShrink: 0 }}>주관식</span>
+                <div style=${{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                  <input type="number" min="0" value=${saCount} onChange=${(e) => setSaCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 56, padding: "5px 6px", fontSize: 12.5 }} />
+                  <span style=${{ fontSize: 10.5, color: parseInt(saCount) > saPool.length ? C.danger : C.slate, whiteSpace: "nowrap" }}>(가능: ${saPool.length})</span>
+                </div>
+              </div>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+                <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600 }}>단 나누기</span>
+                <div style=${{ display: "flex", gap: 6 }}>
+                  <${Button} variant=${cols === 1 ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => setCols(1)}>1단<//>
+                  <${Button} variant=${cols === 2 ? "primary" : "ghost"} style=${{ padding: "4px 10px", fontSize: 11.5 }} onClick=${() => setCols(2)}>2단<//>
+                </div>
               </div>
             <//>
-            <${Field} label="주관식">
-              <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-                <input type="number" min="0" value=${saCount} onChange=${(e) => setSaCount(Math.max(0, parseInt(e.target.value || 0)))} style=${{ ...inputStyle, width: 80 }} />
-                <span style=${{ fontSize: 11, color: parseInt(saCount) > saPool.length ? C.danger : C.slate }}>(출제 가능한 문항수: ${saPool.length})</span>
-              </div>
-            <//>
-            <${Field} label="단 나누기">
-              <div style=${{ display: "flex", gap: 8 }}>
-                <${Button} variant=${cols === 1 ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCols(1)}>1단<//>
-                <${Button} variant=${cols === 2 ? "primary" : "ghost"} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => setCols(2)}>2단<//>
-              </div>
-            <//>
-          <//>
+          </div>
 
-          <${Card}>
+          <${Card} style=${{ marginTop: 14 }}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>미리보기</div>
               <span onClick=${showAllQuestions} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>선택한 소주제 전체 목록 보기 (${mcPool.length + saPool.length}문항)</span>
@@ -10374,7 +10383,7 @@ function GrammarBankPrototype() {
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("a")}>정답 보기<//>
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("qa")}>문제+정답 보기<//>
             </div>
-            <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6", padding: 16, minHeight: 140, columnCount: cols === 2 ? 2 : 1, columnGap: 24 }}>
+            <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6", padding: 16, minHeight: 140, maxHeight: 300, overflowY: "auto", columnCount: cols === 2 ? 2 : 1, columnGap: 24 }}>
               ${previewItems.length === 0 && html`<div style=${{ textAlign: "center", color: "#9a9488", fontSize: 12.5, padding: "44px 0" }}>카테고리를 선택하고 미리보기를 눌러주세요.</div>`}
               ${previewItems.map((item, idx) => html`
                 <div key=${item.id || idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid" }}>
