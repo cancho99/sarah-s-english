@@ -12726,6 +12726,17 @@ function GrammarBankPrototype() {
   function myQuestionsFor(cat, sub) {
     return myQuestions.filter((m) => m.grade === grade && m.cat === cat && m.sub === sub);
   }
+  // 사이드바 학년 배지용 — 현재 선택된 학년과 무관하게 임의의 학년 g의 총 등록 문항 수를
+  // 센다(GB_BANK 하드코딩/AI 더미 문항 + Firestore에서 불러온 myQuestions 합산).
+  function totalQuestionsForGrade(g) {
+    let total = 0;
+    GB_GRAMMAR_TREE[g].forEach((c) => c.subs.forEach((sub) => {
+      const q = GB_BANK[g][c.cat][sub];
+      total += q.mc.length + q.sa.length;
+      total += myQuestions.filter((m) => m.grade === g && m.cat === c.cat && m.sub === sub).length;
+    }));
+    return total;
+  }
   function getPool() {
     const mcPool = [], saPool = [];
     if (!grade) return { mcPool, saPool };
@@ -12828,29 +12839,28 @@ function GrammarBankPrototype() {
     setPreviewMode("qa");
   }
 
-  if (!grade) {
-    return html`
-      <div>
-        <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>학년을 선택하면 그 학년의 문법 카테고리가 나타나요.</div>
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, maxWidth: 760 }}>
+  return html`
+    <div className="es-shell">
+      <div className="es-sidebar">
+        <div className="es-sidebar-logo">📐 Grammar Bank<div className="sub">문법 문제뱅크</div></div>
+        <div style=${{ padding: "14px 18px 6px", fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>학년</div>
+        <div className="es-sidebar-menu">
           ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
-            <div key=${g} onClick=${() => pickGrade(g)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: "20px 16px", cursor: "pointer", textAlign: "center" }}>
-              <div style=${{ ...serif, fontSize: 18, fontWeight: 700, color: C.navy }}>${g}</div>
-              <div style=${{ fontSize: 11, color: C.slate, marginTop: 6, lineHeight: 1.5 }}>${GB_GRADE_DESC[g]}</div>
+            <div key=${g} className=${"es-sidebar-item" + (grade === g ? " active" : "")} onClick=${() => pickGrade(g)}>
+              <span className="lb">${g}</span>
+              <span className="es-sidebar-badge">${totalQuestionsForGrade(g)}</span>
             </div>
           `)}
         </div>
       </div>
-    `;
-  }
-
-  return html`
-    <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style=${{ fontSize: 12, color: C.slate }}>학년: <b style=${{ color: C.navy }}>${grade}</b> · 선택된 소주제 ${pickedCount}개</div>
-        <${Button} variant="ghost" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => setGrade(null)}>학년 다시 선택<//>
-      </div>
-      <div style=${{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, alignItems: "start" }}>
+      <div className="es-main">
+        <div className="es-topbar"><div className="es-breadcrumb">문법 문제뱅크<span className="sep">·</span>${grade || "학년을 선택하세요"}</div></div>
+        <div className="es-content">
+          ${!grade ? html`
+            <div style=${{ textAlign: "center", color: "#9a9488", fontSize: 13, padding: "80px 0" }}>왼쪽에서 학년을 선택하세요.</div>
+          ` : html`
+            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>선택된 소주제 ${pickedCount}개</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, alignItems: "start" }}>
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6 }}>
@@ -12995,6 +13005,9 @@ function GrammarBankPrototype() {
             <${Button} variant="primary" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${printGrammarBank}>🖨 출력하기<//>
             <${Button} variant="gold" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("저장되었습니다. (프로토타입 — 실제 저장은 아직 연결되지 않았어요)")}>💾 저장하기<//>
           </div>
+        </div>
+      </div>
+          `}
         </div>
       </div>
     </div>
