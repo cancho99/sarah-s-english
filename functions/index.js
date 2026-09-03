@@ -219,7 +219,7 @@ ${choicesLine}정답: ${answerDisplay}
 위 순서대로 이 문제의 세부 문법/어휘 유형을 먼저 판별한 뒤, 그 유형을 절대 벗어나지 않는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
 }
 
-// ── Sarah's Original — Question Bank AI 문제 생성 (원래 로드맵 Phase 7, ARCHITECTURE.md §14) ──
+// ── Question Bank AI 문제 생성 (원래 로드맵 Phase 7, ARCHITECTURE.md §14) ──
 // 기존 SYSTEM_PROMPT/TYPE_INSTRUCTIONS(passage-transform.html이 실제 사용 중)는 절대 건드리지 않고
 // 완전히 새 프롬프트 2개를 추가한다 — 하나는 지문 없이 조건만으로(Grammar), 하나는 기존 PUBLISHED
 // 지문 텍스트를 입력받아(Reading) 생성한다.
@@ -1101,7 +1101,7 @@ exports.aiWorker = onRequest(
     const isReport = mode === "monthlyReport";
     const isExamKey = mode === "examkey";
     const isExamVariant = mode === "examVariant";
-    // Phase 7(원래 로드맵 순서상 "Sarah's Original") — Question Bank용 AI 생성 2모드. 기존 6개 모드의
+    // Phase 7 — Question Bank용 AI 생성 2모드. 기존 6개 모드의
     // 프롬프트/핸들러는 한 글자도 건드리지 않고 새 분기만 추가한다(ARCHITECTURE.md §14.9).
     const isGrammarGenerate = mode === "grammarGenerate";
     const isReadingGenerate = mode === "readingGenerate";

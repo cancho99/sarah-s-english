@@ -181,13 +181,6 @@ window.SarahServices = window.SarahServices || {};
     { key: "PAST_EXAM_REFERENCE", label: "기출 유형 참고" },
   ];
 
-  // Teacher OS STEP 7 (2026-08-25) — "Sarah's Original"은 새 컬렉션/필드가 아니라 이 두 source.type
-  // 값에 대한 필터 프리셋일 뿐이다(사용자 확인 완료: AI_GENERATED + TEACHER_CREATED, 즉 외부 출처
-  // 참고인 TEXTBOOK_VARIATION/PAST_EXAM_REFERENCE만 제외). 실제 데이터 확인 결과 이 두 값만
-  // 쓰이고 있었다(grammarQuestions 13/13 AI_GENERATED, readingQuestions AI_GENERATED 4 +
-  // TEACHER_CREATED 1) — 나머지 3개 값은 스키마에는 있지만 현재 실제 문서엔 없음.
-  const SARAH_ORIGINAL_SOURCE_TYPES = ["AI_GENERATED", "TEACHER_CREATED"];
-
   // Status pipeline (§5). Order matters — used for "forward" transition validation below.
   // PUBLISHED is reachable only from APPROVED, and only a human calls setStatus (there is no AI
   // auto-generation wired up yet this phase, but the guard is here so that stays true later too —
@@ -693,7 +686,6 @@ window.SarahServices = window.SarahServices || {};
 
   window.SarahServices.questionBankService = {
     GRADES, DIFFICULTIES, GRAMMAR_TAXONOMY, QUESTION_TYPES, SOURCE_TYPES, STATUS_FLOW,
-    SARAH_ORIGINAL_SOURCE_TYPES,
     canTransition, computeFingerprint, findDuplicates,
     listQuestions, createQuestion, updateQuestion, setStatus, canHardDelete, hardDeleteQuestion,
     queryQuestions, pickQuestionsForExam, incrementUsageCount,

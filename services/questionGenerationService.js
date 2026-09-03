@@ -1,4 +1,4 @@
-// Phase 7 (원래 로드맵 순서상 "Sarah's Original", ARCHITECTURE.md §14) — the ONLY file in this repo
+// Phase 7 (원래 로드맵 순서상, ARCHITECTURE.md §14) — the ONLY file in this repo
 // allowed to call an AI API for question generation. services/questionBankService.js never calls
 // AI (verified: 0 `fetch` calls in that file outside comments) and knows nothing about this file —
 // the dependency is one-directional (this file calls questionBankService's create*/list* functions,
