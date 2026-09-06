@@ -19191,11 +19191,19 @@ function HomeworkEditor({ student, data, updateData }) {
   const [showTodaySummary, setShowTodaySummary] = useState(true);
   const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(today());
+  const [adding, setAdding] = useState(false);
+  function openAdd() {
+    setAssignedDate(selectedDate);
+    setDueDate(selectedDate);
+    setContent("");
+    setCategory("");
+    setAdding(true);
+  }
   async function add() {
     if (!content) return;
     await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content, category: category || null, done: false, photos: [] }, ...(d.homework || [])] }));
     notifyStudent(student.studentFcmToken, "homework_assigned", content);
-    setContent(""); setCategory(""); setShowAddForm(false);
+    setContent(""); setCategory(""); setShowAddForm(false); setAdding(false);
   }
   async function remove(id) { await updateData((d) => ({ ...d, homework: (d.homework || []).filter((h) => h.id !== id) })); }
   function startEdit(h) { setEditId(h.id); setEditAssigned(h.assignedDate); setEditDue(h.dueDate); setEditContent(h.content); setEditCategory(h.category || ""); }
@@ -19313,35 +19321,36 @@ function HomeworkEditor({ student, data, updateData }) {
         <//>
       `}
 
-      <${Accordion} title="숙제 등록" icon="➕" open=${showAddForm} onToggle=${() => setShowAddForm((v) => !v)}>
-        <div style=${{ display: "flex", gap: 12, marginBottom: 14 }}>
-          <div style=${{ flex: 1 }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>내준 날짜</div>
-            <${MiniCalendar} selected=${assignedDate} onSelect=${setAssignedDate} />
-          </div>
-          <div style=${{ flex: 1 }}>
-            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6, fontWeight: 600 }}>제출 기한</div>
-            <${MiniCalendar} selected=${dueDate} onSelect=${setDueDate} />
-          </div>
-        </div>
-        <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
-        <${Field} label="유형 (선택, Teacher Center 필터용)">
-          <select style=${inputStyle} value=${category} onChange=${(e) => setCategory(e.target.value)}>
-            <option value="">미분류</option>
-            ${(window.SarahServices && window.SarahServices.homeworkService ? window.SarahServices.homeworkService.HOMEWORK_CATEGORIES : ["문법", "어휘", "독해", "듣기", "기타"]).map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
-          </select>
-        <//>
-        <${Button} variant="gold" onClick=${add}>숙제 추가<//>
-      <//>
-
-      ${list.length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` : html`
+      ${list.length === 0 && !adding ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` : html`
         <div className="ap-cal-shell">
           <div className="ap-cal-main">
-            <${ItemMonthCalendar} items=${calItems} viewMonth=${viewMonth} onMonthChange=${setViewMonth} selectedDate=${selectedDate} onSelectDate=${(d) => { setSelectedDate(d); setEditId(null); }} renderChip=${hwChip} />
+            <${ItemMonthCalendar} items=${calItems} viewMonth=${viewMonth} onMonthChange=${setViewMonth} selectedDate=${selectedDate} onSelectDate=${(d) => { setSelectedDate(d); setEditId(null); setAdding(false); }} renderChip=${hwChip} />
           </div>
           <div className="ap-cal-side">
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>기한 ${fmtDateDay(selectedDate)}${selectedDate === todayStr ? " · 오늘" : ""} (${dayItems.length}건)</div>
-            ${dayItems.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>이 날짜에 등록된 숙제가 없어요.</div>` : dayItems.map((h) => html`
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>기한 ${fmtDateDay(selectedDate)}${selectedDate === todayStr ? " · 오늘" : ""} (${dayItems.length}건)</div>
+              ${!adding && html`<${Button} variant="gold" onClick=${openAdd} style=${{ padding: "6px 12px", fontSize: 12 }}>＋ 숙제 추가<//>`}
+            </div>
+            ${adding && html`
+              <${Card} style=${{ background: "#FFFDF8", border: `1px solid ${C.gold}`, marginBottom: 8 }}>
+                <div style=${{ display: "flex", gap: 8 }}>
+                  <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><${DateField} value=${assignedDate} onChange=${setAssignedDate} /><//></div>
+                  <div style=${{ flex: 1 }}><${Field} label="제출 기한"><${DateField} value=${dueDate} onChange=${setDueDate} /><//></div>
+                </div>
+                <${Field} label="숙제 내용"><textarea style=${{ ...inputStyle, minHeight: 70 }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예: 워크북 15-18p 풀어오기, 단어 Unit 5 암기" /><//>
+                <${Field} label="유형 (선택, Teacher Center 필터용)">
+                  <select style=${inputStyle} value=${category} onChange=${(e) => setCategory(e.target.value)}>
+                    <option value="">미분류</option>
+                    ${(window.SarahServices && window.SarahServices.homeworkService ? window.SarahServices.homeworkService.HOMEWORK_CATEGORIES : ["문법", "어휘", "독해", "듣기", "기타"]).map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
+                  </select>
+                <//>
+                <div style=${{ display: "flex", gap: 8 }}>
+                  <${Button} variant="gold" onClick=${add}>등록<//>
+                  <${Button} variant="ghost" onClick=${() => setAdding(false)}>취소<//>
+                </div>
+              <//>
+            `}
+            ${dayItems.length === 0 && !adding ? html`<div style=${{ fontSize: 12, color: C.slate }}>이 날짜에 등록된 숙제가 없어요.</div>` : dayItems.map((h) => html`
               <${Card} key=${h.id} style=${{ marginBottom: 8 }}>
                 ${editId === h.id ? html`
                   <div style=${{ display: "flex", gap: 8 }}>
