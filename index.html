@@ -13016,6 +13016,119 @@ function GrammarBankPrototype() {
   `;
 }
 
+// 2026-09-06 — "전체 문항" 열람 전용 탭(QuestionBankSection의 새 "browse" 탭). GrammarBankPrototype
+// (문제뱅크 만들기: 개수 지정 → 랜덤 미리보기 → 인쇄)과는 완전히 별개의 화면 — 여기는 학년을
+// 고르면 그 학년의 카테고리 트리를 전부 아코디언으로 펼쳐 등록된 문항(GB_BANK 하드코딩/AI 더미
+// + Firestore grammarBankQuestions로 교사가 직접 등록한 것)을 있는 그대로 다 보여주기만 한다 —
+// 개수 설정/랜덤 뽑기/체크박스 선택/인쇄 없음. myQuestions는 GrammarBankPrototype과 상태를
+// 공유하지 않고 이 컴포넌트가 마운트될 때 별도로 Firestore에서 다시 읽어온다(두 탭이 동시에
+// 마운트되지 않으므로 중복 비용은 탭 전환 시 한 번뿐).
+function gbAllQuestionsFor(grade, cat, sub, myQuestions) {
+  const bank = GB_BANK[grade][cat][sub];
+  const mine = myQuestions.filter((m) => m.grade === grade && m.cat === cat && m.sub === sub);
+  return [...bank.mc, ...bank.sa, ...mine];
+}
+function GrammarBankBrowseView() {
+  const [grade, setGrade] = useState(Object.keys(GB_GRAMMAR_TREE)[0]);
+  const [expandedCat, setExpandedCat] = useState({});
+  const [expandedSub, setExpandedSub] = useState({});
+  const [myQuestions, setMyQuestions] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const FC = window.SarahServices.firebaseClient;
+        const docs = await FC.getAllDocs("grammarBankQuestions");
+        if (cancelled) return;
+        setMyQuestions(Object.entries(docs).map(([id, d]) => ({ id, ...d })));
+      } catch (e) {
+        console.error("grammarBankQuestions load failed", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  function pickGrade(g) {
+    setGrade(g);
+    setExpandedCat({});
+    setExpandedSub({});
+  }
+
+  const q = searchQuery.trim().toLowerCase();
+  const isSearching = q.length > 0;
+  function matchesQuery(item) {
+    return (item.q || "").toLowerCase().includes(q) || (item.ans || "").toLowerCase().includes(q);
+  }
+
+  return html`
+    <div>
+      <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+        ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
+          <button key=${g} type="button" onClick=${() => pickGrade(g)}
+            style=${{ padding: "7px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${grade === g ? C.navy : C.line}`, background: grade === g ? C.navy : C.white, color: grade === g ? C.white : C.slate }}>${g}<//>
+        `)}
+      </div>
+      <input value=${searchQuery} onChange=${(e) => setSearchQuery(e.target.value)}
+        placeholder="🔍 문제 또는 정답 검색 (선택한 학년 전체 대상)" style=${{ ...inputStyle, marginBottom: 16 }} />
+      ${GB_GRAMMAR_TREE[grade].map((c) => {
+        const subEntries = c.subs.map((sub) => {
+          const all = gbAllQuestionsFor(grade, c.cat, sub, myQuestions);
+          const shown = isSearching ? all.filter(matchesQuery) : all;
+          return { sub, all, shown };
+        });
+        const catHasMatch = subEntries.some((e) => e.shown.length > 0);
+        if (isSearching && !catHasMatch) return null;
+        const catOpen = isSearching ? true : !!expandedCat[c.cat];
+        return html`
+          <div key=${c.cat} style=${{ marginBottom: 8, border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: C.navy, background: "#FAF8F3" }} onClick=${() => setExpandedCat((prev) => ({ ...prev, [c.cat]: !prev[c.cat] }))}>
+              <span style=${{ fontSize: 10, color: C.slate, width: 10, display: "inline-block", transform: catOpen ? "rotate(90deg)" : "none" }}>▶</span>
+              <span>${c.cat}</span>
+            </div>
+            ${catOpen && html`
+              <div style=${{ padding: "6px 12px 10px 26px" }}>
+                ${subEntries.map(({ sub, all, shown }) => {
+                  if (isSearching && shown.length === 0) return null;
+                  const subKey = c.cat + "|" + sub;
+                  const subOpen = isSearching ? true : !!expandedSub[subKey];
+                  const list = isSearching ? shown : all;
+                  return html`
+                    <div key=${sub} style=${{ marginBottom: 6 }}>
+                      <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, color: C.ink, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 4 }} onClick=${() => setExpandedSub((prev) => ({ ...prev, [subKey]: !prev[subKey] }))}>
+                        <span style=${{ fontSize: 9, color: C.slate, width: 10, display: "inline-block", transform: subOpen ? "rotate(90deg)" : "none" }}>▶</span>
+                        <span style=${{ flex: 1 }}>${sub}</span>
+                        <span style=${{ fontSize: 10.5, color: "#9a9488" }}>${isSearching ? `${shown.length}/${all.length}` : `${all.length}`}문항</span>
+                      </div>
+                      ${subOpen && html`
+                        <div style=${{ padding: "10px 8px 4px 18px" }}>
+                          ${list.length === 0
+                            ? html`<div style=${{ fontSize: 11.5, color: C.slate, padding: "6px 0" }}>등록된 문항이 없어요.</div>`
+                            : list.map((item, idx) => html`
+                              <div key=${item.id || idx} style=${{ marginBottom: 14, paddingBottom: 12, borderBottom: "1px solid #EDEAE2" }}>
+                                <div style=${{ display: "flex", gap: 8, fontSize: 13, color: C.ink, lineHeight: 1.6 }}>
+                                  <span style=${{ display: "inline-flex", width: 18, height: 18, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
+                                  <span style=${{ flex: 1 }}>${item.q}<span style=${{ fontSize: 10, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 7px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span></span>
+                                </div>
+                                ${item.type === "mc" && html`<div style=${{ margin: "5px 0 0 26px", fontSize: 12.5, color: C.slate }}>${item.opts.join("   ")}</div>`}
+                                <div style=${{ margin: "5px 0 0 26px", fontSize: 12, color: C.gold, fontWeight: 700 }}>정답: ${item.ans}</div>
+                              </div>
+                            `)}
+                        </div>
+                      `}
+                    </div>
+                  `;
+                })}
+              </div>
+            `}
+          </div>
+        `;
+      })}
+    </div>
+  `;
+}
+
 function GrammarBankView({ initialSelectedId, roster }) {
   const QB = window.SarahServices.questionBankService;
   const [questions, setQuestions] = useState(null); // null = loading
@@ -15144,7 +15257,7 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   // Keys는 문법·리딩 문제뱅크와 무관한 별개 기능이라 그대로 둔다. 배정·결과 관리는 추후 새로 만들
   // 예정이라 이 탭 목록에서도 함께 뺐다. initialBank로 옛 "examBuilder"/"review"가 넘어와도
   // 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys"];
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse"];
   const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
   return html`
     <div>
@@ -15152,10 +15265,12 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "grammar", icon: "📐", label: "Grammar" },
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
+        { key: "browse", icon: "📚", label: "전체 문항" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankPrototype} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
+      ${bank === "browse" && html`<${GrammarBankBrowseView} />`}
     </div>
   `;
 }
