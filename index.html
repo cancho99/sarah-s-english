@@ -17150,82 +17150,145 @@ function ConsultRequestsTeacherView({ data, updateData }) {
 function VocabLogEditor({ data, updateData }) {
   const [date, setDate] = useState(today());
   const [book, setBook] = useState(BOOK_LIST[0]);
-  const [customBook, setCustomBook] = useState("");
+  const [customBooks, setCustomBooks] = useState([]);
+  const [addingBook, setAddingBook] = useState(false);
+  const [newBookName, setNewBookName] = useState("");
+  const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(today());
   const [range, setRange] = useState("");
   const [correct, setCorrect] = useState("");
   const [total, setTotal] = useState("");
   const [retest, setRetest] = useState("");
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = await window.SarahServices.firebaseClient.getDoc("sarahsEnglishSettings", "main");
+        if (!cancelled) setCustomBooks((doc && doc.vocabBooks) || []);
+      } catch (e) {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const allBooks = [...BOOK_LIST, ...customBooks];
   const isCumulative = range.includes("누적");
   const threshold = isCumulative ? 90 : 80;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
   const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.10 : 0.20)) : null;
   const wrongCount = total && correct !== "" ? Number(total) - Number(correct) : null;
   const willPass = wrongCount !== null ? wrongCount <= allowedWrong : null;
-  const effectiveBook = book === "__other__" ? customBook.trim() : book;
+
+  async function confirmNewBook() {
+    const name = newBookName.trim();
+    if (!name) { setAddingBook(false); return; }
+    if (!allBooks.includes(name)) {
+      const next = [...customBooks, name];
+      setCustomBooks(next);
+      await window.SarahServices.firebaseClient.setDocAt("sarahsEnglishSettings", "main", { vocabBooks: next }, { merge: true });
+    }
+    setBook(name);
+    setNewBookName("");
+    setAddingBook(false);
+  }
+  async function removeCustomBook(name) {
+    if (!confirm(`"${name}" 교재를 목록에서 삭제할까요?`)) return;
+    const next = customBooks.filter((b) => b !== name);
+    setCustomBooks(next);
+    await window.SarahServices.firebaseClient.setDocAt("sarahsEnglishSettings", "main", { vocabBooks: next }, { merge: true });
+    if (book === name) setBook(BOOK_LIST[0]);
+  }
 
   async function add() {
-    if (!date || !total || !range || !effectiveBook) return;
+    if (!date || !total || !range || !book) return;
     const scorePct = Math.round((Number(correct) / Number(total)) * 100);
     const allowed = Math.round(Number(total) * (range.includes("누적") ? 0.10 : 0.20));
     const passed = (Number(total) - Number(correct)) <= allowed;
     await updateData((d) => ({
       ...d,
-      vocabLog: [{ id: uid(), date, book: effectiveBook, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
+      vocabLog: [{ id: uid(), date, book, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest }, ...(d.vocabLog || [])],
     }));
+    setSelectedDate(date);
+    setViewMonth(date.slice(0, 7));
     setRange(""); setCorrect(""); setTotal(""); setRetest("");
   }
   async function remove(id) { await updateData((d) => ({ ...d, vocabLog: (d.vocabLog || []).filter((v) => v.id !== id) })); }
 
-  const list = data.vocabLog || [];
+  const calItems = (data.vocabLog || []).map((v) => ({ ...v, dateStr: v.date }));
+  const dayItems = (data.vocabLog || []).filter((v) => v.date === selectedDate);
+  function vocabLogChip(v) {
+    const bg = v.passed ? "#F2F0E4" : "#F5E9E6";
+    const color = v.passed ? "#9C7A44" : C.danger;
+    return { label: v.book, bg, color };
+  }
+
   return html`
     <div>
       <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90%(오답 10% 이내), 아니면 80%(오답 20% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
-      <${Card}>
-        <div className="ap-split-form">
-          <div className="ap-split-form-left">
-            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>날짜</div>
-            <${MiniCalendar} selected=${date} onSelect=${setDate} />
+      <${Card} style=${{ borderTop: `3px solid ${C.gold}` }}>
+        <div style=${{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style=${{ flex: "1 1 200px" }}>
+            <${Field} label="날짜"><${MiniCalendar} selected=${date} onSelect=${setDate} /><//>
           </div>
-          <div className="ap-split-form-right">
+          <div style=${{ flex: "1 1 220px" }}>
             <${Field} label="교재">
-              <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
-                ${BOOK_LIST.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
-                <option value="__other__">기타 (직접 입력)</option>
-              </select>
+              ${addingBook ? html`
+                <div style=${{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input style=${inputStyle} value=${newBookName} onChange=${(e) => setNewBookName(e.target.value)} placeholder="새 교재 이름" autoFocus />
+                  <button type="button" onClick=${confirmNewBook} style=${{ flex: "none", fontSize: 12, fontWeight: 700, color: C.navy, background: "#F2F0E4", border: "none", borderRadius: 6, padding: "8px 10px", cursor: "pointer" }}>저장</button>
+                  <button type="button" onClick=${() => { setAddingBook(false); setNewBookName(""); }} style=${{ flex: "none", background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 14 }}>✕</button>
+                </div>
+              ` : html`
+                <div style=${{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
+                    ${allBooks.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
+                  </select>
+                  ${customBooks.includes(book)
+                    ? html`<button type="button" onClick=${() => removeCustomBook(book)} style=${{ flex: "none", background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 14 }}>✕</button>`
+                    : html`<button type="button" onClick=${() => setAddingBook(true)} style=${{ flex: "none", background: "none", border: `1px solid ${C.line}`, borderRadius: 6, color: C.navy, cursor: "pointer", fontSize: 14, width: 32, height: 32 }}>＋</button>`}
+                </div>
+              `}
             <//>
-            ${book === "__other__" && html`<${Field} label="교재명 직접 입력"><input style=${inputStyle} value=${customBook} onChange=${(e) => setCustomBook(e.target.value)} placeholder="교재 이름 입력" /><//>`}
-            <${Field} label="시험범위"><input style=${inputStyle} value=${range} onChange=${(e) => setRange(e.target.value)} placeholder="예: Day 1-9 누적" /><//>
-            <div style=${{ display: "flex", gap: 8 }}>
-              <div style=${{ flex: 1 }}><${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//></div>
-              <div style=${{ flex: 1 }}><${Field} label="총 문항"><input style=${inputStyle} type="number" value=${total} onChange=${(e) => setTotal(e.target.value)} /><//></div>
-            </div>
-            ${pct !== null && html`<div style=${{ fontSize: 12.5, marginBottom: 10, color: willPass ? C.navy : C.danger, fontWeight: 700 }}>${pct}% (오답 ${wrongCount}개) · ${total}문항 중 오답 ${allowedWrong}개까지 허용 → ${willPass ? "합격" : "불합격"}</div>`}
-            <${Field} label="재시험 메모 (선택)"><input style=${inputStyle} value=${retest} onChange=${(e) => setRetest(e.target.value)} placeholder="예: 7/20 10시" /><//>
-            <${Button} variant="gold" onClick=${add}>기록 추가<//>
           </div>
+        </div>
+        <${Field} label="시험범위"><input style=${inputStyle} value=${range} onChange=${(e) => setRange(e.target.value)} placeholder="예: Day 1-9 누적" /><//>
+        <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: 8 }}>
+          <${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//>
+          <${Field} label="총 문항"><input style=${inputStyle} type="number" value=${total} onChange=${(e) => setTotal(e.target.value)} /><//>
+          <div>
+            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>${" "}</div>
+            ${pct === null
+              ? html`<div style=${{ fontSize: 12, color: C.slate, border: `1px dashed ${C.line}`, borderRadius: 8, padding: "9px 10px" }}>점수를 입력하면 판정돼요</div>`
+              : html`<div style=${{ fontSize: 12.5, fontWeight: 700, borderRadius: 8, padding: "9px 10px", background: willPass ? "#F2F0E4" : "#F5E9E6", color: willPass ? C.navy : C.danger }}>${pct}% · 오답 ${wrongCount}개 (허용 ${allowedWrong}개) → ${willPass ? "합격" : "불합격"}</div>`}
+          </div>
+        </div>
+        <div style=${{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <div style=${{ flex: 1 }}>
+            <${Field} label="재시험 메모 (선택)"><input style=${inputStyle} value=${retest} onChange=${(e) => setRetest(e.target.value)} placeholder="예: 7/20 10시" /><//>
+          </div>
+          <${Button} variant="gold" onClick=${add}>기록 추가<//>
         </div>
       <//>
-      ${list.length === 0 ? html`<${Empty} text="아직 기록이 없어요." />` : html`
-        <div style=${{ marginTop: 12 }}>
-          ${list.map((v) => html`
-            <${Row} key=${v.id} style=${{ cursor: "default" }}>
-              <div className="ap-row-main">
-                <div className="ap-row-title">${v.book} — ${v.range}</div>
-                <div className="ap-row-meta">
-                  <span>${fmtDate(v.date)}</span>
-                  <span>${v.correct}/${v.total} (${v.score}%)</span>
-                  ${v.retest && html`<span>재시험 ${v.retest}</span>`}
-                </div>
-              </div>
-              <div className="ap-row-side">
-                <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: v.passed ? "#E9F1EA" : "#F7E9E6", color: v.passed ? "#3D6B4F" : C.danger }}>${v.passed ? "합격" : "불합격"}</span>
-                <button onClick=${() => remove(v.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
-              </div>
-            <//>
-          `)}
+      <div style=${{ marginTop: 14 }}>
+        <div className="ap-cal-shell">
+          <div className="ap-cal-main">
+            <${ItemMonthCalendar} items=${calItems} viewMonth=${viewMonth} onMonthChange=${setViewMonth} selectedDate=${selectedDate} onSelectDate=${setSelectedDate} renderChip=${vocabLogChip} />
+          </div>
+          <div className="ap-cal-side">
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>${fmtDateDay(selectedDate)}${selectedDate === today() ? " · 오늘" : ""} (${dayItems.length}건)</div>
+            ${dayItems.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>이 날짜에 기록이 없어요.</div>` : dayItems.map((v) => html`
+              <${Card} key=${v.id} style=${{ borderLeft: `3px solid ${v.passed ? C.gold : C.danger}`, marginBottom: 8, position: "relative" }}>
+                <button onClick=${() => remove(v.id)} style=${{ position: "absolute", top: 8, right: 10, background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+                <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 4, paddingRight: 20 }}>${v.book}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate }}>${v.range}</div>
+                <div style=${{ fontSize: 11.5, color: C.slate }}>${v.correct}/${v.total} (${v.score}%)</div>
+                ${v.retest && html`<div style=${{ fontSize: 11.5, color: C.slate }}>재시험 ${v.retest}</div>`}
+                <div style=${{ fontSize: 12, fontWeight: 700, color: v.passed ? "#9C7A44" : C.danger, marginTop: 6 }}>${v.passed ? "합격" : "불합격"}</div>
+              <//>
+            `)}
+          </div>
         </div>
-      `}
+      </div>
     </div>
   `;
 }
