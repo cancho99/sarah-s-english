@@ -48,18 +48,28 @@ window.SarahServices = window.SarahServices || {};
     const results = getVocabResultsForStudent(studentData)
       .filter((r) => r.date && r.date.startsWith(month))
       .map((r) => ({ ...r, title: titleById[r.testId] || "단어시험", pct: r.total ? Math.round((r.score / r.total) * 100) : null }));
-    const count = results.length;
+    let count = results.length;
     const withPct = results.filter((r) => r.pct != null);
-    const avgPct = withPct.length ? Math.round(withPct.reduce((s, r) => s + r.pct, 0) / withPct.length) : null;
-    const quizPassed = withPct.filter((r) => r.pct >= passThreshold(r.title)).length;
+    let avgPct = withPct.length ? Math.round(withPct.reduce((s, r) => s + r.pct, 0) / withPct.length) : null;
+    let passed = withPct.filter((r) => r.pct >= passThreshold(r.title)).length;
     // 단어 통과율은 Question Bank 자동채점(vocabResults)만이 아니라 선생님이 직접 기록하는
     // vocabLog(레거시 수기 채점 경로)까지 합쳐야 한다 — 두 경로 모두 실제로 쓰이고 있어서, 한쪽만
     // 보면 학생이 실제로 본 단어시험보다 통과율이 낮게(혹은 표본이 작게) 잡힌다.
     const logRows = getVocabLogForStudent(studentData).filter((v) => v.date && v.date.startsWith(month));
     const logPassed = logRows.filter((v) => v.passed).length;
     const passDenom = withPct.length + logRows.length;
-    const passRate = passDenom ? Math.round(((quizPassed + logPassed) / passDenom) * 100) : null;
-    return { count, avgPct, passRate, results };
+    let passRate = passDenom ? Math.round(((passed + logPassed) / passDenom) * 100) : null;
+    // 2026-09-06 — "지난달 이전 정리" 버튼(index.html pruneOldMonths)이 원본 vocabResults를
+    // 지우면서 studentData.monthlyStats[month]에 남겨둔 스냅샷으로 복원한다(vocabLog는 pruneOldMonths가
+    // 건드리지 않으므로 이 fallback 대상이 아니다). 원본이 아직 있으면(count>0) 스냅샷은 무시한다.
+    const snap = studentData.monthlyStats && studentData.monthlyStats[month];
+    if (count === 0 && snap && snap.vocabCount) {
+      count = snap.vocabCount;
+      avgPct = Math.round(snap.vocabPctSum / snap.vocabCount);
+      passed = snap.vocabPassed;
+      passRate = Math.round((snap.vocabPassed / snap.vocabCount) * 100);
+    }
+    return { count, avgPct, passed, passRate, results };
   }
 
   // "누적 학습 단어 수" — unique words across every vocab test ever assigned to this student

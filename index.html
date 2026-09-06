@@ -1134,7 +1134,7 @@ function pruneOldMonths(d, currentMonth) {
 
   const monthlyStats = { ...(d.monthlyStats || {}) };
   function bump(month, field, delta) {
-    monthlyStats[month] = { hwTotal: 0, hwDone: 0, vocabTotal: 0, vocabPassed: 0, ...monthlyStats[month] };
+    monthlyStats[month] = { hwTotal: 0, hwDone: 0, vocabCount: 0, vocabPctSum: 0, vocabPassed: 0, ...monthlyStats[month] };
     monthlyStats[month][field] += delta;
   }
   droppedHomework.forEach((h) => {
@@ -1143,9 +1143,11 @@ function pruneOldMonths(d, currentMonth) {
     if (h.done) bump(month, "hwDone", 1);
   });
   droppedVocabResults.forEach((r) => {
+    if (!r.total) return;
     const month = monthOf(r.date);
-    bump(month, "vocabTotal", 1);
-    const pct = r.total > 0 ? (r.score / r.total) * 100 : 0;
+    const pct = Math.round((r.score / r.total) * 100);
+    bump(month, "vocabCount", 1);
+    bump(month, "vocabPctSum", pct);
     if (pct >= vocabPassThreshold(titleById[r.testId] || "")) bump(month, "vocabPassed", 1);
   });
 

@@ -130,11 +130,20 @@ window.SarahServices = window.SarahServices || {};
     const hw = getHomeworkForStudent("", "", studentData).filter(
       (h) => h.dueDate && h.dueDate.startsWith(month) && h.dueDate < today
     );
-    const total = hw.length;
-    const submitted = hw.filter((h) => h.done).length;
+    let total = hw.length;
+    let submitted = hw.filter((h) => h.done).length;
     const notSubmitted = hw.filter((h) => !h.done).length;
     const late = hw.filter((h) => h.late).length;
     const checked = hw.filter((h) => h.checked).length;
+    // 2026-09-06 — "지난달 이전 정리" 버튼(index.html pruneOldMonths)이 원본 hw를 지우면서
+    // studentData.monthlyStats[month]에 남겨둔 스냅샷으로 복원한다. 원본이 아직 있으면(total>0)
+    // 스냅샷은 무시하고 실제 데이터를 그대로 쓴다 — 이 fallback은 원본이 이미 삭제된 지난달
+    // 이전 통계에만 적용된다.
+    const snap = studentData.monthlyStats && studentData.monthlyStats[month];
+    if (total === 0 && snap && snap.hwTotal) {
+      total = snap.hwTotal;
+      submitted = snap.hwDone;
+    }
     return {
       total, submitted, notSubmitted, late, checked,
       rate: total ? Math.round((submitted / total) * 100) : null,
