@@ -18660,7 +18660,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       `}
       ${tab === "schedule" && html`<${StudentScheduleEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
       ${tab === "exams" && html`<${StudentExamListSection} student=${student} />`}
-      ${tab === "flashcards" && html`<${FlashcardHome} student=${student} />`}
+      ${tab === "flashcards" && html`<${FlashcardHome} student=${student} data=${data} updateData=${updateData} />`}
     </div>
   `;
 }
@@ -21619,18 +21619,29 @@ function ConsultRequestPanel({ student, data, updateData }) {
 // 별도 컬렉션/필드를 새로 쓰지 않는다. 세션 진행 상태(deck/missed)는 이 화면 안에서만 쓰는
 // 휴리스틱 학습 보조 데이터라 Firestore에 저장하지 않는다 — 새로고침하면 Day 선택부터 다시
 // 시작한다(기존 단어시험 activeTestSession처럼 재개가 필요한 "시험 응시 기록"과는 성격이 다름).
-function FlashcardHome({ student }) {
+// 단어 플래시카드 암기. 화면 흐름: 교재 목록(등록된 것만) → Day 선택 → 학습 방법 선택(카드로
+// 외우기/스펠링 연습) → 세션 → 세션 종료 요약. "모르는 단어 모아보기"는 교재 목록 화면 상단에서
+// 들어가는 별도 화면 — data.flashcardUnknown(학생 문서, 교재/Day 안 가리는 누적 목록)을 그대로
+// 보여준다. 세션 진행 상태(deck/index 등) 자체는 새로고침하면 사라지는 로컬 state — 저장되는 건
+// data.flashcardUnknown뿐이다.
+const FLASHCARD_GREEN = "#3F8C5A";
+
+function FlashcardHome({ student, data, updateData }) {
   const svc = window.SarahServices.flashcardService;
-  const [screen, setScreen] = useState("books"); // "books" | "days" | "session" | "missed"
+  const [screen, setScreen] = useState("books"); // "books" | "days" | "mode" | "session" | "summary" | "unknown"
   const [allBooks, setAllBooks] = useState(null); // null = 아직 안 불러옴
   const [loadErr, setLoadErr] = useState("");
   const [selectedBook, setSelectedBook] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [mode, setMode] = useState(null); // "cards" | "spelling"
   const [deck, setDeck] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [missed, setMissed] = useState([]);
-  const [flipped, setFlipped] = useState(false);
-  const [reviewDeck, setReviewDeck] = useState([]);
-  const [reviewFlipped, setReviewFlipped] = useState(false);
+  const [index, setIndex] = useState(0);
+  const [sessionMistakes, setSessionMistakes] = useState([]); // [{en,ko}] — 이번 세션 한정, 재도전 대상
+  const [flipped, setFlipped] = useState(false); // 카드 모드
+  const [spellInput, setSpellInput] = useState("");
+  const [spellWrong, setSpellWrong] = useState(false); // 오답 → 정답 보여주고 재입력 요구 중
+  const [retypeInput, setRetypeInput] = useState("");
+  const [spellCorrectFlash, setSpellCorrectFlash] = useState(false); // 정답 → 다음으로 넘어가기 전 잠깐 표시
 
   useEffect(() => {
     (async () => {
@@ -21640,59 +21651,98 @@ function FlashcardHome({ student }) {
   }, []);
 
   const books = allBooks ? svc.getAccessibleBooks(allBooks, student.flashcardBooks) : null;
+  const unknownList = (data && data.flashcardUnknown) || [];
 
-  function startDay(book, day) {
-    const words = svc.getWordsForDay(book, day);
-    if (words.length === 0) return;
-    setSelectedBook(book);
-    setDeck(svc.buildDeck(words)); setTotal(words.length); setMissed([]); setFlipped(false);
+  function goDays(book) { setSelectedBook(book); setScreen("days"); }
+  function goMode(day) { setSelectedDay(day); setScreen("mode"); }
+
+  function resetSessionInputs() {
+    setFlipped(false);
+    setSpellInput(""); setSpellWrong(false); setRetypeInput(""); setSpellCorrectFlash(false);
+  }
+  function startSession(words, chosenMode) {
+    setDeck(svc.buildDeck(words));
+    setIndex(0);
+    setSessionMistakes([]);
+    setMode(chosenMode);
+    resetSessionInputs();
     setScreen("session");
   }
-  // "알아요" — 요구사항 3: 다음 단어로 넘어간다(맨 앞 카드가 큐에서 빠짐).
-  function markKnown() {
-    setDeck((d) => svc.markKnown(d));
-    setFlipped(false);
-  }
-  // "모름" — 요구사항 3: 리스트 맨 뒤로 재배치. 동시에 요구사항 4의 "모르는 단어 모아보기"
-  // 리스트에도 추가된다(별도 상태, 나중에 메인 큐에서 알아요로 넘어가도 여기서는 안 빠진다).
-  function markUnknown() {
-    setDeck((d) => {
-      if (d[0]) setMissed((m) => svc.addMissed(m, d[0]));
-      return svc.markUnknown(d);
-    });
-    setFlipped(false);
-  }
-  // 요구사항 4 — "모르는 단어 모아보기"도 메인 세션과 같은 뒤집기 카드 방식으로 스스로
-  // 맞혀본다. svc.buildDeck은 안 쓴다 — 카드마다 id를 새로 생성해서 missed 목록(id 기준
-  // 매칭)과 어긋난다. missed 항목을 그대로 shuffle만 해서 큐로 쓴다.
-  function startReview() {
-    setReviewDeck(shuffle(missed));
-    setReviewFlipped(false);
-    setScreen("missed");
-  }
-  function reviewKnown() {
-    const card = reviewDeck[0];
-    setReviewDeck((d) => svc.markKnown(d));
-    if (card) setMissed((m) => svc.removeMissed(m, card.id));
-    setReviewFlipped(false);
-  }
-  function reviewUnknown() {
-    setReviewDeck((d) => svc.markUnknown(d));
-    setReviewFlipped(false);
+
+  // 두 모드 공통 — 이번 카드를 끝내고 다음으로. 마지막 카드였으면 요약 화면으로.
+  function advance(wasWrong, card) {
+    if (wasWrong) {
+      setSessionMistakes((m) => (m.some((x) => x.en === card.en) ? m : [...m, card]));
+    }
+    resetSessionInputs();
+    if (index + 1 >= deck.length) setScreen("summary");
+    else setIndex((i) => i + 1);
   }
 
-  const progress = svc.computeProgress(total, deck.length);
+  // ---- 카드로 외우기 ----
+  function persistUnknownAdd(card) {
+    if (!selectedBook) return;
+    updateData(student.id, (d) => ({
+      ...d,
+      flashcardUnknown: svc.addUnknownWord(d.flashcardUnknown || [], {
+        bookId: selectedBook.id, bookName: selectedBook.name, day: selectedDay, word: card.en, meaning: card.ko,
+      }),
+    })).catch((e) => console.error("flashcardUnknown 추가 실패", e));
+  }
+  function persistUnknownRemove(bookId, word) {
+    updateData(student.id, (d) => ({ ...d, flashcardUnknown: svc.removeUnknownWord(d.flashcardUnknown || [], bookId, word) }))
+      .catch((e) => console.error("flashcardUnknown 삭제 실패", e));
+  }
+  function cardKnown() {
+    const card = deck[index];
+    if (selectedBook && svc.hasUnknownWord(unknownList, selectedBook.id, card.en)) persistUnknownRemove(selectedBook.id, card.en);
+    advance(false, card);
+  }
+  function cardUnknown() {
+    const card = deck[index];
+    persistUnknownAdd(card);
+    advance(true, card);
+  }
+
+  // ---- 스펠링 연습 ----
+  function submitSpelling() {
+    const card = deck[index];
+    if (svc.checkSpelling(spellInput, card.en)) {
+      setSpellCorrectFlash(true);
+      setTimeout(() => advance(false, card), 700);
+    } else {
+      setSpellWrong(true);
+    }
+  }
+  function onRetypeChange(v) {
+    setRetypeInput(v);
+    const card = deck[index];
+    if (svc.checkSpelling(v, card.en)) advance(true, card);
+  }
+
+  function retryMistakes() {
+    startSession(sessionMistakes.map((m) => ({ en: m.en, ko: m.ko })), mode);
+  }
+
+  const progress = svc.computeProgress(deck.length, index);
+  const card = deck[index];
 
   return html`
     <div>
       <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>🎴 단어 플래시카드 암기</div>
 
       ${screen === "books" && html`
+        ${unknownList.length > 0 && html`
+          <div onClick=${() => setScreen("unknown")} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderRadius: 8, background: "#FBF4EA", border: `1px solid ${C.gold}`, marginBottom: 12, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: C.navy }}>
+            <span>🔖 모르는 단어 모아보기</span>
+            <span style=${{ color: C.gold }}>${unknownList.length}개 ›</span>
+          </div>
+        `}
         ${books === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` :
-          books.length === 0 ? html`<${Empty} text=${loadErr || "선생님이 등록해 주신 교재가 아직 없어요."} />` : html`
+          books.length === 0 ? html`<${Empty} text=${loadErr || "선생님이 아직 등록한 교재가 없어요."} />` : html`
           <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
             ${books.map((b) => html`
-              <${Card} key=${b.id} onClick=${() => { setSelectedBook(b); setScreen("days"); }} style=${{ marginBottom: 0 }}>
+              <${Card} key=${b.id} onClick=${() => goDays(b)} style=${{ marginBottom: 0 }}>
                 <div style=${{ fontWeight: 700, color: C.navy }}>${b.name}</div>
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>Day ${b.totalDays || 0}</div>
               <//>
@@ -21706,7 +21756,7 @@ function FlashcardHome({ student }) {
         <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${selectedBook.name} — Day 선택</div>
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(64px, 1fr))", gap: 8 }}>
           ${svc.getDayList(selectedBook).map((d) => html`
-            <button key=${d.day} disabled=${d.count === 0} onClick=${() => startDay(selectedBook, d.day)}
+            <button key=${d.day} disabled=${d.count === 0} onClick=${() => goMode(d.day)}
               style=${{ padding: "10px 4px", borderRadius: 6, border: `1px solid ${C.line}`, background: d.count === 0 ? C.ivory : C.white, color: d.count === 0 ? C.slate : C.ink, cursor: d.count === 0 ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 700 }}>
               Day ${d.day}
               <div style=${{ fontSize: 10, fontWeight: 400, color: C.slate, marginTop: 2 }}>${d.count}개</div>
@@ -21715,70 +21765,106 @@ function FlashcardHome({ student }) {
         </div>
       `}
 
-      ${screen === "session" && html`
+      ${screen === "mode" && selectedBook && selectedDay && html`
         <${BackBtn} onClick=${() => setScreen("days")} />
-        ${deck.length === 0 ? html`
-          <${Card} style=${{ textAlign: "center" }}>
-            <div style=${{ fontSize: 30, marginBottom: 8 }}>🎉</div>
-            <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 12 }}>이 Day 단어를 모두 학습했어요!</div>
-            ${missed.length > 0
-              ? html`<${Button} variant="gold" onClick=${startReview}>모르는 단어 모아보기 (${missed.length})<//>`
-              : html`<div style=${{ fontSize: 12.5, color: C.slate }}>"모름"을 한 번도 누르지 않고 다 외웠어요.</div>`}
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${selectedBook.name} · Day ${selectedDay} — 학습 방법을 선택하세요</div>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <${Card} onClick=${() => startSession(svc.getWordsForDay(selectedBook, selectedDay), "cards")} style=${{ textAlign: "center", padding: "24px 16px" }}>
+            <div style=${{ fontSize: 30, marginBottom: 6 }}>🃏</div>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>카드로 외우기</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>단어를 보고 뜻을 떠올린 뒤 카드를 뒤집어 확인해요</div>
           <//>
-        ` : html`
-          <div style=${{ marginBottom: 14 }}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: C.slate, marginBottom: 4 }}>
-              <span>${progress.done} / ${progress.total}</span>
-              ${missed.length > 0 && html`<span onClick=${startReview} style=${{ cursor: "pointer", color: C.gold, fontWeight: 700 }}>모르는 단어 (${missed.length})</span>`}
-            </div>
-            <div style=${{ height: 6, borderRadius: 3, background: C.ivory, overflow: "hidden" }}>
-              <div style=${{ height: "100%", width: `${progress.pct}%`, background: C.gold }}></div>
-            </div>
-          </div>
+          <${Card} onClick=${() => startSession(svc.getWordsForDay(selectedBook, selectedDay), "spelling")} style=${{ textAlign: "center", padding: "24px 16px" }}>
+            <div style=${{ fontSize: 30, marginBottom: 6 }}>✍️</div>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14 }}>스펠링 연습</div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>뜻을 보고 영단어 스펠링을 직접 입력해요</div>
+          <//>
+        </div>
+      `}
 
+      ${screen === "session" && card && html`
+        <${BackBtn} onClick=${() => setScreen("days")} />
+        <div style=${{ marginBottom: 14 }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>${progress.done} / ${progress.total}</div>
+          <div style=${{ height: 6, borderRadius: 3, background: C.ivory, overflow: "hidden" }}>
+            <div style=${{ height: "100%", width: `${progress.pct}%`, background: C.gold }}></div>
+          </div>
+        </div>
+
+        ${mode === "cards" && html`
           <${Card} onClick=${() => setFlipped((f) => !f)} style=${{ minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-            <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${flipped ? deck[0].ko : deck[0].en}</div>
+            <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${flipped ? card.ko : card.en}</div>
           <//>
           <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
-
-          <div style=${{ display: "flex", gap: 16 }}>
-            <button onClick=${markUnknown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.danger, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style=${{ fontSize: 34 }}>❌</span>
-              <span style=${{ fontSize: 13, fontWeight: 700 }}>모름</span>
-            </button>
-            <button onClick=${markKnown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.gold, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style=${{ fontSize: 34 }}>✅</span>
-              <span style=${{ fontSize: 13, fontWeight: 700 }}>알아요</span>
-            </button>
+          <div style=${{ display: "flex", gap: 10 }}>
+            <button onClick=${cardUnknown} style=${{ flex: 1, padding: "16px", borderRadius: 10, border: `2px solid ${C.danger}`, background: C.white, color: C.danger, fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}>몰라요</button>
+            <button onClick=${cardKnown} style=${{ flex: 1, padding: "16px", borderRadius: 10, border: "none", background: FLASHCARD_GREEN, color: C.white, fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}>알아요</button>
           </div>
+        `}
+
+        ${mode === "spelling" && html`
+          <${Card} style=${{ minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+            <div style=${{ ...serif, fontSize: 22, color: C.navy }}>${card.ko}</div>
+          <//>
+          ${spellCorrectFlash ? html`
+            <div style=${{ textAlign: "center", padding: "16px 0", color: FLASHCARD_GREEN, fontWeight: 700, fontSize: 15 }}>✅ 정답이에요!</div>
+          ` : spellWrong ? html`
+            <div style=${{ marginTop: 14 }}>
+              <div style=${{ fontSize: 11, color: C.slate, marginBottom: 4 }}>내가 쓴 답</div>
+              <div style=${{ ...inputStyle, borderColor: C.danger, color: C.danger, fontWeight: 700, textAlign: "center" }}>${spellInput || "(빈칸)"}</div>
+              <div style=${{ fontSize: 11, color: C.slate, margin: "12px 0 4px" }}>정답</div>
+              <div style=${{ ...inputStyle, borderColor: FLASHCARD_GREEN, color: FLASHCARD_GREEN, fontWeight: 700, textAlign: "center" }}>${card.en}</div>
+              <div style=${{ fontSize: 11, color: C.slate, margin: "14px 0 4px" }}>정답을 그대로 다시 입력하면 다음 단어로 넘어가요</div>
+              <input style=${{ ...inputStyle, fontSize: 16, textAlign: "center" }} placeholder="정답을 다시 입력하세요"
+                autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"
+                name=${`flashcard-retype-${card.id}`} autoFocus=${true}
+                value=${retypeInput} onChange=${(e) => onRetypeChange(e.target.value)} />
+            </div>
+          ` : html`
+            <div style=${{ marginTop: 14 }}>
+              <input style=${{ ...inputStyle, fontSize: 16, textAlign: "center" }} placeholder="영어 단어를 입력하세요"
+                autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off"
+                name=${`flashcard-spell-${card.id}`} autoFocus=${true}
+                value=${spellInput} onChange=${(e) => setSpellInput(e.target.value)}
+                onKeyDown=${(e) => { if (e.key === "Enter") submitSpelling(); }} />
+              <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", padding: "12px", marginTop: 10 }} onClick=${submitSpelling}>제출<//>
+            </div>
+          `}
         `}
       `}
 
-      ${screen === "missed" && html`
-        <${BackBtn} onClick=${() => setScreen("session")} />
-        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>모르는 단어 모아보기</div>
-        ${reviewDeck.length === 0 ? html`
-          <${Card} style=${{ textAlign: "center" }}>
-            <div style=${{ fontSize: 30, marginBottom: 8 }}>🎉</div>
-            <div style=${{ ...serif, fontSize: 16, color: C.navy }}>모르는 단어를 모두 외웠어요!</div>
-          <//>
+      ${screen === "summary" && html`
+        <div style=${{ ...serif, fontSize: 16, color: C.navy, textAlign: "center", margin: "18px 0 6px" }}>
+          Day ${selectedDay} 완료! ${deck.length}개 중 ${deck.length - sessionMistakes.length}개 정답 (한 번에)
+        </div>
+        ${sessionMistakes.length === 0 ? html`
+          <div style=${{ textAlign: "center", fontSize: 13, color: FLASHCARD_GREEN, fontWeight: 700, margin: "12px 0 20px" }}>🎉 전부 한 번에 맞혔어요!</div>
         ` : html`
-          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10, textAlign: "right" }}>${reviewDeck.length}개 남음</div>
-          <${Card} onClick=${() => setReviewFlipped((f) => !f)} style=${{ minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-            <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${reviewFlipped ? reviewDeck[0].ko : reviewDeck[0].en}</div>
-          <//>
-          <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
-          <div style=${{ display: "flex", gap: 16 }}>
-            <button onClick=${reviewUnknown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.danger, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style=${{ fontSize: 34 }}>❌</span>
-              <span style=${{ fontSize: 13, fontWeight: 700 }}>아직 모름</span>
-            </button>
-            <button onClick=${reviewKnown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.gold, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span style=${{ fontSize: 34 }}>✅</span>
-              <span style=${{ fontSize: 13, fontWeight: 700 }}>이제 알아요</span>
-            </button>
+          <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", margin: "14px 0 20px" }}>
+            ${sessionMistakes.map((m) => html`
+              <span key=${m.en} style=${{ fontSize: 12, padding: "5px 12px", borderRadius: 20, background: "#F7E9E6", color: C.danger, fontWeight: 700 }}>${m.en}</span>
+            `)}
           </div>
         `}
+        <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+          ${sessionMistakes.length > 0 && html`<${Button} variant="gold" style=${{ justifyContent: "center", padding: "12px" }} onClick=${retryMistakes}>틀린 단어만 다시<//>`}
+          <${Button} variant="ghost" style=${{ justifyContent: "center", padding: "12px" }} onClick=${() => setScreen("days")}>Day 목록으로<//>
+        </div>
+      `}
+
+      ${screen === "unknown" && html`
+        <${BackBtn} onClick=${() => setScreen("books")} />
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>모르는 단어 모아보기</div>
+        ${unknownList.length === 0 ? html`<${Empty} text="🎉 모르는 단어가 없어요!" />` : unknownList.map((u) => html`
+          <${Card} key=${`${u.bookId}::${u.word}`} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 2 }}>${u.bookName}${u.day ? ` · Day ${u.day}` : ""}</div>
+              <div style=${{ fontWeight: 700, color: C.navy }}>${u.word}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>${u.meaning}</div>
+            </div>
+            <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => persistUnknownRemove(u.bookId, u.word)}>알아요<//>
+          <//>
+        `)}
       `}
     </div>
   `;
