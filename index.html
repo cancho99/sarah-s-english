@@ -9651,7 +9651,9 @@ function gbParseBulkText(rawText) {
 
   const ansMap = {};
   const ansFullText = aLines.join("\n");
-  const ansRegexGlobal = /(\d+)\s*\.\s*정답\s*([①②③④⑤])/g;
+  // 2026-09-07 — "N. 정답 ③" 형식뿐 아니라 "정답"이라는 단어 없이 "N. ③"만 쓰는 정답표
+  // 형식도 실사용 중 발견돼서(사용자 실제 붙여넣기 텍스트) "정답" 단어를 선택 사항으로 완화.
+  const ansRegexGlobal = /(\d+)\s*\.\s*(?:정답\s*)?([①②③④⑤])/g;
   let match;
   while ((match = ansRegexGlobal.exec(ansFullText))) {
     ansMap[parseInt(match[1], 10)] = match[2];
