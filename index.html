@@ -9608,6 +9608,61 @@ function gbShuffle(arr) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+// 2026-09-07 — 한글(hwp)에서 추출한 객관식 문제 텍스트를 붙여넣기로 일괄 등록하는 기능의 파싱
+// 로직. "N. 문제..." 로 시작하는 줄부터 다음 그런 줄 전까지를 한 문항 블록으로 보고, 그 블록
+// 안에서 ①~⑤로 시작하는 줄들을 보기로, 그 앞의 텍스트를 문제 본문으로 모은다. "정답과 해설"
+// (또는 "정답 및 해설") 줄 뒤는 정답 섹션으로 보고 "N. 정답 [원문자]" 패턴으로 문항 번호별
+// 정답 기호를 찾아 문제 블록과 번호로 매칭한다. 순수 함수 — Firestore/React 상태 없음, 미리보기
+// 파싱과 일괄 등록 저장 둘 다 이 함수의 결과를 그대로 쓴다.
+function gbParseBulkText(rawText) {
+  const text = (rawText || "").replace(/\r\n/g, "\n");
+  const lines = text.split("\n");
+  const ansHeaderRe = /^\s*정답\s*(과|및)\s*해설\s*$/;
+  const splitIdx = lines.findIndex((l) => ansHeaderRe.test(l));
+  const qLines = splitIdx === -1 ? lines : lines.slice(0, splitIdx);
+  const aLines = splitIdx === -1 ? [] : lines.slice(splitIdx + 1);
+
+  const qNumRe = /^\s*(\d+)\.\s?(.*)$/;
+  const optRe = /^\s*([①②③④⑤])\s*(.*)$/;
+  const starts = [];
+  qLines.forEach((line, i) => {
+    const m = line.match(qNumRe);
+    if (m) starts.push({ idx: i, num: parseInt(m[1], 10), rest: m[2] });
+  });
+
+  const blocks = starts.map((s, si) => {
+    const endIdx = si + 1 < starts.length ? starts[si + 1].idx : qLines.length;
+    const blockLines = qLines.slice(s.idx, endIdx);
+    const qTextParts = s.rest && s.rest.trim() ? [s.rest.trim()] : [];
+    const opts = [];
+    let seenOpt = false;
+    for (let i = 1; i < blockLines.length; i++) {
+      const om = blockLines[i].match(optRe);
+      if (om) {
+        seenOpt = true;
+        opts.push(`${om[1]} ${om[2]}`.trim());
+      } else if (!seenOpt) {
+        const t = blockLines[i].trim();
+        if (t) qTextParts.push(t);
+      }
+    }
+    return { num: s.num, q: qTextParts.join(" ").trim(), opts };
+  });
+
+  const ansMap = {};
+  const ansFullText = aLines.join("\n");
+  const ansRegexGlobal = /(\d+)\s*\.\s*정답\s*([①②③④⑤])/g;
+  let match;
+  while ((match = ansRegexGlobal.exec(ansFullText))) {
+    ansMap[parseInt(match[1], 10)] = match[2];
+  }
+
+  return blocks.map((b) => {
+    const ansMark = ansMap[b.num];
+    const ansOpt = ansMark ? (b.opts.find((o) => o.startsWith(ansMark)) || null) : null;
+    return { num: b.num, q: b.q, opts: b.opts, ans: ansOpt };
+  });
+}
 
 function GrammarBankPrototype() {
   const [grade, setGrade] = useState(null);
@@ -9639,6 +9694,13 @@ function GrammarBankPrototype() {
   const [formAns, setFormAns] = useState("");
   const [saving, setSaving] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // 2026-09-07 — 붙여넣기로 일괄 등록. bulkPreview는 gbParseBulkText()의 결과({num,q,opts,ans})
+  // 배열을 그대로 담아, "미리보기 파싱"으로 먼저 확인한 뒤에만 "일괄 등록"으로 저장하게 한다.
+  const [bulkCat, setBulkCat] = useState("");
+  const [bulkSub, setBulkSub] = useState("");
+  const [bulkText, setBulkText] = useState("");
+  const [bulkPreview, setBulkPreview] = useState([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -9663,6 +9725,8 @@ function GrammarBankPrototype() {
     GB_GRAMMAR_TREE[g].forEach((c, i) => { exp[c.cat] = i === 0; c.subs.forEach((s) => { sel[c.cat + "|" + s] = true; }); });
     setExpanded(exp); setSelected(sel); setPreviewMode(null); setPreviewItems([]);
     setFormCat(GB_GRAMMAR_TREE[g][0].cat); setFormSub(GB_GRAMMAR_TREE[g][0].subs[0]);
+    setBulkCat(GB_GRAMMAR_TREE[g][0].cat); setBulkSub(GB_GRAMMAR_TREE[g][0].subs[0]);
+    setBulkText(""); setBulkPreview([]);
   }
   function toggleCat(cat) { setExpanded((e) => ({ ...e, [cat]: !e[cat] })); }
   function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
@@ -9731,6 +9795,34 @@ function GrammarBankPrototype() {
       setMyQuestions((prev) => prev.filter((m) => m.id !== id));
     } catch (e) {
       alert("삭제에 실패했어요: " + (e && e.message ? e.message : e));
+    }
+  }
+  function parseBulkPreview() {
+    setBulkPreview(gbParseBulkText(bulkText));
+  }
+  async function submitBulkQuestions() {
+    // 2026-09-07 — 사용자가 붙여넣기만 하고 "미리보기 파싱"을 안 누른 채 바로 "일괄 등록"을
+    // 누르면(실사용 중 실제로 재현됨) bulkPreview가 여전히 빈 배열이라 아무 일도 안 일어나던
+    // 버그. 저장 직전에 미리보기가 비어 있으면 그 자리에서 한 번 더 파싱해서 쓴다 — 미리보기를
+    // 먼저 보고 저장하고 싶은 사용자를 위해 "미리보기 파싱" 버튼 자체는 그대로 둔다.
+    const items = bulkPreview.length > 0 ? bulkPreview : gbParseBulkText(bulkText);
+    if (items.length === 0) { alert("인식된 문항이 없어요. 텍스트를 다시 확인해주세요."); return; }
+    setBulkSaving(true);
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      const saved = [];
+      for (const item of items) {
+        const data = { grade, cat: bulkCat, sub: bulkSub, type: "mc", q: item.q, opts: item.opts, ans: item.ans || "" };
+        const id = await FC.addDocTo("grammarBankQuestions", data);
+        saved.push({ id, ...data });
+      }
+      setMyQuestions((prev) => [...prev, ...saved]);
+      setBulkText(""); setBulkPreview([]);
+      alert(`${saved.length}문항을 등록했어요.`);
+    } catch (e) {
+      alert("일괄 등록에 실패했어요: " + (e && e.message ? e.message : e));
+    } finally {
+      setBulkSaving(false);
     }
   }
   // 2026-09-07 — Firestore grammarBankQuestions(교사가 직접 등록한 문항)만 대상으로 하는 전체
@@ -9962,6 +10054,35 @@ function GrammarBankPrototype() {
               </div>
             <//>
           </div>
+
+          <${Card} style=${{ marginTop: 14 }}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>붙여넣기로 일괄 등록</div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+              <select value=${bulkCat} onChange=${(e) => { setBulkCat(e.target.value); setBulkSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
+              </select>
+              <select value=${bulkSub} onChange=${(e) => setBulkSub(e.target.value)} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                ${(GB_GRAMMAR_TREE[grade].find((c) => c.cat === bulkCat) || { subs: [] }).subs.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
+              </select>
+            </div>
+            <textarea value=${bulkText} onChange=${(e) => { setBulkText(e.target.value); setBulkPreview([]); }} style=${{ ...inputStyle, minHeight: 180, padding: "8px 10px", fontSize: 12.5, fontFamily: "monospace" }} placeholder=${"한글(hwp) 문제 파일에서 추출한 텍스트를 붙여넣으세요. 예:\n\n 1. 다음 중 어법상 올바른 문장은?\n① ...\n② ...\n...\n\n정답과 해설\n\n 1. 정답 ③"} />
+            <div style=${{ display: "flex", gap: 8, marginTop: 10 }}>
+              <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${parseBulkPreview}>미리보기 파싱<//>
+              <${Button} variant="gold" disabled=${bulkSaving || !bulkText.trim()} style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${submitBulkQuestions}>${bulkSaving ? "등록 중..." : bulkPreview.length > 0 ? `일괄 등록 (${bulkPreview.length}문항)` : "일괄 등록"}<//>
+            </div>
+            ${bulkPreview.length > 0 && html`
+              <div style=${{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 10, maxHeight: 240, overflowY: "auto" }}>
+                <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>인식된 문항 ${bulkPreview.length}개</div>
+                ${bulkPreview.map((item, idx) => html`
+                  <div key=${idx} style=${{ fontSize: 12.5, padding: "5px 0", borderBottom: "1px dotted #EDEAE2" }}>
+                    <b>${item.num}.</b> ${item.q || "(문제 텍스트를 인식하지 못했어요)"}
+                    <span style=${{ color: C.slate }}> · 보기 ${item.opts.length}개 · </span>
+                    ${item.ans ? html`<span style=${{ color: C.gold, fontWeight: 700 }}>정답 ${item.ans}</span>` : html`<span style=${{ color: C.danger, fontWeight: 700 }}>정답 없음</span>`}
+                  </div>
+                `)}
+              </div>
+            `}
+          <//>
 
           <${Card} style=${{ marginTop: 14 }}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>

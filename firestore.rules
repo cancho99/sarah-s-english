@@ -51,6 +51,14 @@ service cloud.firestore {
     match /readingAnalysisQuestions/{id} {
       allow read, create, update, delete: if isTeacher();
     }
+    // 2026-09-07 — Grammar Bank(문법 문제뱅크, GrammarBankPrototype)의 "문항 직접 등록"/
+    // "붙여넣기로 일괄 등록"이 쓰는 grammarBankQuestions가 이 파일에 한 번도 등록된 적이 없어서
+    // (git 히스토리 확인) 위 4종/2종과 완전히 같은 상황인데도 화이트리스트 밖에 있었다 — 즉
+    // 이 화면의 저장 기능 자체가 처음부터 막혀 있었던 것으로 보인다. 나머지 컬렉션들과 동일한
+    // 패턴(teacher만 read/write)으로 새로 추가한다.
+    match /grammarBankQuestions/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
 
     // ── Phase 9-D: examAssignments — 본인 배정만 read, 상태 전이만 update ──
     // create/delete는 teacher만(9-B와 동일, 변화 없음). update는 teacher 전체 허용 + 학생 본인
