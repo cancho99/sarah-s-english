@@ -20424,7 +20424,14 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
 
   const positionKey = vocab ? `${vocab.phase}:${vocab.phase === "recall" ? vocab.recall.currentIndex : vocab.currentIndex}` : null;
   useEffect(() => {
-    setDraftAnswer(null);
+    if (vocab) {
+      const isRecall = vocab.phase === "recall";
+      const idx = isRecall ? vocab.recall.currentIndex : vocab.currentIndex;
+      const prevAnswer = isRecall ? vocab.recall.answers[idx] : vocab.answers[idx];
+      setDraftAnswer(prevAnswer != null ? prevAnswer : null);
+    } else {
+      setDraftAnswer(null);
+    }
     questionStartedAtRef.current = Date.now();
     keydownCountRef.current = 0;
   }, [positionKey]);
@@ -20514,6 +20521,33 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
     }
   }
 
+  // phase(main/recall) 경계는 넘지 않는다 — phase가 바뀐 뒤에는 mainScore가 이미 계산돼 있어서
+  // 되돌릴 수 없다. 같은 phase 안에서 currentIndex만 하나 줄인다.
+  async function goToPrevious() {
+    if (!vocab || saving) return;
+    const isRecall = vocab.phase === "recall";
+    const idx = isRecall ? vocab.recall.currentIndex : vocab.currentIndex;
+    if (idx === 0) return;
+    setSaving(true);
+    try {
+      const next = await updateData(student.id, (d) => {
+        const cur = d.activeTestSession && d.activeTestSession.testId === test.id ? d.activeTestSession : null;
+        if (!cur) return d;
+        const v = vocab;
+        if (!isRecall) {
+          return { ...d, activeTestSession: { ...cur, vocab: { ...v, currentIndex: idx - 1 } } };
+        }
+        return { ...d, activeTestSession: { ...cur, vocab: { ...v, recall: { ...v.recall, currentIndex: idx - 1 } } } };
+      });
+      if (next.activeTestSession && next.activeTestSession.vocab) setVocab(next.activeTestSession.vocab);
+    } catch (e) {
+      console.error("이전 문제로 이동 실패", e);
+      alert(friendlyErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (initError) {
     return html`<div><${BackBtn} onClick=${onExit} /><${Card}><div style=${{ color: C.danger, fontSize: 13 }}>${initError}</div><//></div>`;
   }
@@ -20574,7 +20608,10 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
           />
         `}
       <//>
-      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${!canSubmit || saving} onClick=${submitCurrent}>${saving ? "저장 중..." : (isRecall && isLastQuestion ? "제출 완료" : "다음")}<//>
+      <div style=${{ display: "flex", gap: 8 }}>
+        <${Button} variant="ghost" disabled=${idx === 0 || saving} onClick=${goToPrevious}>◀ 이전<//>
+        <${Button} variant="gold" style=${{ flex: 1, justifyContent: "center" }} disabled=${!canSubmit || saving} onClick=${submitCurrent}>${saving ? "저장 중..." : (isRecall && isLastQuestion ? "제출 완료" : "다음")}<//>
+      </div>
     </div>
   `;
 }
