@@ -21423,9 +21423,15 @@ function FlashcardHome({ student }) {
           <//>
           <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
 
-          <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <${Button} variant="danger" style=${{ justifyContent: "center", padding: "12px" }} onClick=${markUnknown}>❌ 모름<//>
-            <${Button} variant="gold" style=${{ justifyContent: "center", padding: "12px" }} onClick=${markKnown}>✅ 알아요<//>
+          <div style=${{ display: "flex", gap: 16 }}>
+            <button onClick=${markUnknown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.danger, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style=${{ fontSize: 34 }}>❌</span>
+              <span style=${{ fontSize: 13, fontWeight: 700 }}>모름</span>
+            </button>
+            <button onClick=${markKnown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.gold, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style=${{ fontSize: 34 }}>✅</span>
+              <span style=${{ fontSize: 13, fontWeight: 700 }}>알아요</span>
+            </button>
           </div>
         `}
       `}
@@ -21444,9 +21450,15 @@ function FlashcardHome({ student }) {
             <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${reviewFlipped ? reviewDeck[0].ko : reviewDeck[0].en}</div>
           <//>
           <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
-          <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <${Button} variant="danger" style=${{ justifyContent: "center", padding: "12px" }} onClick=${reviewUnknown}>❌ 아직 모름<//>
-            <${Button} variant="gold" style=${{ justifyContent: "center", padding: "12px" }} onClick=${reviewKnown}>✅ 이제 알아요<//>
+          <div style=${{ display: "flex", gap: 16 }}>
+            <button onClick=${reviewUnknown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.danger, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style=${{ fontSize: 34 }}>❌</span>
+              <span style=${{ fontSize: 13, fontWeight: 700 }}>아직 모름</span>
+            </button>
+            <button onClick=${reviewKnown} style=${{ flex: 1, aspectRatio: "1", borderRadius: 14, border: "none", background: C.gold, color: C.white, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <span style=${{ fontSize: 34 }}>✅</span>
+              <span style=${{ fontSize: 13, fontWeight: 700 }}>이제 알아요</span>
+            </button>
           </div>
         `}
       `}
