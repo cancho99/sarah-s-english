@@ -9623,7 +9623,14 @@ function gbParseBulkText(rawText) {
   const aLines = splitIdx === -1 ? [] : lines.slice(splitIdx + 1);
 
   const qNumRe = /^\s*(\d+)\.\s?(.*)$/;
-  const optRe = /^\s*([①②③④⑤])\s*(.*)$/;
+  // 2026-09-08b — 보기 5개가 한 줄에 몰려("① broke ② was broken ③ ... ⑤ ...") 나오는
+  // 실제 모의고사 문제집 포맷 지원. 예전엔 "①로 시작하는 줄 = 보기 1개"로만 파싱해서, 이
+  // 형태에서는 opts가 그 줄 전체를 담은 항목 1개로만 채워지고(제대로 쪼개지지 않음), 그
+  // 결과 정답 매칭(o.startsWith(markMatch[0]))이 항상 실패해 "정답 없음"으로 떴다. 이제
+  // "①로 시작하는 줄"을 발견하면 그 줄 안에서 ①~⑤ 각각을 기준으로 다시 쪼갠다 — 한 줄에
+  // 1개든 5개든 동일하게 동작한다(줄당 1개였던 기존 포맷도 그대로 지원).
+  const optStartRe = /^\s*[①②③④⑤]/;
+  const optSplitRe = /[①②③④⑤][^①②③④⑤]*/g;
   const starts = [];
   qLines.forEach((line, i) => {
     const m = line.match(qNumRe);
@@ -9637,12 +9644,16 @@ function gbParseBulkText(rawText) {
     const opts = [];
     let seenOpt = false;
     for (let i = 1; i < blockLines.length; i++) {
-      const om = blockLines[i].match(optRe);
-      if (om) {
+      const line = blockLines[i];
+      if (optStartRe.test(line)) {
         seenOpt = true;
-        opts.push(`${om[1]} ${om[2]}`.trim());
+        (line.match(optSplitRe) || []).forEach((seg) => {
+          const mark = seg.charAt(0);
+          const rest = seg.slice(1).trim();
+          if (rest) opts.push(`${mark} ${rest}`);
+        });
       } else if (!seenOpt) {
-        const t = blockLines[i].trim();
+        const t = line.trim();
         if (t) qTextParts.push(t);
       }
     }
@@ -9661,7 +9672,14 @@ function gbParseBulkText(rawText) {
     const m = line.match(qNumRe);
     if (m) aStarts.push({ idx: i, num: parseInt(m[1], 10), rest: m[2] });
   });
-  const ansTextMap = {}; // num -> 정답 섹션의 그 문항 원문 전체(설명 포함)
+  // num -> { first: "N. " 바로 뒷줄(같은 줄) 텍스트만, all: 그 문항 정답 섹션 전체(해설 포함) }
+  // 2026-09-08b — sa 정답은 first만 쓴다. 실제 문제집 정답표는 "N. 실제 답" 한 줄 다음에
+  // 완전히 별도 줄로 한글 해설이 이어지는 경우가 흔한데(em dash 구분자 없음), 예전엔 그 해설
+  // 줄까지 전부 이어붙여 "정답"으로 저장했다 — 실사용 데이터로 실제 확인된 형태는 항상 "N. "
+  // 바로 그 줄 안에 정답이 전부 담기고 해설은 그 다음 줄부터라, first만 취하면 해설이 안
+  // 섞인다. mc 정답 마크(①~⑤)는 all(전체)에서 찾는다 — 마크가 항상 첫 줄에 있다는 보장은
+  // 없어서 이쪽은 그대로 넓게 찾는다.
+  const ansTextMap = {};
   aStarts.forEach((s, si) => {
     const endIdx = si + 1 < aStarts.length ? aStarts[si + 1].idx : aLines.length;
     const blockLines = aLines.slice(s.idx, endIdx);
@@ -9670,19 +9688,20 @@ function gbParseBulkText(rawText) {
       const t = blockLines[i].trim();
       if (t) parts.push(t);
     }
-    ansTextMap[s.num] = parts.join(" ").trim();
+    ansTextMap[s.num] = { first: (s.rest || "").trim(), all: parts.join(" ").trim() };
   });
 
   return blocks.map((b) => {
     const raw = ansTextMap[b.num];
     if (b.type === "mc") {
-      const markMatch = raw && raw.match(/[①②③④⑤]/);
+      const markMatch = raw && raw.all.match(/[①②③④⑤]/);
       const ansOpt = markMatch ? (b.opts.find((o) => o.startsWith(markMatch[0])) || null) : null;
       return { num: b.num, q: b.q, opts: b.opts, type: "mc", ans: ansOpt };
     }
-    // 주관식 — "실제 정답 — 설명" 형식(이 사이트 정답표에서 쓰는 em dash 구분자)이면 앞부분만
-    // 정답으로 쓰고, 구분자가 없으면(설명 없이 정답 문장만 있는 경우) 줄 전체를 정답으로 본다.
-    const ans = raw ? raw.split(/\s+—\s+/)[0].trim() : null;
+    // 주관식 — "실제 정답 — 설명" 형식(이 사이트 정답표에서 쓰는 em dash 구분자)이 같은 줄에
+    // 있으면 앞부분만 정답으로 쓰고, 없으면(설명 없이 정답만 있거나 해설이 다음 줄부터인
+    // 경우) first 줄 전체를 정답으로 본다.
+    const ans = raw && raw.first ? raw.first.split(/\s+—\s+/)[0].trim() : null;
     return { num: b.num, q: b.q, opts: [], type: "sa", ans };
   });
 }
