@@ -9724,6 +9724,10 @@ function GrammarBankPrototype() {
   const [bulkText, setBulkText] = useState("");
   const [bulkPreview, setBulkPreview] = useState([]);
   const [bulkSaving, setBulkSaving] = useState(false);
+  // 2026-09-08 — 미리보기/전체 목록에서 여러 개를 한 번에 선택해 지우는 기능. GB_BANK 기본
+  // 문항(item.id 없음)은 애초에 선택 대상이 아니다 — 체크박스 자체가 안 뜬다.
+  const [selectedIds, setSelectedIds] = useState({}); // {id: true}
+  const [bulkSelectedDeleting, setBulkSelectedDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -9750,6 +9754,7 @@ function GrammarBankPrototype() {
     setFormCat(GB_GRAMMAR_TREE[g][0].cat); setFormSub(GB_GRAMMAR_TREE[g][0].subs[0]);
     setBulkCat(GB_GRAMMAR_TREE[g][0].cat); setBulkSub(GB_GRAMMAR_TREE[g][0].subs[0]);
     setBulkText(""); setBulkPreview([]);
+    setSelectedIds({});
   }
   function toggleCat(cat) { setExpanded((e) => ({ ...e, [cat]: !e[cat] })); }
   function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
@@ -9818,6 +9823,47 @@ function GrammarBankPrototype() {
       setMyQuestions((prev) => prev.filter((m) => m.id !== id));
     } catch (e) {
       alert("삭제에 실패했어요: " + (e && e.message ? e.message : e));
+    }
+  }
+  function toggleSelectedId(id) {
+    setSelectedIds((s) => ({ ...s, [id]: !s[id] }));
+  }
+  // previewItems 중 실제로 내가 등록한 것(item.id 있음)만 전체 선택/해제 대상.
+  function toggleSelectAllPreview() {
+    const selectableIds = previewItems.filter((it) => it.id).map((it) => it.id);
+    const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds[id]);
+    if (allSelected) {
+      setSelectedIds({});
+    } else {
+      const next = {};
+      selectableIds.forEach((id) => { next[id] = true; });
+      setSelectedIds(next);
+    }
+  }
+  async function deleteSelectedQuestions() {
+    const ids = Object.keys(selectedIds).filter((id) => selectedIds[id]);
+    if (ids.length === 0) return;
+    if (!confirm(`선택한 ${ids.length}개 문항을 삭제할까요?`)) return;
+    setBulkSelectedDeleting(true);
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      const results = await Promise.all(ids.map((id) =>
+        FC.deleteDocAt("grammarBankQuestions", id).then(() => ({ id, ok: true })).catch((e) => ({ id, ok: false, e }))
+      ));
+      const succeeded = results.filter((r) => r.ok).map((r) => r.id);
+      const failed = results.filter((r) => !r.ok);
+      if (succeeded.length > 0) {
+        const succeededSet = new Set(succeeded);
+        setMyQuestions((prev) => prev.filter((m) => !succeededSet.has(m.id)));
+      }
+      setSelectedIds({});
+      if (failed.length > 0) {
+        alert(`${succeeded.length}개 삭제 성공, ${failed.length}개 실패했어요.`);
+      } else {
+        alert(`${succeeded.length}개 문항을 삭제했어요.`);
+      }
+    } finally {
+      setBulkSelectedDeleting(false);
     }
   }
   function parseBulkPreview() {
@@ -9931,6 +9977,7 @@ function GrammarBankPrototype() {
     const saN = Math.min(saCount, saPool.length);
     setPreviewItems([...gbShuffle(mcPool).slice(0, mcN), ...gbShuffle(saPool).slice(0, saN)]);
     setPreviewMode(mode);
+    setSelectedIds({});
   }
   // "전체 목록 보기" — 위 미리보기(문제보기/정답보기)는 총 문항수 설정에 맞춰 무작위로 뽑은
   // 일부만 보여주는데, 실제로 등록된 문항을 전부 훑어보고 싶다는 요청(2026-09-03)으로 추가했다.
@@ -9938,6 +9985,7 @@ function GrammarBankPrototype() {
   function showAllQuestions() {
     setPreviewItems([...mcPool, ...saPool]);
     setPreviewMode("qa");
+    setSelectedIds({});
   }
 
   return html`
@@ -10110,9 +10158,20 @@ function GrammarBankPrototype() {
           <//>
 
           <${Card} style=${{ marginTop: 14 }}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
               <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>미리보기</div>
-              <span onClick=${showAllQuestions} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>선택한 소주제 전체 목록 보기 (${mcPool.length + saPool.length}문항)</span>
+              <div style=${{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                ${previewItems.some((it) => it.id) && html`
+                  <span onClick=${toggleSelectAllPreview} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>
+                    ${previewItems.filter((it) => it.id).every((it) => selectedIds[it.id]) ? "전체 해제" : "전체 선택"}
+                  </span>
+                  <button type="button" disabled=${bulkSelectedDeleting || Object.values(selectedIds).filter(Boolean).length === 0} onClick=${deleteSelectedQuestions}
+                    style=${{ fontSize: 11, fontWeight: 700, color: C.danger, cursor: Object.values(selectedIds).filter(Boolean).length === 0 ? "not-allowed" : "pointer", opacity: Object.values(selectedIds).filter(Boolean).length === 0 ? 0.5 : 1, border: `1px solid ${C.danger}`, background: "#fff", borderRadius: 20, padding: "3px 10px" }}>
+                    ${bulkSelectedDeleting ? "삭제 중..." : `선택 삭제 (${Object.values(selectedIds).filter(Boolean).length})`}
+                  </button>
+                `}
+                <span onClick=${showAllQuestions} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>선택한 소주제 전체 목록 보기 (${mcPool.length + saPool.length}문항)</span>
+              </div>
             </div>
             <div style=${{ display: "flex", gap: 8, marginBottom: 12 }}>
               <${Button} variant="ghost" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => runPreview("q")}>문제 보기<//>
@@ -10126,6 +10185,7 @@ function GrammarBankPrototype() {
                   <div style=${{ display: "flex", gap: 8, fontSize: 13.5, color: C.ink, lineHeight: 1.6 }}>
                     <span style=${{ display: "inline-flex", width: 20, height: 20, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
                     <span style=${{ flex: 1 }}>${item.q}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${item.id && html`<span style=${{ fontSize: 10.5, color: C.navy, border: `1px solid ${C.navy}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>내가 등록</span>`}</span>
+                    ${item.id && html`<input type="checkbox" checked=${!!selectedIds[item.id]} onChange=${() => toggleSelectedId(item.id)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0, cursor: "pointer" }} />`}
                     ${item.id && html`<span onClick=${() => deleteMyQuestion(item.id)} style=${{ color: C.slate, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>삭제</span>`}
                   </div>
                   ${previewMode !== "a" && item.type === "mc" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>${item.opts.join("   ")}</div>`}
