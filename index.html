@@ -9700,8 +9700,12 @@ function gbParseBulkText(rawText) {
     }
     // 주관식 — "실제 정답 — 설명" 형식(이 사이트 정답표에서 쓰는 em dash 구분자)이 같은 줄에
     // 있으면 앞부분만 정답으로 쓰고, 없으면(설명 없이 정답만 있거나 해설이 다음 줄부터인
-    // 경우) first 줄 전체를 정답으로 본다.
-    const ans = raw && raw.first ? raw.first.split(/\s+—\s+/)[0].trim() : null;
+    // 경우) first 줄 전체를 정답으로 본다. "N. 정답 will"처럼 실제 답 앞에 "정답"이라는
+    // 라벨이 붙어 나오는 정답표(2026-09-08c 실사용 파일에서 확인)도 흔해서, 그 라벨(과 있다면
+    // 뒤따르는 콜론)은 먼저 떼어내고 남은 텍스트를 정답으로 쓴다 — 라벨이 없는 정답표는
+    // 이 치환이 아무 것도 안 지우므로 그대로 동작한다.
+    const first = raw && raw.first ? raw.first.replace(/^\s*정답\s*[:：]?\s*/, "") : "";
+    const ans = first ? first.split(/\s+—\s+/)[0].trim() : null;
     return { num: b.num, q: b.q, opts: [], type: "sa", ans };
   });
 }
