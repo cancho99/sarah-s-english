@@ -60,6 +60,28 @@ service cloud.firestore {
       allow read, create, update, delete: if isTeacher();
     }
 
+    // 2026-09-08 — Exam Studio(문제뱅크 만들기)가 쓰는 4개 컬렉션도 grammarBankQuestions와
+    // 정확히 같은 상황이었다: services/examStudioService.js가 이 4개를 쓴 이래(git 히스토리
+    // 확인, examStudioService.js 생성 커밋들) 이 파일에 한 번도 등록된 적이 없다 — "교사가
+    // 지문 보관함에 저장한 지문이 화면에서 사라져 보인다"는 제보(사용자, 2026-09-08)의 원인으로
+    // 추정된다. 저장/조회가 처음부터 permission-denied였다면 데이터 자체가 지워진 게 아니라
+    // 애초에 안 쓰였거나(신규 세션에서 매번 실패), 배포된 Rules가 이 파일과 다른 시점에 더
+    // 열려 있었을 때 저장된 데이터가 이후 Rules 강화로 조회만 막힌 상태일 수 있다 — 어느
+    // 쪽이든 이 규칙 추가+배포로 실제 저장된 문서가 있다면 다시 보여야 정상이다. 나머지
+    // 컬렉션들과 동일한 패턴(teacher만 read/write)으로 새로 추가한다.
+    match /examStudioFolders/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /examStudioPassages/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /examStudioQuestions/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+    match /examStudioExamPapers/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
+
     // ── Phase 9-D: examAssignments — 본인 배정만 read, 상태 전이만 update ──
     // create/delete는 teacher만(9-B와 동일, 변화 없음). update는 teacher 전체 허용 + 학생 본인
     // 소유(studentId 일치) 배정에 한해 "정확히 examAssignmentService.STATUS_ORDER가 이미
