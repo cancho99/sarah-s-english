@@ -9638,6 +9638,7 @@ function GrammarBankPrototype() {
   const [formAnsIdx, setFormAnsIdx] = useState(0);
   const [formAns, setFormAns] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -9732,6 +9733,38 @@ function GrammarBankPrototype() {
       alert("삭제에 실패했어요: " + (e && e.message ? e.message : e));
     }
   }
+  // 2026-09-07 — Firestore grammarBankQuestions(교사가 직접 등록한 문항)만 대상으로 하는 전체
+  // 백업+삭제. GB_BANK(코드에 하드코딩된 샘플 문항)는 여기서 전혀 건드리지 않는다.
+  async function backupAndDeleteAllMyQuestions() {
+    if (myQuestions.length === 0) { alert("삭제할 문항이 없어요."); return; }
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      source: "grammarBankQuestions (Sarah's English 문법 뱅크)",
+      count: myQuestions.length,
+      questions: myQuestions,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grammarBankQuestions-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    if (!confirm(`문항 ${myQuestions.length}개를 백업 파일로 다운로드했어요. 다운로드 폴더에서 파일이 잘 저장됐는지 확인하신 뒤 "확인"을 누르면, 문법 뱅크에 등록된 문항 ${myQuestions.length}개를 Firestore에서 전부 삭제합니다. 되돌릴 수 없어요. 계속할까요?`)) return;
+    setBulkDeleting(true);
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      for (const q of myQuestions) {
+        await FC.deleteDocAt("grammarBankQuestions", q.id);
+      }
+      setMyQuestions([]);
+      alert("문법 뱅크에 등록된 문항을 모두 삭제했어요.");
+    } catch (e) {
+      alert("삭제 중 일부 실패했을 수 있어요: " + (e && e.message ? e.message : e) + "\n\n화면을 새로고침해서 남은 문항이 있는지 확인해주세요.");
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
 
   // 2026-09-03 — "출력하기"가 현재 화면(사이드바·폼·카드 전부 포함) 그대로 window.print()를
   // 호출해서 인쇄물이 엉망으로 나오던 버그 수정. Exam Studio가 쓰는 것과 같은 패턴(별도 인쇄
@@ -9802,6 +9835,13 @@ function GrammarBankPrototype() {
               <span className="es-sidebar-badge">${totalQuestionsForGrade(g)}</span>
             </div>
           `)}
+        </div>
+        <div style=${{ padding: "12px 14px", borderTop: `1px solid ${C.line}`, marginTop: "auto" }}>
+          <div style=${{ fontSize: 10.5, color: C.slate, marginBottom: 6 }}>내가 등록한 문항 ${myQuestions.length}개 (grammarBankQuestions)</div>
+          <button disabled=${bulkDeleting || myQuestions.length === 0} onClick=${backupAndDeleteAllMyQuestions}
+            style=${{ width: "100%", padding: "8px 10px", borderRadius: 4, border: `1px solid ${C.danger}`, background: "#fff", color: C.danger, fontSize: 11.5, fontWeight: 700, cursor: myQuestions.length === 0 ? "not-allowed" : "pointer", opacity: myQuestions.length === 0 ? 0.5 : 1 }}>
+            ${bulkDeleting ? "삭제 중..." : "📦 전체 백업 후 삭제"}
+          </button>
         </div>
       </div>
       <div className="es-main">
