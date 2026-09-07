@@ -24362,6 +24362,8 @@ function FlashcardHome({ student }) {
   const [total, setTotal] = useState(0);
   const [missed, setMissed] = useState([]);
   const [flipped, setFlipped] = useState(false);
+  const [reviewDeck, setReviewDeck] = useState([]);
+  const [reviewFlipped, setReviewFlipped] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -24393,7 +24395,24 @@ function FlashcardHome({ student }) {
     });
     setFlipped(false);
   }
-  function removeMissed(id) { setMissed((m) => svc.removeMissed(m, id)); }
+  // 요구사항 4 — "모르는 단어 모아보기"도 메인 세션과 같은 뒤집기 카드 방식으로 스스로
+  // 맞혀본다. svc.buildDeck은 안 쓴다 — 카드마다 id를 새로 생성해서 missed 목록(id 기준
+  // 매칭)과 어긋난다. missed 항목을 그대로 shuffle만 해서 큐로 쓴다.
+  function startReview() {
+    setReviewDeck(shuffle(missed));
+    setReviewFlipped(false);
+    setScreen("missed");
+  }
+  function reviewKnown() {
+    const card = reviewDeck[0];
+    setReviewDeck((d) => svc.markKnown(d));
+    if (card) setMissed((m) => svc.removeMissed(m, card.id));
+    setReviewFlipped(false);
+  }
+  function reviewUnknown() {
+    setReviewDeck((d) => svc.markUnknown(d));
+    setReviewFlipped(false);
+  }
 
   const progress = svc.computeProgress(total, deck.length);
 
@@ -24436,14 +24455,14 @@ function FlashcardHome({ student }) {
             <div style=${{ fontSize: 30, marginBottom: 8 }}>🎉</div>
             <div style=${{ ...serif, fontSize: 16, color: C.navy, marginBottom: 12 }}>이 Day 단어를 모두 학습했어요!</div>
             ${missed.length > 0
-              ? html`<${Button} variant="gold" onClick=${() => setScreen("missed")}>모르는 단어 모아보기 (${missed.length})<//>`
+              ? html`<${Button} variant="gold" onClick=${startReview}>모르는 단어 모아보기 (${missed.length})<//>`
               : html`<div style=${{ fontSize: 12.5, color: C.slate }}>"모름"을 한 번도 누르지 않고 다 외웠어요.</div>`}
           <//>
         ` : html`
           <div style=${{ marginBottom: 14 }}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11.5, color: C.slate, marginBottom: 4 }}>
               <span>${progress.done} / ${progress.total}</span>
-              ${missed.length > 0 && html`<span onClick=${() => setScreen("missed")} style=${{ cursor: "pointer", color: C.gold, fontWeight: 700 }}>모르는 단어 (${missed.length})</span>`}
+              ${missed.length > 0 && html`<span onClick=${startReview} style=${{ cursor: "pointer", color: C.gold, fontWeight: 700 }}>모르는 단어 (${missed.length})</span>`}
             </div>
             <div style=${{ height: 6, borderRadius: 3, background: C.ivory, overflow: "hidden" }}>
               <div style=${{ height: "100%", width: `${progress.pct}%`, background: C.gold }}></div>
@@ -24462,27 +24481,26 @@ function FlashcardHome({ student }) {
         `}
       `}
 
-      ${screen === "missed" && html`<${FlashcardMissedList} missed=${missed} onKnow=${removeMissed} onBack=${() => setScreen("session")} />`}
-    </div>
-  `;
-}
-
-// 요구사항 4 — 세션 중 "모름"으로 표시된 단어만 모아보는 화면. 여기서 "알아요"를 누르면
-// 이 리스트에서만 즉시 제거된다(메인 카드 큐와는 별개 — FlashcardHome의 missed state).
-function FlashcardMissedList({ missed, onKnow, onBack }) {
-  return html`
-    <div>
-      <${BackBtn} onClick=${onBack} />
-      <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>모르는 단어 모아보기</div>
-      ${missed.length === 0 ? html`<${Empty} text="🎉 모두 외웠어요!" />` : missed.map((m) => html`
-        <${Card} key=${m.id} style=${{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style=${{ fontWeight: 700, color: C.navy }}>${m.en}</div>
-            <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>${m.ko}</div>
+      ${screen === "missed" && html`
+        <${BackBtn} onClick=${() => setScreen("session")} />
+        <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>모르는 단어 모아보기</div>
+        ${reviewDeck.length === 0 ? html`
+          <${Card} style=${{ textAlign: "center" }}>
+            <div style=${{ fontSize: 30, marginBottom: 8 }}>🎉</div>
+            <div style=${{ ...serif, fontSize: 16, color: C.navy }}>모르는 단어를 모두 외웠어요!</div>
+          <//>
+        ` : html`
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10, textAlign: "right" }}>${reviewDeck.length}개 남음</div>
+          <${Card} onClick=${() => setReviewFlipped((f) => !f)} style=${{ minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+            <div style=${{ ...serif, fontSize: 24, color: C.navy }}>${reviewFlipped ? reviewDeck[0].ko : reviewDeck[0].en}</div>
+          <//>
+          <div style=${{ fontSize: 11, color: C.slate, textAlign: "center", marginBottom: 16 }}>카드를 눌러서 뜻을 확인하세요</div>
+          <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <${Button} variant="danger" style=${{ justifyContent: "center", padding: "12px" }} onClick=${reviewUnknown}>❌ 아직 모름<//>
+            <${Button} variant="gold" style=${{ justifyContent: "center", padding: "12px" }} onClick=${reviewKnown}>✅ 이제 알아요<//>
           </div>
-          <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${() => onKnow(m.id)}>알아요<//>
-        <//>
-      `)}
+        `}
+      `}
     </div>
   `;
 }
