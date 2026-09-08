@@ -178,5 +178,8 @@ service cloud.firestore {
     match /materialsLibrary/{id} { allow read, write: if true; }
     match /sharedMaterialsLibrary/{id} { allow read, write: if true; }
     match /materialDownloadLog/{id} { allow read, write: if true; }
+    // 2026-09-08 — minhye_HSK(별도 배포된 HSK 단어장 앱, 로그인 없음)가 쓰는 컬렉션이 이 파일에
+    // 한 번도 등록된 적이 없어서 기본 차단되고 있었다 — 형제 컬렉션들과 동일하게 완전 개방으로 추가.
+    match /hsk_vocab_app/{id} { allow read, write: if true; }
   }
 }
