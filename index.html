@@ -22114,9 +22114,15 @@ function FlashcardHome({ student, data, updateData }) {
         ${sessionMistakes.length === 0 ? html`
           <div style=${{ textAlign: "center", fontSize: 13, color: FLASHCARD_GREEN, fontWeight: 700, margin: "12px 0 20px" }}>🎉 전부 한 번에 맞혔어요!</div>
         ` : html`
-          <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", margin: "14px 0 20px" }}>
+          <div style=${{ textAlign: "center", fontSize: 12.5, color: C.slate, margin: "14px 0 8px" }}>
+            ${mode === "cards" ? `몰라요 누른 단어 ${sessionMistakes.length}개 — 다시 보고 외워보세요` : `틀렸던 단어 ${sessionMistakes.length}개 — 스펠링과 뜻을 다시 확인하세요`}
+          </div>
+          <div style=${{ display: "flex", flexDirection: "column", gap: 8, margin: "0 0 20px" }}>
             ${sessionMistakes.map((m) => html`
-              <span key=${m.en} style=${{ fontSize: 12, padding: "5px 12px", borderRadius: 20, background: "#F7E9E6", color: C.danger, fontWeight: 700 }}>${m.en}</span>
+              <div key=${m.en} style=${{ padding: "10px 14px", borderRadius: 9, background: C.ivory }}>
+                <div style=${{ fontSize: 15, fontWeight: 700, color: C.navy }}>${m.en}</div>
+                <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 2 }}>${m.ko}</div>
+              </div>
             `)}
           </div>
         `}
