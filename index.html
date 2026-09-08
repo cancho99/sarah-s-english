@@ -3757,11 +3757,11 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
       onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }} />`;
   } else if (section === "grammarBank") {
-    body = html`<${QuestionBankSection} key="qb-grammar" roster=${roster} initialBank="grammar" />`;
+    body = html`<${QuestionBankSection} key="qb-grammar" roster=${roster} initialBank="grammar" updateData=${updateData} />`;
   } else if (section === "readingBank") {
-    body = html`<${QuestionBankSection} key="qb-reading" roster=${roster} initialBank="reading" />`;
+    body = html`<${QuestionBankSection} key="qb-reading" roster=${roster} initialBank="reading" updateData=${updateData} />`;
   } else if (section === "examBuilder") {
-    body = html`<${QuestionBankSection} key="qb-examBuilder" roster=${roster} initialBank="examBuilder" />`;
+    body = html`<${QuestionBankSection} key="qb-examBuilder" roster=${roster} initialBank="examBuilder" updateData=${updateData} />`;
   } else if (section === "readingAnalysis") {
     // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인) — Passage Analysis / Question
     // Generator / Passage Variation 3탭. readingAnalyses/readingAnalysisQuestions 신규 컬렉션만
@@ -9623,6 +9623,11 @@ function gbShuffle(arr) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+// ①~⑤ 보기 마커 분리 정규식·기호 목록 — gbParseBulkText(붙여넣기 일괄 등록 파싱)와
+// GrammarBankPrototype의 "보기로 분리"(서술형으로 잘못 등록된 객관식 문항 복구) 양쪽이 공유한다.
+const GB_OPT_SPLIT_RE = /[①②③④⑤][^①②③④⑤]*/g;
+const GB_MC_NUMERALS = ["①", "②", "③", "④", "⑤"];
+
 // 2026-09-07 — 한글(hwp)에서 추출한 객관식 문제 텍스트를 붙여넣기로 일괄 등록하는 기능의 파싱
 // 로직. "N. 문제..." 로 시작하는 줄부터 다음 그런 줄 전까지를 한 문항 블록으로 보고, 그 블록
 // 안에서 ①~⑤로 시작하는 줄들을 보기로, 그 앞의 텍스트를 문제 본문으로 모은다. "정답과 해설"
@@ -9632,7 +9637,12 @@ function gbShuffle(arr) {
 function gbParseBulkText(rawText) {
   const text = (rawText || "").replace(/\r\n/g, "\n");
   const lines = text.split("\n");
-  const ansHeaderRe = /^\s*정답\s*(과|및)\s*해설\s*$/;
+  // 2026-09-08d — "=== 정답과 해설 ===", "--- 정답 및 해설 ---"처럼 헤더 앞뒤에 장식 기호가
+  // 붙는 실제 문제집 포맷 지원. 예전엔 줄 전체가 정확히 "정답과 해설"이어야만 매치돼서, 장식
+  // 기호가 있으면 이 헤더를 못 찾고 splitIdx가 -1로 남아 정답 섹션 전체가 "못 찾음" 처리됐다
+  // (문제 섹션과 정답 섹션이 통째로 합쳐져 모든 문항 정답이 비었다). 앞뒤로 =,-,*,~,_,공백만
+  // 있으면 장식으로 보고 허용한다 — 그 외 글자가 섞이면(오탐 방지) 여전히 매치하지 않는다.
+  const ansHeaderRe = /^[\s=\-*~_]*정답\s*(과|및)\s*해설[\s=\-*~_]*$/;
   const splitIdx = lines.findIndex((l) => ansHeaderRe.test(l));
   const qLines = splitIdx === -1 ? lines : lines.slice(0, splitIdx);
   const aLines = splitIdx === -1 ? [] : lines.slice(splitIdx + 1);
@@ -9643,9 +9653,17 @@ function gbParseBulkText(rawText) {
   // 형태에서는 opts가 그 줄 전체를 담은 항목 1개로만 채워지고(제대로 쪼개지지 않음), 그
   // 결과 정답 매칭(o.startsWith(markMatch[0]))이 항상 실패해 "정답 없음"으로 떴다. 이제
   // "①로 시작하는 줄"을 발견하면 그 줄 안에서 ①~⑤ 각각을 기준으로 다시 쪼갠다 — 한 줄에
-  // 1개든 5개든 동일하게 동작한다(줄당 1개였던 기존 포맷도 그대로 지원).
-  const optStartRe = /^\s*[①②③④⑤]/;
-  const optSplitRe = /[①②③④⑤][^①②③④⑤]*/g;
+  // 1개든 5개든 동일하게 동작한다(줄당 1개였던 기존 포맷도 그대로 지원). GB_OPT_SPLIT_RE는
+  // 이 파일 위쪽(GrammarBankPrototype보다 앞)에 모듈 스코프 상수로 정의돼 있다 — "보기로
+  // 분리"(문법 문제뱅크의 sa→mc 복구 기능)가 같은 정규식을 공유한다.
+  // 2026-09-08e — "(A) (B) ① Do No ② Do Not ..."처럼 짧은 표 머리글(칸 라벨)이 보기 앞에
+  // 붙어 한 줄에 같이 나오는 포맷 지원. "①로 시작하는 줄"만 보기 줄로 보던 기존 조건 대신,
+  // 첫 ①~⑤ 앞의 텍스트(prefix)가 (1) 12자 이하이고 (2) 마침표·쉼표·물음표·느낌표가 없으면
+  // — 즉 온전한 문장의 시작이 아니라 "(A) (B)"/"ⓐ ⓑ ⓒ" 같은 순수 라벨로 보이면 — 그 줄도
+  // 보기 줄로 취급한다(라벨 부분은 opts에 안 들어가고 버려짐, optSplitRe가 어차피 ①부터만
+  // 뽑으므로 자연히 그렇게 된다). "Hello, my name ① Joey. I ②..."처럼 ①~⑤가 실제 지문
+  // 문장 속에 흩어져 있는 유형(보기 자체가 없는 문제)은 첫 ① 앞이 쉼표 포함 완전한 문장의
+  // 시작이라 이 조건에 안 걸려서 지금처럼 지문 그대로 남는다 — 두 유형을 이 기준으로 구분한다.
   const starts = [];
   qLines.forEach((line, i) => {
     const m = line.match(qNumRe);
@@ -9660,9 +9678,12 @@ function gbParseBulkText(rawText) {
     let seenOpt = false;
     for (let i = 1; i < blockLines.length; i++) {
       const line = blockLines[i];
-      if (optStartRe.test(line)) {
+      const firstMarkIdx = line.search(/[①②③④⑤]/);
+      const prefix = firstMarkIdx === -1 ? "" : line.slice(0, firstMarkIdx);
+      const isOptionLine = firstMarkIdx !== -1 && prefix.trim().length <= 12 && !/[.,!?]/.test(prefix);
+      if (isOptionLine) {
         seenOpt = true;
-        (line.match(optSplitRe) || []).forEach((seg) => {
+        (line.match(GB_OPT_SPLIT_RE) || []).forEach((seg) => {
           const mark = seg.charAt(0);
           const rest = seg.slice(1).trim();
           if (rest) opts.push(`${mark} ${rest}`);
@@ -9725,7 +9746,116 @@ function gbParseBulkText(rawText) {
   });
 }
 
-function GrammarBankPrototype() {
+// 2026-09-08 — "(A) 문장. (B) 문장. (C) 문장..." 처럼 알파벳 라벨이 붙은 여러 문장이 한 문단에
+// 뭉쳐 있는 문제 텍스트를 stem(질문 본문)과 라벨별 문장으로 분리하는 순수 함수. 라벨이 2개
+// 미만이면(우연의 일치일 수 있음) null을 반환해 호출부가 원문 그대로 렌더링하게 한다. 각
+// item.text는 trim만 하고 내용은 절대 고치지 않는다.
+function splitLabeledSentenceItems(text) {
+  if (!text) return null;
+  const re = /\(([A-Z])\)/g;
+  const matches = [...text.matchAll(re)];
+  if (matches.length < 2) return null;
+  const stem = text.slice(0, matches[0].index).trim();
+  const items = matches.map((m, i) => {
+    const start = m.index + m[0].length;
+    const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    return { label: m[1], text: text.slice(start, end).trim() };
+  });
+  return { stem, items };
+}
+// 2026-09-09 — 문항 표시 형식 개선 1단계. splitLabeledSentenceItems((A)(B)(C) 문장나열)보다
+// 앞단계로, "지시문 + 본문(대화/보기/지문)"을 줄바꿈해서 보여주기 위한 순수 함수. 첫 "?"까지를
+// 지시문으로 보고("?"가 없으면 전체가 지시문, 본문은 빈 문자열), 본문 안에서 (a) "이름:"/"A:"
+// 같은 화자 라벨이 2번 이상 반복되는 대화 (b) "《보기》"/"<보기1>" 같은 보기 마커 (c) 둘 다
+// 없으면 한 줄 그대로, 우선순위대로 감지해 줄 단위 배열로 쪼갠다.
+function formatQuestionStem(text) {
+  const full = text || "";
+  const qIdx = full.indexOf("?");
+  const instruction = (qIdx === -1 ? full : full.slice(0, qIdx + 1)).trim();
+  const body = qIdx === -1 ? "" : full.slice(qIdx + 1);
+  if (!body.trim()) return { instruction, lines: [] };
+
+  // (a) 대화 — "이름:"/"A:" 처럼 (단어 또는 한 글자)+콜론이 2번 이상 반복.
+  const speakerMatches = [...body.matchAll(/([A-Za-z가-힣]{1,10}):\s*/g)];
+  if (speakerMatches.length >= 2) return { instruction, lines: gbChunkByMatches(body, speakerMatches) };
+
+  // (b) 보기 마커 — "《보기》"/"<보기>"/"<보기1>"/"<보기2>" 등.
+  const markerMatches = [...body.matchAll(/(?:《\s*보기\s*\d*\s*》|<\s*보기\s*\d*\s*>)/g)];
+  if (markerMatches.length >= 1) return { instruction, lines: gbChunkByMatches(body, markerMatches) };
+
+  // (c) 둘 다 없으면 본문 전체를 줄바꿈 없이 한 줄로.
+  return { instruction, lines: [body.trim()] };
+}
+// formatQuestionStem 내부 헬퍼 — match 시작 지점을 기준으로 본문을 줄 단위로 자른다. 첫 match
+// 앞에 텍스트가 남아있으면(예: 대화 시작 전 지문 한 줄) 그것도 첫 줄로 살려서 내용 손실을 막는다.
+function gbChunkByMatches(body, matches) {
+  const lines = [];
+  const lead = body.slice(0, matches[0].index).trim();
+  if (lead) lines.push(lead);
+  matches.forEach((m, i) => {
+    const end = i + 1 < matches.length ? matches[i + 1].index : body.length;
+    const chunk = body.slice(m.index, end).trim();
+    if (chunk) lines.push(chunk);
+  });
+  return lines;
+}
+// formatQuestionStem 결과를 실제로 렌더링 — instruction을 굵은 첫 줄로, lines의 각 줄을 그
+// 아래 한 줄씩 보여준다. 마지막 줄에는 splitLabeledSentenceItems를 한 번 더 적용해 (A)(B)(C)
+// 문장나열이 있으면 그것도 세로로 펼친다(두 함수를 순서대로 적용) — null이면(라벨 2개 미만)
+// 그 줄을 그대로 한 줄로 보여준다.
+function renderFormattedQuestionStem(text) {
+  const { instruction, lines } = formatQuestionStem(text);
+  if (lines.length === 0) return html`<b>${instruction}</b>`;
+  const otherLines = lines.slice(0, -1);
+  const lastLine = lines[lines.length - 1];
+  const labeled = splitLabeledSentenceItems(lastLine);
+  return html`<span>
+    <b>${instruction}</b>
+    <div style=${{ marginTop: 4 }}>
+      ${otherLines.map((ln, i) => html`<div key=${`l${i}`} style=${{ marginTop: 2 }}>${ln}</div>`)}
+      ${labeled ? html`
+        <div style=${{ marginTop: 2 }}>${labeled.stem}</div>
+        <div style=${{ marginTop: 4 }}>
+          ${labeled.items.map((it) => html`<div key=${it.label} style=${{ marginLeft: 14, marginTop: 2 }}><b>(${it.label})</b> ${it.text}</div>`)}
+        </div>
+      ` : html`<div style=${{ marginTop: 2 }}>${lastLine}</div>`}
+    </div>
+  </span>`;
+}
+
+// 2026-09-08 — "빈칸이 사라진 것으로 의심되는 문항" 자동 점검. 세 가지 신호 중 하나라도 걸리면
+// 의심 대상: (1) 콤마 바로 뒤에 물음표/마침표만 오는 경우(콤마와 문장부호 사이에 내용이 없다 =
+// 빈칸이 사라졌을 가능성), (2) 공백이 두 칸 이상 연속(빈칸이 있던 자리가 지워진 흔적일 수
+// 있음), (3) 객관식 보기 중 하나가 빈 문자열이거나 "① " 처럼 원문자 마크만 있고 내용이 없음.
+function isSuspiciousGbQuestion(item) {
+  const q = item.q || "";
+  if (/,\s*[?.]/.test(q)) return true;
+  if (/ {2,}/.test(q)) return true;
+  if (item.type === "mc" && Array.isArray(item.opts)) {
+    if (item.opts.some((o) => !o || !String(o).replace(/^[①②③④⑤]\s*/, "").trim())) return true;
+  }
+  return false;
+}
+
+// 2026-09-09 — "객관식인데 서술형으로 등록된 문항" 점검. gbParseBulkText가 "①로 시작하는 줄"
+// 기준으로만 보기 유무를 판정하다 보니, 보기가 지문 중간에 한 줄로 안 떨어져 있으면(예: q 텍스트
+// 안에 그냥 섞여 들어간 경우) sa로 잘못 분류된 채 저장될 수 있다. q 안에 ①~⑤ 마커가 2개 이상
+// 있는데 type이 "sa"면 이 경우로 의심한다.
+function isMisclassifiedSaGbQuestion(item) {
+  if (item.type !== "sa") return false;
+  const marks = (item.q || "").match(/[①②③④⑤]/g);
+  return !!marks && marks.length >= 2;
+}
+// "(A)/(B)/(C)..." 라벨은 있는데 그 사이 실제 문장이 거의 없는(3글자 미만) 문항 — 원본 파일
+// 변환 과정에서 라벨 사이 본문 텍스트 자체가 통째로 날아간 것으로 의심된다. 라벨 전부가
+// 비어있다시피 해야("every") "손실"로 본다 — 라벨 하나만 우연히 짧은 정상 케이스(예: "(A) I")를
+// 오탐하지 않기 위함.
+function isContentLostGbQuestion(item) {
+  const parsed = splitLabeledSentenceItems(item.q || "");
+  return !!parsed && parsed.items.every((it) => it.text.trim().length < 3);
+}
+
+function GrammarBankPrototype({ roster, updateData }) {
   const [grade, setGrade] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [selected, setSelected] = useState({}); // "cat|sub" -> true
@@ -9766,6 +9896,12 @@ function GrammarBankPrototype() {
   // 문항(item.id 없음)은 애초에 선택 대상이 아니다 — 체크박스 자체가 안 뜬다.
   const [selectedIds, setSelectedIds] = useState({}); // {id: true}
   const [bulkSelectedDeleting, setBulkSelectedDeleting] = useState(false);
+  // 2026-09-08 — "빈칸 점검" 배너에서 "수정"을 누르면 이 id가 채워지고, 위 "문항 직접 등록"
+  // 폼이 그대로 편집 폼으로 바뀐다(같은 form* state를 재사용). null이면 평소처럼 신규 등록.
+  const [editingId, setEditingId] = useState(null);
+  // 2026-09-08 — "저장하기"로 미리보기 문항을 실제 학생에게 배정(makeReviewTest와 동일한 패턴:
+  // updateData로 d.examTests에 추가).
+  const [selectedStudentId, setSelectedStudentId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -9833,26 +9969,118 @@ function GrammarBankPrototype() {
   }
   const { mcPool, saPool } = getPool();
   const pickedCount = Object.values(selected).filter(Boolean).length;
+  // 2026-09-08 — "빈칸 점검" 배너용. myQuestions(전체 학년, Firestore에 등록된 것)에서 의심스러운
+  // 문항만 걸러낸다. 현재 선택된 grade와 무관하게 전체를 대상으로 한다.
+  const suspiciousQuestions = myQuestions.filter(isSuspiciousGbQuestion);
+  function showSuspiciousQuestions() {
+    if (suspiciousQuestions.length === 0) return;
+    if (!grade) pickGrade(suspiciousQuestions[0].grade);
+    setPreviewItems(suspiciousQuestions);
+    setPreviewMode("qa");
+    setSelectedIds({});
+  }
+  // 2026-09-09 — 위 "빈칸 점검"과 같은 방식의 점검 배너 2개 더. 전부 myQuestions(전체 학년)
+  // 대상, 클릭하면 그 목록만 previewItems에 채워 보여준다.
+  const misclassifiedQuestions = myQuestions.filter(isMisclassifiedSaGbQuestion);
+  function showMisclassifiedQuestions() {
+    if (misclassifiedQuestions.length === 0) return;
+    if (!grade) pickGrade(misclassifiedQuestions[0].grade);
+    setPreviewItems(misclassifiedQuestions);
+    setPreviewMode("qa");
+    setSelectedIds({});
+  }
+  const contentLostQuestions = myQuestions.filter(isContentLostGbQuestion);
+  function showContentLostQuestions() {
+    if (contentLostQuestions.length === 0) return;
+    if (!grade) pickGrade(contentLostQuestions[0].grade);
+    setPreviewItems(contentLostQuestions);
+    setPreviewMode("qa");
+    setSelectedIds({});
+  }
+  // "보기로 분리" — q 안에 섞여 들어간 ①~⑤ 보기를 gbParseBulkText와 같은 정규식(GB_OPT_SPLIT_RE)
+  // 으로 잘라 opts로 옮기고 type을 "mc"로 바꾼다. 정답은 자동 판정이 불가능해 비워두고, 편집
+  // 폼을 열어 선생님이 직접 고르게 한다(startEditQuestion 재사용).
+  async function splitSaIntoMc(item) {
+    const q = item.q || "";
+    const firstMarkIdx = q.search(/[①②③④⑤]/);
+    const newQ = (firstMarkIdx === -1 ? q : q.slice(0, firstMarkIdx)).trim();
+    const opts = [];
+    (q.match(GB_OPT_SPLIT_RE) || []).forEach((seg) => {
+      const mark = seg.charAt(0);
+      const rest = seg.slice(1).trim();
+      if (rest) opts.push(`${mark} ${rest}`);
+    });
+    if (opts.length === 0) { alert("보기(①~⑤)를 찾지 못했어요."); return; }
+    const data = { grade: item.grade, cat: item.cat, sub: item.sub, type: "mc", q: newQ, opts, ans: "" };
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      await FC.setDocAt("grammarBankQuestions", item.id, data);
+      const updated = { id: item.id, ...data };
+      setMyQuestions((prev) => prev.map((m) => (m.id === item.id ? updated : m)));
+      setPreviewItems((prev) => prev.map((it) => (it.id === item.id ? updated : it)));
+      startEditQuestion(updated);
+    } catch (e) {
+      alert("보기 분리에 실패했어요: " + (e && e.message ? e.message : e));
+    }
+  }
 
   async function submitQuestion() {
     if (!formQ.trim()) { alert("문제 내용을 입력해주세요."); return; }
-    if (formType === "mc" && formOpts.some((o) => !o.trim())) { alert("보기 4개를 모두 입력해주세요."); return; }
+    if (formType === "mc" && formOpts.some((o) => !o.trim())) { alert(`보기 ${formOpts.length}개를 모두 입력해주세요.`); return; }
     if (formType === "sa" && !formAns.trim()) { alert("정답을 입력해주세요."); return; }
     setSaving(true);
     try {
       const FC = window.SarahServices.firebaseClient;
-      const numerals = ["①", "②", "③", "④"];
       const data = formType === "mc"
-        ? { grade, cat: formCat, sub: formSub, type: "mc", q: formQ.trim(), opts: formOpts.map((o, i) => `${numerals[i]} ${o.trim()}`), ans: `${numerals[formAnsIdx]} ${formOpts[formAnsIdx].trim()}` }
+        ? { grade, cat: formCat, sub: formSub, type: "mc", q: formQ.trim(), opts: formOpts.map((o, i) => `${GB_MC_NUMERALS[i]} ${o.trim()}`), ans: `${GB_MC_NUMERALS[formAnsIdx]} ${formOpts[formAnsIdx].trim()}` }
         : { grade, cat: formCat, sub: formSub, type: "sa", q: formQ.trim(), ans: formAns.trim() };
-      const id = await FC.addDocTo("grammarBankQuestions", data);
-      setMyQuestions((prev) => [...prev, { id, ...data }]);
+      if (editingId) {
+        await FC.setDocAt("grammarBankQuestions", editingId, data);
+        const updated = { id: editingId, ...data };
+        setMyQuestions((prev) => prev.map((m) => (m.id === editingId ? updated : m)));
+        setPreviewItems((prev) => prev.map((it) => (it.id === editingId ? updated : it)));
+        setEditingId(null);
+      } else {
+        const id = await FC.addDocTo("grammarBankQuestions", data);
+        setMyQuestions((prev) => [...prev, { id, ...data }]);
+      }
       setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAns("");
     } catch (e) {
       alert("저장에 실패했어요: " + (e && e.message ? e.message : e));
     } finally {
       setSaving(false);
     }
+  }
+  // "빈칸 점검"/전체 목록에서 "수정"을 누르면 등록 폼을 그 문항 내용으로 채우고 편집 모드로
+  // 전환한다. item.grade가 현재 선택된 grade와 다르면(빈칸 점검은 전체 학년을 대상으로 하므로
+  // 흔함) grade 자체를 그 문항의 학년으로 맞춰서 카테고리/소주제 select가 올바른 옵션을
+  // 보여주게 한다 — pickGrade()와 달리 expanded/selected/previewItems 등은 건드리지 않는다
+  // (편집 중인 목록이 화면에서 사라지면 안 되므로).
+  function startEditQuestion(item) {
+    if (item.grade !== grade) setGrade(item.grade);
+    setEditingId(item.id);
+    setFormCat(item.cat);
+    setFormSub(item.sub);
+    setFormType(item.type);
+    setFormQ(item.q || "");
+    if (item.type === "mc") {
+      // "보기로 분리"로 만들어진 문항은 ⑤까지 5개일 수 있다(GB_MC_NUMERALS) — 4개로
+      // 잘라내면 5번째 보기가 사라지므로 최대 5개까지는 실제 길이를 그대로 유지한다.
+      const opts = (item.opts || []).map((o) => String(o || "").replace(/^[①②③④⑤]\s*/, ""));
+      while (opts.length < 4) opts.push("");
+      setFormOpts(opts.slice(0, 5));
+      const ansIdx = (item.opts || []).findIndex((o) => o === item.ans);
+      setFormAnsIdx(ansIdx >= 0 ? ansIdx : 0);
+      setFormAns("");
+    } else {
+      setFormAns(item.ans || "");
+      setFormOpts(["", "", "", ""]);
+      setFormAnsIdx(0);
+    }
+  }
+  function cancelEditQuestion() {
+    setEditingId(null);
+    setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAns("");
   }
   async function deleteMyQuestion(id) {
     if (!confirm("이 문항을 삭제할까요?")) return;
@@ -10010,6 +10238,24 @@ function GrammarBankPrototype() {
     esOpenPrintWindow(buildGrammarPrintHtml(previewItems, previewMode !== "q", printTitle, printSubtitle));
   }
 
+  // 2026-09-08 — "저장하기" — makeReviewTest(오답 복습 시험 만들기)와 같은 패턴: 선택한
+  // 학생의 문서에 examTests 항목을 하나 추가한다("추가시험(퀴즈)" 탭에서 응시).
+  async function saveGrammarBankTest() {
+    if (previewItems.length === 0) { alert("먼저 미리보기(문제 보기 등)를 눌러 저장할 문항을 만들어주세요."); return; }
+    const questions = previewItems.map((item) => (
+      item.type === "mc"
+        ? { q: item.q, choices: item.opts, answer: item.opts.indexOf(item.ans) }
+        : { type: "subjective", q: item.q, answer: item.ans }
+    ));
+    if (questions.length === 0) { alert("저장할 문항이 없어요."); return; }
+    const studentName = (roster.find((r) => r.id === selectedStudentId) || {}).name || "";
+    await updateData(selectedStudentId, (d) => ({
+      ...d,
+      examTests: [{ id: uid(), title: printTitle.trim() || `문법 문제뱅크 (${grade})`, date: today(), questions }, ...(d.examTests || [])],
+    }));
+    alert(`${questions.length}문항을 ${studentName}에게 배정했어요 — "추가시험(퀴즈)" 탭에서 확인할 수 있어요.`);
+  }
+
   function runPreview(mode) {
     const mcN = Math.min(mcCount, mcPool.length);
     const saN = Math.min(saCount, saPool.length);
@@ -10050,6 +10296,25 @@ function GrammarBankPrototype() {
       <div className="es-main">
         <div className="es-topbar"><div className="es-breadcrumb">문법 문제뱅크<span className="sep">·</span>${grade || "학년을 선택하세요"}</div></div>
         <div className="es-content">
+          ${(suspiciousQuestions.length > 0 || misclassifiedQuestions.length > 0 || contentLostQuestions.length > 0) && html`
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              ${suspiciousQuestions.length > 0 && html`
+                <div onClick=${showSuspiciousQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
+                  ⚠️ 빈칸이 빠졌을 수 있는 문항 ${suspiciousQuestions.length}개 — 클릭해서 확인
+                </div>
+              `}
+              ${misclassifiedQuestions.length > 0 && html`
+                <div onClick=${showMisclassifiedQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
+                  ⚠️ 객관식인데 서술형으로 등록된 문항처럼 보여요 ${misclassifiedQuestions.length}개 — 클릭해서 확인
+                </div>
+              `}
+              ${contentLostQuestions.length > 0 && html`
+                <div onClick=${showContentLostQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
+                  ⚠️ 원본 내용이 손실된 것 같은 문항 ${contentLostQuestions.length}개 — 클릭해서 확인
+                </div>
+              `}
+            </div>
+          `}
           ${!grade ? html`
             <div style=${{ textAlign: "center", color: "#9a9488", fontSize: 13, padding: "80px 0" }}>왼쪽에서 학년을 선택하세요.</div>
           ` : html`
@@ -10095,7 +10360,7 @@ function GrammarBankPrototype() {
         <div>
           <div style=${{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 14, alignItems: "start" }}>
             <${Card}>
-              <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5, marginBottom: 10 }}>문항 직접 등록</div>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: editingId ? C.danger : C.gold, letterSpacing: .5, marginBottom: 10 }}>${editingId ? "⚠️ 문항 수정 중" : "문항 직접 등록"}</div>
               <div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                 <select value=${formCat} onChange=${(e) => { setFormCat(e.target.value); setFormSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
                   ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
@@ -10107,25 +10372,26 @@ function GrammarBankPrototype() {
                 <${Button} variant=${formType === "sa" ? "primary" : "ghost"} style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${() => setFormType("sa")}>주관식<//>
               </div>
               <${Field} label="문제">
-                <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 40, padding: "6px 8px", fontSize: 12.5 }} placeholder="문제 내용을 입력하세요" />
+                <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 160, padding: "10px 12px", fontSize: 15, lineHeight: 1.6, resize: "vertical" }} placeholder="문제 내용을 입력하세요" />
               <//>
               ${formType === "mc" ? html`
                 <${Field} label="보기 (정답에 표시)">
-                  <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 8px" }}>
+                  <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px" }}>
                     ${formOpts.map((opt, i) => html`
                       <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
                         <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} />
-                        <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle, padding: "6px 8px", fontSize: 12.5 }} placeholder=${`보기 ${i + 1}`} />
+                        <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder=${`보기 ${i + 1}`} />
                       </div>
                     `)}
                   </div>
                 <//>
               ` : html`
                 <${Field} label="정답">
-                  <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${{ ...inputStyle, padding: "6px 8px", fontSize: 12.5 }} placeholder="정답을 입력하세요" />
+                  <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder="정답을 입력하세요" />
                 <//>
               `}
-              <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : "+ 이 소주제에 문항 등록"}<//>
+              <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : editingId ? "수정 저장" : "+ 이 소주제에 문항 등록"}<//>
+              ${editingId && html`<${Button} variant="ghost" style=${{ width: "100%", justifyContent: "center", marginTop: 6 }} onClick=${cancelEditQuestion}>취소<//>`}
             <//>
 
             <${Card}>
@@ -10219,11 +10485,13 @@ function GrammarBankPrototype() {
             <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6", padding: 16, minHeight: 140, maxHeight: 300, overflowY: "auto", columnCount: cols === 2 ? 2 : 1, columnGap: 24 }}>
               ${previewItems.length === 0 && html`<div style=${{ textAlign: "center", color: "#9a9488", fontSize: 12.5, padding: "44px 0" }}>카테고리를 선택하고 미리보기를 눌러주세요.</div>`}
               ${previewItems.map((item, idx) => html`
-                <div key=${item.id || idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid" }}>
+                <div key=${item.id || idx} style=${{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #EDEAE2", breakInside: "avoid", ...(isSuspiciousGbQuestion(item) ? { borderLeft: `3px solid ${C.danger}`, paddingLeft: 8 } : {}) }}>
                   <div style=${{ display: "flex", gap: 8, fontSize: 13.5, color: C.ink, lineHeight: 1.6 }}>
                     <span style=${{ display: "inline-flex", width: 20, height: 20, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
-                    <span style=${{ flex: 1 }}>${item.q}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${item.id && html`<span style=${{ fontSize: 10.5, color: C.navy, border: `1px solid ${C.navy}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>내가 등록</span>`}</span>
+                    <span style=${{ flex: 1 }}>${renderFormattedQuestionStem(item.q)}<span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${item.id && html`<span style=${{ fontSize: 10.5, color: C.navy, border: `1px solid ${C.navy}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>내가 등록</span>`}${isSuspiciousGbQuestion(item) && html`<span style=${{ fontSize: 10.5, color: C.danger, border: `1px solid ${C.danger}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>⚠️ 점검 필요</span>`}</span>
                     ${item.id && html`<input type="checkbox" checked=${!!selectedIds[item.id]} onChange=${() => toggleSelectedId(item.id)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0, cursor: "pointer" }} />`}
+                    ${item.id && isMisclassifiedSaGbQuestion(item) && html`<span onClick=${() => splitSaIntoMc(item)} style=${{ color: C.danger, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>보기로 분리</span>`}
+                    ${item.id && html`<span onClick=${() => startEditQuestion(item)} style=${{ color: C.navy, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>수정</span>`}
                     ${item.id && html`<span onClick=${() => deleteMyQuestion(item.id)} style=${{ color: C.slate, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>삭제</span>`}
                   </div>
                   ${previewMode !== "a" && item.type === "mc" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>${item.opts.join("   ")}</div>`}
@@ -10238,7 +10506,11 @@ function GrammarBankPrototype() {
             <${Button} variant="ghost" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("워드(.docx) 내보내기는 실제 문항 데이터 연결 후 지원됩니다.")}>📄 Word<//>
             <${Button} variant="ghost" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("한글(.hwp) 내보내기는 실제 문항 데이터 연결 후 지원됩니다.")}>📝 한글<//>
             <${Button} variant="primary" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${printGrammarBank}>🖨 출력하기<//>
-            <${Button} variant="gold" style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${() => alert("저장되었습니다. (프로토타입 — 실제 저장은 아직 연결되지 않았어요)")}>💾 저장하기<//>
+            <select value=${selectedStudentId} onChange=${(e) => setSelectedStudentId(e.target.value)} style=${{ ...inputStyle, flex: 1, minWidth: 140, padding: "8px 10px", fontSize: 12.5 }}>
+              <option value="">학생 선택</option>
+              ${(roster || []).map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+            </select>
+            <${Button} variant="gold" disabled=${!selectedStudentId} style=${{ flex: 1, minWidth: 100, justifyContent: "center" }} onClick=${saveGrammarBankTest}>💾 저장하기<//>
           </div>
         </div>
       </div>
@@ -12332,7 +12604,7 @@ function ExamHubSection({ roster, updateData }) {
         { key: "papers", icon: "🧪", label: "시험지" },
         { key: "assignments", icon: "📝", label: "배정 · 결과" },
       ]} active=${tab} onChange=${setTab} />
-      ${tab === "papers" && html`<${QuestionBankSection} key="qb-examBuilder-examHub" roster=${roster} initialBank="examBuilder" />`}
+      ${tab === "papers" && html`<${QuestionBankSection} key="qb-examBuilder-examHub" roster=${roster} initialBank="examBuilder" updateData=${updateData} />`}
       ${tab === "assignments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
     </div>
   `;
@@ -12483,7 +12755,7 @@ function ExamAssignmentManager({ roster, updateData }) {
 // (ExamKeyLibrarySection, 예전 "examkeys" 메뉴). "Assignments & Results"(ExamAssignmentManager)는
 // STEP4에서 여기 있었지만, STEP5에서 사용자 지시로 Classes → Assessments로 옮겼다 — "Question
 // Bank는 문제·시험지를 만드는 공간, Classes는 실제 학생 수업/평가를 운영하는 공간"이라는 구분.
-function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary }) {
+function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary, updateData }) {
   // 2026-09-03 — 문법/리딩 문제뱅크 전면 교체: Question Review·Exam Builder 탭(둘 다 옛
   // questionBankService.js 데이터 기반)을 제거했다. Grammar 탭은 새 GrammarBankPrototype(더미
   // 데이터, 위에서 정의)으로 교체 — 실제 데이터 연결 전까지는 화면만 제공한다. Vocabulary/Answer
@@ -12500,7 +12772,7 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "browse", icon: "📚", label: "전체 문항" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
-      ${bank === "grammar" && html`<${GrammarBankPrototype} />`}
+      ${bank === "grammar" && html`<${GrammarBankPrototype} roster=${roster} updateData=${updateData} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
       ${bank === "browse" && html`<${GrammarBankBrowseView} />`}
@@ -20792,7 +21064,7 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
           <${Card}>
             ${breakdown.map((r, i) => html`
               <div key=${i} style=${{ padding: "8px 0", borderBottom: i < breakdown.length - 1 ? `1px solid ${C.line}` : "none" }}>
-                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${r.prompt}</div>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${type === "exam" ? renderFormattedQuestionStem(r.prompt) : r.prompt}</div>
                 <div style=${{ fontSize: 12, marginTop: 3, color: r.ok ? C.navy : C.danger }}>내 답: ${r.given} ${r.ok ? "✓" : "✗"}</div>
                 ${!r.ok && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 1 }}>정답: ${r.correct}</div>`}
               </div>
@@ -20810,7 +21082,7 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
       <div style=${{ ...serif, fontSize: 18, color: C.navy, marginBottom: 12 }}>${test.title}</div>
       ${questions.map((q, qi) => html`
         <${Card} key=${qi}>
-          <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10, whiteSpace: "pre-wrap" }}>${qi + 1}. ${type === "vocab" ? (directions[qi] === "w2m" ? q.word : q.meaning) : q.q}</div>
+          <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10, whiteSpace: "pre-wrap" }}>${qi + 1}. ${type === "vocab" ? (directions[qi] === "w2m" ? q.word : q.meaning) : type === "exam" ? renderFormattedQuestionStem(q.q) : q.q}</div>
           ${type === "vocab" ? html`
             <input style=${inputStyle} placeholder=${directions[qi] === "w2m" ? "뜻을 입력하세요" : "영어 단어를 입력하세요"}
               autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" name=${`test-ans-${test.id}-${qi}`}
