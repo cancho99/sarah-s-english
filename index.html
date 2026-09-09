@@ -16813,7 +16813,7 @@ function HomeworkEditor({ student, data, updateData }) {
   const [selectedDate, setSelectedDate] = useState(today());
   const [adding, setAdding] = useState(false);
   function openAdd() {
-    setAssignedDate(selectedDate);
+    setAssignedDate(today());
     setDueDate(selectedDate);
     setContent("");
     setCategory("");
