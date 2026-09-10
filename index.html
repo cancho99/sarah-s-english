@@ -13466,11 +13466,11 @@ function wrongNoteDoc(title, pagesHtml) {
 }
 
 // "오답 문제만 인쇄" — no answers, no explanations, just the stem/choices for re-practice.
-function buildWrongOnlyItemHtml(item, EP, displayIndex, paper, studentName) {
+function buildWrongOnlyItemHtml(item, EP, displayIndex, paper, studentName, headerSuffix) {
   const { qDoc, qref, passageText } = item;
   const cat = wrongNoteCategoryInfo(qDoc);
   const isMc = qDoc.answerFormat === "mc";
-  let body = wrongNoteCardHeader(displayIndex, paper, studentName, cat.label, "오답 다시 풀기");
+  let body = wrongNoteCardHeader(displayIndex, paper, studentName, cat.label, headerSuffix || "오답 다시 풀기");
   body += `<div class="passage-box">`;
   if (passageText) body += `<div class="stem-block" style="padding-bottom:12px;border-bottom:1px dashed #ccc;">${esEscapeHtml(passageText).replace(/\n/g, "<br/>")}</div>`;
   body += `<div class="stem-block">${renderQuestionStemHtml(qDoc.questionText)}</div>`;
@@ -13572,6 +13572,198 @@ function buildWrongExplainPrintHtml(wrongItems, EP, paper, studentName) {
   return wrongNoteDoc(`${paper.title || "시험지"} - 오답노트`, pages.join(""));
 }
 
+// "🔁 오답 유형으로 복습 시험지 만들기" 인쇄용 — 기존 "오답 문제만 인쇄"와 완전히 같은 파이프라인
+// (wrongNoteCardHeader/wrongNoteCategoryInfo/wrongNotePage/wrongNoteDoc, buildWrongOnlyItemHtml
+// 그대로 재사용)으로 한 문제당 한 페이지씩 빈 연습장을 만들고, 아직 응시 전(result 없음)이라
+// "내 답" 비교가 불가능한 buildWrongExplainItemHtml 대신 마지막 페이지에 간단한 정답 목록만
+// 별도로 붙인다. pickedQuestionDocs는 choiceDisplayOrder를 전혀 안 섞은 원본 순서이므로
+// qDoc.answer가 곧 표시 정답 인덱스와 같다(EP.resolveQuestionForDisplay(qDoc, null)과 동치).
+function buildReviewWorksheetAnswerPageHtml(pickedQuestionDocs, EP, paperLike, studentName) {
+  const rows = pickedQuestionDocs.map((qDoc, i) => {
+    const isMc = qDoc.answerFormat === "mc";
+    const { displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, null);
+    const answerText = isMc ? (ES_CIRC[displayAnswerIndex] || String(displayAnswerIndex + 1)) : String(qDoc.answer || "");
+    const explanation = qDoc.explanation ? ` — ${esEscapeHtml(qDoc.explanation)}` : "";
+    return `<div style="font-size:12.5px;line-height:1.7;margin-bottom:8px;"><b>${i + 1}.</b> 정답 ${esEscapeHtml(answerText)}${explanation}</div>`;
+  }).join("");
+  return `<div class="card-header"><div class="card-meta"><div class="card-source">${wrongNoteSourceLine(paperLike, studentName, "정답 및 해설")}</div></div></div>${rows}`;
+}
+function buildReviewWorksheetPrintHtml(pickedQuestionDocs, EP, examTitle, gradeLabel, studentName) {
+  const paperLike = { title: examTitle, grade: gradeLabel };
+  const wrongItemShape = pickedQuestionDocs.map((qDoc) => ({ qDoc, qref: { choiceDisplayOrder: null }, passageText: "" }));
+  const qPages = wrongItemShape.map((item, i) => wrongNotePage(buildWrongOnlyItemHtml(item, EP, i, paperLike, studentName, "유형별 복습 문제"), false));
+  const answerPage = wrongNotePage(buildReviewWorksheetAnswerPageHtml(pickedQuestionDocs, EP, paperLike, studentName), true);
+  return wrongNoteDoc(`${examTitle} - 복습 시험지`, [...qPages, answerPage].join(""));
+}
+
+// "🔁 오답 유형으로 복습 시험지 만들기" — ExamResultDetail(오답 인쇄 버튼들 옆)에서 열리는 패널.
+// 오답 문항의 mainCategory(문법 대주제)를 감지해 유형별로 grammarQuestions(Phase 8 Question
+// Bank) 뱅크 보유량을 보여주고, QB.distributeCounts/pickQuestionsWeighted(Exam Wizard가 이미
+// 쓰는 것과 완전히 같은 함수)로 목표 총 문항 수를 유형별로 배분해 뽑는다. 최종 액션 둘 다 기존
+// 파이프라인 그대로: 배정은 EP.createExamPaper→updateExamPaper→finalizeExamPaper→
+// AS.createAssignment(ExamPaperDetail의 AssignExamModal과 같은 패턴), 인쇄는 위
+// buildReviewWorksheetPrintHtml+esOpenPrintWindow. mainCategory가 없는(=독해) 오답은 애초에
+// 이 기능의 감지 대상이 아니다 — Phase 8에서 문법만 mainCategory/subCategory taxonomy를 쓴다.
+function ReviewWorksheetGenerator({ EP, AS, QB, paper, wrongItems, grammarQuestions, studentId, studentName }) {
+  const [open, setOpen] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState(null); // lazy: 첫 오픈 시 감지된 유형 전부로 초기화
+  const [targetTotal, setTargetTotal] = useState(20);
+  const [overrides, setOverrides] = useState({});
+  const [pickedItems, setPickedItems] = useState(null);
+  const [assigning, setAssigning] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const usedIds = [];
+  (paper.sections || []).forEach((s) => (s.questionRefs || []).forEach((r) => usedIds.push(r.questionId)));
+
+  const wrongCatMap = {};
+  wrongItems.forEach(({ qDoc }) => {
+    if (!qDoc || !qDoc.mainCategory || !QB.GRAMMAR_TAXONOMY.find((c) => c.key === qDoc.mainCategory)) return;
+    const key = qDoc.mainCategory;
+    if (!wrongCatMap[key]) wrongCatMap[key] = { key, label: qbCategoryLabel(QB.GRAMMAR_TAXONOMY, key, "").main, wrongCount: 0 };
+    wrongCatMap[key].wrongCount += 1;
+  });
+  const detected = Object.values(wrongCatMap);
+  const keys = selectedKeys || new Set(detected.map((c) => c.key));
+
+  if (detected.length === 0) return null;
+
+  function bankAvailable(key) {
+    return QB.queryQuestions(grammarQuestions, { status: ["PUBLISHED"], grade: paper.grade, mainCategory: key, excludeIds: usedIds }).length;
+  }
+
+  const selectedCats = detected.filter((c) => keys.has(c.key)).map((c) => ({ ...c, available: bankAvailable(c.key) }));
+  const dist = QB.distributeCounts(selectedCats.map((c) => ({ key: c.key, label: c.label, available: c.available })), Number(targetTotal) || 0);
+  const allocByKey = {};
+  dist.allocations.forEach((a) => { allocByKey[a.key] = a.allocated; });
+
+  function countFor(c) {
+    const ov = overrides[c.key];
+    if (ov !== undefined && ov !== "" && !Number.isNaN(Number(ov))) return Math.max(0, Math.min(Number(ov), c.available));
+    return allocByKey[c.key] || 0;
+  }
+  const finalCats = selectedCats.map((c) => ({ ...c, count: countFor(c) }));
+  const totalPicked = finalCats.reduce((sum, c) => sum + c.count, 0);
+  const evenShare = selectedCats.length > 0 ? Math.ceil((Number(targetTotal) || 0) / selectedCats.length) : 0;
+  const shortCats = selectedCats.filter((c) => c.available < evenShare);
+
+  function toggleKey(key) {
+    const next = new Set(keys);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    setSelectedKeys(next);
+    setPickedItems(null);
+  }
+
+  function drawQuestions() {
+    const picked = [];
+    const excludeIds = [...usedIds];
+    finalCats.forEach((c) => {
+      if (c.count <= 0) return;
+      const pool = QB.queryQuestions(grammarQuestions, { status: ["PUBLISHED"], grade: paper.grade, mainCategory: c.key, excludeIds });
+      const chosen = QB.pickQuestionsWeighted(pool, c.count, new Set());
+      chosen.forEach((q) => { excludeIds.push(q.id); picked.push({ ...q, __catLabel: c.label }); });
+    });
+    setPickedItems(shuffle(picked));
+    setMsg("");
+  }
+
+  async function assignToStudent() {
+    if (!pickedItems || pickedItems.length === 0) return;
+    setAssigning(true); setMsg("");
+    try {
+      const catLabels = [...new Set(pickedItems.map((q) => q.__catLabel))];
+      const title = `${studentName} - 오답유형 복습 (${catLabels.join("·")})`;
+      const created = await EP.createExamPaper({ title, grade: paper.grade, examCategory: "general" });
+      const { section } = EP.manualSection("grammar", "SECTION. GRAMMAR (오답유형 복습)", pickedItems);
+      const updated = await EP.updateExamPaper(created, { sections: [section] });
+      const questionsById = {};
+      pickedItems.forEach((q) => { questionsById[q.id] = q; });
+      const finalDoc = await EP.finalizeExamPaper(updated, questionsById);
+      await AS.createAssignment({ examPaperId: finalDoc.id, studentId, title: finalDoc.title, dueAt: Date.now() + 7 * 24 * 60 * 60 * 1000, resultsVisibleToStudent: false });
+      setMsg(`✅ "${title}" 시험지를 ${studentName}에게 배정했어요.`);
+    } catch (e) {
+      setMsg("배정 실패: " + String(e.message || e));
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  function printWorksheet() {
+    if (!pickedItems || pickedItems.length === 0) return;
+    const catLabels = [...new Set(pickedItems.map((q) => q.__catLabel))];
+    const title = `${studentName} - 오답유형 복습 (${catLabels.join("·")})`;
+    esOpenPrintWindow(buildReviewWorksheetPrintHtml(pickedItems, EP, title, paper.grade, studentName));
+  }
+
+  return html`
+    <${Card} style=${{ marginBottom: 16 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick=${() => setOpen((o) => !o)}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>🔁 오답 유형으로 복습 시험지 만들기</div>
+        <span style=${{ fontSize: 11, color: C.slate }}>${open ? "▾ 접기" : "▸ 펼치기"}</span>
+      </div>
+      ${open && html`
+        <div style=${{ marginTop: 12 }}>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>이번 시험에서 틀린 문법 유형이에요 — 포함할 유형을 고르고, 유형별 문항 수는 자동 배분되거나 직접 입력할 수 있어요.</div>
+          ${detected.map((c) => {
+            const inSel = keys.has(c.key);
+            const cat = finalCats.find((f) => f.key === c.key);
+            return html`
+              <div key=${c.key} style=${{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.line}` }}>
+                <input type="checkbox" checked=${inSel} onChange=${() => toggleKey(c.key)} style=${{ width: 15, height: 15, appearance: "auto", flexShrink: 0 }} />
+                <div style=${{ flex: 1, minWidth: 0 }}>
+                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>${c.label}</div>
+                  <div style=${{ fontSize: 11, color: C.slate }}>이번 시험 오답 ${c.wrongCount}문항 · 뱅크에 ${bankAvailable(c.key)}개 있음</div>
+                </div>
+                ${inSel && html`
+                  <input type="number" min="0" value=${overrides[c.key] !== undefined ? overrides[c.key] : (cat ? cat.count : 0)}
+                    onChange=${(e) => { setOverrides((o) => ({ ...o, [c.key]: e.target.value })); setPickedItems(null); }}
+                    style=${{ ...inputStyle, width: 60, textAlign: "center" }} />
+                `}
+              </div>
+            `;
+          })}
+          <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+            <${Field} label="목표 총 문항 수">
+              <input type="number" min="1" style=${{ ...inputStyle, width: 80 }} value=${targetTotal}
+                onChange=${(e) => { setTargetTotal(e.target.value); setOverrides({}); setPickedItems(null); }} />
+            <//>
+            <div style=${{ fontSize: 12, color: C.slate, marginTop: 16 }}>선택된 유형 ${selectedCats.length}개 · 총 ${totalPicked}문항 배분됨</div>
+          </div>
+          ${shortCats.length > 0 && html`
+            <div style=${{ fontSize: 11.5, color: "#8A6414", background: "#FBF6EA", border: `1px solid ${C.gold}`, borderRadius: 4, padding: "8px 10px", marginTop: 8 }}>
+              ${shortCats.map((c) => html`<div key=${c.key}>${c.label}은(는) 뱅크에 ${c.available}개밖에 없어서 부족한 만큼 다른 유형에서 채웠어요.</div>`)}
+            </div>
+          `}
+          <div style=${{ marginTop: 12 }}>
+            <${Button} variant="gold" style=${{ fontSize: 12.5, padding: "8px 16px" }} disabled=${totalPicked === 0} onClick=${drawQuestions}>
+              ${pickedItems ? "🔀 다른 문항으로 다시 뽑기" : "🎲 이 조건으로 문제 뽑기"}
+            <//>
+          </div>
+          ${pickedItems && html`
+            <div style=${{ marginTop: 14 }}>
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>뽑힌 문항 ${pickedItems.length}개</div>
+              <div style=${{ maxHeight: 260, overflowY: "auto", border: `1px solid ${C.line}`, borderRadius: 4, marginBottom: 12 }}>
+                ${pickedItems.map((q, i) => html`
+                  <div key=${q.id} style=${{ padding: "7px 10px", borderBottom: i === pickedItems.length - 1 ? "none" : `1px solid ${C.line}`, fontSize: 12 }}>
+                    <span style=${{ fontWeight: 700, color: C.navy }}>${i + 1}.</span>
+                    <span style=${{ fontSize: 10.5, fontWeight: 700, color: C.navy, background: C.ivory, borderRadius: 20, padding: "1px 8px", margin: "0 6px" }}>${q.__catLabel}</span>
+                    <span style=${{ color: C.ink }}>${(q.questionText || "").slice(0, 60)}${(q.questionText || "").length > 60 ? "…" : ""}</span>
+                  </div>
+                `)}
+              </div>
+              <div style=${{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <${Button} variant="primary" style=${{ fontSize: 12.5, padding: "8px 16px" }} disabled=${assigning} onClick=${assignToStudent}>${assigning ? "배정 중..." : "📋 학생에게 배정"}<//>
+                <${Button} variant="ghost" style=${{ fontSize: 12.5, padding: "8px 16px" }} onClick=${printWorksheet}>🖨 인쇄용으로 보내기<//>
+              </div>
+            </div>
+          `}
+          ${msg && html`<div style=${{ fontSize: 12, color: msg.startsWith("✅") ? "#2E6B44" : C.danger, marginTop: 10 }}>${msg}</div>`}
+        </div>
+      `}
+    <//>
+  `;
+}
+
 function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
   if (!qDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
   const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
@@ -13622,7 +13814,7 @@ function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
   `;
 }
 
-function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questionsById, passagesById, onBack }) {
+function ExamResultDetail({ EP, AS, QB, grammarQuestions, assignment, paper, attempt, studentName, questionsById, passagesById, onBack }) {
   const total = attempt.totalQuestions || 0;
   const gradedDenominator = total - (attempt.ungradedCount || 0);
   const accuracy = gradedDenominator > 0 ? Math.round(((attempt.correctCount || 0) / gradedDenominator) * 100) : 0;
@@ -13680,6 +13872,9 @@ function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questio
         ${wrongItems.length === 0 && html`<span style=${{ fontSize: 12, color: C.slate }}>오답이 없습니다</span>`}
       </div>
 
+      <${ReviewWorksheetGenerator} EP=${EP} AS=${AS} QB=${QB} paper=${paper} wrongItems=${wrongItems}
+        grammarQuestions=${grammarQuestions} studentId=${assignment.studentId} studentName=${studentName} />
+
       <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 10 }}>문제별 결과</div>
       ${(paper.sections || []).map((s) => {
         const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
@@ -13735,6 +13930,7 @@ function ExamAssignmentManager({ roster, updateData }) {
   const [attempts, setAttempts] = useState([]);
   const [questionsById, setQuestionsById] = useState({});
   const [passagesById, setPassagesById] = useState({});
+  const [grammarQuestions, setGrammarQuestions] = useState([]);
   const [err, setErr] = useState("");
   const [view, setView] = useState("list"); // list | detail | result
   const [selectedId, setSelectedId] = useState(null);
@@ -13750,6 +13946,7 @@ function ExamAssignmentManager({ roster, updateData }) {
         QB.listGrammarQuestions(), QB.listReadingQuestions(), QB.listReadingPassages(),
       ]);
       setAssignments(a); setPapers(p); setAttempts(att);
+      setGrammarQuestions(gq);
       const qById = {};
       gq.forEach((q) => { qById[q.id] = q; });
       rq.forEach((q) => { qById[q.id] = q; });
@@ -13781,7 +13978,8 @@ function ExamAssignmentManager({ roster, updateData }) {
   const selectedAttempt = selected && selected.attemptId ? attemptById[selected.attemptId] : null;
 
   if (view === "result" && selected && selectedAttempt) {
-    return html`<${ExamResultDetail} EP=${EP} assignment=${selected} paper=${paperById[selected.examPaperId]}
+    return html`<${ExamResultDetail} EP=${EP} AS=${AS} QB=${QB} grammarQuestions=${grammarQuestions}
+      assignment=${selected} paper=${paperById[selected.examPaperId]}
       attempt=${selectedAttempt} studentName=${studentNameById[selected.studentId] || selected.studentId}
       questionsById=${questionsById} passagesById=${passagesById}
       onBack=${() => setView("detail")} />`;
