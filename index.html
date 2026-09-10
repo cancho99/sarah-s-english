@@ -13103,6 +13103,475 @@ function ExamAssignmentDetail({ assignment, studentName, paperTitle, attempt, on
 // questionText/choices/explanation을 복제하지 않고 questionBank에서 매번 조인해서만 표시(§7).
 const RESULT_CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 
+// §Wrong-answer print notes (2026-09-10) — two teacher-triggered print buttons on ExamResultDetail:
+// a blank re-practice sheet (no answers shown) and a full explained note (strategy/misconception/
+// keypoint boxes). Both only ever include questions where attempt.results[qId].correct === false —
+// per examAttemptService.js computeGrading(), subjective questions are always graded `correct: null`
+// (never false) today, so in practice only MC questions ever show up here. The alts/parts handling
+// in buildWrongExplainItemHtml is forward-compatible defensive code for a data shape the current
+// grammarQuestions/readingQuestions schema (services/questionBankService.js) does not populate —
+// GrammarQuestionForm/ReadingQuestionForm only ever save a single subjective `answer` string.
+const WRONG_NOTE_CSS = `
+  :root{ --navy:#1C2B4A; --gold:#B8935A; --danger:#A6473A; --green:#2E6B44; --blue:#2C5F8A; --amber-bg:#FBF0DC; --amber-line:#D9A441; --graybox:#F4F2ED; }
+  *{box-sizing:border-box;}
+  body{font-family:'Malgun Gothic',-apple-system,sans-serif;color:#14161A;margin:0;background:#fff;}
+  @page{ size:A4; margin:12mm; }
+  .sheet-page{padding:28px 30px;}
+  .card-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--navy);}
+  .card-badge{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;}
+  .card-meta{flex:1;min-width:0;}
+  .card-source{font-size:11.5px;color:#5B6270;margin-bottom:3px;}
+  .card-type-pill{display:inline-block;font-size:11px;font-weight:700;color:var(--navy);background:#EEF1F6;border-radius:20px;padding:2px 10px;}
+  .strategy-box{background:var(--graybox);border-radius:8px;padding:14px 16px;margin-bottom:16px;}
+  .strategy-box .st-title{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px;}
+  .strategy-box .st-step{font-size:12.5px;color:#333;line-height:1.6;margin-bottom:4px;}
+  .strategy-box .st-step b{color:var(--navy);}
+  .passage-box{background:#FAF8F4;border:1px solid #E5E0D3;border-radius:8px;padding:16px 18px;font-family:Georgia,'Nanum Myeongjo',serif;font-size:13.5px;line-height:1.8;color:#222;margin-bottom:14px;}
+  .passage-box .stem-block{margin-bottom:10px;}
+  .passage-box .choice-row{margin:6px 0;}
+  .passage-box .wrong-choice{color:var(--danger);font-weight:700;text-decoration:underline wavy var(--danger);text-underline-offset:3px;}
+  .compare-row{display:flex;gap:24px;font-size:12.5px;margin-bottom:10px;flex-wrap:wrap;}
+  .compare-row .lbl{color:#5B6270;margin-right:4px;}
+  .ans-badge{display:inline-block;background:var(--green);color:#fff;font-weight:700;font-size:12.5px;border-radius:20px;padding:4px 14px;margin-bottom:16px;}
+  .explain-block{border-left:4px solid var(--blue);background:#F4F8FB;border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:10px;}
+  .explain-block.emphasis{border-left-color:var(--danger);background:#FBF1EF;}
+  .explain-block .eb-head{font-size:12px;font-weight:700;color:var(--blue);margin-bottom:4px;}
+  .explain-block.emphasis .eb-head{color:var(--danger);}
+  .explain-block .eb-body{font-size:12.5px;color:#333;line-height:1.6;white-space:pre-wrap;}
+  .misconception-box{background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:8px;padding:12px 16px;margin:14px 0;}
+  .misconception-box .mb-title{font-size:12px;font-weight:700;color:#8A5A00;margin-bottom:6px;}
+  .misconception-box .mb-body{font-size:12.5px;color:#5C4008;line-height:1.6;}
+  .keypoint-box{background:var(--navy);color:#fff;border-radius:8px;padding:14px 16px;}
+  .keypoint-box .kb-title{font-size:12px;font-weight:700;margin-bottom:6px;color:#D9C79A;}
+  .keypoint-box .kb-body{font-size:12.5px;line-height:1.6;}
+  .answer-blank{display:block;border-bottom:1px solid #999;height:26px;margin-top:8px;max-width:420px;}
+  .plain-choices div{font-size:13.5px;margin:6px 0;}
+  @media print{ body{padding:0;} }
+`;
+
+// mainCategory(grammar) → { steps[3], misconception, keypoint }. %SUB% is replaced with the
+// question's subCategory label (falls back to the mainCategory label) at render time.
+const GRAMMAR_WRONG_NOTE_STRATEGY = {
+  sentenceStructure: {
+    steps: [
+      "문장에서 주어(S)·동사(V)·목적어(O)·보어(C)를 먼저 표시해 문형(SV~SVOC)을 확인한다.",
+      "%SUB% 관점에서 동사가 요구하는 필수 성분과 실제 쓰인 형태가 일치하는지 대조한다.",
+      "수식어나 삽입구를 걷어내고 핵심 골격만 남겨 다시 읽어 어색한 부분을 찾아낸다.",
+    ],
+    misconception: "수식어구가 길면 그것을 문장의 핵심 성분으로 착각해 동사를 잘못 짚는 경우가 흔하다.",
+    keypoint: "모든 문장은 결국 하나의 기본 문형으로 환원된다 — 수식어를 걷어내고 뼈대부터 확인하는 습관을 들이자.",
+  },
+  partsOfSpeech: {
+    steps: [
+      "밑줄 친 단어가 문장에서 어떤 역할(명사/형용사/부사/전치사/관사)을 해야 하는지 먼저 파악한다.",
+      "%SUB% 규칙에 따라 그 자리에 올 수 있는 품사가 맞는지, 형태(어미·굴절)가 그 역할에 맞는지 확인한다.",
+      "같은 어원에서 파생된 다른 품사 형태(명사형/형용사형/부사형)와 헷갈리지 않았는지 다시 검토한다.",
+    ],
+    misconception: "의미가 비슷하다고 품사가 다른 단어를 그대로 바꿔 쓸 수 있다고 착각하는 경우가 많다(예: 형용사 자리에 부사).",
+    keypoint: "품사는 '의미'가 아니라 '문장 안에서의 역할'로 결정된다 — 항상 그 자리가 요구하는 역할부터 확인하자.",
+  },
+  sentenceElements: {
+    steps: [
+      "문장에서 주어·동사·목적어·보어가 각각 무엇인지 표시한다.",
+      "%SUB% 관점에서 필요한 성분이 빠지지 않았는지, 자리(위치)가 올바른지 확인한다.",
+      "수식어(구/절)가 수식하는 대상이 무엇인지 명확히 짚어 위치가 자연스러운지 검토한다.",
+    ],
+    misconception: "긴 수식어구를 문장 성분(주어/목적어)으로 착각하거나, 수식어의 위치를 수식 대상과 멀리 두는 실수가 흔하다.",
+    keypoint: "문장 성분 분석은 항상 '동사'에서 출발한다 — 동사가 요구하는 성분을 먼저 채우고 남는 부분을 수식어로 분류하자.",
+  },
+  tense: {
+    steps: [
+      "문장 안의 시간 표현(부사구/절)을 찾아 사건이 언제 일어났는지 확정한다.",
+      "%SUB%의 형태 규칙과 그 시제가 쓰이는 상황(완료/진행/계속)이 맞는지 대조한다.",
+      "주절과 종속절의 시제가 서로 어울리는지(시제 일치) 확인한다.",
+    ],
+    misconception: "since/for/by now 같은 신호어를 놓치고 단순 과거·현재로만 판단해 완료 시제를 놓치는 경우가 많다.",
+    keypoint: "시제 문제는 '형태'보다 '시간 신호어'를 먼저 찾는 것이 핵심이다.",
+  },
+  modal: {
+    steps: [
+      "조동사가 나타내는 의미(가능/허가/의무/추측 등)를 문맥에서 먼저 파악한다.",
+      "%SUB% 형태가 문맥의 시점(현재/과거 추측)과 맞는지 확인한다.",
+      "조동사 뒤에 온 동사 형태가 원형인지, p.p.인지 다시 확인한다.",
+    ],
+    misconception: "'must have p.p.'(~했음이 틀림없다)와 'must + 동사원형'(~해야 한다)의 의미 차이를 혼동하는 경우가 많다.",
+    keypoint: "조동사+have+p.p.는 '과거에 대한 현재의 추측/후회'를 나타낸다는 것을 항상 기억하자.",
+  },
+  passive: {
+    steps: [
+      "동작의 주체(하는 사람)와 대상(당하는 사람) 중 무엇이 주어로 와야 하는지 문맥에서 확인한다.",
+      "%SUB% 형태(be+p.p., 필요한 전치사)가 올바른지 검토한다.",
+      "목적어가 두 개 이상인 문장(4형식/5형식)이라면 어떤 목적어가 수동태 주어가 됐는지 확인한다.",
+    ],
+    misconception: "타동사인지 자동사인지 확인하지 않고 무조건 be+p.p.로 바꿀 수 있다고 착각하는 경우가 있다(자동사는 수동태 불가).",
+    keypoint: "수동태는 '동작을 당하는 대상'이 주어가 된다 — 항상 원래 능동태 문장을 먼저 그려보자.",
+  },
+  infinitive: {
+    steps: [
+      "to부정사가 문장에서 명사·형용사·부사 중 어떤 역할을 하는지 확인한다.",
+      "%SUB% 규칙에 따라 원형부정사를 써야 하는 동사(사역/지각동사)인지, 의미상 주어 표시가 필요한지 확인한다.",
+      "부정사의 의미상 주어와 문장의 주어가 일치하는지 확인한다.",
+    ],
+    misconception: "지각동사·사역동사 뒤에 to부정사를 그대로 써도 된다고 착각하는 경우가 흔하다(원형부정사 필요).",
+    keypoint: "부정사는 역할(명사/형용사/부사)을 먼저 정하면 나머지 규칙이 자연스럽게 따라온다.",
+  },
+  gerund: {
+    steps: [
+      "동명사가 필요한 자리인지(전치사 뒤, 특정 동사의 목적어) 확인한다.",
+      "%SUB% 규칙에 따라 to부정사와 동명사 중 어느 쪽을 목적어로 취하는 동사인지 확인한다(remember/stop/forget 등 의미 차이 주의).",
+      "동명사의 의미상 주어(소유격/목적격)가 올바른지 확인한다.",
+    ],
+    misconception: "remember/forget/stop 뒤에 오는 동명사와 to부정사의 의미 차이(과거 행위 vs 미래 행위)를 혼동하는 경우가 많다.",
+    keypoint: "동사마다 동명사/부정사를 목적어로 취하는 규칙이 다르다는 것을 어휘처럼 암기해야 한다.",
+  },
+  participle: {
+    steps: [
+      "분사가 수식하는 명사와 분사 사이의 관계가 능동(~하는)인지 수동(~되는)인지 판단한다.",
+      "%SUB% 규칙에 따라 현재분사/과거분사 중 올바른 형태가 쓰였는지 확인한다.",
+      "분사구문이라면 생략된 접속사·주어를 복원해 원래 문장으로 바꿔 의미가 통하는지 확인한다.",
+    ],
+    misconception: "감정을 나타내는 동사(interest/bore/excite 등)에서 사람이 주어일 때도 현재분사를 쓰는 실수가 흔하다(사람은 과거분사).",
+    keypoint: "분사는 수식받는 명사가 '하는' 쪽인지 '당하는' 쪽인지만 판단하면 형태가 결정된다.",
+  },
+  relative: {
+    steps: [
+      "선행사가 사람인지 사물인지, 관계사절 안에서 어떤 성분(주어/목적어/소유격)이 빠졌는지 확인한다.",
+      "%SUB% 규칙에 따라 관계대명사와 관계부사 중 올바른 것이 쓰였는지(뒤에 완전한 절인지 불완전한 절인지) 확인한다.",
+      "계속적 용법(콤마+관계사)이라면 선행사 전체를 부연 설명하는 것이 자연스러운지 확인한다.",
+    ],
+    misconception: "관계부사 자리에 완전한 절이 오는데도 관계대명사를 쓰거나, 그 반대로 착각하는 경우가 가장 흔하다.",
+    keypoint: "관계사절 뒤가 완전한 절이면 관계부사(또는 전치사+관계대명사), 불완전한 절이면 관계대명사다.",
+  },
+  conjunction: {
+    steps: [
+      "두 절(또는 구)을 연결하는 접속사가 필요한 자리인지, 전치사가 필요한 자리인지 구분한다.",
+      "%SUB% 규칙에 따라 논리 관계(대등/종속/상관)에 맞는 접속사가 쓰였는지 확인한다.",
+      "상관접속사라면 앞뒤 형태가 문법적으로 대등(병렬)한지 확인한다.",
+    ],
+    misconception: "'while/during'처럼 의미가 비슷해 보이는 접속사와 전치사를, 뒤에 오는 것(절 vs 명사구)을 확인하지 않고 바꿔 쓰는 실수가 흔하다.",
+    keypoint: "접속사 뒤에는 절(주어+동사)이, 전치사 뒤에는 명사(구)가 온다는 원칙을 항상 먼저 확인하자.",
+  },
+  nounClause: {
+    steps: [
+      "that/whether/if/의문사절이 문장에서 주어·목적어·보어 중 어떤 역할을 하는지 확인한다.",
+      "%SUB% 규칙에 따라 절 안의 어순(평서문 어순)과 접속사 선택이 올바른지 확인한다.",
+      "간접의문문이라면 의문사 뒤 어순이 '의문사+주어+동사'인지 확인한다.",
+    ],
+    misconception: "간접의문문에서 의문문 어순(의문사+동사+주어)을 그대로 써버리는 실수가 가장 흔하다.",
+    keypoint: "명사절 안에서는 항상 평서문 어순(주어+동사)을 유지한다는 것을 기억하자.",
+  },
+  adverbClause: {
+    steps: [
+      "부사절이 나타내는 의미 관계(시간/이유/조건/양보/목적/결과)를 먼저 파악한다.",
+      "%SUB% 규칙에 따라 그 의미에 맞는 접속사가 쓰였는지 확인한다.",
+      "시간·조건의 부사절 안에서는 미래를 현재시제로 표현하는 규칙이 지켜졌는지 확인한다.",
+    ],
+    misconception: "시간/조건 부사절 안에서 미래의 일인데도 will을 그대로 써버리는 실수가 흔하다.",
+    keypoint: "시간·조건의 부사절에서는 현재시제가 미래를 대신한다는 규칙을 항상 기억하자.",
+  },
+  conditional: {
+    steps: [
+      "가정하는 상황이 현재/미래의 실제 가능성인지, 가정법(비현실)인지 먼저 구분한다.",
+      "%SUB% 규칙에 따라 if절과 주절의 시제 조합이 올바른지 확인한다.",
+      "unless/otherwise 같은 조건 표현이라면 그 의미(부정 조건 등)에 맞게 쓰였는지 확인한다.",
+    ],
+    misconception: "직설법 조건문과 가정법을 혼동해 if절에 will을 쓰는 실수가 흔하다(직설법 조건문 if절엔 will 대신 현재시제).",
+    keypoint: "실제로 일어날 수 있는 일이면 직설법, 사실과 반대되는 가정이면 가정법이라는 것부터 구분하자.",
+  },
+  subjunctive: {
+    steps: [
+      "가정하는 시점이 현재(사실과 반대)인지 과거(사실과 반대)인지 먼저 확인한다.",
+      "%SUB% 규칙에 따라 if절과 주절의 동사 형태(과거/과거완료 + would+동사원형/have p.p.)가 짝이 맞는지 확인한다.",
+      "I wish나 as if 구문이라면 주절 시제 대비 종속절 시제가 한 단계 앞서 있는지 확인한다.",
+    ],
+    misconception: "가정법 과거(현재 사실 반대)와 가정법 과거완료(과거 사실 반대)의 시제 형태를 서로 바꿔 쓰는 실수가 흔하다.",
+    keypoint: "가정법은 '형태가 실제 시제보다 한 단계 과거로 간다'는 원칙만 기억하면 대부분 풀린다.",
+  },
+  comparison: {
+    steps: [
+      "비교하는 대상이 두 개인지 셋 이상인지 먼저 확인해 원급/비교급/최상급 중 무엇이 필요한지 판단한다.",
+      "%SUB% 규칙에 따라 형용사/부사의 비교 형태(-er/more, -est/most)가 올바른지 확인한다.",
+      "비교 대상끼리 문법적으로 대등한 형태로 짝지어졌는지 확인한다(병렬).",
+    ],
+    misconception: "비교 대상의 형태를 맞추지 않고 명사와 대명사, 동사와 명사를 그대로 비교해버리는 실수가 흔하다.",
+    keypoint: "비교 구문은 항상 '무엇과 무엇을 비교하는가'를 먼저 확인하고, 그 두 대상의 형태를 맞춰야 한다.",
+  },
+  agreement: {
+    steps: [
+      "문장의 진짜 주어(수식어를 걷어낸 핵심 명사)가 단수인지 복수인지 확인한다.",
+      "%SUB% 규칙에 따라 동사의 수(단수/복수 형태)가 주어와 일치하는지 확인한다.",
+      "주절과 종속절의 시제가 서로 자연스럽게 이어지는지 다시 확인한다.",
+    ],
+    misconception: "주어 바로 앞에 있는 명사(전치사구 안의 명사)를 진짜 주어로 착각해 동사 수를 잘못 맞추는 실수가 가장 흔하다.",
+    keypoint: "수식어구(전치사구, 관계사절)를 괄호로 묶어 걷어내고 남는 명사가 진짜 주어라는 것을 항상 확인하자.",
+  },
+  inversion: {
+    steps: [
+      "문장 맨 앞에 부정어, so/neither, 장소부사구 등 도치를 유발하는 표현이 있는지 확인한다.",
+      "%SUB% 규칙에 따라 주어와 동사(또는 조동사)의 순서가 올바르게 도치됐는지 확인한다.",
+      "일반동사가 쓰인 문장이라면 도치를 위해 do/does/did가 제대로 쓰였는지 확인한다.",
+    ],
+    misconception: "부정어가 문두에 나왔는데도 도치를 시키지 않고 평서문 어순을 그대로 두는 실수가 흔하다.",
+    keypoint: "문두에 나온 특정 표현(부정어·so/neither·장소부사구)은 반드시 주어-동사 도치를 동반한다는 것을 기억하자.",
+  },
+  emphasis: {
+    steps: [
+      "강조하려는 대상(주어/목적어/부사구 등)이 무엇인지 먼저 확인한다.",
+      "%SUB% 형태(it is ~ that 구문, do 강조)가 올바르게 쓰였는지 확인한다.",
+      "it ~ that 강조구문이라면, it과 that을 지워도 문장이 완전한지 확인해 강조구문이 맞는지 검증한다.",
+    ],
+    misconception: "it ~ that 강조구문을 가주어-진주어 구문과 혼동하는 경우가 많다.",
+    keypoint: "it과 that을 지웠을 때 완전한 문장이 남으면 강조구문, 안 남으면 가주어-진주어 구문이다.",
+  },
+  parallelism: {
+    steps: [
+      "접속사(등위/상관)로 연결된 두 개 이상의 요소가 무엇인지 확인한다.",
+      "%SUB% 규칙에 따라 연결된 요소들의 문법적 형태(품사/시제/구조)가 서로 대등한지 확인한다.",
+      "리스트 형태로 나열된 경우 마지막 항목까지 같은 패턴이 유지됐는지 확인한다.",
+    ],
+    misconception: "연결된 두 요소 중 하나만 형태를 바꿔서(예: to부정사와 동명사를 섞어) 병렬을 깨뜨리는 실수가 흔하다.",
+    keypoint: "and/or/but이나 상관접속사로 연결된 요소는 반드시 같은 문법 형태여야 한다.",
+  },
+  verbals: {
+    steps: [
+      "밑줄 친 단어가 부정사/동명사/분사 중 무엇으로 쓰였는지, 문장에서 어떤 역할을 하는지 확인한다.",
+      "%SUB% — 준동사가 만드는 의미 관계(능동/수동, 시제)가 문맥과 일치하는지 확인한다.",
+      "준동사구 안의 다른 요소(목적어, 수식어)와의 호응도 함께 확인한다.",
+    ],
+    misconception: "여러 준동사가 한 문장에 섞여 나올 때 각각을 따로 판단하지 않고 앞서 나온 형태에 이끌려 그대로 맞춰버리는 실수가 흔하다.",
+    keypoint: "준동사 문제는 밑줄 하나마다 독립적으로 '이 자리에 필요한 것이 부정사/동명사/분사 중 무엇인가'를 다시 판단해야 한다.",
+  },
+  etc: {
+    steps: [
+      "밑줄이나 빈칸 주변 문맥에서 어떤 문법 현상(생략/무생물 주어/삽입·동격)이 관련됐는지 먼저 판단한다.",
+      "%SUB% 규칙에 따라 생략되거나 삽입된 요소를 복원해 문장이 자연스러운지 확인한다.",
+      "문장 전체를 다시 읽어 의미가 매끄럽게 통하는지 최종 확인한다.",
+    ],
+    misconception: "생략된 부분을 알아채지 못하고 눈앞의 형태만으로 판단해 오류를 놓치는 경우가 많다.",
+    keypoint: "생략·삽입 구문은 생략된 부분을 직접 복원해보는 것이 가장 확실한 확인 방법이다.",
+  },
+};
+
+// reading questionType key → strategy group. Groups mirror QB.READING_QUESTION_TYPES' 32 keys
+// (services/questionBankService.js Group A/B/C) — every key there is covered by exactly one group.
+const READING_WRONG_NOTE_GROUPS = [
+  { keys: ["topic", "title", "mainIdea", "claim", "purpose"], label: "주제·제목·요지·주장 파악형", steps: [
+    "글의 도입부와 결론부에서 반복되는 핵심 어구를 찾아 필자가 말하려는 대상이 무엇인지 확인한다.",
+    "각 문단의 소재가 아니라 글 전체를 관통하는 하나의 메시지로 선택지를 좁혀 나간다.",
+    "선택지가 본문의 일부 소재만 다루거나(too narrow) 본문 범위를 벗어나는지(too broad) 확인해 제거한다.",
+  ], misconception: "본문에 나온 단어가 선택지에 그대로 있다는 이유만으로 정답으로 고르는 경우가 가장 흔하다 — 소재 일치가 곧 주제 일치는 아니다.",
+    keypoint: "주제·요지 문제는 '가장 많이 반복되는 단어'가 아니라 '글 전체를 하나로 묶는 메시지'를 찾는 문제다." },
+  { keys: ["contentMatch", "contentMismatch", "textComprehension", "detail"], label: "내용 일치/불일치·세부 내용형", steps: [
+    "선택지를 먼저 훑어 확인해야 할 핵심 정보(숫자, 고유명사, 사실 관계)를 파악한다.",
+    "본문에서 해당 정보가 언급된 위치를 찾아 선택지 문구와 하나하나 대조한다.",
+    "본문에 아예 언급되지 않은 내용인지, 언급됐지만 다르게 서술됐는지 구분한다.",
+  ], misconception: "본문의 표현을 그대로 옮긴 선택지라고 해서 내용까지 일치한다고 착각하는 경우가 많다 — 숫자나 조건이 미묘하게 바뀌어 있을 수 있다.",
+    keypoint: "일치/불일치 문제는 느낌이 아니라 본문 근거 문장을 직접 손가락으로 짚어 확인해야 하는 문제다." },
+  { keys: ["blank", "textBlank", "summaryCompletion", "summary"], label: "빈칸·요약문 완성형", steps: [
+    "빈칸 앞뒤 문장을 먼저 읽어 빈칸에 들어갈 내용의 논리적 방향(원인/결과/예시/재진술 등)을 예측한다.",
+    "글 전체의 주제·흐름 안에서 그 예측이 타당한지 문단 전체를 읽으며 확인한다.",
+    "선택지를 빈칸에 직접 넣어 앞뒤 문장과 논리적으로 자연스럽게 이어지는지 최종 확인한다.",
+  ], misconception: "빈칸 바로 앞뒤 문장만 보고 성급하게 답을 고른 뒤 글 전체 흐름과 안 맞는 경우를 놓치는 실수가 흔하다.",
+    keypoint: "빈칸 문제는 빈칸 주변만이 아니라 글 전체의 논리 구조 속에서 답을 찾아야 한다." },
+  { keys: ["sentenceInsertion", "order", "textOrder"], label: "문장 삽입·순서형", steps: [
+    "주어진 문장(또는 각 단락)에 있는 연결어·지시어(this, such, however 등)를 먼저 표시한다.",
+    "그 연결어·지시어가 가리키는 대상이 앞에 나와야 하는지 확인해 앞뒤 순서의 단서를 찾는다.",
+    "재구성한 순서대로 다시 읽어 논리적 흐름이 자연스럽게 이어지는지 확인한다.",
+  ], misconception: "단서 없이 내용만으로 순서를 짐작하는 경우가 흔하다 — 연결어·지시어·시간 표현 같은 명확한 단서를 근거로 삼아야 한다.",
+    keypoint: "순서·삽입 문제는 감이 아니라 '지시어가 가리키는 대상'과 '연결어가 요구하는 논리 관계'라는 명확한 근거로 푸는 문제다." },
+  { keys: ["irrelevantSentence"], label: "무관한 문장형", steps: [
+    "글 전체의 주제 문장(대개 도입부)을 먼저 확인한다.",
+    "각 문장이 그 주제를 뒷받침하는지, 아니면 다른 소재로 흘러가는지 하나씩 대조한다.",
+    "무관해 보이는 문장을 빼고 읽었을 때 글의 흐름이 더 자연스러운지 확인한다.",
+  ], misconception: "문장 자체는 문법적으로 멀쩡하고 관련 단어도 포함하고 있어서 무관한 문장임을 놓치는 경우가 많다.",
+    keypoint: "무관한 문장은 '단어'가 아니라 '글의 주제 전개 방향'과 어긋나는 문장이다." },
+  { keys: ["vocabulary", "contextualMeaning", "vocabTransform", "englishDefinition"], label: "어휘형", steps: [
+    "밑줄 친 단어(구)가 포함된 문장을 문맥 속에서 다시 읽어 그 단어가 나타내는 의미를 추측한다.",
+    "선택지 단어를 하나씩 그 자리에 대입해 문맥상 자연스러운지 확인한다.",
+    "기본 의미가 아니라 그 문맥에서만 통하는 특수한 의미(다의어)는 아닌지 확인한다.",
+  ], misconception: "단어의 가장 흔한 뜻(사전 1번 의미)만 알고 있어서 문맥상 다른 의미로 쓰인 경우를 놓치는 실수가 흔하다.",
+    keypoint: "어휘 문제는 단어 자체의 뜻이 아니라 '그 문장 안에서' 통하는 뜻을 찾는 문제다." },
+  { keys: ["referentInference", "inference", "authorAttitude", "hardInference"], label: "추론형", steps: [
+    "직접 언급되지 않았지만 본문 근거로부터 논리적으로 이끌어낼 수 있는 내용이 무엇인지 확인한다.",
+    "선택지가 본문에 실제로 있는 근거에서 출발하는지, 근거 없이 비약하는지 구분한다.",
+    "지나치게 확대해석하거나(overinterpretation) 본문과 반대로 해석하지 않았는지 확인한다.",
+  ], misconception: "본문에 없는 내용을 그럴듯하다는 이유로 답으로 고르는 '과잉 추론'이 가장 흔한 실수다.",
+    keypoint: "추론 문제의 정답도 결국 본문 안에 명확한 근거가 있어야 한다 — 근거 없는 상상은 오답이다." },
+  { keys: ["longPassage", "complex"], label: "장문·복합 문항형", steps: [
+    "긴 지문을 문단 단위로 끊어 각 문단의 역할(도입/전개/전환/결론)을 표시하며 읽는다.",
+    "여러 문항이 묻는 정보가 서로 다른 문단에 흩어져 있으므로, 문항마다 근거 문단을 따로 찾는다.",
+    "한 문항의 답을 다른 문항의 단서로 활용해(교차 확인) 전체 지문 이해를 보완한다.",
+  ], misconception: "지문이 길다는 이유로 급하게 훑어 읽어 세부 정보를 놓치는 경우가 많다.",
+    keypoint: "장문·복합 문항은 지문을 한 번에 다 이해하려 하지 말고, 문항별로 필요한 문단만 정확히 찾아가는 것이 효율적이다." },
+  { keys: ["textGrammar", "sentenceTransform", "textVariation", "grammarInContext"], label: "본문 어법·문장 변형형", steps: [
+    "밑줄 친 부분이 문장 안에서 어떤 문법 요소(동사 형태, 수식 관계 등)인지 먼저 확인한다.",
+    "그 요소가 문장의 나머지 부분과 문법적으로 호응하는지(수 일치, 시제, 능동/수동 등) 확인한다.",
+    "본문 전체 문맥과도 자연스럽게 이어지는지 최종 확인한다.",
+  ], misconception: "본문 내용 이해에만 집중해 밑줄 부분의 문법적 정확성을 확인하지 않고 넘어가는 경우가 흔하다.",
+    keypoint: "본문 어법 문제는 내용이 아니라 그 문장 하나의 문법 구조를 정확히 분석하는 문제다." },
+  { keys: ["shortAnswer"], label: "서술형", steps: [
+    "질문이 요구하는 것이 본문 내용의 요약인지, 특정 정보의 인용인지, 자신의 표현으로 바꿔 쓰는 것인지 정확히 확인한다.",
+    "본문에서 답의 근거가 되는 문장(구)을 정확히 찾아 표시한다.",
+    "요구된 조건(단어 수, 형식, 특정 표현 사용 여부)을 지켜 문장으로 완성한다.",
+  ], misconception: "본문 문장을 그대로 베껴 써서 요구된 조건(자신의 언어로 표현하기 등)을 지키지 않는 경우가 흔하다.",
+    keypoint: "서술형은 '무엇을 답해야 하는가'와 '어떤 조건으로 답해야 하는가'를 문제에서 정확히 확인하는 것이 절반이다." },
+];
+
+const WRONG_NOTE_FALLBACK_STRATEGY = {
+  steps: [
+    "문제가 정확히 무엇을 묻는지(지시문)부터 다시 확인한다.",
+    "본문/보기에서 그 질문과 직접 관련된 근거를 찾아 표시한다.",
+    "찾은 근거와 선택지(또는 자신의 답)를 하나씩 대조해 최종 확인한다.",
+  ],
+  misconception: "지시문을 끝까지 읽지 않고 익숙한 패턴으로 성급하게 답을 고르는 경우가 흔하다.",
+  keypoint: "모든 문제 풀이는 결국 '근거를 찾아 대조하는' 과정이라는 것을 기억하자.",
+};
+
+function wrongNoteCategoryInfo(qDoc) {
+  const QB = window.SarahServices.questionBankService;
+  if (qDoc.mainCategory) {
+    const { main, sub } = qbCategoryLabel(QB.GRAMMAR_TAXONOMY, qDoc.mainCategory, qDoc.subCategory);
+    const strat = GRAMMAR_WRONG_NOTE_STRATEGY[qDoc.mainCategory] || WRONG_NOTE_FALLBACK_STRATEGY;
+    const steps = strat.steps.map((s) => s.replace(/%SUB%/g, sub || main));
+    return { label: sub ? `${main} · ${sub}` : main, steps, misconception: strat.misconception, keypoint: strat.keypoint };
+  }
+  const rt = (QB.READING_QUESTION_TYPES || []).find((t) => t.key === qDoc.questionType);
+  const group = READING_WRONG_NOTE_GROUPS.find((g) => g.keys.includes(qDoc.questionType));
+  const strat = group || WRONG_NOTE_FALLBACK_STRATEGY;
+  return { label: rt ? rt.label : (qDoc.questionType || "독해"), steps: strat.steps, misconception: strat.misconception, keypoint: strat.keypoint };
+}
+
+function wrongNoteSourceLine(paper, studentName, suffix) {
+  const parts = [paper.title || "제목 없는 시험지", paper.grade || "학년 미지정", studentName].map((s) => esEscapeHtml(String(s || "")));
+  return `출처: ${parts.join(" · ")}${suffix ? " — " + esEscapeHtml(suffix) : ""}`;
+}
+
+function wrongNoteCardHeader(displayIndex, paper, studentName, catLabel, suffix) {
+  const num = String(displayIndex + 1).padStart(2, "0");
+  return `<div class="card-header">
+    <div class="card-badge">${num}</div>
+    <div class="card-meta">
+      <div class="card-source">${wrongNoteSourceLine(paper, studentName, suffix)}</div>
+      <span class="card-type-pill">${esEscapeHtml(catLabel)}</span>
+    </div>
+  </div>`;
+}
+
+function wrongNotePage(bodyHtml, isLast) {
+  const brk = isLast ? "page-break-after:auto;break-after:auto;" : "page-break-after:always;break-after:page;";
+  return `<div class="sheet-page" style="${brk}">${bodyHtml}</div>`;
+}
+function wrongNoteDoc(title, pagesHtml) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(title)}</title><style>${WRONG_NOTE_CSS}</style></head><body>${pagesHtml}</body></html>`;
+}
+
+// "오답 문제만 인쇄" — no answers, no explanations, just the stem/choices for re-practice.
+function buildWrongOnlyItemHtml(item, EP, displayIndex, paper, studentName) {
+  const { qDoc, qref, passageText } = item;
+  const cat = wrongNoteCategoryInfo(qDoc);
+  const isMc = qDoc.answerFormat === "mc";
+  let body = wrongNoteCardHeader(displayIndex, paper, studentName, cat.label, "오답 다시 풀기");
+  body += `<div class="passage-box">`;
+  if (passageText) body += `<div class="stem-block" style="padding-bottom:12px;border-bottom:1px dashed #ccc;">${esEscapeHtml(passageText).replace(/\n/g, "<br/>")}</div>`;
+  body += `<div class="stem-block">${renderQuestionStemHtml(qDoc.questionText)}</div>`;
+  if (isMc) {
+    const { displayChoices } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
+    body += `<div class="plain-choices">` + displayChoices.map((c, i) => `<div class="choice-row">${ES_CIRC[i] || (i + 1) + ")"} ${esEscapeHtml(c)}</div>`).join("") + `</div>`;
+  }
+  body += `</div>`;
+  if (!isMc) {
+    body += `<div style="font-size:12.5px;color:#5B6270;">내 답:</div><div class="answer-blank"></div>`;
+  }
+  return body;
+}
+function buildWrongOnlyPrintHtml(wrongItems, EP, paper, studentName) {
+  const pages = wrongItems.map((item, i) => wrongNotePage(buildWrongOnlyItemHtml(item, EP, i, paper, studentName), i === wrongItems.length - 1));
+  return wrongNoteDoc(`${paper.title || "시험지"} - 오답 다시 풀기`, pages.join(""));
+}
+
+// "오답 문제 + 해설 인쇄" — full house-style note: strategy → passage/choices (wrong choices
+// marked) → student-vs-correct comparison → per-choice (or per-alt/per-part) explain blocks →
+// misconception box → keypoint box. One page per question.
+function buildWrongExplainItemHtml(item, EP, displayIndex, paper, studentName) {
+  const { qDoc, qref, result, passageText } = item;
+  const cat = wrongNoteCategoryInfo(qDoc);
+  const isMc = qDoc.answerFormat === "mc";
+
+  const strategyHtml = `<div class="strategy-box">
+    <div class="st-title">🧭 유형별 풀이 전략 — ${esEscapeHtml(cat.label)}</div>
+    ${cat.steps.map((s, i) => `<div class="st-step"><b>STEP ${i + 1}.</b> ${esEscapeHtml(s)}</div>`).join("")}
+  </div>`;
+
+  let passageBoxHtml = `<div class="passage-box">`;
+  if (passageText) passageBoxHtml += `<div class="stem-block" style="padding-bottom:12px;border-bottom:1px dashed #ccc;">${esEscapeHtml(passageText).replace(/\n/g, "<br/>")}</div>`;
+  passageBoxHtml += `<div class="stem-block">${renderQuestionStemHtml(qDoc.questionText)}</div>`;
+
+  let compareHtml, ansBadgeHtml, explainBlocksHtml;
+
+  if (isMc) {
+    const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
+    const hasAnswer = result.selectedAnswer !== null && result.selectedAnswer !== undefined && result.selectedAnswer !== "";
+    const studentDisplayIdx = hasAnswer ? originalToDisplayIndex(qref.choiceDisplayOrder, result.selectedAnswer) : -1;
+
+    passageBoxHtml += `<div class="plain-choices">` + displayChoices.map((c, i) => {
+      const isCorrect = i === displayAnswerIndex;
+      return `<div class="choice-row"><span class="${isCorrect ? "" : "wrong-choice"}">${ES_CIRC[i] || (i + 1) + ")"} ${esEscapeHtml(c)}</span></div>`;
+    }).join("") + `</div>`;
+
+    const studentLabel = studentDisplayIdx >= 0 ? (ES_CIRC[studentDisplayIdx] || (studentDisplayIdx + 1)) : "미응답";
+    const correctLabel = ES_CIRC[displayAnswerIndex] || (displayAnswerIndex + 1);
+    compareHtml = `<div class="compare-row"><div><span class="lbl">내 답</span><b style="color:var(--danger)">${studentLabel}</b></div><div><span class="lbl">정답</span><b>${correctLabel}</b></div></div>`;
+    ansBadgeHtml = `<div class="ans-badge">정답 ${correctLabel}</div>`;
+
+    explainBlocksHtml = displayChoices.map((c, i) => {
+      const isCorrect = i === displayAnswerIndex;
+      const isStudentWrongPick = i === studentDisplayIdx && !isCorrect;
+      const emphasize = isCorrect || isStudentWrongPick;
+      const originalIdx = displayIndexToOriginal(qref.choiceDisplayOrder, i);
+      const bodyText = isCorrect
+        ? (qDoc.explanation || "정답인 이유가 별도로 등록되지 않았어요.")
+        : ((qDoc.wrongChoiceExplanations || [])[originalIdx] || "이 보기가 오답인 이유가 별도로 등록되지 않았어요.");
+      const headLabel = `${ES_CIRC[i] || (i + 1) + ")"}${isCorrect ? " (정답)" : (isStudentWrongPick ? " (내가 고른 답)" : "")}`;
+      return `<div class="explain-block${emphasize ? " emphasis" : ""}"><div class="eb-head">${headLabel}</div><div class="eb-body">${esEscapeHtml(bodyText)}</div></div>`;
+    }).join("");
+  } else {
+    // subjective — alts(복수 정답 인정)/parts(소문항) are defensive: current schema never sets
+    // them (see comment above WRONG_NOTE_CSS), so this normally falls through to the plain-else
+    // single-answer branch below.
+    const hasAnswer = result.selectedAnswer !== null && result.selectedAnswer !== undefined && result.selectedAnswer !== "";
+    const studentAnswerText = hasAnswer ? String(result.selectedAnswer) : "미응답";
+    const correctAnswerText = String((result.correctAnswer != null ? result.correctAnswer : qDoc.answer) || "");
+    compareHtml = `<div class="compare-row"><div><span class="lbl">내 답</span><b style="color:var(--danger)">${esEscapeHtml(studentAnswerText)}</b></div><div><span class="lbl">정답</span><b>${esEscapeHtml(correctAnswerText)}</b></div></div>`;
+    ansBadgeHtml = `<div class="ans-badge">정답 ${esEscapeHtml(correctAnswerText)}</div>`;
+
+    if (Array.isArray(qDoc.parts) && qDoc.parts.length) {
+      explainBlocksHtml = qDoc.parts.map((p, i) => {
+        const text = [p.text, p.answer ? `정답: ${p.answer}` : "", p.explanation || ""].filter(Boolean).join(" — ");
+        return `<div class="explain-block"><div class="eb-head">소문항 ${esEscapeHtml(p.label || String(i + 1))}</div><div class="eb-body">${esEscapeHtml(text)}</div></div>`;
+      }).join("");
+    } else if (Array.isArray(qDoc.alts) && qDoc.alts.length) {
+      const altList = [qDoc.answer, ...qDoc.alts].filter(Boolean);
+      explainBlocksHtml = altList.map((a, i) => {
+        const altObj = typeof a === "object" && a ? a : { answer: a };
+        const text = altObj.explanation || qDoc.explanation || "해설이 등록되지 않았어요.";
+        return `<div class="explain-block${i === 0 ? " emphasis" : ""}"><div class="eb-head">정답 ${i + 1}${i === 0 ? " (대표)" : ""} — ${esEscapeHtml(String(altObj.answer || ""))}</div><div class="eb-body">${esEscapeHtml(text)}</div></div>`;
+      }).join("");
+    } else {
+      explainBlocksHtml = `<div class="explain-block emphasis"><div class="eb-head">정답 해설</div><div class="eb-body">${esEscapeHtml(qDoc.explanation || "해설이 등록되지 않았어요.")}</div></div>`;
+    }
+  }
+
+  passageBoxHtml += `</div>`;
+  const misconceptionHtml = `<div class="misconception-box"><div class="mb-title">⚠️ 흔한 착각</div><div class="mb-body">${esEscapeHtml(cat.misconception)}</div></div>`;
+  const keypointHtml = `<div class="keypoint-box"><div class="kb-title">🔑 핵심 포인트</div><div class="kb-body">${esEscapeHtml(cat.keypoint)}</div></div>`;
+
+  return wrongNoteCardHeader(displayIndex, paper, studentName, cat.label, "") + strategyHtml + passageBoxHtml + compareHtml + ansBadgeHtml + explainBlocksHtml + misconceptionHtml + keypointHtml;
+}
+function buildWrongExplainPrintHtml(wrongItems, EP, paper, studentName) {
+  const pages = wrongItems.map((item, i) => wrongNotePage(buildWrongExplainItemHtml(item, EP, i, paper, studentName), i === wrongItems.length - 1));
+  return wrongNoteDoc(`${paper.title || "시험지"} - 오답노트`, pages.join(""));
+}
+
 function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
   if (!qDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
   const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
@@ -13158,6 +13627,21 @@ function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questio
   const gradedDenominator = total - (attempt.ungradedCount || 0);
   const accuracy = gradedDenominator > 0 ? Math.round(((attempt.correctCount || 0) / gradedDenominator) * 100) : 0;
 
+  // 오답 인쇄 두 버튼(아래)을 위한 오답 목록 — attempt.results[qId].correct === false인 것만.
+  // computeGrading()상 subjective는 항상 correct:null(미채점)이라 오늘 기준 실제로는 MC만 걸린다.
+  const wrongItems = [];
+  (paper.sections || []).forEach((s) => {
+    const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
+    const passageText = passage ? (passage.passageText || passage.originalText || "") : "";
+    (s.questionRefs || []).forEach((ref) => {
+      const qDoc = questionsById[ref.questionId];
+      const result = (attempt.results || {})[ref.questionId];
+      if (qDoc && result && result.correct === false) {
+        wrongItems.push({ qDoc, qref: ref, result, passageText });
+      }
+    });
+  });
+
   let qNum = 0;
   return html`
     <div>
@@ -13183,6 +13667,18 @@ function ExamResultDetail({ EP, assignment, paper, attempt, studentName, questio
           <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#8A6414" }}>${attempt.ungradedCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>미채점</div></div>
         </div>
       <//>
+
+      <div style=${{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+        <${Button} variant="ghost" disabled=${wrongItems.length === 0} style=${{ fontSize: 12.5, padding: "8px 14px" }}
+          onClick=${() => esOpenPrintWindow(buildWrongOnlyPrintHtml(wrongItems, EP, paper, studentName))}>
+          📝 오답 문제만 인쇄
+        <//>
+        <${Button} variant="ghost" disabled=${wrongItems.length === 0} style=${{ fontSize: 12.5, padding: "8px 14px" }}
+          onClick=${() => esOpenPrintWindow(buildWrongExplainPrintHtml(wrongItems, EP, paper, studentName))}>
+          📘 오답 문제 + 해설 인쇄
+        <//>
+        ${wrongItems.length === 0 && html`<span style=${{ fontSize: 12, color: C.slate }}>오답이 없습니다</span>`}
+      </div>
 
       <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 10 }}>문제별 결과</div>
       ${(paper.sections || []).map((s) => {
