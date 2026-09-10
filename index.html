@@ -13764,7 +13764,8 @@ function ReviewWorksheetGenerator({ EP, AS, QB, paper, wrongItems, grammarQuesti
   `;
 }
 
-function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
+function ExamResultQuestionCard({ EP, index, qDoc, qref, result, onGrade }) {
+  const [grading, setGrading] = useState(false);
   if (!qDoc) return html`<div style=${{ fontSize: 12, color: C.danger }}>문제를 찾을 수 없어요 (${qref.questionId})</div>`;
   const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qref.choiceDisplayOrder);
   const isMc = qDoc.answerFormat === "mc";
@@ -13773,13 +13774,21 @@ function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
 
   let resultBadge;
   if (!isMc) {
-    resultBadge = html`<span style=${{ color: "#8A6414", fontWeight: 700 }}>🟡 미채점</span>`;
+    if (!result || result.correct === null) resultBadge = html`<span style=${{ color: "#8A6414", fontWeight: 700 }}>🟡 채점 대기</span>`;
+    else if (result.correct) resultBadge = html`<span style=${{ color: "#2E6B44", fontWeight: 700 }}>✓ 정답 처리됨</span>`;
+    else resultBadge = html`<span style=${{ color: C.danger, fontWeight: 700 }}>✕ 오답 처리됨</span>`;
   } else if (!hasAnswer) {
     resultBadge = html`<span style=${{ color: C.slate, fontWeight: 700 }}>미응답</span>`;
   } else if (result.correct) {
     resultBadge = html`<span style=${{ color: "#2E6B44", fontWeight: 700 }}>✓ 정답</span>`;
   } else {
     resultBadge = html`<span style=${{ color: C.danger, fontWeight: 700 }}>✕ 오답</span>`;
+  }
+
+  async function grade(isCorrect) {
+    if (!onGrade || grading) return;
+    setGrading(true);
+    try { await onGrade(qref.questionId, isCorrect); } finally { setGrading(false); }
   }
 
   return html`
@@ -13802,8 +13811,20 @@ function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
         <div style=${{ marginBottom: 8 }}>
           <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>학생의 답</div>
           <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap", background: C.ivory, borderRadius: 4, padding: "8px 10px", marginBottom: 8 }}>${hasAnswer ? result.selectedAnswer : "미응답"}</div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>정답</div>
-          <div style=${{ fontSize: 12.5, color: C.slate }}>교사 채점 필요</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>모범답안</div>
+          <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap", marginBottom: 10 }}>${qDoc.answer || "등록된 모범답안이 없어요."}</div>
+          ${onGrade && html`
+            <div style=${{ display: "flex", gap: 8 }}>
+              <button type="button" disabled=${grading} onClick=${() => grade(true)}
+                style=${{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, border: "1px solid #2E6B44", background: result && result.correct === true ? "#2E6B44" : "#fff", color: result && result.correct === true ? "#fff" : "#2E6B44", cursor: grading ? "default" : "pointer", opacity: grading ? 0.6 : 1 }}>
+                ✓ 정답 처리
+              </button>
+              <button type="button" disabled=${grading} onClick=${() => grade(false)}
+                style=${{ fontSize: 11.5, fontWeight: 700, padding: "5px 12px", borderRadius: 20, border: `1px solid ${C.danger}`, background: result && result.correct === false ? C.danger : "#fff", color: result && result.correct === false ? "#fff" : C.danger, cursor: grading ? "default" : "pointer", opacity: grading ? 0.6 : 1 }}>
+                ✕ 오답 처리
+              </button>
+            </div>
+          `}
         </div>
       `}
       <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>
@@ -13814,20 +13835,38 @@ function ExamResultQuestionCard({ EP, index, qDoc, qref, result }) {
   `;
 }
 
-function ExamResultDetail({ EP, AS, QB, grammarQuestions, assignment, paper, attempt, studentName, questionsById, passagesById, onBack }) {
-  const total = attempt.totalQuestions || 0;
-  const gradedDenominator = total - (attempt.ungradedCount || 0);
-  const accuracy = gradedDenominator > 0 ? Math.round(((attempt.correctCount || 0) / gradedDenominator) * 100) : 0;
+function ExamResultDetail({ EP, AS, AT, QB, grammarQuestions, assignment, paper, attempt, studentName, questionsById, passagesById, updateData, onBack }) {
+  // 서술형 수동 채점("✓ 정답 처리"/"✕ 오답 처리") 직후 점수 요약/오답 목록/배지가 새로고침 없이
+  // 바로 반영되도록 attempt를 로컬 state로 들고 있는다 — prop 자체(attempt)는 이 화면을 연 시점의
+  // 스냅샷이라 채점 후에도 안 바뀐다. assignment/attemptId가 바뀌면(다른 학생 결과로 이동) 새
+  // 스냅샷으로 다시 맞춘다.
+  const [liveAttempt, setLiveAttempt] = useState(attempt);
+  useEffect(() => { setLiveAttempt(attempt); }, [attempt.id]);
+
+  async function handleGrade(questionId, isCorrect) {
+    try {
+      const updated = await AT.gradeSubjectiveAnswer(liveAttempt, questionId, isCorrect);
+      setLiveAttempt(updated);
+      if (updateData) syncStudentExamSummary(assignment.studentId, updateData).catch(() => {});
+    } catch (e) {
+      alert("채점 실패: " + String(e.message || e));
+    }
+  }
+
+  const total = liveAttempt.totalQuestions || 0;
+  const gradedDenominator = total - (liveAttempt.ungradedCount || 0);
+  const accuracy = gradedDenominator > 0 ? Math.round(((liveAttempt.correctCount || 0) / gradedDenominator) * 100) : 0;
 
   // 오답 인쇄 두 버튼(아래)을 위한 오답 목록 — attempt.results[qId].correct === false인 것만.
-  // computeGrading()상 subjective는 항상 correct:null(미채점)이라 오늘 기준 실제로는 MC만 걸린다.
+  // 서술형도 수동 채점으로 오답 처리되면(위 handleGrade) 이제 여기 포함된다 — buildWrongOnlyItemHtml
+  // /buildWrongExplainItemHtml의 subjective 분기는 이미 이 경우를 대비해 만들어져 있었다.
   const wrongItems = [];
   (paper.sections || []).forEach((s) => {
     const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
     const passageText = passage ? (passage.passageText || passage.originalText || "") : "";
     (s.questionRefs || []).forEach((ref) => {
       const qDoc = questionsById[ref.questionId];
-      const result = (attempt.results || {})[ref.questionId];
+      const result = (liveAttempt.results || {})[ref.questionId];
       if (qDoc && result && result.correct === false) {
         wrongItems.push({ qDoc, qref: ref, result, passageText });
       }
@@ -13848,15 +13887,15 @@ function ExamResultDetail({ EP, AS, QB, grammarQuestions, assignment, paper, att
         <div style=${{ display: "grid", gridTemplateColumns: "auto 1fr", rowGap: 7, columnGap: 14, fontSize: 12.5, marginBottom: 14 }}>
           <div style=${{ color: C.slate }}>학년</div><div style=${{ color: C.ink }}>${paper.grade || "미지정"}</div>
           <div style=${{ color: C.slate }}>배정일</div><div style=${{ color: C.ink }}>${fmtDateTime(assignment.assignedAt)}</div>
-          <div style=${{ color: C.slate }}>응시 시작</div><div style=${{ color: C.ink }}>${attempt.startedAt ? fmtDateTime(attempt.startedAt) : "-"}</div>
-          <div style=${{ color: C.slate }}>제출일</div><div style=${{ color: C.ink }}>${attempt.submittedAt ? fmtDateTime(attempt.submittedAt) : "-"}</div>
+          <div style=${{ color: C.slate }}>응시 시작</div><div style=${{ color: C.ink }}>${liveAttempt.startedAt ? fmtDateTime(liveAttempt.startedAt) : "-"}</div>
+          <div style=${{ color: C.slate }}>제출일</div><div style=${{ color: C.ink }}>${liveAttempt.submittedAt ? fmtDateTime(liveAttempt.submittedAt) : "-"}</div>
         </div>
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10, textAlign: "center", borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
-          <div><div style=${{ fontSize: 22, ...serif, color: C.gold }}>${attempt.score}<span style=${{ fontSize: 13, color: C.slate }}> / ${total}</span></div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>점수</div></div>
+          <div><div style=${{ fontSize: 22, ...serif, color: C.gold }}>${liveAttempt.score}<span style=${{ fontSize: 13, color: C.slate }}> / ${total}</span></div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>점수</div></div>
           <div><div style=${{ fontSize: 22, ...serif, color: C.navy }}>${accuracy}%</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>정답률</div></div>
-          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#2E6B44" }}>${attempt.correctCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>정답</div></div>
-          <div><div style=${{ fontSize: 18, fontWeight: 700, color: C.danger }}>${attempt.wrongCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>오답</div></div>
-          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#8A6414" }}>${attempt.ungradedCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>미채점</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#2E6B44" }}>${liveAttempt.correctCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>정답</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: C.danger }}>${liveAttempt.wrongCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>오답</div></div>
+          <div><div style=${{ fontSize: 18, fontWeight: 700, color: "#8A6414" }}>${liveAttempt.ungradedCount || 0}</div><div style=${{ fontSize: 10.5, color: C.slate, marginTop: 2 }}>미채점</div></div>
         </div>
       <//>
 
@@ -13890,7 +13929,7 @@ function ExamResultDetail({ EP, AS, QB, grammarQuestions, assignment, paper, att
             ${(s.questionRefs || []).map((ref) => {
               const displayIndex = qNum;
               qNum += 1;
-              return html`<${ExamResultQuestionCard} key=${ref.questionId + displayIndex} EP=${EP} index=${displayIndex} qDoc=${questionsById[ref.questionId]} qref=${ref} result=${(attempt.results || {})[ref.questionId]} />`;
+              return html`<${ExamResultQuestionCard} key=${ref.questionId + displayIndex} EP=${EP} index=${displayIndex} qDoc=${questionsById[ref.questionId]} qref=${ref} result=${(liveAttempt.results || {})[ref.questionId]} onGrade=${handleGrade} />`;
             })}
           </div>
         `;
@@ -13978,10 +14017,10 @@ function ExamAssignmentManager({ roster, updateData }) {
   const selectedAttempt = selected && selected.attemptId ? attemptById[selected.attemptId] : null;
 
   if (view === "result" && selected && selectedAttempt) {
-    return html`<${ExamResultDetail} EP=${EP} AS=${AS} QB=${QB} grammarQuestions=${grammarQuestions}
+    return html`<${ExamResultDetail} EP=${EP} AS=${AS} AT=${AT} QB=${QB} grammarQuestions=${grammarQuestions}
       assignment=${selected} paper=${paperById[selected.examPaperId]}
       attempt=${selectedAttempt} studentName=${studentNameById[selected.studentId] || selected.studentId}
-      questionsById=${questionsById} passagesById=${passagesById}
+      questionsById=${questionsById} passagesById=${passagesById} updateData=${updateData}
       onBack=${() => setView("detail")} />`;
   }
 

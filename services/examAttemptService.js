@@ -145,6 +145,30 @@ window.SarahServices = window.SarahServices || {};
     return graded;
   }
 
+  // Manual grading for subjective answers — the "future teacher manual-grading UI" this file's
+  // header comment always said computeGrading() was deferring to (subjective is never auto-graded,
+  // no AI call, no free-text matching, CLAUDE.md API cost policy). Only ever flips one
+  // `results[qId].correct` from null (or a previous manual grade) to true/false and recomputes the
+  // aggregate counts from the full results map — MC entries are untouched (still machine-graded,
+  // this never lets a teacher override an MC auto-grade). Callable on a GRADED attempt only (there's
+  // nothing to grade before submission).
+  async function gradeSubjectiveAnswer(attempt, questionId, isCorrect) {
+    if (attempt.status !== "GRADED") throw new Error("제출·채점된 시험만 직접 채점할 수 있어요.");
+    const existing = (attempt.results || {})[questionId];
+    if (!existing || existing.answerFormat !== "subjective") throw new Error("서술형 문항만 직접 채점할 수 있어요.");
+    const results = { ...attempt.results, [questionId]: { ...existing, correct: !!isCorrect } };
+    let correctCount = 0, wrongCount = 0, ungradedCount = 0;
+    Object.values(results).forEach((r) => {
+      if (r.correct === null) ungradedCount += 1;
+      else if (r.correct) correctCount += 1;
+      else wrongCount += 1;
+    });
+    const now = Date.now();
+    const patch = { results, correctCount, wrongCount, ungradedCount, score: correctCount, updatedAt: now };
+    await setDocAt(ATTEMPTS_COLLECTION, attempt.id, patch, { merge: true });
+    return { ...attempt, ...patch };
+  }
+
   // §12 — "이 문제가 어느 시험지/학생에게 언제 나갔고 언제/몇 점으로 응시됐는가"를 examAttempts/
   // examAssignments/examPapers 세 컬렉션을 조합해 조회. 별도 이력 컬렉션은 만들지 않는다(지시사항 그대로).
   async function getQuestionUsageHistory(questionId) {
@@ -190,6 +214,7 @@ window.SarahServices = window.SarahServices || {};
     saveAnswer,
     submitAttempt,
     gradeAttempt,
+    gradeSubjectiveAnswer,
     computeGrading,
     getAttempt,
     listStudentAttempts,
