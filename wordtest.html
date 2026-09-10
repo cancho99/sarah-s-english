@@ -176,7 +176,7 @@
   .sheet-actions{text-align:center;margin-bottom:18px;}
 
   .sheet-page{
-    background:var(--ivory);border:1px solid #e3dcc7;padding:46px 50px;
+    background:#fff;border:1px solid #e3dcc7;padding:46px 50px;
     margin:0 auto 34px;max-width:720px;font-family:Georgia,'Nanum Myeongjo',serif;color:var(--charcoal);
   }
   .sheet-rule{border:none;border-top:1px solid var(--gold-soft);margin:18px 0;}
@@ -193,18 +193,26 @@
   .section-heading span{font-size:15px;letter-spacing:1px;color:var(--charcoal);font-weight:bold;}
 
   ol.qlist{list-style:none;padding:0;margin:0;}
-  ol.qlist li{display:grid;grid-template-columns:28px 1fr 92px;align-items:start;column-gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;break-inside:avoid;}
+  ol.qlist li{display:grid;grid-template-columns:28px 1fr 115px;align-items:start;column-gap:10px;padding:9px 0;border-bottom:1px dotted #ddd3b8;font-size:14.5px;break-inside:avoid;}
   .qnum{color:var(--gold);font-weight:bold;}
   .qprompt{min-width:0;overflow-wrap:normal;}
   .qblank{align-self:end;border-bottom:1px solid var(--slate);height:16px;margin-bottom:2px;}
-  .qlist-2col{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;}
-  .qlist-2col ol.qlist{flex:1 1 280px;min-width:0;margin-bottom:18px;}
+  .qlist-2col{display:flex;gap:32px;align-items:flex-start;}
+  .qlist-2col ol.qlist{flex:1 1 0;min-width:0;margin-bottom:0;}
 
   .answer-box{border:1px solid var(--gold-soft);border-radius:6px;background:#fff9ec;padding:20px 24px;}
   .answer-box .a-item{display:inline-block;width:49%;font-size:13.5px;margin-bottom:10px;vertical-align:top;}
   .answer-box .a-num{color:var(--gold);font-weight:bold;margin-right:4px;}
+  .answer-cols{display:flex;gap:32px;align-items:flex-start;}
+  .answer-cols .a-col{flex:1 1 0;min-width:0;}
+  .answer-cols .a-item{display:block;width:100%;font-size:13.5px;margin-bottom:10px;}
 
   .page-break{page-break-before:always;}
+
+  @page{
+    size:A4;
+    margin:12mm;
+  }
 
   @media print{
     body *{visibility:hidden;}
@@ -486,6 +494,10 @@ function renderAll(){
       <div class="toggle-row">
         <input type="checkbox" id="twoColumnLayout">
         <label for="twoColumnLayout">인쇄 시 2단(2열) 레이아웃으로 배치</label>
+      </div>
+      <div class="row" style="margin:-8px 0 20px;">
+        <label for="perPageInput" style="font-size:13px;color:var(--muted);">2단 레이아웃일 때 페이지당 문항 수:</label>
+        <input type="number" id="perPageInput" min="1" value="40" style="width:80px;padding:9px 12px;border:1px solid var(--gray-rule);border-radius:6px;font-size:13.5px;">
       </div>
 
       <div class="toggle-row">
@@ -869,47 +881,116 @@ function generateSheet(book){
     ? 'Ⅰ. 다음 영단어의 뜻을, 다음 뜻의 영단어를 각각 쓰시오'
     : (fmt === 'e2k' ? 'Ⅰ. 다음 영단어의 뜻을 쓰시오' : 'Ⅰ. 다음 뜻에 해당하는 영단어를 쓰시오');
 
-  const qItems = words.map((w, idx) => {
+  const items = words.map((w, idx) => {
     const prompt = directions[idx] === 'e2k' ? w.en : w.ko;
-    return '<li><span class="qnum">' + (idx+1) + '.</span><span class="qprompt">' + escapeHtml(prompt) + '</span><span class="qblank"></span></li>';
+    const answer = directions[idx] === 'e2k' ? w.ko : w.en;
+    return { num: idx + 1, prompt, answer };
   });
-  let qSectionHtml;
-  if (twoCol) {
-    const half = Math.ceil(qItems.length / 2);
-    const left = qItems.slice(0, half).join('');
-    const right = qItems.slice(half).join('');
-    qSectionHtml = '<div class="qlist-2col"><ol class="qlist">' + left + '</ol><ol class="qlist">' + right + '</ol></div>';
-  } else {
-    qSectionHtml = '<ol class="qlist">' + qItems.join('') + '</ol>';
-  }
 
-  let answerHtml = '';
-  words.forEach((w, idx) => {
-    const prompt = directions[idx] === 'e2k' ? w.en : w.ko;
-    const ans = directions[idx] === 'e2k' ? w.ko : w.en;
-    answerHtml += '<span class="a-item"><span class="a-num">' + (idx+1) + '.</span>' + escapeHtml(prompt) + ' → ' + escapeHtml(ans) + '</span>';
-  });
+  const meta = { book, dayLabel, sectionTitle, totalCount: items.length };
+
+  let bodyHtml;
+  if (twoCol) {
+    let perPage = parseInt(document.getElementById('perPageInput').value, 10);
+    if (isNaN(perPage) || perPage < 1) perPage = 40;
+
+    const pages = [];
+    for (let i = 0; i < items.length; i += perPage) pages.push(items.slice(i, i + perPage));
+
+    // Build the full ordered list of physical pages up front (all question pages, then —
+    // if requested — all answer pages in the same order) so "is this the very last page?"
+    // can be decided once, instead of per-section — an answer key's first page still needs
+    // a page-break-after from the last question page.
+    const pageBlocks = pages.map((pageItems, i) => ({ type: 'q', items: pageItems }));
+    if (includeKey) {
+      pages.forEach(pageItems => pageBlocks.push({ type: 'a', items: pageItems }));
+    }
+
+    bodyHtml = pageBlocks.map((pb, idx) => {
+      const isLast = idx === pageBlocks.length - 1;
+      return pb.type === 'q'
+        ? buildQuestionPageHtml(pb.items, meta, isLast)
+        : buildAnswerPageHtml(pb.items, meta, isLast);
+    }).join('');
+  } else {
+    const qItems = items.map(it =>
+      '<li><span class="qnum">' + it.num + '.</span><span class="qprompt">' + escapeHtml(it.prompt) + '</span><span class="qblank"></span></li>'
+    );
+    const qSectionHtml = '<ol class="qlist">' + qItems.join('') + '</ol>';
+
+    let answerHtml = '';
+    items.forEach(it => {
+      answerHtml += '<span class="a-item"><span class="a-num">' + it.num + '.</span>' + escapeHtml(it.prompt) + ' → ' + escapeHtml(it.answer) + '</span>';
+    });
+
+    let html = '<div class="sheet-page">';
+    html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>단어 시험지</h3><div class="daymeta">' + dayLabel + ' · 총 ' + items.length + '문항</div></div>';
+    html += '<hr class="sheet-rule">';
+    html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
+    html += '<div class="section-heading"><div class="bar"></div><span>' + sectionTitle + '</span></div>';
+    html += qSectionHtml;
+    html += '</div>';
+
+    if(includeKey){
+      html += '<div class="sheet-page page-break">';
+      html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>정답지</h3><div class="daymeta">' + dayLabel + '</div></div>';
+      html += '<hr class="sheet-rule">';
+      html += '<div class="answer-box">' + answerHtml + '</div>';
+      html += '</div>';
+    }
+    bodyHtml = html;
+  }
 
   let html = '<div class="sheet-actions"><button class="primary" onclick="printSheet()">인쇄 / PDF로 저장</button></div>';
-  html += '<div id="printArea">';
-  html += '<div class="sheet-page">';
-  html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>단어 시험지</h3><div class="daymeta">' + dayLabel + ' · 총 ' + words.length + '문항</div></div>';
-  html += '<hr class="sheet-rule">';
-  html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
-  html += '<div class="section-heading"><div class="bar"></div><span>' + sectionTitle + '</span></div>';
-  html += qSectionHtml;
-  html += '</div>';
-
-  if(includeKey){
-    html += '<div class="sheet-page page-break">';
-    html += '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>정답지</h3><div class="daymeta">' + dayLabel + '</div></div>';
-    html += '<hr class="sheet-rule">';
-    html += '<div class="answer-box">' + answerHtml + '</div>';
-    html += '</div>';
-  }
-  html += '</div>';
+  html += '<div id="printArea">' + bodyHtml + '</div>';
 
   output.innerHTML = html;
+}
+
+// ---------- paginated 2-column sheet builders ----------
+// Each physical printed page is built as its own self-contained .sheet-page — never a single
+// flex/grid container holding the whole word list — because browsers can't reliably page-break
+// inside flex/grid layouts. Splitting into per-page containers up front sidesteps that entirely.
+function pageBreakStyle(isLast){
+  return isLast ? 'page-break-after:auto;break-after:auto;' : 'page-break-after:always;break-after:page;';
+}
+
+function sheetHeaderHtml(book, title, dayMeta){
+  return '<div class="sheet-header"><div class="eng-tag">Sarah’s English · ' + escapeHtml(book.name) + '</div><h3>' + title + '</h3><div class="daymeta">' + dayMeta + '</div></div>';
+}
+
+function buildQuestionPageHtml(pageItems, meta, isLast){
+  const half = Math.ceil(pageItems.length / 2);
+  const left = pageItems.slice(0, half);
+  const right = pageItems.slice(half);
+  const colHtml = (arr) => '<ol class="qlist">' + arr.map(it =>
+    '<li><span class="qnum">' + it.num + '.</span><span class="qprompt">' + escapeHtml(it.prompt) + '</span><span class="qblank"></span></li>'
+  ).join('') + '</ol>';
+
+  let html = '<div class="sheet-page" style="' + pageBreakStyle(isLast) + '">';
+  html += sheetHeaderHtml(meta.book, '단어 시험지', meta.dayLabel + ' · 총 ' + meta.totalCount + '문항');
+  html += '<hr class="sheet-rule">';
+  html += '<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>';
+  html += '<div class="section-heading"><div class="bar"></div><span>' + meta.sectionTitle + '</span></div>';
+  html += '<div class="qlist-2col">' + colHtml(left) + colHtml(right) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+function buildAnswerPageHtml(pageItems, meta, isLast){
+  const half = Math.ceil(pageItems.length / 2);
+  const left = pageItems.slice(0, half);
+  const right = pageItems.slice(half);
+  const colHtml = (arr) => '<div class="a-col">' + arr.map(it =>
+    '<span class="a-item"><span class="a-num">' + it.num + '.</span>' + escapeHtml(it.prompt) + ' → ' + escapeHtml(it.answer) + '</span>'
+  ).join('') + '</div>';
+
+  let html = '<div class="sheet-page" style="' + pageBreakStyle(isLast) + '">';
+  html += sheetHeaderHtml(meta.book, '정답지', meta.dayLabel);
+  html += '<hr class="sheet-rule">';
+  html += '<div class="answer-box"><div class="answer-cols">' + colHtml(left) + colHtml(right) + '</div></div>';
+  html += '</div>';
+  return html;
 }
 
 // Printing from inside an <iframe> (this page is embedded inside the main site) doesn't
