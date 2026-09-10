@@ -9627,6 +9627,19 @@ function gbShuffle(arr) {
 // GrammarBankPrototype의 "보기로 분리"(서술형으로 잘못 등록된 객관식 문항 복구) 양쪽이 공유한다.
 const GB_OPT_SPLIT_RE = /[①②③④⑤][^①②③④⑤]*/g;
 const GB_MC_NUMERALS = ["①", "②", "③", "④", "⑤"];
+// 2026-09-10 — 주관식 정답을 ⓐⓑⓒ처럼 소문항별로 여러 개 입력할 수 있게 하는 공용 헬퍼.
+// GrammarBankPrototype의 등록 폼과 GrammarBankBrowseView의 인라인 수정 폼이 공유한다. 여러
+// 정답은 쉼표로 합쳐 grammarBankQuestions.ans(문자열) 하나에 저장한다 — TestTaker의
+// getSubjectiveSubAnswers/getSubjectiveMultiParts가 이미 쉼표/슬래시/세미콜론으로 정답을
+// 나눠 읽으므로(문항(q)에 (1)(2)(3)/ⓐⓑⓒ 같은 마커가 있을 때) 별도 데이터 모델 변경 없이
+// 그대로 호환된다.
+function splitMultiAnswerString(ans) {
+  const parts = String(ans || "").split(/[,/;]/).map((s) => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [""];
+}
+function joinMultiAnswers(list) {
+  return list.map((s) => s.trim()).filter(Boolean).join(", ");
+}
 
 // 2026-09-07 — 한글(hwp)에서 추출한 객관식 문제 텍스트를 붙여넣기로 일괄 등록하는 기능의 파싱
 // 로직. "N. 문제..." 로 시작하는 줄부터 다음 그런 줄 전까지를 한 문항 블록으로 보고, 그 블록
@@ -10276,7 +10289,9 @@ function GrammarBankPrototype({ roster, updateData }) {
   const [formQ, setFormQ] = useState("");
   const [formOpts, setFormOpts] = useState(["", "", "", ""]);
   const [formAnsIdx, setFormAnsIdx] = useState(0);
-  const [formAns, setFormAns] = useState("");
+  // 2026-09-10 — 주관식 정답을 ⓐⓑⓒ처럼 소문항별로 여러 개 입력할 수 있게 배열로 관리한다
+  // (splitMultiAnswerString/joinMultiAnswers 참고). 기본은 입력창 1개([""]).
+  const [formAnsList, setFormAnsList] = useState([""]);
   const [saving, setSaving] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   // 2026-09-07 — 붙여넣기로 일괄 등록. bulkPreview는 gbParseBulkText()의 결과({num,q,opts,ans})
@@ -10445,13 +10460,14 @@ function GrammarBankPrototype({ roster, updateData }) {
   async function submitQuestion() {
     if (!formQ.trim()) { alert("문제 내용을 입력해주세요."); return; }
     if (formType === "mc" && formOpts.some((o) => !o.trim())) { alert(`보기 ${formOpts.length}개를 모두 입력해주세요.`); return; }
-    if (formType === "sa" && !formAns.trim()) { alert("정답을 입력해주세요."); return; }
+    const ansJoined = joinMultiAnswers(formAnsList);
+    if (formType === "sa" && !ansJoined) { alert("정답을 입력해주세요."); return; }
     setSaving(true);
     try {
       const FC = window.SarahServices.firebaseClient;
       const data = formType === "mc"
         ? { grade, cat: formCat, sub: formSub, type: "mc", q: formQ.trim(), opts: formOpts.map((o, i) => `${GB_MC_NUMERALS[i]} ${o.trim()}`), ans: `${GB_MC_NUMERALS[formAnsIdx]} ${formOpts[formAnsIdx].trim()}` }
-        : { grade, cat: formCat, sub: formSub, type: "sa", q: formQ.trim(), ans: formAns.trim() };
+        : { grade, cat: formCat, sub: formSub, type: "sa", q: formQ.trim(), ans: ansJoined };
       if (editingId) {
         await FC.setDocAt("grammarBankQuestions", editingId, data);
         const updated = { id: editingId, ...data };
@@ -10462,7 +10478,7 @@ function GrammarBankPrototype({ roster, updateData }) {
         const id = await FC.addDocTo("grammarBankQuestions", data);
         setMyQuestions((prev) => [...prev, { id, ...data }]);
       }
-      setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAns("");
+      setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAnsList([""]);
     } catch (e) {
       alert("저장에 실패했어요: " + (e && e.message ? e.message : e));
     } finally {
@@ -10489,16 +10505,16 @@ function GrammarBankPrototype({ roster, updateData }) {
       setFormOpts(opts.slice(0, 5));
       const ansIdx = (item.opts || []).findIndex((o) => o === item.ans);
       setFormAnsIdx(ansIdx >= 0 ? ansIdx : 0);
-      setFormAns("");
+      setFormAnsList([""]);
     } else {
-      setFormAns(item.ans || "");
+      setFormAnsList(splitMultiAnswerString(item.ans));
       setFormOpts(["", "", "", ""]);
       setFormAnsIdx(0);
     }
   }
   function cancelEditQuestion() {
     setEditingId(null);
-    setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAns("");
+    setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAnsList([""]);
   }
   async function deleteMyQuestion(id) {
     if (!confirm("이 문항을 삭제할까요?")) return;
@@ -10818,15 +10834,21 @@ function GrammarBankPrototype({ roster, updateData }) {
                   <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px" }}>
                     ${formOpts.map((opt, i) => html`
                       <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} />
+                        <input type="radio" name="gbAnsIdx" checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} style=${{ width: 15, height: 15, appearance: "auto", flexShrink: 0 }} />
                         <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder=${`보기 ${i + 1}`} />
                       </div>
                     `)}
                   </div>
                 <//>
               ` : html`
-                <${Field} label="정답">
-                  <input value=${formAns} onChange=${(e) => setFormAns(e.target.value)} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder="정답을 입력하세요" />
+                <${Field} label="정답 (ⓐⓑⓒ처럼 소문항 정답이 다르면 + 눌러서 추가)">
+                  ${formAnsList.map((a, i) => html`
+                    <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                      <input value=${a} onChange=${(e) => setFormAnsList((prev) => prev.map((v, j) => j === i ? e.target.value : v))} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder=${formAnsList.length > 1 ? `정답 ${i + 1}` : "정답을 입력하세요"} />
+                      ${formAnsList.length > 1 && html`<span onClick=${() => setFormAnsList((prev) => prev.filter((_, j) => j !== i))} style=${{ color: C.danger, cursor: "pointer", fontSize: 16, flexShrink: 0, padding: "0 4px" }}>✕</span>`}
+                    </div>
+                  `)}
+                  <span onClick=${() => setFormAnsList((prev) => [...prev, ""])} style=${{ fontSize: 11.5, color: C.navy, cursor: "pointer", border: `1px solid ${C.navy}`, borderRadius: 20, padding: "3px 12px", display: "inline-block" }}>+ 정답 추가</span>
                 <//>
               `}
               <${Button} variant="gold" disabled=${saving} style=${{ width: "100%", justifyContent: "center" }} onClick=${submitQuestion}>${saving ? "저장 중..." : editingId ? "수정 저장" : "+ 이 소주제에 문항 등록"}<//>
@@ -10938,7 +10960,14 @@ function GrammarBankPrototype({ roster, updateData }) {
                     ${item.id && html`<span onClick=${() => startEditQuestion(item)} style=${{ color: C.navy, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>수정</span>`}
                     ${item.id && html`<span onClick=${() => deleteMyQuestion(item.id)} style=${{ color: C.slate, cursor: "pointer", fontSize: 12, flexShrink: 0 }}>삭제</span>`}
                   </div>
-                  ${previewMode !== "a" && disp.type === "mc" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>${disp.opts.join("   ")}</div>`}
+                  ${previewMode !== "a" && disp.type === "mc" && html`
+                    <div style=${{ margin: "6px 0 0 28px" }}>
+                      ${disp.opts.map((opt, oi) => {
+                        const isAns = previewMode !== "q" && opt === item.ans;
+                        return html`<div key=${oi} style=${{ padding: "9px 12px", border: `1px solid ${isAns ? C.gold : C.line}`, background: isAns ? "#FBF4EA" : C.white, borderRadius: 3, marginBottom: 6, fontSize: 13 }}>${opt}</div>`;
+                      })}
+                    </div>
+                  `}
                   ${previewMode !== "a" && item.type === "sa" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 13, color: C.slate }}>______________________________</div>`}
                   ${previewMode !== "q" && html`<div style=${{ margin: "6px 0 0 28px", fontSize: 12.5, color: C.gold, fontWeight: 700 }}>정답: ${item.ans}</div>`}
                 </div>
@@ -10981,9 +11010,26 @@ function gbAllQuestionsFor(grade, cat, sub, myQuestions) {
 function GrammarBankBrowseView() {
   const [grade, setGrade] = useState(Object.keys(GB_GRAMMAR_TREE)[0]);
   const [expandedCat, setExpandedCat] = useState({});
-  const [expandedSub, setExpandedSub] = useState({});
+  const [selected, setSelected] = useState({}); // "cat|sub" -> true
   const [myQuestions, setMyQuestions] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
+  // 2026-09-10 — 정답을 기본 숨김으로 바꿔 학생 앞에서도 그대로 열어볼 수 있게 했다. 켜면 객관식은
+  // TestTaker와 같은 박스를 금색으로, 주관식은 아래에 정답 텍스트를 보여준다.
+  const [showAnswers, setShowAnswers] = useState(false);
+  // 2026-09-10 — 카드 자리에서 바로 여는 인라인 수정 폼. GrammarBankPrototype의
+  // startEditQuestion/submitQuestion과 같은 패턴(FC.setDocAt)이지만, 이 화면 자신의
+  // myQuestions만 갱신한다(두 화면은 상태를 공유하지 않는다 — 위 주석 참고).
+  const [editingId, setEditingId] = useState(null);
+  const [formCat, setFormCat] = useState("");
+  const [formSub, setFormSub] = useState("");
+  const [formType, setFormType] = useState("mc");
+  const [formQ, setFormQ] = useState("");
+  const [formOpts, setFormOpts] = useState(["", "", "", ""]);
+  const [formAnsIdx, setFormAnsIdx] = useState(0);
+  // 2026-09-10 — GrammarBankPrototype과 같은 방식(splitMultiAnswerString/joinMultiAnswers)의
+  // 주관식 다중 정답 입력.
+  const [formAnsList, setFormAnsList] = useState([""]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -11000,10 +11046,24 @@ function GrammarBankBrowseView() {
     return () => { cancelled = true; };
   }, []);
 
-  function pickGrade(g) {
-    setGrade(g);
-    setExpandedCat({});
-    setExpandedSub({});
+  // 학년이 바뀌면 그 학년의 모든 소주제를 기본 선택 상태로 켜고 첫 카테고리만 펼친다
+  // (GrammarBankPrototype.pickGrade와 같은 패턴) — 편집 중이던 카드는 닫는다.
+  useEffect(() => {
+    const exp = {}; const sel = {};
+    GB_GRAMMAR_TREE[grade].forEach((c, i) => { exp[c.cat] = i === 0; c.subs.forEach((s) => { sel[c.cat + "|" + s] = true; }); });
+    setExpandedCat(exp); setSelected(sel);
+    setEditingId(null);
+  }, [grade]);
+
+  function toggleCat(cat) { setExpandedCat((e) => ({ ...e, [cat]: !e[cat] })); }
+  function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
+  function toggleCatAll(cat, subs, checked) {
+    setSelected((s) => { const next = { ...s }; subs.forEach((sub) => { next[cat + "|" + sub] = checked; }); return next; });
+  }
+  function selectAll(checked) {
+    const sel = {};
+    GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((s) => { sel[c.cat + "|" + s] = checked; }));
+    setSelected(sel);
   }
 
   const q = searchQuery.trim().toLowerCase();
@@ -11012,72 +11072,210 @@ function GrammarBankBrowseView() {
     return (item.q || "").toLowerCase().includes(q) || (item.ans || "").toLowerCase().includes(q);
   }
 
+  // 왼쪽에서 체크된 소주제만 모아, 검색어가 있으면 거기서 한 번 더 걸러 오른쪽 카드 목록에 낸다
+  // — 카테고리/소주제 아코디언이 아니라 평평한 카드 목록.
+  const visibleItems = [];
+  GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((sub) => {
+    if (!selected[c.cat + "|" + sub]) return;
+    const all = gbAllQuestionsFor(grade, c.cat, sub, myQuestions);
+    const list = isSearching ? all.filter(matchesQuery) : all;
+    list.forEach((item) => visibleItems.push({ item, cat: c.cat, sub }));
+  }));
+
+  function startEdit(item) {
+    setEditingId(item.id);
+    setFormCat(item.cat);
+    setFormSub(item.sub);
+    setFormType(item.type);
+    setFormQ(item.q || "");
+    if (item.type === "mc") {
+      // "보기로 분리"로 만들어진 문항은 ⑤까지 5개일 수 있다(GB_MC_NUMERALS) — 4개로
+      // 잘라내면 5번째 보기가 사라지므로 최대 5개까지는 실제 길이를 그대로 유지한다.
+      const opts = (item.opts || []).map((o) => String(o || "").replace(/^[①②③④⑤]\s*/, ""));
+      while (opts.length < 4) opts.push("");
+      setFormOpts(opts.slice(0, 5));
+      const ansIdx = (item.opts || []).findIndex((o) => o === item.ans);
+      setFormAnsIdx(ansIdx >= 0 ? ansIdx : 0);
+      setFormAnsList([""]);
+    } else {
+      setFormAnsList(splitMultiAnswerString(item.ans));
+      setFormOpts(["", "", "", ""]);
+      setFormAnsIdx(0);
+    }
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setFormQ(""); setFormOpts(["", "", "", ""]); setFormAnsIdx(0); setFormAnsList([""]);
+  }
+  async function saveEdit() {
+    if (!formQ.trim()) { alert("문제 내용을 입력해주세요."); return; }
+    if (formType === "mc" && formOpts.some((o) => !o.trim())) { alert(`보기 ${formOpts.length}개를 모두 입력해주세요.`); return; }
+    const ansJoined = joinMultiAnswers(formAnsList);
+    if (formType === "sa" && !ansJoined) { alert("정답을 입력해주세요."); return; }
+    setSaving(true);
+    try {
+      const FC = window.SarahServices.firebaseClient;
+      const data = formType === "mc"
+        ? { grade, cat: formCat, sub: formSub, type: "mc", q: formQ.trim(), opts: formOpts.map((o, i) => `${GB_MC_NUMERALS[i]} ${o.trim()}`), ans: `${GB_MC_NUMERALS[formAnsIdx]} ${formOpts[formAnsIdx].trim()}` }
+        : { grade, cat: formCat, sub: formSub, type: "sa", q: formQ.trim(), ans: ansJoined };
+      await FC.setDocAt("grammarBankQuestions", editingId, data);
+      const updated = { id: editingId, ...data };
+      setMyQuestions((prev) => prev.map((m) => (m.id === editingId ? updated : m)));
+      cancelEdit();
+    } catch (e) {
+      alert("저장에 실패했어요: " + (e && e.message ? e.message : e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function removeItem(id) {
+    if (!confirm("이 문항을 삭제할까요?")) return;
+    try {
+      await window.SarahServices.firebaseClient.deleteDocAt("grammarBankQuestions", id);
+      setMyQuestions((prev) => prev.filter((m) => m.id !== id));
+      if (editingId === id) cancelEdit();
+    } catch (e) {
+      alert("삭제에 실패했어요: " + (e && e.message ? e.message : e));
+    }
+  }
+
   return html`
     <div>
       <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
-          <button key=${g} type="button" onClick=${() => pickGrade(g)}
+          <button key=${g} type="button" onClick=${() => setGrade(g)}
             style=${{ padding: "7px 16px", fontSize: 12.5, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${grade === g ? C.navy : C.line}`, background: grade === g ? C.navy : C.white, color: grade === g ? C.white : C.slate }}>${g}<//>
         `)}
       </div>
-      <input value=${searchQuery} onChange=${(e) => setSearchQuery(e.target.value)}
-        placeholder="🔍 문제 또는 정답 검색 (선택한 학년 전체 대상)" style=${{ ...inputStyle, marginBottom: 16 }} />
-      ${GB_GRAMMAR_TREE[grade].map((c) => {
-        const subEntries = c.subs.map((sub) => {
-          const all = gbAllQuestionsFor(grade, c.cat, sub, myQuestions);
-          const shown = isSearching ? all.filter(matchesQuery) : all;
-          return { sub, all, shown };
-        });
-        const catHasMatch = subEntries.some((e) => e.shown.length > 0);
-        if (isSearching && !catHasMatch) return null;
-        const catOpen = isSearching ? true : !!expandedCat[c.cat];
-        return html`
-          <div key=${c.cat} style=${{ marginBottom: 8, border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: C.navy, background: "#FAF8F3" }} onClick=${() => setExpandedCat((prev) => ({ ...prev, [c.cat]: !prev[c.cat] }))}>
-              <span style=${{ fontSize: 10, color: C.slate, width: 10, display: "inline-block", transform: catOpen ? "rotate(90deg)" : "none" }}>▶</span>
-              <span>${c.cat}</span>
+      <div style=${{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20, alignItems: "start" }}>
+        <${Card}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6 }}>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>CATEGORY</div>
+            <div style=${{ display: "flex", gap: 4 }}>
+              <span onClick=${() => selectAll(true)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
+              <span onClick=${() => selectAll(false)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체해제</span>
             </div>
-            ${catOpen && html`
-              <div style=${{ padding: "6px 12px 10px 26px" }}>
-                ${subEntries.map(({ sub, all, shown }) => {
-                  if (isSearching && shown.length === 0) return null;
-                  const subKey = c.cat + "|" + sub;
-                  const subOpen = isSearching ? true : !!expandedSub[subKey];
-                  const list = isSearching ? shown : all;
-                  return html`
-                    <div key=${sub} style=${{ marginBottom: 6 }}>
-                      <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", cursor: "pointer", fontSize: 12, fontWeight: 600, color: C.ink, background: "#fff", border: `1px solid ${C.line}`, borderRadius: 4 }} onClick=${() => setExpandedSub((prev) => ({ ...prev, [subKey]: !prev[subKey] }))}>
-                        <span style=${{ fontSize: 9, color: C.slate, width: 10, display: "inline-block", transform: subOpen ? "rotate(90deg)" : "none" }}>▶</span>
-                        <span style=${{ flex: 1 }}>${sub}</span>
-                        <span style=${{ fontSize: 10.5, color: "#9a9488" }}>${isSearching ? `${shown.length}/${all.length}` : `${all.length}`}문항</span>
-                      </div>
-                      ${subOpen && html`
-                        <div style=${{ padding: "10px 8px 4px 18px" }}>
-                          ${list.length === 0
-                            ? html`<div style=${{ fontSize: 11.5, color: C.slate, padding: "6px 0" }}>등록된 문항이 없어요.</div>`
-                            : list.map((item, idx) => {
-                              const disp = sanitizeGbMcOptsForDisplay(item);
-                              return html`
-                              <div key=${item.id || idx} style=${{ marginBottom: 14, paddingBottom: 12, borderBottom: "1px solid #EDEAE2" }}>
-                                <div style=${{ display: "flex", gap: 8, fontSize: 13, color: C.ink, lineHeight: 1.6 }}>
-                                  <span style=${{ display: "inline-flex", width: 18, height: 18, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 10.5, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
-                                  <span style=${{ flex: 1 }}>${disp.q}<span style=${{ fontSize: 10, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 7px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${isDoubleCycleMcQuestion(item) && html`<span style=${{ fontSize: 10, color: C.danger, border: `1px solid ${C.danger}`, padding: "1px 7px", borderRadius: 10, marginLeft: 6 }}>⚠️ 보기 중복 의심</span>`}</span>
-                                </div>
-                                ${disp.type === "mc" && html`<div style=${{ margin: "5px 0 0 26px", fontSize: 12.5, color: C.slate }}>${disp.opts.join("   ")}</div>`}
-                                <div style=${{ margin: "5px 0 0 26px", fontSize: 12, color: C.gold, fontWeight: 700 }}>정답: ${item.ans}</div>
-                              </div>
-                            `;
-                            })}
-                        </div>
-                      `}
-                    </div>
-                  `;
-                })}
-              </div>
-            `}
           </div>
-        `;
-      })}
+          <div style=${{ maxHeight: 640, overflowY: "auto" }}>
+            ${GB_GRAMMAR_TREE[grade].map((c) => html`
+              <div key=${c.cat} style=${{ borderBottom: `1px solid #EDEAE2` }}>
+                <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: C.navy }} onClick=${() => toggleCat(c.cat)}>
+                  <span style=${{ fontSize: 10, color: C.slate, width: 10, display: "inline-block", transform: expandedCat[c.cat] ? "rotate(90deg)" : "none" }}>▶</span>
+                  <input type="checkbox" checked=${c.subs.every((s) => selected[c.cat + "|" + s])} onClick=${(e) => e.stopPropagation()} onChange=${(e) => toggleCatAll(c.cat, c.subs, e.target.checked)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+                  <span>${c.cat}</span>
+                </div>
+                ${expandedCat[c.cat] && html`
+                  <div style=${{ padding: "0 0 8px 20px" }}>
+                    ${c.subs.map((sub) => {
+                      const key = c.cat + "|" + sub; const checked = !!selected[key];
+                      const total = gbAllQuestionsFor(grade, c.cat, sub, myQuestions).length;
+                      return html`
+                        <label key=${sub} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: `1px solid ${checked ? C.gold : C.line}`, background: checked ? "#FBF6EA" : "#fff", borderRadius: 4, cursor: "pointer", fontSize: 11.5, marginBottom: 6 }}>
+                          <input type="checkbox" checked=${checked} onChange=${() => toggleSub(c.cat, sub)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+                          <span style=${{ flex: 1 }}>${sub}</span>
+                          <span style=${{ fontSize: 10.5, color: "#9a9488", flexShrink: 0, whiteSpace: "nowrap" }}>${total}문항</span>
+                        </label>
+                      `;
+                    })}
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        <//>
+        <div>
+          <div style=${{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+            <input value=${searchQuery} onChange=${(e) => setSearchQuery(e.target.value)}
+              placeholder="🔍 문제 또는 정답 검색 (선택된 소주제 대상)" style=${{ ...inputStyle, flex: 1 }} />
+            <div onClick=${() => setShowAnswers((v) => !v)} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: C.slate, fontWeight: 600, flexShrink: 0 }}>
+              <span>정답 표시</span>
+              <span style=${{ position: "relative", width: 34, height: 19, borderRadius: 10, background: showAnswers ? C.gold : C.line, transition: "background .15s", flexShrink: 0 }}>
+                <span style=${{ position: "absolute", top: 2, left: showAnswers ? 17 : 2, width: 15, height: 15, borderRadius: "50%", background: C.white, transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.25)" }}></span>
+              </span>
+            </div>
+          </div>
+          <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>${visibleItems.length}문항</div>
+          ${visibleItems.length === 0 && html`<div style=${{ textAlign: "center", color: "#9a9488", fontSize: 12.5, padding: "60px 0", border: `1px solid ${C.line}`, borderRadius: 6, background: "#FDFBF6" }}>왼쪽에서 카테고리를 선택하세요.</div>`}
+          ${visibleItems.map(({ item, sub }, idx) => {
+            if (editingId === item.id) {
+              return html`
+                <${Card} key=${item.id} style=${{ border: `1px solid ${C.danger}` }}>
+                  <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger, letterSpacing: .5, marginBottom: 10 }}>⚠️ 문항 수정 중</div>
+                  <div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                    <select value=${formCat} onChange=${(e) => { setFormCat(e.target.value); setFormSub(GB_GRAMMAR_TREE[grade].find((c) => c.cat === e.target.value).subs[0]); }} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                      ${GB_GRAMMAR_TREE[grade].map((c) => html`<option key=${c.cat} value=${c.cat}>${c.cat}</option>`)}
+                    </select>
+                    <select value=${formSub} onChange=${(e) => setFormSub(e.target.value)} style=${{ ...inputStyle, flex: 1, minWidth: 90, padding: "6px 8px", fontSize: 12.5 }}>
+                      ${(GB_GRAMMAR_TREE[grade].find((c) => c.cat === formCat) || { subs: [] }).subs.map((s) => html`<option key=${s} value=${s}>${s}</option>`)}
+                    </select>
+                    <${Button} variant=${formType === "mc" ? "primary" : "ghost"} style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${() => setFormType("mc")}>객관식<//>
+                    <${Button} variant=${formType === "sa" ? "primary" : "ghost"} style=${{ padding: "6px 12px", fontSize: 12 }} onClick=${() => setFormType("sa")}>주관식<//>
+                  </div>
+                  <${Field} label="문제">
+                    <textarea value=${formQ} onChange=${(e) => setFormQ(e.target.value)} style=${{ ...inputStyle, minHeight: 140, padding: "10px 12px", fontSize: 15, lineHeight: 1.6, resize: "vertical" }} placeholder="문제 내용을 입력하세요" />
+                  <//>
+                  ${formType === "mc" ? html`
+                    <${Field} label="보기 (정답에 표시)">
+                      <div style=${{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 10px" }}>
+                        ${formOpts.map((opt, i) => html`
+                          <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <input type="radio" name=${`gbBrowseAnsIdx-${item.id}`} checked=${formAnsIdx === i} onChange=${() => setFormAnsIdx(i)} style=${{ width: 15, height: 15, appearance: "auto", flexShrink: 0 }} />
+                            <input value=${opt} onChange=${(e) => setFormOpts((prev) => prev.map((o, j) => j === i ? e.target.value : o))} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder=${`보기 ${i + 1}`} />
+                          </div>
+                        `)}
+                      </div>
+                    <//>
+                  ` : html`
+                    <${Field} label="정답 (ⓐⓑⓒ처럼 소문항 정답이 다르면 + 눌러서 추가)">
+                      ${formAnsList.map((a, i) => html`
+                        <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                          <input value=${a} onChange=${(e) => setFormAnsList((prev) => prev.map((v, j) => j === i ? e.target.value : v))} style=${{ ...inputStyle, padding: "9px 10px", fontSize: 14.5 }} placeholder=${formAnsList.length > 1 ? `정답 ${i + 1}` : "정답을 입력하세요"} />
+                          ${formAnsList.length > 1 && html`<span onClick=${() => setFormAnsList((prev) => prev.filter((_, j) => j !== i))} style=${{ color: C.danger, cursor: "pointer", fontSize: 16, flexShrink: 0, padding: "0 4px" }}>✕</span>`}
+                        </div>
+                      `)}
+                      <span onClick=${() => setFormAnsList((prev) => [...prev, ""])} style=${{ fontSize: 11.5, color: C.navy, cursor: "pointer", border: `1px solid ${C.navy}`, borderRadius: 20, padding: "3px 12px", display: "inline-block" }}>+ 정답 추가</span>
+                    <//>
+                  `}
+                  <div style=${{ display: "flex", gap: 8 }}>
+                    <${Button} variant="gold" disabled=${saving} style=${{ flex: 1, justifyContent: "center" }} onClick=${saveEdit}>${saving ? "저장 중..." : "저장"}<//>
+                    <${Button} variant="ghost" disabled=${saving} style=${{ flex: 1, justifyContent: "center" }} onClick=${cancelEdit}>취소<//>
+                  </div>
+                <//>
+              `;
+            }
+            const disp = sanitizeGbMcOptsForDisplay(item);
+            return html`
+              <${Card} key=${item.id || `bank-${idx}`}>
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+                  <div style=${{ display: "flex", gap: 8, fontSize: 13, color: C.ink, lineHeight: 1.6, flex: 1 }}>
+                    <span style=${{ display: "inline-flex", width: 20, height: 20, borderRadius: "50%", background: C.navy, color: C.white, alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>${idx + 1}</span>
+                    <span style=${{ flex: 1, whiteSpace: "pre-line" }}>${renderFormattedQuestionStem(disp.q)}<span style=${{ fontSize: 10.5, color: C.slate, border: `1px solid ${C.line}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${sub}</span><span style=${{ fontSize: 10.5, color: C.gold, border: `1px solid ${C.gold}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>${item.type === "mc" ? "객관식" : "주관식"}</span>${isDoubleCycleMcQuestion(item) && html`<span style=${{ fontSize: 10.5, color: C.danger, border: `1px solid ${C.danger}`, padding: "1px 8px", borderRadius: 10, marginLeft: 6 }}>⚠️ 보기 중복 의심</span>`}</span>
+                  </div>
+                  ${item.id && html`
+                    <div style=${{ display: "flex", gap: 10, flexShrink: 0 }}>
+                      <span onClick=${() => startEdit(item)} style=${{ color: C.navy, cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>✏️ 수정</span>
+                      <span onClick=${() => removeItem(item.id)} style=${{ color: C.danger, cursor: "pointer", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>삭제</span>
+                    </div>
+                  `}
+                </div>
+                ${disp.type === "mc" ? html`
+                  <div style=${{ margin: "0 0 0 28px" }}>
+                    ${disp.opts.map((opt, oi) => {
+                      const isAns = showAnswers && opt === item.ans;
+                      return html`<div key=${oi} style=${{ padding: "9px 12px", border: `1px solid ${isAns ? C.gold : C.line}`, background: isAns ? "#FBF4EA" : C.white, borderRadius: 3, marginBottom: 6, fontSize: 13 }}>${opt}</div>`;
+                    })}
+                  </div>
+                ` : html`
+                  <div style=${{ margin: "0 0 0 28px" }}>
+                    <input disabled placeholder="답을 입력하세요" style=${{ ...inputStyle, background: "#F5F3EE", color: C.slate }} />
+                    ${showAnswers && html`<div style=${{ marginTop: 6, fontSize: 12.5, color: C.gold, fontWeight: 700 }}>정답: ${item.ans}</div>`}
+                  </div>
+                `}
+              <//>
+            `;
+          })}
+        </div>
+      </div>
     </div>
   `;
 }
