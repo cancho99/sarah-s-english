@@ -311,6 +311,48 @@ window.SarahServices = window.SarahServices || {};
     return { id, ...doc };
   }
 
+  // 2026-09-14 — Grammar Bank(grammarBankQuestions, 교사가 실사용해온 진짜 문항 3663개)에서 고른
+  // 문항을 이 Phase 8 형식으로 복사해 시험지 빌더(examPaperService의 manualSection/
+  // finalizeExamPaper)가 바로 쓸 수 있게 한다. createQuestion과 거의 같은 문서 모양이지만 항상
+  // status를 곧장 "PUBLISHED"로 만든다 — AI가 생성한 미검증 콘텐츠가 아니라 교사가 이미
+  // 실사용해온 진짜 문항을 그대로 가져오는 것이라, DRAFT→AI_REVIEW→TEACHER_REVIEW→APPROVED→
+  // PUBLISHED 4단계 검토를 다시 거칠 이유가 없다(§5/§19 "AI가 자동으로 승인하면 안 된다"는
+  // 사람이 이미 만들어 써온 문항의 재사용에는 해당하지 않는다). manualSection이 PUBLISHED만
+  // 받아들이므로 이 함수 없이는 가져온 문항으로 시험지를 만들 수 없다.
+  async function importPublishedQuestion(collectionName, input, opts) {
+    opts = opts || {};
+    const now = Date.now();
+    const choices = Array.isArray(input.choices) ? input.choices.filter((c) => c != null && c !== "") : [];
+    const doc = {
+      grade: input.grade || "",
+      difficulty: input.difficulty || "BASIC",
+      mainCategory: input.mainCategory || "",
+      subCategory: input.subCategory || "",
+      questionType: input.questionType || "",
+      questionText: input.questionText || "",
+      choices,
+      answerFormat: choices.length > 0 ? "mc" : "subjective",
+      answer: choices.length > 0 ? Number(input.answer) : String(input.answer || ""),
+      explanation: input.explanation || "",
+      wrongChoiceExplanations: Array.isArray(input.wrongChoiceExplanations) ? input.wrongChoiceExplanations : [],
+      tags: Array.isArray(input.tags) ? input.tags : [],
+      source: { type: (input.source && input.source.type) || "TEACHER_CREATED", note: (input.source && input.source.note) || "" },
+      ...(opts.extraFields || {}),
+      status: "PUBLISHED",
+      review: blankReview(opts.reviewSchema),
+      fingerprint: computeFingerprint(input.questionText),
+      usageCount: 0,
+      version: 1,
+      supersedesId: null,
+      replacedBy: null,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: "teacher",
+    };
+    const id = await addDocTo(collectionName, doc);
+    return { id, ...doc };
+  }
+
   // Versioning (§12): if the existing doc has usageCount > 0 and the patch touches a CONTENT_FIELD,
   // fork instead of overwriting — a new doc is created (version+1, supersedesId = old id, status
   // reset to DRAFT since edited content is unreviewed again, usageCount 0), and the old doc is
@@ -687,7 +729,7 @@ window.SarahServices = window.SarahServices || {};
   window.SarahServices.questionBankService = {
     GRADES, DIFFICULTIES, GRAMMAR_TAXONOMY, QUESTION_TYPES, SOURCE_TYPES, STATUS_FLOW,
     canTransition, computeFingerprint, findDuplicates,
-    listQuestions, createQuestion, updateQuestion, setStatus, canHardDelete, hardDeleteQuestion,
+    listQuestions, createQuestion, importPublishedQuestion, updateQuestion, setStatus, canHardDelete, hardDeleteQuestion,
     queryQuestions, pickQuestionsForExam, incrementUsageCount,
     distributeCounts, pickQuestionsWeighted,
     GRAMMAR_COLLECTION,
