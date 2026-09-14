@@ -15104,46 +15104,26 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // ---- 모바일 전용 레이아웃(useIsMobile() === true) ----
   // 데스크탑 레이아웃(ap-tc-shell 2단 구성)은 이 아래 원래 return문 그대로 두고, 모바일일 때만
   // 이 블록에서 완전히 별도로 렌더링한다 — 데스크탑 JSX/로직은 이 분기가 없어도 그대로 동작한다.
-  // 카드 순서: 🔴 내 할 일 → 📝 오늘 확인할 것(숙제 체크리스트 포함, 확장) → 🕐 오늘 수업(축소) →
-  // 📋 데일리 리포트 미작성(뱃지) → 📊 월말 리포트 미작성(있을 때만) → 나머지(로드맵/상담/수업준비/
-  // Daily Report/최근 시험)는 데스크탑과 같은 순서로 이어서.
+  // 사용자 지시(2026-09-14)로 카드 2개만 남기고 그 외(오늘 수업/데일리·월말 리포트 미작성/
+  // 로드맵/상담/수업준비/Daily Report/최근 시험/상단 stat tile 줄)는 전부 숨긴다 — 데스크탑
+  // return문(아래)의 해당 카드들은 무수정으로 그대로 남아있다. "공지사항 등록" 버튼은
+  // TeacherCenterHome/TeacherCenterSection 어디에도 없어서(Settings 화면의
+  // SettingsAnnouncementsPanel과는 별개) 숨길 대상이 없었다.
   if (isMobile) {
     return html`
       <div>
         <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>🎯 Teacher Command Center</div>
         <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>오늘(${fmtDate(todayStr)}) 내가 지금 무엇을 해야 하는지부터 보여드려요.</div>
 
-        <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-          ${statTile("오늘 수업", todayClasses.length, C.navy)}
-          ${statTile("미확인 숙제", hwCounts.unchecked, hwCounts.unchecked > 0 ? C.danger : C.navy)}
-          ${statTile("기한 지난", overdueCheckCount, overdueCheckCount > 0 ? C.danger : C.navy)}
-          ${statTile("상담 요청", pendingConsults.length, pendingConsults.length > 0 ? C.danger : C.navy)}
-          ${statTile("로드맵 지연", roadmapAlerts.length, roadmapAlerts.length > 0 ? C.danger : C.navy)}
-        </div>
-
         <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} />
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📝 오늘 확인할 것</div>
-            <button onClick=${onOpenBoard} style=${{ background: "none", border: "none", color: C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>숙제 전체보기 →</button>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📝 오늘 숙제 체크</div>
+            <span style=${{ fontSize: 11, fontWeight: 700, color: mobileHwChecklist.length > 0 ? "#fff" : C.gold, background: mobileHwChecklist.length > 0 ? C.danger : C.ivory, borderRadius: 10, padding: "2px 10px" }}>미확인 ${mobileHwChecklist.length}건</span>
           </div>
-
-          <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>숙제 제출/확인</div>
-          ${hwCounts.total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>오늘 마감이거나 오늘 낸 숙제가 없어요.</div>` : html`
-            <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-              ${statTile("전체", hwCounts.total, C.navy)}
-              ${statTile("제출완료", hwCounts.submitted, C.gold)}
-              ${statTile("미제출", hwCounts.notSubmitted, C.danger)}
-              ${statTile("확인완료", hwCounts.checked, C.gold)}
-              ${statTile("미확인", hwCounts.unchecked, C.danger)}
-              ${statTile("지연제출", hwCounts.late, C.danger)}
-            </div>
-          `}
-
-          <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>확인할 숙제 (${mobileHwChecklist.length})</div>
-          ${mobileHwChecklist.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>오늘 마감이거나 기한 지난 숙제 중 확인할 게 없어요.</div>` : html`
-            <div style=${{ marginBottom: 12 }}>
+          ${mobileHwChecklist.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 마감이거나 기한 지난 숙제 중 확인할 게 없어요.</div>` : html`
+            <div>
               ${mobileHwChecklist.map((h, i) => html`
                 <label key=${h.id} style=${{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
                   <input type="checkbox" checked=${false} onChange=${() => toggleHwChecked(h)} style=${{ marginTop: 3, flexShrink: 0 }} />
@@ -15155,181 +15135,6 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               `)}
             </div>
           `}
-
-          <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>단어시험 결과 (오늘)</div>
-          ${vocabToday.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>오늘 응시한 단어시험이 없어요.</div>` : html`
-            <div style=${{ marginBottom: 12 }}>
-              ${vocabToday.map((r, i) => {
-                const pct = r.total ? Math.round((r.score / r.total) * 100) : 0;
-                const pass = r.total && pct >= svc.vocabularyService.passThreshold(r.title);
-                return html`
-                  <div key=${i} style=${{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
-                    <span><span onClick=${() => onSelectStudent(r.studentId)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600 }}>${r.studentName}</span> <span style=${{ color: C.slate }}>${r.title}</span></span>
-                    <span style=${{ color: pass ? C.gold : C.danger, fontWeight: 700 }}>${r.score}/${r.total} · ${pass ? "PASS" : "FAIL"}</span>
-                  </div>
-                `;
-              })}
-            </div>
-          `}
-
-          <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>시험 결과 (오늘)</div>
-          ${examResultsToday.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>오늘 응시한 시험이 없어요.</div>` : html`
-            <div style=${{ marginBottom: 12 }}>
-              ${examResultsToday.map((r, i) => html`
-                <div key=${i} style=${{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
-                  <span><span onClick=${() => onSelectStudent(r.studentId)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600 }}>${r.studentName}</span> <span style=${{ color: C.slate }}>${r.title}</span></span>
-                  <span style=${{ color: C.ink }}>${fmtScoreDisplay(r)}</span>
-                </div>
-              `)}
-            </div>
-          `}
-
-          <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>Reading 활동 (오늘)</div>
-          ${!readingLoaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : readingActiveToday.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 리딩 라이브러리 활동 기록이 없어요.</div>` : readingActiveToday.map((id, i) => {
-            const r = readingByStudent[id];
-            const parts = [];
-            if (r.journalEntries.length) parts.push(`Reading Log ${r.journalEntries.length}`);
-            if (r.newWords.length) parts.push(`새 단어 ${r.newWords.length}`);
-            return html`
-              <div key=${id} style=${{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", fontSize: 12.5 }}>
-                <span onClick=${() => onSelectStudent(id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600 }}>${studentNameById[id] || id}</span>
-                <span style=${{ color: C.slate }}>${parts.join(" · ")}</span>
-              </div>
-            `;
-          })}
-
-          ${overdueCheckCount > 0 && html`
-            <div className="ap-tc-alert">
-              <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
-              ${overdueHomework.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 8 }}>숙제</div>
-                ${overdueHomework.map(({ student, hw }, i) => html`
-                  <div key=${"ohw" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                    <span><b>${student.name}</b> — ${hw.content}</span>
-                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>기한 ${fmtDate(hw.dueDate)}</span>
-                  </div>
-                `)}
-              `}
-              ${overdueVocab.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>단어시험</div>
-                ${overdueVocab.map(({ student, test }, i) => html`
-                  <div key=${"ovc" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                    <span><b>${student.name}</b> — ${test.title}</span>
-                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>재시험 ${fmtDate(test.retestDate)}</span>
-                  </div>
-                `)}
-              `}
-              ${overdueMock.length > 0 && html`
-                <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 10 }}>모의고사</div>
-                ${overdueMock.map(({ student, test }, i) => html`
-                  <div key=${"omk" + i} className="ap-tc-row" onClick=${() => onSelectStudent(student.id)} style=${{ fontSize: 12.5, padding: "4px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                    <span><b>${student.name}</b> — ${test.title}</span>
-                    <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>응시일 ${fmtDate(test.date)}</span>
-                  </div>
-                `)}
-              `}
-            </div>
-          `}
-        <//>
-
-        <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🕐 오늘 수업 (${todayClasses.length}건)</div>
-          ${todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 예정된 수업이 없어요.</div>` : todayClasses.map((c, i) => html`
-            <div key=${i} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
-              <span onClick=${() => onSelectStudent(c.student.id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${c.student.name}</span>
-              <span style=${{ fontSize: 12, color: C.slate }}>${c.time}~${c.endTime}${c.kind === "보강" ? " (보강)" : ""}</span>
-            </div>
-          `)}
-        <//>
-
-        <${Card}>
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📋 데일리 리포트 미작성</div>
-            <span style=${{ fontSize: 11, fontWeight: 700, color: missingDailyReports.length > 0 ? "#fff" : C.gold, background: missingDailyReports.length > 0 ? C.danger : C.ivory, borderRadius: 10, padding: "2px 10px" }}>${missingDailyReports.length}건</span>
-          </div>
-        <//>
-
-        ${missingMonthlyReports.length > 0 && html`
-          <${Card}>
-            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger }}>📊 월말 리포트 미작성</div>
-              <span style=${{ fontSize: 11, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "2px 10px" }}>${missingMonthlyReports.length}건</span>
-            </div>
-          <//>
-        `}
-
-        ${roadmapAlerts.length > 0 && html`
-          <${Card}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
-            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
-            ${roadmapAlerts.map((x, i) => html`
-              <div key=${x.student.id} className="ap-tc-row" onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
-                <span><b>${x.student.name}</b> — ${x.phase.title || "진행 단계"}</span>
-                <span style=${{ color: C.danger, fontWeight: 700, whiteSpace: "nowrap", marginLeft: 8 }}>${x.overdueDays}일 지연</span>
-              </div>
-            `)}
-          <//>
-        `}
-
-        ${pendingConsults.length > 0 && html`
-          <${Card}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>💬 학부모 상담 요청 (${pendingConsults.length}건)</div>
-            ${pendingConsults.slice(0, 6).map((c, i) => html`
-              <div key=${c.r.id} className="ap-tc-row" onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
-                <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
-              </div>
-            `)}
-          <//>
-        `}
-
-        <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📚 수업 준비</div>
-          ${todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 수업이 없어요.</div>` : studentsNeedingPrep.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 수업 학생 전원 준비할 것이 없어요.</div>` : studentsNeedingPrep.map(({ student }, i) => {
-            const prep = prepByStudent[student.id];
-            return html`
-              <div key=${student.id} style=${{ padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
-                <span onClick=${() => onSelectStudent(student.id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${student.name}</span>
-                <div style=${{ fontSize: 11.5, color: C.ink, marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-                  ${prep.auto.map((p) => html`<span key=${p.key}>${p.icon} ${p.label}</span>`)}
-                  ${prep.linked.map((t) => {
-                    const info = TEACHER_TODO_TYPES.find((x) => x.key === t.type) || {};
-                    return html`<span key=${t.id}>${info.icon} ${t.content}</span>`;
-                  })}
-                </div>
-              </div>
-            `;
-          })}
-        <//>
-
-        <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📋 오늘 수업 기록 · Daily Report</div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>
-            숙제/단어시험/시험/Reading 활동은 자동으로 연결돼요 — 수업 내용과 평가만 채우면 학부모 메시지 초안까지 자동으로 만들어져요.
-          </div>
-          ${dailyReportRows.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 수업이 없어요.</div>` : dailyReportRows.map(({ student, time, endTime, status }, i) => html`
-            <div key=${student.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
-              <div>
-                <span onClick=${() => onSelectStudent(student.id)} style=${{ cursor: "pointer", color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${student.name}</span>
-                <span style=${{ fontSize: 11, color: C.slate, marginLeft: 6 }}>${time}~${endTime}</span>
-                <span style=${{ fontSize: 11, fontWeight: 700, color: statusColor(status), marginLeft: 8 }}>${statusLabel(status)}</span>
-              </div>
-              <button onClick=${() => onWriteDailyReport(student.id)} style=${{ padding: "4px 10px", borderRadius: 4, border: `1px solid ${C.gold}`, background: "#fff", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>${status === "DRAFT" ? "작성" : "보기/수정"}</button>
-            </div>
-          `)}
-        <//>
-
-        <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📈 최근 시험 (전체)</div>
-          ${recentTestsTop.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>최근 응시한 시험이 없어요.</div>` : recentTestsTop.map((r, i) => html`
-            <div key=${i} className="ap-tc-row" onClick=${() => (onSelectStudentAssessment || onSelectStudent)(r.studentId)}
-              style=${{ display: "flex", justifyContent: "space-between", padding: "6px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
-              <div>
-                <span style=${{ color: C.navy, fontWeight: 600, fontSize: 12.5 }}>${r.studentName}</span>
-                <span style=${{ fontSize: 11.5, color: C.slate, marginLeft: 6 }}>${r.title}</span>
-              </div>
-              <span style=${{ fontSize: 12, color: C.slate, whiteSpace: "nowrap" }}>${fmtScoreDisplay(r)} · ${fmtDate(r.date)}</span>
-            </div>
-          `)}
         <//>
       </div>
     `;
