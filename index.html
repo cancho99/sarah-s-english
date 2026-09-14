@@ -9720,15 +9720,26 @@ function ExamStudioSection({ roster, updateData }) {
         ${mobileShowGenerate ? html`
           <div>
             <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>${mobileSelectedPassageTitle}</div>
-            <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 8 }}>문제 유형 선택</div>
-            <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, maxHeight: 320, overflowY: "auto" }}>
-              ${ES_TYPE_META.map((t) => html`
-                <label key=${t.key} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12.5, color: C.ink }}>
-                  <input type="checkbox" checked=${selectedTypes.has(t.key)} onChange=${() => toggleType(t.key)} style=${{ width: 16, height: 16, flexShrink: 0 }} />
-                  <span>${t.icon} ${t.label}</span>
-                </label>
-              `)}
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 8 }}>문제 유형 선택 (선택한 유형은 배경이 강조되고, 오른쪽 숫자로 그 유형의 생성 개수를 정해요)</div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12, maxHeight: 320, overflowY: "auto" }}>
+              ${ES_TYPE_META.map((t) => {
+                const checked = selectedTypes.has(t.key);
+                return html`
+                  <label key=${t.key} style=${{
+                    display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", borderRadius: 4, fontSize: 12.5, color: C.ink, cursor: "pointer",
+                    border: `1px solid ${checked ? C.gold : C.line}`, background: checked ? "#FBF6EA" : "#fff",
+                  }}>
+                    <input type="checkbox" checked=${checked} onChange=${() => toggleType(t.key)} style=${{ width: 16, height: 16, flexShrink: 0, appearance: "auto" }} />
+                    <span style=${{ flex: 1, minWidth: 0, overflowWrap: "break-word" }}>${t.icon} ${t.label}</span>
+                    <select value=${typeCounts[t.key] || 1} disabled=${!checked} onClick=${(e) => e.stopPropagation()} onChange=${(e) => setTypeCount(t.key, Number(e.target.value))}
+                      style=${{ width: 52, flexShrink: 0, padding: "5px 2px", fontSize: 12, textAlign: "center", border: `1px solid ${C.line}`, borderRadius: 3, background: "#fff", color: C.ink, opacity: checked ? 1 : 0.5 }}>
+                      ${[1, 2, 3, 4, 5].map((n) => html`<option key=${n} value=${n}>${n}개<//>`)}
+                    </select>
+                  </label>
+                `;
+              })}
             </div>
+            ${selectedTypes.size > 0 && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>선택한 ${selectedTypes.size}개 유형 · 총 ${[...selectedTypes].reduce((sum, key) => sum + (typeCounts[key] || 1), 0)}개 생성</div>`}
             ${genStatus && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${genStatus}</div>`}
             <${Button} variant="gold" disabled=${genBusy} onClick=${mobileGenerate} style=${{ width: "100%", justifyContent: "center" }}>${genBusy ? "생성 중..." : "✨ 문제 생성하기"}<//>
             <button onClick=${() => setMobileShowGenerate(false)} style=${{ width: "100%", marginTop: 8, padding: "6px 0", background: "none", border: "none", color: C.slate, fontSize: 12, cursor: "pointer" }}>‹ 보관함으로</button>
@@ -9826,7 +9837,7 @@ function ExamStudioSection({ roster, updateData }) {
             <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 8 }}>저장함 (${savedItems.length})</div>
             ${savedItems.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>저장된 문항이 없어요.</div>` : savedItems.map((it, i) => html`
               <label key=${it.localId} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
-                <input type="checkbox" checked=${selectedIds.has(it.localId)} onChange=${() => toggleCheck(it.localId)} style=${{ width: 14, height: 14, flexShrink: 0 }} />
+                <input type="checkbox" checked=${selectedIds.has(it.localId)} onChange=${() => toggleCheck(it.localId)} style=${{ width: 14, height: 14, flexShrink: 0, appearance: "auto" }} />
                 <span style=${{ fontSize: 12.5, color: C.ink, minWidth: 0, overflowWrap: "break-word" }}>${esMobileItemLabel(it)}</span>
               </label>
             `)}
