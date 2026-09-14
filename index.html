@@ -1622,9 +1622,45 @@ async function extractPdfPlainText(file) {
 // a circled number, not "정답: 3". A block with no choice markers at all becomes a 서술형
 // (subjective) question instead of being dropped, since real worksheets mix objective and
 // short-answer/서술형 items freely.
+//
+// Strips a leading "정답:"/"정답 :"/"정답" label off an already-extracted answer string. Looped
+// (not a single replace) so a doubled label — e.g. "정답: 정답: I am talking with my friend
+// now." from a PDF text-extraction column overlap duplicating the "정답" token onto one line —
+// gets fully removed, not just the outer occurrence. Used both when parseExamPaste first builds a
+// subjective answer (so new imports never store the label) and at display time everywhere an
+// already-stored answer/given value is shown (so old contaminated records read clean too).
+function stripAnswerLabel(s) {
+  let out = String(s ?? "").trim();
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(/^정답\s*[:：]?\s*/, "").trim();
+  } while (out !== prev && out.length > 0);
+  return out;
+}
+// Same marker shape parseExamPaste's own choice-boundary detection (markerRe, below) uses to spot
+// a choice line — shared here so "what counts as a choice marker" has one definition instead of
+// drifting between parse time and display time. Also used defensively at display time (see
+// stripChoiceLabel) for already-stored choice text that has a marker baked in from before this
+// stripping existed, or from a teacher typing it in by hand.
+const EXAM_CHOICE_MARKER_RE = /^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/;
+// Strips a leading "①"/"1."/"A)"-style choice marker off an already-extracted choice string.
+// Looped for the same reason as stripAnswerLabel — a doubled marker (e.g. a stored choice of
+// "①My glasses are new." that ALSO gets a fresh "①" prepended at display time, producing
+// "①①My glasses are new.") should come out clean either way it happened: contamination baked
+// into the stored text at parse time, or typed in by hand directly in the edit form.
+function stripChoiceLabel(s) {
+  let out = String(s ?? "").trim();
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(EXAM_CHOICE_MARKER_RE, "").trim();
+  } while (out !== prev && out.length > 0);
+  return out;
+}
 function parseExamPaste(text) {
   const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩";
-  const markerRe = /^(?:[①②③④⑤]|[1-9][.\)]|[A-Da-d][.\)])\s*/;
+  const markerRe = EXAM_CHOICE_MARKER_RE;
   function markerToIndex(raw, choiceCount) {
     const ch = (raw || "").trim()[0];
     if (!ch) return null;
@@ -1646,7 +1682,8 @@ function parseExamPaste(text) {
         const idx = markerToIndex(answerRaw, choices.length);
         out.push({ q: qText, type: "mc", choices, answer: idx == null ? 0 : Math.min(Math.max(idx, 0), choices.length - 1) });
       } else if (answerRaw && answerRaw.trim()) {
-        out.push({ q: qText, type: "subjective", answer: answerRaw.trim() });
+        const cleanAnswer = stripAnswerLabel(answerRaw);
+        if (cleanAnswer) out.push({ q: qText, type: "subjective", answer: cleanAnswer });
       }
     }
     qLines = []; choices = [];
@@ -1660,7 +1697,7 @@ function parseExamPaste(text) {
     // — otherwise a leading "1. 문제 내용" (question numbering) would itself get mistaken for the
     // first choice, since "1." matches the same marker pattern as "1) 보기".
     const marker = qLines.length > 0 ? line.match(markerRe) : null;
-    if (marker) { choices.push(line.slice(marker[0].length).trim()); return; }
+    if (marker) { choices.push(stripChoiceLabel(line.slice(marker[0].length))); return; }
     if (choices.length > 0) choices[choices.length - 1] += " " + line; // wrapped choice text
     else qLines.push(line);
   });
@@ -16612,7 +16649,7 @@ function StudentTabBody({ tab, student, data, updateData, examKeyLibrary }) {
   if (tab === "homework") return html`<${HomeworkEditor} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "vocab") return html`<${VocabEditor} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "mock") return html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} />`;
-  if (tab === "examTests") return html`<${ExamEditor} data=${data} updateData=${updateData} />`;
+  if (tab === "examTests") return html`<${ExamEditor} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "wrongNote") return html`<${WrongNoteSection} student=${student} data=${data} updateData=${updateData} />`;
   if (tab === "regularExam") return html`<${RegularExamEditor} data=${data} updateData=${updateData} />`;
   if (tab === "materials") return html`<${MaterialsLibrarySection} key=${student.id} student=${student} driveFolderLink=${student.driveFolderLink} />`;
@@ -19455,7 +19492,7 @@ function QuestionEditorFields({ q, onChange }) {
   `;
 }
 
-function ExamEditor({ data, updateData }) {
+function ExamEditor({ student, data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [questions, setQuestions] = useState([{ q: "", type: "mc", choices: ["", ""], answer: 0 }]);
   const [showPaste, setShowPaste] = useState(false); const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
@@ -19502,6 +19539,7 @@ function ExamEditor({ data, updateData }) {
 
   return html`
     <div>
+      <style>${EXAM_WRONG_CARD_CSS}</style>
       ${activeExamSession && html`
         <div style=${{ fontSize: 12.5, color: "#fff", background: C.danger, borderRadius: 4, padding: "8px 12px", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
           <span>🔴 응시중</span>
@@ -19552,49 +19590,317 @@ function ExamEditor({ data, updateData }) {
       `}
       <${SectionLabel} n=${2} label="등록된 시험" />
       ${data.examTests.length === 0 ? html`<${Empty} text="아직 만든 시험이 없어요." />` : html`
-        <div className=${"ap-mlist" + (selectedTestId ? " has-selection" : "")}>
-          <div className="ap-mlist-left">
-            ${data.examTests.map((t) => {
-              const results = data.examResults.filter((r) => r.testId === t.id);
-              return html`
-                <${Row} key=${t.id} active=${selectedTestId === t.id} onClick=${() => setSelectedTestId(t.id)}>
-                  <div className="ap-row-main">
-                    <div className="ap-row-title">${t.title}</div>
-                    <div className="ap-row-meta">
-                      <span>${fmtDate(t.date)}</span><span>문제 ${t.questions.length}개</span>${results.length > 0 && html`<span>응시 ${results.length}회</span>`}
+        <div className="ex3-scroll">
+          <div className="ex3-layout">
+            <div className="ex3-col1">
+              ${data.examTests.map((t) => {
+                const results = data.examResults.filter((r) => r.testId === t.id);
+                return html`
+                  <${Row} key=${t.id} active=${selectedTestId === t.id} onClick=${() => setSelectedTestId(t.id)}>
+                    <div className="ap-row-main">
+                      <div className="ap-row-title">${t.title}</div>
+                      <div className="ap-row-meta">
+                        <span>${fmtDate(t.date)}</span><span>문제 ${t.questions.length}개</span>${results.length > 0 && html`<span>응시 ${results.length}회</span>`}
+                      </div>
                     </div>
-                  </div>
-                  <div className="ap-row-side" style=${{ fontSize: 11, fontWeight: 700, color: results.length === 0 ? C.slate : C.gold }}>${results.length === 0 ? "대기" : "✓ 응시"}</div>
-                <//>
-              `;
-            })}
-          </div>
-          <div className="ap-mlist-right">
+                    <div className="ap-row-side" style=${{ fontSize: 11, fontWeight: 700, color: results.length === 0 ? C.slate : C.gold }}>${results.length === 0 ? "대기" : "✓ 응시"}</div>
+                  <//>
+                `;
+              })}
+            </div>
             ${(() => {
               const t = data.examTests.find((x) => x.id === selectedTestId) || null;
-              if (!t) return html`<${Empty} text="왼쪽 목록에서 시험을 선택하세요." />`;
+              if (!t) return html`
+                <div key="col2" className="ex3-col2"><${Empty} text="왼쪽 목록에서 시험을 선택하세요." /></div>
+                <div key="col3" className="ex3-col3"></div>
+              `;
               const results = data.examResults.filter((r) => r.testId === t.id);
+              const studentName = student ? student.name : "";
               return html`
-                <${BackBtn} onClick=${() => setSelectedTestId(null)} />
-                <${Card} style=${{ marginBottom: 0 }}>
-                  <div style=${{ display: "flex", justifyContent: "space-between" }}>
-                    <div>
-                      <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
-                      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문제 ${t.questions.length}개</div>
+                <div key="col2" className="ex3-col2">
+                  <${Card} style=${{ marginBottom: 12 }}>
+                    <div style=${{ display: "flex", justifyContent: "space-between" }}>
+                      <div>
+                        <div style=${{ fontWeight: 700, color: C.navy }}>${t.title}</div>
+                        <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>${fmtDate(t.date)} · 문제 ${t.questions.length}개</div>
+                      </div>
+                      <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
                     </div>
-                    <button onClick=${() => removeTest(t.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
-                  </div>
-                  ${results.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>아직 응시하지 않았어요.</div>` : html`
-                    <div style=${{ marginTop: 8, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
-                      ${results.map((r) => html`<div key=${r.id} style=${{ fontSize: 12.5, marginBottom: 3 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}</div>`)}
-                    </div>
-                  `}
-                <//>
+                  <//>
+                  ${results.length === 0
+                    ? html`<div style=${{ fontSize: 12, color: C.slate }}>아직 응시하지 않았어요.</div>`
+                    : results.map((r) => html`<${ExamResultSummaryBlock} key=${r.id} r=${r} test=${t} studentName=${studentName} />`)}
+                </div>
+                <div key="col3" className="ex3-col3">
+                  ${results.map((r) => html`<${ExamResultCardsBlock} key=${r.id} r=${r} test=${t} studentName=${studentName} />`)}
+                </div>
               `;
             })()}
           </div>
         </div>
       `}
+    </div>
+  `;
+}
+
+// Exam-result wrong-answer card style — lifted verbatim (class names, :root color variables,
+// rule bodies) from the teacher-approved wrong-answers-print-preview.html mockup, not
+// reinvented. Used for the on-screen "추가시험" wrong-answer cards only now (ExamResultCardsBlock
+// renders each card via dangerouslySetInnerHTML) — the two print buttons build a different,
+// worksheet-styled document instead (EXAM_WRONG_SHEET_CSS, below), to match this app's other
+// printed exam papers rather than this card mockup. A single <style> injected once by ExamEditor
+// covers this on-screen CSS, plus .rcard/.qrow/.qbadge (column 2's "문제별 결과" list) and the
+// .ex3-* 3-column detail-view grid further down this block. Classes the mockup defines for
+// category-driven content (.type-pill, .strategy-box, .wrong-choice, .explain-block,
+// .misconception-box, .keypoint-box) are kept in the CSS for fidelity but never
+// referenced in markup here, since "추가시험" questions have no mainCategory/questionType
+// taxonomy to hang a 유형 pill or 유형별 풀이 전략 on.
+const EXAM_WRONG_CARD_CSS = `
+  :root{
+    --ink:#14161A; --navy:#1C2B4A; --gold:#B8935A; --ivory:#FAF7F1;
+    --slate:#5B6270; --line:#DCD8CF; --white:#FFFFFF; --danger:#A6473A;
+    --green:#2E6B44; --blue:#2C5F8A; --amber-bg:#FBF0DC; --amber-line:#D9A441; --graybox:#F4F2ED;
+  }
+  .sheet-page{background:#fff;border:1px solid var(--line);max-width:680px;margin:0 auto 8px;padding:0;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+  .card-header{background:var(--navy);color:#fff;padding:16px 22px;display:flex;align-items:center;gap:12px;}
+  .num-badge{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0;}
+  .header-txt{flex:1;}
+  .source-line{font-size:11px;opacity:.75;margin-bottom:3px;}
+  .type-pill{display:inline-block;background:var(--gold);color:#fff;font-size:11px;font-weight:700;border-radius:10px;padding:2px 10px;}
+  .card-body{padding:20px 22px 24px;}
+  .strategy-box{background:var(--graybox);border-radius:6px;padding:12px 14px;margin-bottom:16px;}
+  .strategy-title{font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:6px;}
+  .strategy-box .step{font-size:12px;color:var(--ink);line-height:1.7;}
+  .strategy-box .step b{color:var(--gold);}
+  .passage-box{background:#F7F6F2;border-radius:6px;padding:14px 16px;font-family:Georgia,'Nanum Myeongjo',serif;font-style:italic;font-size:13.5px;line-height:1.9;color:var(--ink);margin-bottom:14px;}
+  .choice-num{font-style:normal;font-weight:700;}
+  .wrong-choice{color:var(--danger);font-weight:700;text-decoration:underline wavy var(--danger);text-decoration-skip-ink:none;}
+  .student-answer-row{display:flex;gap:18px;font-size:12.5px;margin-bottom:14px;flex-wrap:wrap;}
+  .student-answer-row .lbl{color:var(--slate);}
+  .student-answer-row .wrong-val{color:var(--danger);font-weight:700;text-decoration:line-through;}
+  .student-answer-row .right-val{color:var(--green);font-weight:700;}
+  .ans-badge{display:inline-flex;align-items:center;gap:6px;background:#E8F1EA;border:1px solid var(--green);color:var(--green);font-weight:700;font-size:12.5px;border-radius:14px;padding:4px 12px;margin-bottom:14px;}
+  .explain-block{margin-bottom:8px;padding:8px 0;border-bottom:1px dotted var(--line);}
+  .explain-block:last-of-type{border-bottom:none;}
+  .explain-head{font-size:12.5px;font-weight:700;color:var(--blue);margin-bottom:3px;}
+  .explain-head.wrongkey{color:var(--danger);}
+  .explain-body{font-size:12px;color:var(--ink);line-height:1.6;}
+  .misconception-box{background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:6px;padding:11px 14px;margin:14px 0;font-size:12px;color:#5c4415;line-height:1.6;}
+  .misconception-box b{color:#8a6414;}
+  .keypoint-box{background:var(--navy);color:#fff;border-radius:6px;padding:12px 16px;font-size:12.5px;line-height:1.6;margin-top:6px;}
+  .keypoint-box b{color:var(--gold);}
+  .answer-blank-row{display:flex;align-items:center;gap:10px;margin-top:18px;}
+  .answer-blank-row .lbl{font-size:12.5px;color:var(--slate);flex-shrink:0;}
+  .blankline{flex:1;border-bottom:1px solid var(--slate);height:28px;}
+  .rcard{background:var(--white);border:1px solid var(--line);border-radius:8px;padding:18px 20px;margin-bottom:14px;}
+  .rname{font-size:16px;color:var(--navy);font-weight:700;margin-bottom:2px;}
+  .rmeta{font-size:12px;color:var(--slate);margin-bottom:14px;}
+  .rstats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;border-top:1px solid var(--line);padding-top:14px;}
+  .rstats .num{font-size:20px;font-weight:700;}
+  .rstats .lbl{font-size:10.5px;color:var(--slate);margin-top:2px;}
+  .qrow{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px dotted var(--line);font-size:13px;}
+  .qrow:last-child{border-bottom:none;}
+  .qbadge{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;margin-right:8px;flex-shrink:0;}
+  .qbadge.ok{background:var(--green);}
+  .qbadge.no{background:var(--danger);}
+  .qtxt{flex:1;color:var(--ink);}
+  .qtag{font-size:10px;color:var(--slate);border:1px solid var(--line);border-radius:8px;padding:1px 7px;flex-shrink:0;}
+  @media print{
+    .sheet-page{border:none;box-shadow:none;margin:0;max-width:none;break-after:page;page-break-after:always;}
+    .sheet-page:last-child{break-after:auto;page-break-after:auto;}
+  }
+  /* ExamEditor's test-selected detail view — a fixed 3-column grid (list | info+summary+print
+     buttons | wrong-answer cards) that never collapses to a vertical stack, unlike the shared
+     .ap-mlist/.ap-mlist-left/.ap-mlist-right pattern used elsewhere in the app (that one DOES
+     stack under 760px). Deliberately scoped to its own ex3-* classes instead of reusing/altering
+     .ap-mlist so this one screen's "always side-by-side, scroll sideways instead" behavior can't
+     leak into the many other places .ap-mlist is used. .ex3-scroll owns the horizontal scrollbar;
+     .ex3-layout's min-width is what forces it to appear once the viewport can't fit all 3 columns
+     at once. .ex3-col3 scrolls vertically on its own so a long wrong-answer list doesn't push the
+     whole page (and columns 1/2) down with it. */
+  .ex3-scroll{overflow-x:auto;}
+  .ex3-layout{display:grid;grid-template-columns:220px 300px 1fr;gap:16px;min-width:900px;align-items:start;}
+  .ex3-col1{min-width:0;}
+  .ex3-col2{min-width:0;}
+  .ex3-col3{min-width:0;max-height:calc(100vh - 220px);overflow-y:auto;padding-right:4px;}
+`;
+// Builds one card's <div class="card-header">...</div><div class="card-body">...</div> inner
+// HTML — the caller wraps it in <div class="sheet-page">. showAnswer=false is the "📝 오답
+// 문제만 인쇄" mode (stem/choices only + a blank line to re-answer on); showAnswer=true is both
+// the "📘 오답 문제 + 정답 인쇄" mode and the on-screen list (the teacher should always see the
+// answer on screen). given/correct are passed through stripAnswerLabel — see the comment above
+// that function — so a "정답:" label baked into old paste-imported data never doubles up here.
+function examWrongCardBodyHtml(item, displayIndex, sourceLabel, showAnswer) {
+  const q = item.question;
+  const isMc = !!(q && q.type !== "subjective");
+  const stem = esEscapeHtml(q ? q.q : item.row.prompt);
+  const choicesHtml = isMc
+    ? (q.choices || []).map((c, i) => `<span class="choice-num">${ES_CIRC[i] || (i + 1) + ")"}</span> ${esEscapeHtml(stripChoiceLabel(c))}<br/>`).join("")
+    : "";
+  const num = String(displayIndex + 1).padStart(2, "0");
+  const given = esEscapeHtml(stripChoiceLabel(stripAnswerLabel(item.row.given)));
+  const correct = esEscapeHtml(stripChoiceLabel(stripAnswerLabel(item.row.correct)));
+  return `<div class="card-header">
+    <div class="num-badge">${num}</div>
+    <div class="header-txt">
+      <div class="source-line">${esEscapeHtml(sourceLabel || "")}${showAnswer ? "" : " — 오답 다시 풀기"}</div>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="passage-box">${stem}${choicesHtml ? "<br/><br/>" + choicesHtml : ""}</div>
+    ${showAnswer
+      ? `<div class="student-answer-row">
+          <span><span class="lbl">내 답: </span><span class="wrong-val">${given}</span></span>
+          <span><span class="lbl">정답: </span><span class="right-val">${correct}</span></span>
+        </div>`
+      : `<div class="answer-blank-row"><span class="lbl">내 답: </span><span class="blankline"></span></div>`}
+  </div>`;
+}
+// Print-only "오답 시험지" layout — deliberately NOT the .sheet-page card style above (that stays
+// on-screen only, via examWrongCardBodyHtml). The teacher asked for the printed sheet to look like
+// this app's other actual worksheets (wordtest.html's word-test sheet, GrammarBankPrototype's
+// buildGrammarPrintHtml) rather than the boxed navy-header card mockup: a centered title block
+// (Sarah's English tag + big title + date/student/count line), a 이름/날짜/점수 fill-in row (only
+// on the answerless "오답 문제만" version — buildAnswerPageHtml in wordtest.html omits it on its
+// answer sheet the same way), then questions flowing in 2 CSS columns. CSS multi-column
+// (column-count, with break-inside:avoid per question) is used instead of wordtest.html's manual
+// slice(0, half) left/right split — that manual split assumes short, uniform-height items (single
+// words); these are full stems + up to 5 choices each, so letting the browser balance variable-
+// height blocks across columns (the same technique buildGrammarPrintHtml already uses for grammar
+// worksheets) avoids one column running much longer than the other.
+const EXAM_WRONG_SHEET_CSS = `
+  :root{ --charcoal:#2b2a28; --gold:#a8853f; --gold-soft:#cdb372; --slate:#5c6470; --danger:#A6473A; --green:#2E6B44; }
+  *{box-sizing:border-box;}
+  body{font-family:Georgia,'Nanum Myeongjo',serif;color:var(--charcoal);margin:0;padding:0;background:#fff;}
+  .sheet-page{padding:30px 34px;}
+  .sheet-rule{border:none;border-top:1px solid var(--gold-soft);margin:14px 0;}
+  .sheet-header{text-align:center;margin-bottom:6px;}
+  .sheet-header .eng-tag{font-style:italic;font-size:12.5px;color:var(--slate);letter-spacing:1px;}
+  .sheet-header h3{margin:6px 0 2px;font-size:22px;letter-spacing:2px;color:var(--charcoal);}
+  .sheet-header .daymeta{font-size:12.5px;color:var(--slate);margin-top:4px;}
+  .info-row{display:flex;justify-content:space-between;font-size:13px;color:var(--charcoal);margin:18px 0 6px;}
+  .info-row span{border-bottom:1px solid var(--slate);padding-bottom:2px;min-width:110px;display:inline-block;}
+  .eq-body{column-count:2;column-gap:30px;margin-top:16px;}
+  .eq-q{margin-bottom:16px;break-inside:avoid;page-break-inside:avoid;}
+  .eq-qtext{font-size:13px;line-height:1.6;white-space:pre-wrap;}
+  .eq-qtext b{color:var(--gold);}
+  .eq-choices{margin:6px 0 0 2px;font-size:12.5px;line-height:1.65;}
+  .eq-blank{margin:8px 2px 0;border-bottom:1px solid var(--slate);height:20px;}
+  .eq-compare{margin:6px 0 0 2px;font-size:12px;}
+  .eq-compare .lbl{color:var(--slate);}
+  .eq-compare .wrong{color:var(--danger);font-weight:700;text-decoration:line-through;}
+  .eq-compare .right{color:var(--green);font-weight:700;}
+  @page{ size:A4; margin:14mm; }
+`;
+function buildExamWrongWorksheetItemHtml(item, displayIndex, showAnswer) {
+  const q = item.question;
+  const isMc = !!(q && q.type !== "subjective");
+  const stem = esEscapeHtml(q ? q.q : item.row.prompt);
+  let inner = `<div class="eq-qtext"><b>${displayIndex + 1}.</b> ${stem}</div>`;
+  if (isMc) {
+    inner += `<div class="eq-choices">` + (q.choices || []).map((c, i) => `<div>${ES_CIRC[i] || (i + 1) + ")"} ${esEscapeHtml(stripChoiceLabel(c))}</div>`).join("") + `</div>`;
+  }
+  if (showAnswer) {
+    const given = esEscapeHtml(stripChoiceLabel(stripAnswerLabel(item.row.given)));
+    const correct = esEscapeHtml(stripChoiceLabel(stripAnswerLabel(item.row.correct)));
+    inner += `<div class="eq-compare"><span class="lbl">내 답</span> <span class="wrong">${given}</span> <span class="lbl">· 정답</span> <span class="right">${correct}</span></div>`;
+  } else if (!isMc) {
+    inner += `<div class="eq-blank"></div>`;
+  }
+  return `<div class="eq-q">${inner}</div>`;
+}
+function buildExamWrongWorksheetPrintHtml(wrongItems, test, r, studentName, showAnswer) {
+  const title = test ? test.title : "추가시험";
+  const modeLabel = showAnswer ? "오답노트" : "오답 다시 풀기";
+  const dayMeta = [fmtDate(r.date), studentName, `총 ${wrongItems.length}문항`].filter(Boolean).join(" · ");
+  const qBlocks = wrongItems.map((item, i) => buildExamWrongWorksheetItemHtml(item, i, showAnswer)).join("");
+  const infoRow = showAnswer ? "" : `<div class="info-row"><span>이름: </span><span>날짜: </span><span>점수: </span></div>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(title)} - ${esEscapeHtml(modeLabel)}</title><style>${EXAM_WRONG_SHEET_CSS}</style></head><body>
+    <div class="sheet-page">
+      <div class="sheet-header"><div class="eng-tag">Sarah's English · ${esEscapeHtml(title)}</div><h3>${esEscapeHtml(modeLabel)}</h3><div class="daymeta">${esEscapeHtml(dayMeta)}</div></div>
+      <hr class="sheet-rule">
+      ${infoRow}
+      <div class="eq-body">${qBlocks}</div>
+    </div>
+  </body></html>`;
+}
+
+// Shared by both halves of one "추가시험" attempt's display (ExamResultSummaryBlock in column 2,
+// ExamResultCardsBlock in column 3, see ExamEditor) — every attempt (including repeats/retests on
+// the same test) gets its own pair of blocks, since a student can be wrong on different questions
+// across attempts; this deliberately does NOT dedupe across attempts the way collectWrongExamItems
+// (below, used by WrongNoteSection) does. Within a single attempt, the result IS deduped by
+// (prompt+given+correct) — a fully identical repeat almost certainly means the same question got
+// parsed into the test twice (e.g. a PDF text-extraction column overlap duplicating a whole
+// question block), and showing that exact duplicate twice in a wrong-answer worksheet isn't useful
+// regardless of the root cause.
+function computeExamWrongItems(r, test) {
+  const seen = new Set();
+  return (r.breakdown || [])
+    .map((row, i) => ({ row, question: test ? test.questions[i] : null }))
+    .filter((item) => !item.row.ok)
+    .filter((item) => {
+      const dedupeKey = `${item.row.prompt}||${item.row.given}||${item.row.correct}`;
+      if (seen.has(dedupeKey)) return false;
+      seen.add(dedupeKey);
+      return true;
+    });
+}
+const EXAM_QROW_LIMIT = 5;
+// Column 2 of ExamEditor's 3-column detail view — one attempt's score line + "문제별 결과"
+// (wrong-only, collapsed past EXAM_QROW_LIMIT behind an expandable "▸ 그 외 N문항 더 보기" row)
+// + the two print buttons. No open/close toggle anymore — selecting a test now always shows
+// everything for it side by side (columns 2/3), so there's nothing left to reveal on click.
+function ExamResultSummaryBlock({ r, test, studentName }) {
+  const [expanded, setExpanded] = useState(false);
+  const wrongItems = computeExamWrongItems(r, test);
+  const visibleRows = expanded ? wrongItems : wrongItems.slice(0, EXAM_QROW_LIMIT);
+  const hiddenRowCount = wrongItems.length - visibleRows.length;
+
+  function printWrongOnly() { esOpenPrintWindow(buildExamWrongWorksheetPrintHtml(wrongItems, test, r, studentName, false)); }
+  function printWrongExplain() { esOpenPrintWindow(buildExamWrongWorksheetPrintHtml(wrongItems, test, r, studentName, true)); }
+
+  return html`
+    <div style=${{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+      <div style=${{ fontSize: 12.5, marginBottom: 8 }}>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total}</div>
+      ${wrongItems.length === 0 ? html`
+        <div style=${{ fontSize: 12.5, color: C.navy, fontWeight: 700 }}>🎉 모두 맞았어요</div>
+      ` : html`
+        <div className="rcard">
+          <div style=${{ fontWeight: 700, color: "var(--navy)", fontSize: 13, marginBottom: 4 }}>문제별 결과</div>
+          ${visibleRows.map((item, i) => html`
+            <div key=${i} className="qrow">
+              <span className="qbadge no">✕</span>
+              <span className="qtxt">${i + 1}. ${item.row.prompt}</span>
+            </div>
+          `)}
+          ${hiddenRowCount > 0 && html`
+            <div className="qrow" style=${{ cursor: "pointer" }} onClick=${() => setExpanded(true)}>
+              <span className="qtxt" style=${{ color: "var(--gold)", fontWeight: 700 }}>▸ 그 외 ${hiddenRowCount}문항 더 보기</span>
+            </div>
+          `}
+        </div>
+        <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <${Button} variant="ghost" onClick=${printWrongOnly} style=${{ fontSize: 11.5, padding: "6px 10px" }}>📝 오답 문제만 인쇄<//>
+          <${Button} variant="ghost" onClick=${printWrongExplain} style=${{ fontSize: 11.5, padding: "6px 10px" }}>📘 오답 문제 + 정답 인쇄<//>
+        </div>
+      `}
+    </div>
+  `;
+}
+// Column 3 of ExamEditor's 3-column detail view — one attempt's wrong-answer cards, same
+// .sheet-page markup (and same examWrongCardBodyHtml builder) the print-outs share, see
+// EXAM_WRONG_CARD_CSS. Renders nothing when the attempt has no wrong answers — ExamResultSummaryBlock
+// already says "🎉 모두 맞았어요" for that case, no need to repeat it here.
+function ExamResultCardsBlock({ r, test, studentName }) {
+  const wrongItems = computeExamWrongItems(r, test);
+  if (wrongItems.length === 0) return null;
+  const sourceLabel = [test ? test.title : "(삭제된 시험)", fmtDate(r.date), studentName].filter(Boolean).join(" · ");
+  return html`
+    <div style=${{ marginBottom: 16 }}>
+      ${wrongItems.map((item, i) => html`
+        <div key=${i} className="sheet-page" dangerouslySetInnerHTML=${{ __html: examWrongCardBodyHtml(item, i, sourceLabel, true) }}></div>
+      `)}
     </div>
   `;
 }
@@ -19621,7 +19927,7 @@ function collectWrongExamItems(examTests, examResults) {
       if (row.ok) return;
       const original = test && test.questions[i];
       items.push({
-        key: row.prompt, prompt: row.prompt, given: row.given, correct: row.correct,
+        key: row.prompt, prompt: row.prompt, given: stripChoiceLabel(stripAnswerLabel(row.given)), correct: stripChoiceLabel(stripAnswerLabel(row.correct)),
         testTitle: test ? test.title : "(삭제된 시험)", date: r.date,
         resultId: r.id, rowIndex: i, wrongCount: wrongCounts[row.prompt],
         question: original ? { ...original } : null,
@@ -23112,8 +23418,8 @@ function TestTaker({ activeTest, onExit, onSubmit }) {
             ${breakdown.map((r, i) => html`
               <div key=${i} style=${{ padding: "8px 0", borderBottom: i < breakdown.length - 1 ? `1px solid ${C.line}` : "none" }}>
                 <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${i + 1}. ${type === "exam" ? renderFormattedQuestionStem(r.prompt) : r.prompt}</div>
-                <div style=${{ fontSize: 12, marginTop: 3, color: r.ok ? C.navy : C.danger }}>내 답: ${r.given} ${r.ok ? "✓" : "✗"}</div>
-                ${!r.ok && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 1 }}>정답: ${r.correct}</div>`}
+                <div style=${{ fontSize: 12, marginTop: 3, color: r.ok ? C.navy : C.danger }}>내 답: ${type === "exam" ? stripChoiceLabel(stripAnswerLabel(r.given)) : r.given} ${r.ok ? "✓" : "✗"}</div>
+                ${!r.ok && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 1 }}>정답: ${type === "exam" ? stripChoiceLabel(stripAnswerLabel(r.correct)) : r.correct}</div>`}
               </div>
             `)}
           <//>
