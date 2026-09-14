@@ -19632,7 +19632,7 @@ function ExamEditor({ student, data, updateData }) {
                     : results.map((r) => html`<${ExamResultSummaryBlock} key=${r.id} r=${r} test=${t} studentName=${studentName} />`)}
                 </div>
                 <div key="col3" className="ex3-col3">
-                  ${results.map((r) => html`<${ExamResultCardsBlock} key=${r.id} r=${r} test=${t} studentName=${studentName} />`)}
+                  ${results.map((r) => html`<${ExamResultCardsBlock} key=${r.id} r=${r} test=${t} studentName=${studentName} updateData=${updateData} />`)}
                 </div>
               `;
             })()}
@@ -19719,7 +19719,7 @@ const EXAM_WRONG_CARD_CSS = `
      at once. .ex3-col3 scrolls vertically on its own so a long wrong-answer list doesn't push the
      whole page (and columns 1/2) down with it. */
   .ex3-scroll{overflow-x:auto;}
-  .ex3-layout{display:grid;grid-template-columns:220px 300px 1fr;gap:16px;min-width:900px;align-items:start;}
+  .ex3-layout{display:grid;grid-template-columns:220px 360px 1fr;gap:16px;min-width:960px;align-items:start;}
   .ex3-col1{min-width:0;}
   .ex3-col2{min-width:0;}
   .ex3-col3{min-width:0;max-height:calc(100vh - 220px);overflow-y:auto;padding-right:4px;}
@@ -19837,7 +19837,7 @@ function buildExamWrongWorksheetPrintHtml(wrongItems, test, r, studentName, show
 function computeExamWrongItems(r, test) {
   const seen = new Set();
   return (r.breakdown || [])
-    .map((row, i) => ({ row, question: test ? test.questions[i] : null }))
+    .map((row, i) => ({ row, question: test ? test.questions[i] : null, rowIndex: i }))
     .filter((item) => !item.row.ok)
     .filter((item) => {
       const dedupeKey = `${item.row.prompt}||${item.row.given}||${item.row.correct}`;
@@ -19892,14 +19892,40 @@ function ExamResultSummaryBlock({ r, test, studentName }) {
 // .sheet-page markup (and same examWrongCardBodyHtml builder) the print-outs share, see
 // EXAM_WRONG_CARD_CSS. Renders nothing when the attempt has no wrong answers — ExamResultSummaryBlock
 // already says "🎉 모두 맞았어요" for that case, no need to repeat it here.
-function ExamResultCardsBlock({ r, test, studentName }) {
+//
+// "✓ 정답 처리" reuses the exact same override shape WrongNoteSection's markResolved() and
+// VocabResultRow's markCorrect() already use elsewhere in this file — flip that one breakdown
+// row's ok to true with manualOverride:true and recompute score from the updated breakdown — so a
+// teacher can correct a case where the exact-match grader was too strict (mainly subjective
+// answers) without needing to go to the separate 오답노트 screen. The button lives outside the
+// dangerouslySetInnerHTML card (that HTML string is shared with the print output, which has no
+// interactivity) rather than inside it.
+function ExamResultCardsBlock({ r, test, studentName, updateData }) {
   const wrongItems = computeExamWrongItems(r, test);
   if (wrongItems.length === 0) return null;
   const sourceLabel = [test ? test.title : "(삭제된 시험)", fmtDate(r.date), studentName].filter(Boolean).join(" · ");
+
+  async function markCorrect(rowIndex) {
+    await updateData((d) => ({
+      ...d,
+      examResults: d.examResults.map((x) => {
+        if (x.id !== r.id) return x;
+        const breakdown = x.breakdown.map((row, i) => (i === rowIndex ? { ...row, ok: true, manualOverride: true } : row));
+        const score = breakdown.filter((row) => row.ok).length;
+        return { ...x, breakdown, score };
+      }),
+    }));
+  }
+
   return html`
     <div style=${{ marginBottom: 16 }}>
       ${wrongItems.map((item, i) => html`
-        <div key=${i} className="sheet-page" dangerouslySetInnerHTML=${{ __html: examWrongCardBodyHtml(item, i, sourceLabel, true) }}></div>
+        <div key=${i} style=${{ marginBottom: 8 }}>
+          <div className="sheet-page" dangerouslySetInnerHTML=${{ __html: examWrongCardBodyHtml(item, i, sourceLabel, true) }}></div>
+          <div style=${{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+            <${Button} variant="ghost" onClick=${() => markCorrect(item.rowIndex)} style=${{ fontSize: 11, padding: "4px 10px" }}>✓ 정답 처리<//>
+          </div>
+        </div>
       `)}
     </div>
   `;
