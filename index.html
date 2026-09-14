@@ -3653,6 +3653,13 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
 // 진입 가능하다(예: Today의 학생 카드 → studentArea, 시험지 배정 화면의 학생 선택 등).
 const MOBILE_TABBAR_KEYS = new Set(["dashboard", "questionBank", "readingAnalysis", "reports"]);
 
+// "✏️ 빠른 기록" 모바일 전용 탭(2026-09-14, 사용자 첨부 quick-record-tab-mobile-preview.html)
+// — 데스크탑 SideNav는 절대 안 건드려야 해서 공용 navItems 배열에는 넣지 않고, 모바일 탭바
+// 렌더링에서만 Exam Studio(readingAnalysis)와 Reports 사이에 끼워 넣는 별도 항목으로 둔다.
+// section 값("quickRecord")은 desktop의 navItems/SideNav 어디에도 없어서 데스크탑에서는
+// 절대 도달할 수 없다.
+const MOBILE_QUICK_RECORD_ITEM = { key: "quickRecord", label: "빠른 기록", icon: "✏️" };
+
 function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, teacherTodos, saveTeacherTodos, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   // Teacher OS 통합 (Phase 1) — 로그인 후 첫 화면을 기존 "mainpage"(TeacherOverview)에서 새
@@ -3949,6 +3956,12 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       onGoBookings=${() => setSection("bookings")} onGoHwStatus=${() => setSection("hwstatus")}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory(null); }}
       onSelectStudentInfo=${(id) => { setSection("studentInfo"); setSelectedStudentId(id); }} />`;
+  } else if (section === "quickRecord") {
+    // 모바일 탭바에서만 도달 가능(desktop navItems엔 없음) — 이 분기가 body를 null로 남겨두면
+    // 아래 isMobile 렌더 블록이 body 대신 QuickRecordSection을 직접 그린다. 이 else-if가 없으면
+    // 알 수 없는 section으로 취급돼 바로 아래 fallback(TeacherCenterSection, 로스터 전체
+    // ensureData)이 쓸데없이 같이 마운트된다.
+    body = null;
   } else {
     // 알 수 없는(또는 기본) section — 예전엔 mainpage였지만, 이제 기본 화면은 Today다.
     body = html`<${TeacherCenterSection} key="tc-home-fallback" roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialView="home"
@@ -3969,20 +3982,30 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   // SideNav와 동일하게 navItems 전체를 보여주므로 "readingAnalysis"가 옛 MOBILE_TEACHER_SECTIONS
   // 배열에서 누락돼 있던 문제도 같이 해결된다.
   if (isMobile) {
+    // Exam Studio(readingAnalysis)와 Reports 사이에 "✏️ 빠른 기록"을 끼워 넣는다 — navItems
+    // 자체는 안 건드리므로(데스크탑 SideNav 무수정) 이 배열은 모바일 탭바 렌더링에만 쓰인다.
+    const mobileTabs = [];
+    navItems.filter((n) => MOBILE_TABBAR_KEYS.has(n.key)).forEach((n) => {
+      mobileTabs.push(n);
+      if (n.key === "readingAnalysis") mobileTabs.push(MOBILE_QUICK_RECORD_ITEM);
+    });
+    const activeLabel = (mobileTabs.find((n) => n.key === activeKey) || navItems.find((n) => n.key === activeKey) || {}).label || "Sarah's English";
     return html`
       <div style=${{ minHeight: "100vh", background: C.ivory }}>
         <div className="ap-mobile-topbar">
-          <span className="title">${(navItems.find((n) => n.key === activeKey) || {}).label || "Sarah's English"}</span>
+          <span className="title">${activeLabel}</span>
           <button onClick=${onLogout}>로그아웃</button>
         </div>
         <div className="ap-mobile-tabbar">
-          ${navItems.filter((n) => MOBILE_TABBAR_KEYS.has(n.key)).map((n) => html`
+          ${mobileTabs.map((n) => html`
             <button key=${n.key} className=${"ap-mobile-tab" + (activeKey === n.key ? " active" : "")} onClick=${() => handleNavChange(n.key)} title=${n.label} aria-label=${n.label}>
               <span className="ic">${n.icon}</span>
             </button>
           `)}
         </div>
-        <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>${body}</div>
+        <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
+          ${section === "quickRecord" ? html`<${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />` : body}
+        </div>
         ${ReactDOM.createPortal(html`<${ReadingLibraryAdminSection} />`, readingLibraryContainerRef.current)}
       </div>
     `;
@@ -20469,6 +20492,231 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
         </div>
       <//>
       <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${answers.some((a) => !a.trim())} onClick=${submit}>제출하기<//>
+    </div>
+  `;
+}
+
+// ---------- Quick Record (모바일 전용 "✏️ 빠른 기록" 탭) ----------
+// 2026-09-14, 사용자 첨부 quick-record-tab-mobile-preview.html을 그대로 이식. 학생을 고르고
+// 숙제/단어시험/모의고사 기록을 화면 전환(달력·목록 등) 없이 한 화면에서 바로 입력할 수 있게
+// 한다 — TeacherDash의 모바일 탭바(useIsMobile()===true)에서만 진입 가능, 데스크탑에는 진입점이
+// 없다. 각 패널은 HomeworkEditor/VocabLogEditor/MockExamEditor+MockExamTaker의 등록/채점 저장
+// 로직(updateData 쓰기 패턴)을 그대로 재사용하고, 그 화면들의 달력 뷰·목록·수정 기능은 옮기지
+// 않는다(이 탭의 목적은 "빠르게 기록"이지 "조회/수정"이 아니라서).
+
+// 숙제 탭 — HomeworkEditor.add()와 정확히 같은 쓰기(homework[] 배열 + notifyStudent) 패턴.
+// 유형(category) 선택은 미리보기 목업에 없어서 생략하고 항상 null로 저장한다(선택 필드라
+// HomeworkEditor 쪽 표시/필터에 영향 없음).
+function QuickHomeworkPanel({ student, updateData }) {
+  const [assignedDate, setAssignedDate] = useState(today());
+  const [dueDate, setDueDate] = useState(today());
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function add() {
+    if (!content.trim() || saving) return;
+    setSaving(true);
+    try {
+      await updateData((d) => ({ ...d, homework: [{ id: uid(), assignedDate, dueDate, content: content.trim(), category: null, done: false, photos: [] }, ...(d.homework || [])] }));
+      notifyStudent(student.studentFcmToken, "homework_assigned", content.trim());
+      setContent("");
+      setMsg("숙제를 등록했어요.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return html`
+    <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>＋ 숙제 내주기</div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div style=${{ flex: 1 }}><${Field} label="내준 날짜"><${DateField} value=${assignedDate} onChange=${setAssignedDate} /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="제출 기한"><${DateField} value=${dueDate} onChange=${setDueDate} /><//></div>
+      </div>
+      <${Field} label="숙제 내용">
+        <textarea rows="3" style=${{ ...inputStyle, resize: "none" }} value=${content} onChange=${(e) => setContent(e.target.value)} placeholder="예) 문법 8과 워크북 p.20-25" />
+      <//>
+      ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${msg}</div>`}
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${saving || !content.trim()} onClick=${add}>${saving ? "저장 중..." : "숙제 추가"}<//>
+    </div>
+  `;
+}
+
+// 단어시험 탭 — VocabLogEditor.add()와 정확히 같은 판정식(오답 허용 개수 반올림, 누적이면 90%/
+// 10%, 아니면 80%/20%)·쓰기(vocabLog[] 배열) 패턴. 날짜는 목업에 입력칸이 없어서 항상 today()로
+// 저장한다(VocabLogEditor의 date state 기본값과 동일). 교재 직접 추가(+) 버튼은 목업에 없어서
+// 생략 — 이미 등록된 교재 중에서 고르는 용도로만 쓴다.
+function QuickVocabPanel({ data, updateData }) {
+  const [customBooks, setCustomBooks] = useState([]);
+  const [book, setBook] = useState(BOOK_LIST[0]);
+  const [range, setRange] = useState("");
+  const [correct, setCorrect] = useState("");
+  const [total, setTotal] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const doc = await window.SarahServices.firebaseClient.getDoc("sarahsEnglishSettings", "main");
+        if (!cancelled) setCustomBooks((doc && doc.vocabBooks) || []);
+      } catch (e) {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const allBooks = [...BOOK_LIST, ...customBooks];
+  const isCumulative = range.includes("누적");
+  const threshold = isCumulative ? 90 : 80;
+  const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
+  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.10 : 0.20)) : null;
+  const wrongCount = total && correct !== "" ? Number(total) - Number(correct) : null;
+  const willPass = wrongCount !== null ? wrongCount <= allowedWrong : null;
+
+  async function add() {
+    if (!total || !range || !book || saving) return;
+    setSaving(true);
+    try {
+      const scorePct = Math.round((Number(correct) / Number(total)) * 100);
+      const passed = wrongCount <= allowedWrong;
+      await updateData((d) => ({
+        ...d,
+        vocabLog: [{ id: uid(), date: today(), book, range, correct: Number(correct), total: Number(total), score: scorePct, passed, retest: "" }, ...(d.vocabLog || [])],
+      }));
+      setMsg("단어시험 기록을 저장했어요.");
+      setRange(""); setCorrect(""); setTotal("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return html`
+    <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>✏️ 단어시험 기록</div>
+      <${Field} label="교재">
+        <select style=${inputStyle} value=${book} onChange=${(e) => setBook(e.target.value)}>
+          ${allBooks.map((b) => html`<option key=${b} value=${b}>${b}</option>`)}
+        </select>
+      <//>
+      <${Field} label="범위"><input style=${inputStyle} value=${range} onChange=${(e) => setRange(e.target.value)} placeholder="예) DAY12" /><//>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <div style=${{ flex: 1 }}><${Field} label="맞은 개수"><input style=${inputStyle} type="number" value=${correct} onChange=${(e) => setCorrect(e.target.value)} /><//></div>
+        <div style=${{ flex: 1 }}><${Field} label="전체 개수"><input style=${inputStyle} type="number" value=${total} onChange=${(e) => setTotal(e.target.value)} /><//></div>
+      </div>
+      ${pct !== null && html`<div style=${{ fontSize: 12, color: C.gold, fontWeight: 700, marginBottom: 14 }}>${pct}% · 통과 기준 ${threshold}% → ${willPass ? "합격 ✓" : "불합격"}</div>`}
+      ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${msg}</div>`}
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${saving || !total || !range || !book} onClick=${add}>${saving ? "저장 중..." : "기록 저장"}<//>
+    </div>
+  `;
+}
+
+// 모의고사 탭 — 새 모의고사를 만드는 폼(MockExamEditor의 "+ 새 모의고사 만들기")은 이 화면에
+// 없다, 요청대로 "이미 등록된 모의고사에 학생 답만 입력"하는 용도로만 쓴다. 문항별 입력 UI는
+// MockExamTaker의 pick()과 같은 숫자 전용 입력 방식을 재사용하고, 채점은 gradeMockAnswers를
+// 그대로 호출한다. 채점 결과는 (MockExamTaker처럼 별도 확인 화면을 두지 않고) 버튼 한 번에
+// 바로 mockExamResults에 저장한다 — 목업의 버튼이 "채점 결과 저장" 하나뿐이라서다. 점수 요약
+// 줄은 채점 전엔 알 수 없어 저장 완료 메시지로 보여준다(VocabLogEditor의 %처럼 입력 중 실시간
+// 미리보기는 아님 — 모든 문항 답이 다 채워져야 채점이 되는 구조라 실시간으로는 의미가 없다).
+function QuickMockPanel({ data, updateData }) {
+  const [testId, setTestId] = useState("");
+  const [answers, setAnswers] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const list = data.mockExams || [];
+  const test = list.find((t) => t.id === testId) || null;
+
+  useEffect(() => {
+    if (!testId && list.length > 0) setTestId(list[0].id);
+    /* eslint-disable-next-line */
+  }, [list.length]);
+
+  useEffect(() => {
+    setAnswers(test ? Array(test.answerKey.length).fill("") : []);
+    setMsg("");
+    /* eslint-disable-next-line */
+  }, [testId]);
+
+  function pick(i, val) { setAnswers((a) => a.map((v, idx) => (idx === i ? val.replace(/[^0-9]/g, "") : v))); }
+
+  async function save() {
+    if (!test || saving || answers.some((a) => !a.trim())) return;
+    setSaving(true);
+    try {
+      const { score, wrong } = gradeMockAnswers(answers, test.answerKey);
+      await updateData((d) => ({
+        ...d,
+        mockExamResults: [{ id: uid(), testId: test.id, date: today(), score, total: test.answerKey.length, wrong, answers, submittedAt: Date.now() }, ...(d.mockExamResults || [])],
+      }));
+      setMsg(`${score} / ${test.answerKey.length} 정답 · ${Math.round((score / test.answerKey.length) * 100)}점으로 저장했어요.`);
+      setAnswers(Array(test.answerKey.length).fill(""));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (list.length === 0) return html`<${Empty} text="등록된 모의고사가 없어요." />`;
+
+  return html`
+    <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16 }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>📄 모의고사 답 입력</div>
+      <${Field} label="모의고사 선택">
+        <select style=${inputStyle} value=${testId} onChange=${(e) => setTestId(e.target.value)}>
+          ${list.map((t) => html`<option key=${t.id} value=${t.id}>${t.title}</option>`)}
+        </select>
+      <//>
+      ${test && html`
+        <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>문항별 답 입력</div>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 14 }}>
+          ${test.answerKey.map((_, i) => html`
+            <div key=${i} style=${{ textAlign: "center" }}>
+              <div style=${{ fontSize: 9.5, color: C.slate, marginBottom: 2 }}>${i + 1}</div>
+              <input inputMode="numeric" pattern="[0-9]*" autocomplete="off" value=${answers[i] || ""} onChange=${(e) => pick(i, e.target.value)} style=${{ ...inputStyle, marginBottom: 0, padding: "6px 0", textAlign: "center" }} />
+            </div>
+          `)}
+        </div>
+        ${msg && html`<div style=${{ fontSize: 12, color: C.navy, fontWeight: 700, marginBottom: 14 }}>${msg}</div>`}
+        <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} disabled=${saving || answers.some((a) => !a.trim())} onClick=${save}>${saving ? "저장 중..." : "채점 결과 저장"}<//>
+      `}
+    </div>
+  `;
+}
+
+const QUICK_RECORD_TABS = [
+  { key: "hw", icon: "📝", label: "숙제" },
+  { key: "vocab", icon: "🔤", label: "단어시험" },
+  { key: "mock", icon: "📄", label: "모의고사" },
+];
+// 학생 선택 + 3개 서브탭(숙제/단어시험/모의고사) 셸. 서브탭 pill 스타일은 QuestionBankSection
+// 등에서 이미 쓰는 공용 SubTabs(.ap-subtabs 클래스, 배경 #F3F1EB·활성 탭 흰 배경+box-shadow)를
+// 그대로 재사용한다 — 새 스타일을 만들지 않는다.
+function QuickRecordSection({ roster, ensureData, dataCache, updateData }) {
+  const [studentId, setStudentId] = useState((roster[0] && roster[0].id) || "");
+  const [tab, setTab] = useState("hw");
+
+  useEffect(() => {
+    if (studentId) ensureData(studentId);
+    /* eslint-disable-next-line */
+  }, [studentId]);
+
+  if (roster.length === 0) return html`<${Empty} text="등록된 학생이 없어요." />`;
+
+  const student = roster.find((s) => s.id === studentId) || roster[0];
+  const data = dataCache[student.id] || emptyData();
+  const boundUpdateData = (updater) => updateData(student.id, updater);
+
+  return html`
+    <div>
+      <${Field} label="학생 선택">
+        <select style=${inputStyle} value=${student.id} onChange=${(e) => setStudentId(e.target.value)}>
+          ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
+        </select>
+      <//>
+      <${SubTabs} tabs=${QUICK_RECORD_TABS} active=${tab} onChange=${setTab} />
+      ${tab === "hw" && html`<${QuickHomeworkPanel} key=${student.id} student=${student} updateData=${boundUpdateData} />`}
+      ${tab === "vocab" && html`<${QuickVocabPanel} key=${student.id} data=${data} updateData=${boundUpdateData} />`}
+      ${tab === "mock" && html`<${QuickMockPanel} key=${student.id} data=${data} updateData=${boundUpdateData} />`}
     </div>
   `;
 }
