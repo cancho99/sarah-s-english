@@ -9316,6 +9316,7 @@ function ExamStudioSection({ roster, updateData }) {
   const [mobileAssignStudentId, setMobileAssignStudentId] = useState("");
   const [mobileAssignBusy, setMobileAssignBusy] = useState(false);
   const [mobileAssignMsg, setMobileAssignMsg] = useState("");
+  const [mobileAddingFolder, setMobileAddingFolder] = useState(false);
 
   const items = questions.filter((q) => q.stage === "review");
   const savedItems = questions.filter((q) => q.stage === "saved");
@@ -9703,7 +9704,6 @@ function ExamStudioSection({ roster, updateData }) {
       { key: "review", label: "🗂️ 생성·검토" },
       { key: "assign", label: "📄 시험지·배정" },
     ];
-    const sortedPassages = [...passageLibrary].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     return html`
       <div>
         <div style=${{ display: "flex", overflowX: "auto", gap: 2, background: C.ivory, borderRadius: 6, padding: 3, marginBottom: 14 }}>
@@ -9733,18 +9733,81 @@ function ExamStudioSection({ roster, updateData }) {
             <${Button} variant="gold" disabled=${genBusy} onClick=${mobileGenerate} style=${{ width: "100%", justifyContent: "center" }}>${genBusy ? "생성 중..." : "✨ 문제 생성하기"}<//>
             <button onClick=${() => setMobileShowGenerate(false)} style=${{ width: "100%", marginTop: 8, padding: "6px 0", background: "none", border: "none", color: C.slate, fontSize: 12, cursor: "pointer" }}>‹ 보관함으로</button>
           </div>
-        ` : mobileTab === "library" ? html`
-          <div>
-            ${sortedPassages.length === 0 ? html`<${Empty} text="저장된 지문이 없어요." />` : sortedPassages.map((p) => html`
-              <${Card} key=${p.localId}>
-                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 6 }}>${p.title || "(제목 없음)"}</div>
-                <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${p.text}</div>
-                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>${[p.grade, p.publisher].filter(Boolean).join(" · ")}${p.grade || p.publisher ? " · " : ""}저장일 ${p.createdAt ? fmtDate(p.createdAt.slice(0, 10)) : "-"}</div>
-                <${Button} onClick=${() => mobileUseLibraryPassage(p)} style=${{ width: "100%", justifyContent: "center" }}>✏️ 이 지문으로 문제 만들기<//>
-              <//>
-            `)}
-          </div>
-        ` : mobileTab === "review" ? html`
+        ` : mobileTab === "library" ? (
+          // 데스크탑 EsFolderNav와 같은 학년→출판사 폴더→내신/수능 구조를 그대로 따라간다 —
+          // 전체를 한 목록으로 나열하던 옛 방식은 지문이 쌓일수록 원하는 걸 찾기 어렵다는
+          // 사용자 피드백(2026-09-14)으로 대체됐다. libraryPath/passageFolders/addFolder는
+          // 데스크탑 "지문 보관함" 화면이 이미 쓰던 것을 그대로 재사용한다.
+          !libraryPath.grade ? html`
+            <div>
+              <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 10 }}>학년을 선택하세요</div>
+              <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+                ${LIBRARY_GRADES.map((g) => html`
+                  <${Card} key=${g} onClick=${() => setLibraryPath({ grade: g, publisher: null, examType: null })}
+                    style=${{ marginBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                    <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style=${{ fontSize: 20 }}>📁</span>
+                      <span style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${g}</span>
+                    </div>
+                    <span style=${{ fontSize: 12, color: C.slate }}>${passageLibrary.filter((p) => p.grade === g).length}개 ›</span>
+                  <//>
+                `)}
+              </div>
+            </div>
+          ` : !libraryPath.publisher ? html`
+            <div>
+              <${BackBtn} onClick=${() => setLibraryPath(esEmptyCategoryTag())} />
+              <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${libraryPath.grade} — 출판사 폴더</div>
+              ${(passageFolders[libraryPath.grade] || []).length === 0 && html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 12 }}>아직 만든 출판사 폴더가 없어요. 아래에서 추가해보세요.</div>`}
+              <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                ${(passageFolders[libraryPath.grade] || []).map((pub) => html`
+                  <${Card} key=${pub} onClick=${() => setLibraryPath({ grade: libraryPath.grade, publisher: pub, examType: ES_EXAM_TYPES[0] })}
+                    style=${{ marginBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                    <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style=${{ fontSize: 20 }}>📁</span>
+                      <span style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${pub}</span>
+                    </div>
+                    <span style=${{ fontSize: 12, color: C.slate }}>${passageLibrary.filter((p) => p.grade === libraryPath.grade && p.publisher === pub).length}개 ›</span>
+                  <//>
+                `)}
+              </div>
+              <button onClick=${() => setMobileAddingFolder(true)}
+                style=${{ width: "100%", padding: "9px 0", border: `1.5px dashed ${C.line}`, borderRadius: 4, background: "none", color: C.slate, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>+ 폴더 추가</button>
+              ${mobileAddingFolder && html`<${EsAddFolderModal} onClose=${() => setMobileAddingFolder(false)} onAdd=${(name) => { addFolder(libraryPath.grade, name); setMobileAddingFolder(false); }} />`}
+            </div>
+          ` : (() => {
+            const currentExamType = libraryPath.examType || ES_EXAM_TYPES[0];
+            const scoped = passageLibrary
+              .filter((p) => p.grade === libraryPath.grade && p.publisher === libraryPath.publisher && p.examType === currentExamType)
+              .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+            return html`
+              <div>
+                <${BackBtn} onClick=${() => setLibraryPath({ grade: libraryPath.grade, publisher: null, examType: null })} />
+                <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${libraryPath.grade} · ${libraryPath.publisher}</div>
+                <div style=${{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  ${ES_EXAM_TYPES.map((t) => html`
+                    <button key=${t} onClick=${() => setLibraryPath({ ...libraryPath, examType: t })}
+                      style=${{
+                        flex: 1, padding: "7px 0", fontSize: 12.5, fontWeight: 700, borderRadius: 20, cursor: "pointer",
+                        border: `1px solid ${currentExamType === t ? C.navy : C.line}`, background: currentExamType === t ? C.navy : "#fff", color: currentExamType === t ? "#fff" : C.slate,
+                      }}>${t}<//>
+                  `)}
+                </div>
+                ${scoped.length === 0 ? html`<${Empty} text="이 폴더에 저장된 지문이 없어요." />` : scoped.map((p) => html`
+                  <${Card} key=${p.localId}>
+                    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, minWidth: 0 }}>${p.title || "(제목 없음)"}</div>
+                      <button type="button" onClick=${() => deletePassageFromLibrary(p.localId)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 14, cursor: "pointer", flexShrink: 0, padding: 0 }} title="삭제">🗑</button>
+                    </div>
+                    <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${p.text}</div>
+                    <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>저장일 ${p.createdAt ? fmtDate(p.createdAt.slice(0, 10)) : "-"}</div>
+                    <${Button} onClick=${() => mobileUseLibraryPassage(p)} style=${{ width: "100%", justifyContent: "center" }}>✏️ 이 지문으로 문제 만들기<//>
+                  <//>
+                `)}
+              </div>
+            `;
+          })()
+        ) : mobileTab === "review" ? html`
           <div>
             <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 8 }}>검토 대기 (${items.length})</div>
             ${items.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>검토할 항목이 없어요.</div>` : html`
