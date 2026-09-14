@@ -12521,6 +12521,10 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
 // 검토 파이프라인은 AI 미검증 콘텐츠용, 이미 실사용해온 진짜 문항엔 해당 없음),
 // EP.manualSection/updateExamPaper/finalizeExamPaper를 그대로 재사용해 시험지를 확정한다 — 새
 // 저장/확정 로직을 따로 만들지 않고 기존 EP 파이프라인에 얹기만 한다.
+// 2026-09-14 — 사용자 요청으로 "내가 직접 문제를 누르는" 체크박스 방식을 버리고, 기존
+// GrammarBankPrototype(데스크탑 Grammar 탭)이 이미 쓰는 "카테고리 선택 → 객관식/주관식 개수
+// 입력 → 무작위 추출" 패턴을 그대로 재사용한다(getPool/mcCount·saCount/gbShuffle과 동일한
+// 모양) — 새 알고리즘을 만들지 않고 검증된 기존 패턴을 재사용.
 function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
   const [myQuestions, setMyQuestions] = useState(null);
   const [loadErr, setLoadErr] = useState("");
@@ -12539,22 +12543,49 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
   }, []);
 
   const [grade, setGrade] = useState(Object.keys(GB_GRAMMAR_TREE)[0]);
-  const [expandedCat, setExpandedCat] = useState({});
-  const [selectedIds, setSelectedIds] = useState({});
+  const [selectedCats, setSelectedCats] = useState({});
+  const [mcCount, setMcCount] = useState(5);
+  const [saCount, setSaCount] = useState(5);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
-  function toggleCat(cat) { setExpandedCat((e) => ({ ...e, [cat]: !e[cat] })); }
-  function toggleQuestion(id) { setSelectedIds((s) => ({ ...s, [id]: !s[id] })); }
-  const selectedCount = Object.values(selectedIds).filter(Boolean).length;
+  // 학년이 바뀌면 그 학년의 모든 카테고리를 기본 선택 상태로 켠다(GrammarBankPrototype의
+  // pickGrade와 같은 관례).
+  useEffect(() => {
+    if (!myQuestions) return;
+    const sel = {};
+    GB_GRAMMAR_TREE[grade].forEach((c) => { sel[c.cat] = true; });
+    setSelectedCats(sel);
+  }, [grade, myQuestions]);
+
+  function toggleCat(cat) { setSelectedCats((s) => ({ ...s, [cat]: !s[cat] })); }
+  function selectAllCats(checked) {
+    const sel = {};
+    GB_GRAMMAR_TREE[grade].forEach((c) => { sel[c.cat] = checked; });
+    setSelectedCats(sel);
+  }
+
+  const catBreakdown = GB_GRAMMAR_TREE[grade].map((c) => {
+    const items = c.subs.flatMap((sub) => gbAllQuestionsFor(grade, c.cat, sub, myQuestions || []).filter((it) => it.id));
+    return { cat: c.cat, mc: items.filter((it) => it.type === "mc").length, sa: items.filter((it) => it.type === "sa").length };
+  });
+  const mcPool = [], saPool = [];
+  GB_GRAMMAR_TREE[grade].forEach((c) => {
+    if (!selectedCats[c.cat]) return;
+    c.subs.forEach((sub) => {
+      gbAllQuestionsFor(grade, c.cat, sub, myQuestions || []).filter((it) => it.id).forEach((it) => (it.type === "mc" ? mcPool : saPool).push(it));
+    });
+  });
 
   async function handleCreate() {
     if (!title.trim()) { setErr("시험지 제목을 입력해 주세요."); return; }
-    if (selectedCount === 0) { setErr("문제를 하나 이상 선택해 주세요."); return; }
+    const mcN = Math.min(Math.max(0, parseInt(mcCount) || 0), mcPool.length);
+    const saN = Math.min(Math.max(0, parseInt(saCount) || 0), saPool.length);
+    if (mcN + saN === 0) { setErr("객관식/주관식 개수를 하나 이상 입력해 주세요(선택한 카테고리에 문제가 있어야 해요)."); return; }
     setSaving(true); setErr("");
     try {
-      const picked = (myQuestions || []).filter((m) => selectedIds[m.id]);
+      const picked = [...gbShuffle(mcPool).slice(0, mcN), ...gbShuffle(saPool).slice(0, saN)];
       const created = [];
       for (const item of picked) {
         const input = gbItemToPhase8Input(item);
@@ -12562,7 +12593,7 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
         created.push(doc);
       }
       const paper = await EP.createExamPaper({ title: title.trim(), grade });
-      const { section } = EP.manualSection("grammar", "선택한 문제", created);
+      const { section } = EP.manualSection("grammar", "무작위 출제", created);
       const updated = await EP.updateExamPaper(paper, { sections: [section] });
       const questionsById = {};
       created.forEach((d) => { questionsById[d.id] = d; });
@@ -12581,43 +12612,52 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
     <div>
       <${BackBtn} onClick=${onCancel} />
       <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 4 }}>📚 내 문제은행에서 시험지 만들기</div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>Grammar Bank에 등록된 문제 중 원하는 것만 골라 바로 시험지로 만들어요.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>카테고리를 고르고 객관식/주관식 개수만 정하면 그 안에서 무작위로 뽑아 시험지를 만들어요.</div>
       <${Field} label="시험지 제목"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 중1 3월 대비 문법" /><//>
-      <div style=${{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 12 }}>
+      <div style=${{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 14 }}>
         ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
-          <button key=${g} onClick=${() => { setGrade(g); setExpandedCat({}); }}
+          <button key=${g} onClick=${() => setGrade(g)}
             style=${{ flex: "0 0 auto", padding: "6px 14px", borderRadius: 20, border: `1px solid ${grade === g ? C.navy : C.line}`, background: grade === g ? C.navy : C.white, color: grade === g ? C.white : C.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>${g}<//>
         `)}
       </div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>선택됨: ${selectedCount}개</div>
-      ${GB_GRAMMAR_TREE[grade].map((c) => {
-        const catItems = c.subs.flatMap((sub) => gbAllQuestionsFor(grade, c.cat, sub, myQuestions).filter((it) => it.id).map((it) => ({ ...it, sub })));
-        if (catItems.length === 0) return null;
-        const catSelectedCount = catItems.filter((it) => selectedIds[it.id]).length;
-        return html`
-          <${Card} key=${c.cat} style=${{ marginBottom: 8, padding: 0 }}>
-            <button type="button" onClick=${() => toggleCat(c.cat)} style=${{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
-              <span style=${{ fontSize: 13.5, fontWeight: 700, color: C.navy }}>${c.cat} <span style=${{ fontWeight: 400, color: C.slate, fontSize: 11.5 }}>(${catItems.length}개${catSelectedCount ? `, ${catSelectedCount}개 선택` : ""})</span></span>
-              <span style=${{ color: C.slate }}>${expandedCat[c.cat] ? "▲" : "▼"}</span>
-            </button>
-            ${expandedCat[c.cat] && html`
-              <div style=${{ borderTop: `1px solid ${C.line}`, padding: "8px 14px 12px" }}>
-                ${catItems.map((item) => html`
-                  <label key=${item.id} style=${{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}>
-                    <input type="checkbox" checked=${!!selectedIds[item.id]} onChange=${() => toggleQuestion(item.id)} style=${{ width: 16, height: 16, marginTop: 2, appearance: "auto", flexShrink: 0 }} />
-                    <div style=${{ flex: 1, minWidth: 0 }}>
-                      <div style=${{ fontSize: 11, color: C.slate, marginBottom: 2 }}>${item.sub} · ${item.type === "mc" ? "객관식" : "주관식"}</div>
-                      <div style=${{ fontSize: 12.5, color: C.ink, whiteSpace: "pre-wrap" }}>${item.q}</div>
-                    </div>
-                  </label>
-                `)}
-              </div>
-            `}
-          <//>
-        `;
-      })}
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>카테고리 선택</div>
+          <div style=${{ display: "flex", gap: 10 }}>
+            <button type="button" onClick=${() => selectAllCats(true)} style=${{ background: "none", border: "none", color: C.navy, fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline" }}>전체 선택</button>
+            <button type="button" onClick=${() => selectAllCats(false)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 11, cursor: "pointer", padding: 0, textDecoration: "underline" }}>전체 해제</button>
+          </div>
+        </div>
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          ${catBreakdown.map((c) => html`
+            <label key=${c.cat} style=${{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, padding: "5px 10px", borderRadius: 20, border: `1px solid ${selectedCats[c.cat] ? C.navy : C.line}`, background: selectedCats[c.cat] ? C.navy : C.white, color: selectedCats[c.cat] ? C.white : C.ink, cursor: "pointer" }}>
+              <input type="checkbox" checked=${!!selectedCats[c.cat]} onChange=${() => toggleCat(c.cat)} style=${{ width: 13, height: 13, appearance: "auto" }} />
+              ${c.cat} (객 ${c.mc}·주 ${c.sa})
+            <//>
+          `)}
+        </div>
+      <//>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>문항 수 설정 <span style=${{ fontWeight: 400, color: C.slate }}>(선택한 카테고리 안에서 무작위로 뽑아요)</span></div>
+        <div style=${{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>객관식 개수</div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="number" min="0" value=${mcCount} onChange=${(e) => setMcCount(Math.max(0, parseInt(e.target.value) || 0))} style=${{ ...inputStyle, width: 64, padding: "6px 8px" }} />
+              <span style=${{ fontSize: 11, color: parseInt(mcCount) > mcPool.length ? C.danger : C.slate, whiteSpace: "nowrap" }}>(가능: ${mcPool.length})</span>
+            </div>
+          </div>
+          <div>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 4 }}>주관식 개수</div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="number" min="0" value=${saCount} onChange=${(e) => setSaCount(Math.max(0, parseInt(e.target.value) || 0))} style=${{ ...inputStyle, width: 64, padding: "6px 8px" }} />
+              <span style=${{ fontSize: 11, color: parseInt(saCount) > saPool.length ? C.danger : C.slate, whiteSpace: "nowrap" }}>(가능: ${saPool.length})</span>
+            </div>
+          </div>
+        </div>
+      <//>
       ${err && html`<div style=${{ fontSize: 12, color: C.danger, margin: "10px 0" }}>${err}</div>`}
-      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", marginTop: 10 }} disabled=${saving || selectedCount === 0} onClick=${handleCreate}>${saving ? "만드는 중..." : `선택한 ${selectedCount}개 문제로 시험지 만들기`}<//>
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center", marginTop: 10 }} disabled=${saving} onClick=${handleCreate}>${saving ? "만드는 중..." : `총 ${Math.min(Math.max(0, parseInt(mcCount) || 0), mcPool.length) + Math.min(Math.max(0, parseInt(saCount) || 0), saPool.length)}문항으로 시험지 만들기`}<//>
     </div>
   `;
 }
