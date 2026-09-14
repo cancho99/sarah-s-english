@@ -373,6 +373,19 @@ window.SarahServices = window.SarahServices || {};
     await deleteDocAt(EXAM_PAPER_COLLECTION, doc.id);
   }
 
+  // 2026-09-14 — 모바일 시험지 생성(MobileGrammarBankExamBuilder)이 만드는 시험지는 만들자마자
+  // 곧장 FINALIZED로 확정되므로, 위 canHardDeleteExamPaper(DRAFT 전용)로는 실수로 만든/안 쓰는
+  // 시험지를 하나도 못 지운다. 위 가드가 실제로 지키려는 것은 "학생에게 실제로 나간 시험 기록은
+  // 절대 못 지운다"이지 "FINALIZED면 무조건 안 된다"가 아니다 — 한 번도 배정/응시된 적 없는
+  // FINALIZED 시험지는 지워도 어떤 학생의 과거 기록도 건드리지 않는다. 그래서 상태가 아니라
+  // 실사용 여부로 가드를 다시 정의한다. hasNoUsage는 호출부가 examAssignmentService/
+  // examAttemptService로 이미 "이 시험지를 참조하는 배정/응시가 0건"임을 확인해 넘기는 값 —
+  // 이 서비스 파일 자체는 그 두 서비스를 몰라도 되도록 책임을 분리했다.
+  async function deleteUnusedExamPaper(doc, hasNoUsage) {
+    if (!hasNoUsage) throw new Error("이미 학생에게 배정되었거나 응시된 시험지는 지울 수 없어요. 보관 처리를 이용해 주세요.");
+    await deleteDocAt(EXAM_PAPER_COLLECTION, doc.id);
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Render helper — §13.6. Pure function, never writes to the original question doc. Works whether
   // choiceDisplayOrder is set (FINALIZED paper) or null (still-DRAFT preview / non-mc question).
@@ -413,7 +426,7 @@ window.SarahServices = window.SarahServices || {};
     autoDistributeReadingAnalysisSections, getRecentSchoolExamValues,
     finalizeExamPaper, computeFinalizedSections,
     canArchiveExamPaper, archiveExamPaper,
-    canHardDeleteExamPaper, hardDeleteExamPaper,
+    canHardDeleteExamPaper, hardDeleteExamPaper, deleteUnusedExamPaper,
     resolveQuestionForDisplay,
     totalQuestionCount,
   };
