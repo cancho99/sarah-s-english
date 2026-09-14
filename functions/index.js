@@ -219,6 +219,78 @@ ${choicesLine}정답: ${answerDisplay}
 위 순서대로 이 문제의 세부 문법/어휘 유형을 먼저 판별한 뒤, 그 유형을 절대 벗어나지 않는 새 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
 }
 
+// ── 오답노트(WrongNoteSection) 카테고리 자동 분류 + 카테고리 단위 변형 생성 (2026-09-14) ──
+// "추가시험"(examTests/examResults) 문항에는 mainCategory 필드가 없어서, 이미 있는 문항에
+// AI로 사후 분류를 붙인다. 카테고리는 절대 새로 만들지 않고 클라이언트가 보낸
+// QB.GRAMMAR_TAXONOMY 기반 taxonomy 목록(대주제+세부주제를 평탄화한 key/label) 중에서만
+// 고르게 해서, 문제은행(그레이드 뱅크) 쪽과 같은 이름 체계를 쓰게 한다.
+const CLASSIFY_CATEGORY_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 문법 문제를 분류하는 전문가입니다.
+주어진 문제 목록 각각을, 미리 정의된 문법 카테고리 목록 중 가장 적합한 하나로 분류하세요.
+
+[규칙]
+- 반드시 주어진 카테고리 키 목록 중에서만 골라야 합니다. 목록에 없는 새 카테고리를 만들면 안 됩니다.
+- 문제가 어떤 카테고리에도 명확히 맞지 않으면 categoryKey를 null로 하세요.
+- 입력받은 모든 문제에 대해 빠짐없이, 정확히 하나씩 결과를 반환하세요 — 입력 개수와 출력 개수가 같아야 합니다.
+- 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력하세요.
+
+[JSON 스키마] (배열)
+[
+  { "key": "입력으로 받은 문제의 key 값 그대로", "categoryKey": "카테고리 목록에 있는 key 또는 null" }
+]`;
+
+function buildClassifyCategoryPrompt({ items, taxonomy }) {
+  const taxonomyText = taxonomy.map((t) => `- ${t.key}: ${t.label}`).join("\n");
+  const itemsText = items.map((it) => `- key: ${it.key}\n  문제: ${it.prompt}`).join("\n\n");
+  return `[카테고리 목록]
+${taxonomyText}
+
+[분류할 문제 목록]
+${itemsText}
+
+위 문제 각각을 카테고리 목록 중 가장 적합한 하나로 분류해 JSON 배열로만 답하세요.`;
+}
+
+const EXAM_CATEGORY_VARIANT_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 시험 문제를 만드는 전문 교육 평가 개발자입니다.
+학생이 같은 문법 카테고리에서 이미 여러 번 틀린 예시 문제들이 주어집니다. 이 예시들을 참고해서, 같은 카테고리를 다루는 완전히 새로운 문제를 만드세요.
+
+[작업 순서]
+1) 예시 문제들이 공통적으로 다루는 문법 포인트를 파악하되, 주어진 카테고리 범위를 벗어나지 마세요.
+2) 예시 문장을 그대로 재사용하거나 단어만 살짝 바꾸지 말고, 새로운 문장·소재로 만드세요.
+3) 예시들의 유형(객관식/서술형) 비율을 참고하되 꼭 같은 비율일 필요는 없습니다 — 단, 카테고리 주제만은 유지하세요.
+4) 문제를 만든 뒤 스스로 재검토하세요: 보기 중 정답이 정확히 하나뿐인가? 오답도 그럴듯하게 헷갈리는가?
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 배열로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 배열만 출력합니다.
+- 객관식이면 보기 5개(정답 1개 + 오답 4개)를 만드세요. "answer"는 choices 배열의 정답 인덱스(0부터 시작)입니다.
+- 서술형이면 보기 없이, 모범 답안 텍스트만 "answer"에 문자열로 담으세요.
+- 요청받은 개수만큼 정확히 만들고, 문제끼리 서로 겹치지 않게 다양한 문장으로 만드세요.
+
+[JSON 스키마] (배열)
+[
+  {
+    "type": "mc 또는 subjective",
+    "q": "문제 지시문 + 문제 문장",
+    "choices": ["보기1", "보기2", "보기3", "보기4", "보기5"],
+    "answer": 0
+  }
+]
+(type이 subjective이면 "choices"는 빈 배열로, "answer"에는 정답 텍스트를 문자열로 담으세요.)`;
+
+function buildExamCategoryVariantPrompt({ category, exampleQuestions, count, grade }) {
+  const examplesText = exampleQuestions.map((q, i) => {
+    const isSubjective = q.type === "subjective";
+    const answerDisplay = isSubjective ? q.answer : (q.choices || [])[q.answer];
+    const choicesLine = !isSubjective ? `보기: ${(q.choices || []).map((c, ci) => `${ci + 1}) ${c}`).join(" / ")}\n` : "";
+    return `예시 ${i + 1} (${isSubjective ? "서술형" : "객관식"})\n문제: ${q.q}\n${choicesLine}정답: ${answerDisplay}`;
+  }).join("\n\n");
+  return `[카테고리] ${category}
+${grade ? `학생 학년: ${grade}\n` : ""}
+[학생이 이 카테고리에서 틀린 예시 문제들]
+${examplesText}
+
+위 카테고리(${category}) 주제로 새로운 문제를 정확히 ${count}개 만들어 주세요. JSON 배열 형식으로만 답하세요.`;
+}
+
 // ── Question Bank AI 문제 생성 (원래 로드맵 Phase 7, ARCHITECTURE.md §14) ──
 // 기존 SYSTEM_PROMPT/TYPE_INSTRUCTIONS(passage-transform.html이 실제 사용 중)는 절대 건드리지 않고
 // 완전히 새 프롬프트 2개를 추가한다 — 하나는 지문 없이 조건만으로(Grammar), 하나는 기존 PUBLISHED
@@ -1095,12 +1167,18 @@ exports.aiWorker = onRequest(
 
     const body = req.body || {};
     const { passage, includeAnalysis, questionTypes, level, countPerType, mode, pdfBase64, images, studentName, month, rough, sourceQuestion, count, grade,
-      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence, answers, types, bookTitle } = body;
+      mainCategoryLabel, subCategoryLabel, questionTypeLabel, difficultyLabel, passageText, difficulty, analysis, word, sentence, answers, types, bookTitle,
+      items, taxonomy, category, exampleQuestions } = body;
     const isTransform = mode === "transform";
     const isNelt = mode === "nelt";
     const isReport = mode === "monthlyReport";
     const isExamKey = mode === "examkey";
     const isExamVariant = mode === "examVariant";
+    // WrongNoteSection(오답노트) 오답 문항 카테고리 자동 분류 + 카테고리 단위 변형 문제 생성
+    // (2026-09-14) — 기존 examVariant(문항 1개당 변형)와 별개, QB.GRAMMAR_TAXONOMY에 이미 있는
+    // 카테고리 키/라벨로만 분류·생성해 문제은행과 이름 체계를 공유한다.
+    const isClassifyCategory = mode === "classifyCategory";
+    const isExamCategoryVariant = mode === "examCategoryVariant";
     // Phase 7 — Question Bank용 AI 생성 2모드. 기존 6개 모드의
     // 프롬프트/핸들러는 한 글자도 건드리지 않고 새 분기만 추가한다(ARCHITECTURE.md §14.9).
     const isGrammarGenerate = mode === "grammarGenerate";
@@ -1401,6 +1479,103 @@ exports.aiWorker = onRequest(
         return;
       }
       res.status(200).json(varParsed);
+      return;
+    }
+
+    if (isClassifyCategory) {
+      if (!Array.isArray(items) || items.length === 0) {
+        res.status(400).json({ error: "분류할 문제 목록이 없습니다." });
+        return;
+      }
+      if (!Array.isArray(taxonomy) || taxonomy.length === 0) {
+        res.status(400).json({ error: "카테고리 목록이 없습니다." });
+        return;
+      }
+      let clsRes;
+      try {
+        clsRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: CLASSIFY_CATEGORY_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildClassifyCategoryPrompt({ items, taxonomy }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!clsRes.ok) {
+        const errText = await clsRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const clsData = await clsRes.json();
+      const clsText = (clsData.content || []).map((b) => b.text || "").join("");
+      let clsParsed;
+      try {
+        clsParsed = JSON.parse(stripFences(clsText));
+      } catch {
+        clsParsed = extractLastJsonArray(stripFences(clsText));
+      }
+      if (!Array.isArray(clsParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: clsText });
+        return;
+      }
+      res.status(200).json(clsParsed);
+      return;
+    }
+
+    if (isExamCategoryVariant) {
+      if (!category || !Array.isArray(exampleQuestions) || exampleQuestions.length === 0) {
+        res.status(400).json({ error: "카테고리 또는 예시 문제가 없습니다." });
+        return;
+      }
+      const n = Math.max(1, Math.min(20, Number(count) || 5));
+      let ecvRes;
+      try {
+        ecvRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            max_tokens: 4000,
+            system: EXAM_CATEGORY_VARIANT_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: buildExamCategoryVariantPrompt({ category, exampleQuestions, count: n, grade }) }],
+          }),
+        });
+      } catch (e) {
+        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+        return;
+      }
+      if (!ecvRes.ok) {
+        const errText = await ecvRes.text();
+        res.status(502).json({ error: "AI 응답 오류", detail: errText });
+        return;
+      }
+      const ecvData = await ecvRes.json();
+      const ecvText = (ecvData.content || []).map((b) => b.text || "").join("");
+      let ecvParsed;
+      try {
+        ecvParsed = JSON.parse(stripFences(ecvText));
+      } catch {
+        ecvParsed = extractLastJsonArray(stripFences(ecvText));
+      }
+      if (!Array.isArray(ecvParsed)) {
+        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: ecvText });
+        return;
+      }
+      res.status(200).json(ecvParsed);
       return;
     }
 

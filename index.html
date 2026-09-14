@@ -19928,7 +19928,7 @@ function collectWrongExamItems(examTests, examResults) {
       const original = test && test.questions[i];
       items.push({
         key: row.prompt, prompt: row.prompt, given: stripChoiceLabel(stripAnswerLabel(row.given)), correct: stripChoiceLabel(stripAnswerLabel(row.correct)),
-        testTitle: test ? test.title : "(삭제된 시험)", date: r.date,
+        testTitle: test ? test.title : "(삭제된 시험)", testId: r.testId || null, date: r.date,
         resultId: r.id, rowIndex: i, wrongCount: wrongCounts[row.prompt],
         question: original ? { ...original } : null,
       });
@@ -19956,20 +19956,121 @@ function sanitizeVariantQuestion(raw) {
   return { q: raw.q, type: "mc", choices, answer };
 }
 
+// "추가시험" 오답 문항에는 mainCategory/subCategory 같은 분류 필드가 없어서(그레이드 뱅크
+// 전용 필드), WrongNoteSection이 AI 분류 결과를 문제은행과 같은 이름 체계로 보여주려면
+// QB.GRAMMAR_TAXONOMY(대주제 → 세부주제)를 평탄화한 단일 후보 목록이 필요하다. 대주제 자체도
+// 후보에 넣는 이유는 "수동태"처럼 세부주제 라벨로는 존재하지 않는 이름도 실제 오답 분류에
+// 자연스럽게 쓰이기 때문("현재완료"/"관계대명사"는 세부주제, "시제"/"수동태"는 대주제).
+function flattenGrammarTaxonomy(taxonomy) {
+  const flat = [];
+  (taxonomy || []).forEach((cat) => {
+    flat.push({ key: cat.key, label: cat.label });
+    (cat.subCategories || []).forEach((sub) => {
+      flat.push({ key: `${cat.key}::${sub.key}`, label: sub.label });
+    });
+  });
+  return flat;
+}
+
 function WrongNoteSection({ student, data, updateData }) {
+  const QB = window.SarahServices.questionBankService;
+  const flatTaxonomy = flattenGrammarTaxonomy(QB.GRAMMAR_TAXONOMY);
   const [selected, setSelected] = useState({});
   const [msg, setMsg] = useState("");
   const [variantCount, setVariantCount] = useState(5);
   const [generating, setGenerating] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftQuestions, setDraftQuestions] = useState(null);
-  const items = collectWrongExamItems(data.examTests || [], data.examResults || []);
-  const selectableItems = items.filter((it) => it.question);
+  // 문항 key(=row.prompt) → 분류된 flatTaxonomy key, 또는 null(AI가 분류했지만 못 고름/실패).
+  // key가 아예 없으면 "아직 분류를 시도하지 않음"(대기 중) — 재렌더링마다 다시 부르지 않으려고
+  // 이 state 자체가 캐시 역할을 한다.
+  const [catByKey, setCatByKey] = useState({});
+  const [classifying, setClassifying] = useState(false);
+  const [classifyMsg, setClassifyMsg] = useState("");
+  // 1단계는 교사가 내준 "시험" 단위 — 무슨 카테고리로 분류되든 어느 시험에서 나온 오답인지가
+  // 먼저 파악돼야 한다는 요구(2026-09-14). 카테고리는 그 안의 2단계 하위 그룹.
+  const [collapsedExams, setCollapsedExams] = useState({});
+  // 원본 시험이 삭제된 항목(it.question === null)은 복습 시험/변형 생성 어디에도 못 쓰고
+  // 그저 목록만 어지럽혀서(2026-09-14 요청) 아예 표시하지 않는다.
+  const items = collectWrongExamItems(data.examTests || [], data.examResults || []).filter((it) => it.question);
+  const selectableItems = items;
   const selectedCount = Object.keys(selected).filter((k) => selected[k]).length;
+  const pendingClassify = items.filter((it) => !(it.key in catByKey));
+
+  // 삭제된 시험은 testId가 없어서 title+date로 묶는다(이름이 같아도 날짜가 다르면 다른 시험).
+  const examMap = {};
+  items.forEach((it) => {
+    const examKey = it.testId ? `id:${it.testId}` : `title:${it.testTitle}__${it.date}`;
+    if (!examMap[examKey]) examMap[examKey] = { key: examKey, title: it.testTitle, date: it.date, items: [] };
+    examMap[examKey].items.push(it);
+  });
+  const examGroups = Object.values(examMap).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  function groupByCategory(examItems) {
+    const map = {};
+    examItems.forEach((it) => {
+      const flatKey = catByKey[it.key];
+      const entry = flatKey ? flatTaxonomy.find((f) => f.key === flatKey) : null;
+      const catKey = entry ? entry.key : "__uncat__";
+      const catLabel = entry ? entry.label : "미분류";
+      if (!map[catKey]) map[catKey] = { key: catKey, label: catLabel, items: [] };
+      map[catKey].items.push(it);
+    });
+    const list = Object.values(map).filter((g) => g.key !== "__uncat__");
+    list.sort((a, b) => b.items.length - a.items.length || a.label.localeCompare(b.label, "ko"));
+    if (map.__uncat__) list.push(map.__uncat__); // 미분류는 항상 마지막
+    return list;
+  }
 
   function toggle(key) { setSelected((s) => ({ ...s, [key]: !s[key] })); setMsg(""); }
   function selectAll() { setSelected(Object.fromEntries(selectableItems.map((it) => [it.key, true]))); setMsg(""); }
   function clearAll() { setSelected({}); setMsg(""); }
+  function selectCategory(group) {
+    const keys = group.items.filter((it) => it.question).map((it) => it.key);
+    setSelected((s) => {
+      const next = { ...s };
+      keys.forEach((k) => { next[k] = true; });
+      return next;
+    });
+    setMsg("");
+  }
+
+  // API 비용 정책상 페이지를 열 때 자동으로 호출하지 않는다 — 교사가 아래 버튼을 눌러야만
+  // 호출된다. 이미 catByKey에 있는(성공했든 실패해서 미분류로 남았든) 문항은 다시 안 보낸다.
+  async function classifyPending() {
+    if (pendingClassify.length === 0 || classifying) return;
+    setClassifying(true); setClassifyMsg("");
+    try {
+      const res = await fetch(NELT_WORKER_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: "classifyCategory",
+          items: pendingClassify.map((it) => ({ key: it.key, prompt: it.prompt })),
+          taxonomy: flatTaxonomy.map((f) => ({ key: f.key, label: f.label })),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || "분류 실패");
+      const resultByKey = {};
+      (Array.isArray(json) ? json : []).forEach((r) => {
+        if (r && typeof r.key === "string") {
+          resultByKey[r.key] = (r.categoryKey && flatTaxonomy.some((f) => f.key === r.categoryKey)) ? r.categoryKey : null;
+        }
+      });
+      setCatByKey((prev) => {
+        const next = { ...prev };
+        pendingClassify.forEach((it) => {
+          next[it.key] = Object.prototype.hasOwnProperty.call(resultByKey, it.key) ? resultByKey[it.key] : null;
+        });
+        return next;
+      });
+    } catch (e) {
+      setClassifyMsg("카테고리 분류에 실패했어요: " + String(e.message || e));
+    } finally {
+      setClassifying(false);
+    }
+  }
 
   async function markResolved(item) {
     await updateData((d) => ({
@@ -19994,16 +20095,51 @@ function WrongNoteSection({ student, data, updateData }) {
     setMsg(`${chosen.length}개 문항으로 복습 시험을 만들었어요 — "추가시험(퀴즈)" 탭에서 확인할 수 있어요.`);
   }
 
-  // One AI call per selected item (the prompt is written around a single source question), run in
-  // parallel — variantCount is "per 문항", matching how the teacher actually thinks about it
-  // ("2번은 시제 문제니까 그 유형으로 5개"), not a single total split across however many items
-  // happen to be selected.
+  // 분류된 문항은 카테고리별로 한 번씩만 AI를 호출한다(그 카테고리의 오답 문항 전부를 예시로
+  // 같이 보내서 "이 카테고리 주제로 새 문제 N개"를 요청) — 아직 분류를 안 돌렸거나 AI가 못
+  // 맞춘(미분류) 문항은 기존처럼 문항 하나당 한 번씩 호출해 하위 호환을 유지한다. variantCount는
+  // 이제 "그룹(카테고리 또는 미분류 문항 1개)당" 개수다.
   async function generateVariants() {
     const chosen = items.filter((it) => selected[it.key] && it.question);
     if (chosen.length === 0) { setMsg("변형 문제를 만들 오답 문항을 먼저 선택해 주세요."); return; }
     setGenerating(true); setMsg("");
     try {
-      const results = await Promise.all(chosen.map(async (it) => {
+      const byCategory = {};
+      const uncategorized = [];
+      chosen.forEach((it) => {
+        const flatKey = catByKey[it.key];
+        const entry = flatKey ? flatTaxonomy.find((f) => f.key === flatKey) : null;
+        if (entry) {
+          if (!byCategory[entry.key]) byCategory[entry.key] = { label: entry.label, items: [] };
+          byCategory[entry.key].items.push(it);
+        } else {
+          uncategorized.push(it);
+        }
+      });
+
+      const categoryJobs = Object.values(byCategory).map(async (group) => {
+        try {
+          const res = await fetch(NELT_WORKER_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              mode: "examCategoryVariant",
+              category: group.label,
+              exampleQuestions: group.items.map((it) => it.question),
+              count: variantCount,
+              grade: (student && student.grade) || "",
+            }),
+          });
+          const json = await res.json();
+          if (!res.ok || json.error) throw new Error(json.error || "AI 생성 실패");
+          const clean = (Array.isArray(json) ? json : []).map(sanitizeVariantQuestion).filter(Boolean);
+          return { ok: true, label: group.label, questions: clean };
+        } catch (e) {
+          return { ok: false, label: group.label, error: String(e.message || e) };
+        }
+      });
+
+      const individualJobs = uncategorized.map(async (it) => {
         try {
           const res = await fetch(NELT_WORKER_URL, {
             method: "POST",
@@ -20013,19 +20149,22 @@ function WrongNoteSection({ student, data, updateData }) {
           const json = await res.json();
           if (!res.ok || json.error) throw new Error(json.error || "AI 생성 실패");
           const clean = (Array.isArray(json) ? json : []).map(sanitizeVariantQuestion).filter(Boolean);
-          return { ok: true, prompt: it.prompt, questions: clean };
+          return { ok: true, label: null, questions: clean };
         } catch (e) {
-          return { ok: false, prompt: it.prompt, error: String(e.message || e) };
+          return { ok: false, label: null, error: String(e.message || e) };
         }
-      }));
+      });
+
+      const results = await Promise.all([...categoryJobs, ...individualJobs]);
       const allQuestions = results.filter((r) => r.ok).flatMap((r) => r.questions);
       const failed = results.filter((r) => !r.ok);
+      const usedCatLabels = [...new Set(results.filter((r) => r.ok && r.label).map((r) => r.label))];
       if (allQuestions.length === 0) {
         setMsg("변형 문제를 하나도 만들지 못했어요. 잠시 후 다시 시도해 주세요.");
       } else {
         setDraftQuestions(allQuestions);
-        setDraftTitle(`오답 변형 복습 (${fmtDate(today())})`);
-        setMsg(failed.length > 0 ? `${failed.length}개 문항은 변형 생성에 실패해서 제외했어요. 나머지 ${allQuestions.length}개를 아래에서 검토해 주세요.` : `${allQuestions.length}개의 변형 문제를 만들었어요 — 아래에서 검토 후 저장하세요.`);
+        setDraftTitle(usedCatLabels.length > 0 ? `오답 변형 복습 (${usedCatLabels.join("·")}) (${fmtDate(today())})` : `오답 변형 복습 (${fmtDate(today())})`);
+        setMsg(failed.length > 0 ? `${failed.length}개 그룹은 변형 생성에 실패해서 제외했어요. 나머지 ${allQuestions.length}개를 아래에서 검토해 주세요.` : `${allQuestions.length}개의 변형 문제를 만들었어요 — 아래에서 검토 후 저장하세요.`);
       }
     } finally {
       setGenerating(false);
@@ -20067,33 +20206,68 @@ function WrongNoteSection({ student, data, updateData }) {
     `;
   }
 
+  function renderItemCard(it) {
+    return html`
+      <${Card} key=${it.key} style=${{ marginBottom: 8 }}>
+        <div style=${{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <input type="checkbox" style=${{ width: 15, height: 15, flexShrink: 0, appearance: "auto", marginTop: 4 }} checked=${!!selected[it.key]} onChange=${() => toggle(it.key)} />
+          <div style=${{ flex: 1 }}>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${it.prompt}</div>
+            <div style=${{ fontSize: 12, marginTop: 3, color: C.danger }}>학생 답: ${it.given}</div>
+            <div style=${{ fontSize: 12, color: C.slate }}>정답: ${it.correct}</div>
+            <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>총 ${it.wrongCount}번 틀림</div>
+          </div>
+          <button onClick=${() => markResolved(it)} style=${{ fontSize: 11, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.gold}`, background: "none", color: C.gold, cursor: "pointer", whiteSpace: "nowrap" }}>이미 아는 문제로 처리</button>
+        </div>
+      <//>
+    `;
+  }
+
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>추가시험에서 아직 다시 맞히지 못한 문항이에요. 그대로 복습 시험에 넣거나, AI로 비슷한 유형의 새 문제를 만들어 복습시킬 수 있어요. 원본 시험이 삭제된 문항은 둘 다 포함할 수 없어요(수동으로 "이미 아는 문제로 처리"만 가능).</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 12 }}>추가시험에서 아직 다시 맞히지 못한 문항이에요. 그대로 복습 시험에 넣거나, AI로 비슷한 유형의 새 문제를 만들어 복습시킬 수 있어요. (원본 시험이 삭제된 문항은 목록에서 제외돼요.)</div>
       <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
         <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "6px 12px" }} onClick=${selectAll}>전체 선택<//>
         <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "6px 12px" }} onClick=${clearAll}>전체 해제<//>
         <${Button} variant="gold" style=${{ fontSize: 12 }} disabled=${selectedCount === 0} onClick=${makeReviewTest}>선택한 ${selectedCount}개로 그대로 복습 시험 만들기<//>
       </div>
+      <div style=${{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "6px 12px" }} disabled=${pendingClassify.length === 0 || classifying} onClick=${classifyPending}>
+          ${classifying ? "AI가 분류하는 중..." : `🤖 AI로 카테고리 분류 (미분류 ${pendingClassify.length}개, API 비용 발생)`}
+        <//>
+      </div>
+      ${classifyMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${classifyMsg}</div>`}
       <div style=${{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <span style=${{ fontSize: 12, color: C.slate }}>문항당</span>
+        <span style=${{ fontSize: 12, color: C.slate }}>그룹당(카테고리 또는 미분류 문항 1개)</span>
         <input type="number" min="1" max="20" style=${{ ...inputStyle, width: 60, marginBottom: 0, padding: "6px 8px" }} value=${variantCount} onChange=${(e) => setVariantCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
         <span style=${{ fontSize: 12, color: C.slate }}>개씩 변형</span>
         <${Button} variant="gold" style=${{ fontSize: 12 }} disabled=${selectedCount === 0 || generating} onClick=${generateVariants}>${generating ? "AI가 만드는 중..." : `선택한 ${selectedCount}개로 변형 문제 만들기 (AI)`}<//>
       </div>
       ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 12 }}>${msg}</div>`}
-      ${items.map((it) => html`
-        <${Card} key=${it.key} style=${{ marginBottom: 8, opacity: it.question ? 1 : 0.6 }}>
-          <div style=${{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <input type="checkbox" style=${{ width: 15, height: 15, flexShrink: 0, appearance: "auto", marginTop: 4 }} disabled=${!it.question} checked=${!!selected[it.key]} onChange=${() => toggle(it.key)} />
-            <div style=${{ flex: 1 }}>
-              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, whiteSpace: "pre-wrap" }}>${it.prompt}</div>
-              <div style=${{ fontSize: 12, marginTop: 3, color: C.danger }}>학생 답: ${it.given}</div>
-              <div style=${{ fontSize: 12, color: C.slate }}>정답: ${it.correct}</div>
-              <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>${it.testTitle} · ${fmtDate(it.date)} · 총 ${it.wrongCount}번 틀림${!it.question ? " · 원본 시험 삭제됨" : ""}</div>
+      ${examGroups.map((exam) => html`
+        <${Card} key=${exam.key} style=${{ marginBottom: 10, padding: 0, overflow: "hidden" }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 14px", background: C.ivory, borderBottom: collapsedExams[exam.key] ? "none" : `1px solid ${C.line}`, cursor: "pointer" }}
+               onClick=${() => setCollapsedExams((c) => ({ ...c, [exam.key]: !c[exam.key] }))}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style=${{ fontSize: 11, color: C.slate }}>${collapsedExams[exam.key] ? "▸" : "▾"}</span>
+              <span style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>📄 ${exam.title} · ${fmtDate(exam.date)} (${exam.items.length}문항)</span>
             </div>
-            <button onClick=${() => markResolved(it)} style=${{ fontSize: 11, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.gold}`, background: "none", color: C.gold, cursor: "pointer", whiteSpace: "nowrap" }}>이미 아는 문제로 처리</button>
           </div>
+          ${!collapsedExams[exam.key] && html`
+            <div style=${{ padding: "10px 14px 0" }}>
+              ${groupByCategory(exam.items).map((cat) => html`
+                <div key=${cat.key} style=${{ marginBottom: 12 }}>
+                  <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, paddingBottom: 4, paddingLeft: cat.key === "__uncat__" ? 0 : 8, borderLeft: cat.key === "__uncat__" ? "none" : `3px solid ${C.gold}`, borderBottom: `1px solid ${C.line}` }}>
+                    <span style=${{ fontSize: 11.5, fontWeight: 700, color: C.slate }}>${cat.label} (${cat.items.length}문항)</span>
+                    ${cat.key !== "__uncat__" && html`
+                      <button onClick=${() => selectCategory(cat)} style=${{ fontSize: 11, padding: "3px 9px", borderRadius: 20, border: `1px solid ${C.gold}`, background: "none", color: C.gold, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>이 카테고리 전체 선택</button>
+                    `}
+                  </div>
+                  ${cat.items.map((it) => renderItemCard(it))}
+                </div>
+              `)}
+            </div>
+          `}
         <//>
       `)}
     </div>
