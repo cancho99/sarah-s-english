@@ -19982,9 +19982,11 @@ function WrongNoteSection({ student, data, updateData }) {
   const [draftTitle, setDraftTitle] = useState("");
   const [draftQuestions, setDraftQuestions] = useState(null);
   // 문항 key(=row.prompt) → 분류된 flatTaxonomy key, 또는 null(AI가 분류했지만 못 고름/실패).
-  // key가 아예 없으면 "아직 분류를 시도하지 않음"(대기 중) — 재렌더링마다 다시 부르지 않으려고
-  // 이 state 자체가 캐시 역할을 한다.
-  const [catByKey, setCatByKey] = useState({});
+  // key가 아예 없으면 "아직 분류를 시도하지 않음"(대기 중). 컴포넌트 state가 아니라 학생 문서
+  // (data.wrongNoteCategoryCache)에 영속 저장한다 — state로만 캐싱하면 다른 서브탭으로 갔다가
+  // 돌아오거나 새로고침할 때 이 컴포넌트가 다시 마운트되면서 캐시가 날아가, 이미 분류한 문항을
+  // 또 분류시키는 문제가 있었다(2026-09-14 사용자 신고).
+  const catByKey = data.wrongNoteCategoryCache || {};
   const [classifying, setClassifying] = useState(false);
   const [classifyMsg, setClassifyMsg] = useState("");
   // 1단계는 교사가 내준 "시험" 단위 — 무슨 카테고리로 분류되든 어느 시험에서 나온 오답인지가
@@ -20058,12 +20060,16 @@ function WrongNoteSection({ student, data, updateData }) {
           resultByKey[r.key] = (r.categoryKey && flatTaxonomy.some((f) => f.key === r.categoryKey)) ? r.categoryKey : null;
         }
       });
-      setCatByKey((prev) => {
-        const next = { ...prev };
+      // 이미 해결됐거나(markResolved) 원본 시험이 삭제돼 더 이상 안 보이는 문항의 캐시 항목은
+      // 같이 정리한다 — 문서에 텍스트 키가 무한정 쌓이는 걸 막기 위해서다(1MB 문서 한도 참고).
+      const liveKeys = new Set(items.map((it) => it.key));
+      await updateData((d) => {
+        const pruned = {};
+        Object.entries(d.wrongNoteCategoryCache || {}).forEach(([k, v]) => { if (liveKeys.has(k)) pruned[k] = v; });
         pendingClassify.forEach((it) => {
-          next[it.key] = Object.prototype.hasOwnProperty.call(resultByKey, it.key) ? resultByKey[it.key] : null;
+          pruned[it.key] = Object.prototype.hasOwnProperty.call(resultByKey, it.key) ? resultByKey[it.key] : null;
         });
-        return next;
+        return { ...d, wrongNoteCategoryCache: pruned };
       });
     } catch (e) {
       setClassifyMsg("카테고리 분류에 실패했어요: " + String(e.message || e));
