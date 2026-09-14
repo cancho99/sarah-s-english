@@ -184,12 +184,17 @@
       scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: none;
     }
     .ap-mobile-tabbar::-webkit-scrollbar { display: none; }
+    /* 하단 4탭(Today/Question Bank/Exam Studio/Reports)만 남기고 아이콘만 크게 보여주는
+       구성으로 축소(2026-09-14, 사용자 요청) — 텍스트 라벨을 없앤 만큼 터치 타깃을 넉넉히
+       키운다. 나머지 항목(Students/Classes/Reading/Settings 등)은 navItems/handleNavChange
+       라우팅 자체는 그대로 두고, 탭바에서만 안 보이게 필터링한다(다른 화면의 링크로는 계속
+       진입 가능). */
     .ap-mobile-tab {
-      scroll-snap-align: start; flex: 0 0 auto; display: flex; flex-direction: column; align-items: center;
-      gap: 3px; padding: 7px 12px; border-radius: 8px; background: transparent; border: none;
-      color: #8A93A6; font-size: 10.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      scroll-snap-align: start; flex: 1 1 0; display: flex; align-items: center; justify-content: center;
+      padding: 12px 8px; border-radius: 8px; background: transparent; border: none;
+      color: #8A93A6; cursor: pointer;
     }
-    .ap-mobile-tab .ic { font-size: 17px; }
+    .ap-mobile-tab .ic { font-size: 23px; line-height: 1; }
     .ap-mobile-tab.active { background: rgba(255,255,255,0.14); color: #FAF7F1; }
   }
   /* Icon-grid launcher — used for the category-first drill-down (학생 정보/학생 관리, on both
@@ -3642,6 +3647,12 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   `;
 }
 
+// 모바일 하단 탭바에 남길 4개 항목(2026-09-14, 사용자 요청) — 데스크탑 SideNav는 navItems
+// 전체를 그대로 쓰고, 이 목록은 모바일 탭바 렌더링에서만 필터로 쓰인다. 나머지 항목은
+// handleNavChange/setSection 라우팅이 그대로 살아있어 다른 화면의 링크·버튼을 통해 계속
+// 진입 가능하다(예: Today의 학생 카드 → studentArea, 시험지 배정 화면의 학생 선택 등).
+const MOBILE_TABBAR_KEYS = new Set(["dashboard", "questionBank", "readingAnalysis", "reports"]);
+
 function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, teacherTodos, saveTeacherTodos, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
   // Teacher OS 통합 (Phase 1) — 로그인 후 첫 화면을 기존 "mainpage"(TeacherOverview)에서 새
@@ -3866,7 +3877,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인) — Passage Analysis / Question
     // Generator / Passage Variation 3탭. readingAnalyses/readingAnalysisQuestions 신규 컬렉션만
     // 쓰고, 레거시 readingPassages/readingQuestions와 학생용 Reading 시스템은 전혀 건드리지 않는다.
-    body = html`<${ReadingAnalysisSection} />`;
+    body = html`<${ReadingAnalysisSection} roster=${roster} updateData=${updateData} />`;
   } else if (section === "teacherCenter") {
     body = html`<${TeacherCenterSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onSelectStudent=${(id) => { setSection("students"); setSelectedStudentId(id); setStudentCategory("homework"); }}
@@ -3965,9 +3976,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
           <button onClick=${onLogout}>로그아웃</button>
         </div>
         <div className="ap-mobile-tabbar">
-          ${navItems.map((n) => html`
-            <button key=${n.key} className=${"ap-mobile-tab" + (activeKey === n.key ? " active" : "")} onClick=${() => handleNavChange(n.key)}>
-              <span className="ic">${n.icon}</span><span>${n.label}</span>
+          ${navItems.filter((n) => MOBILE_TABBAR_KEYS.has(n.key)).map((n) => html`
+            <button key=${n.key} className=${"ap-mobile-tab" + (activeKey === n.key ? " active" : "")} onClick=${() => handleNavChange(n.key)} title=${n.label} aria-label=${n.label}>
+              <span className="ic">${n.icon}</span>
             </button>
           `)}
         </div>
@@ -8389,6 +8400,15 @@ function esEntryMatchesQuery(entry, q) {
   }
   return esMatchesQuery(entry, q);
 }
+// Mobile-only display label for a review/saved question item — desktop's EsTaggedItemsLeaf has
+// room for the full stem, type pill, difficulty badge etc.; the mock's compact list rows just need
+// one short line, so this collapses type label + (for groups) question count into that.
+function esMobileItemLabel(it) {
+  const meta = ES_TYPE_META.find((t) => t.key === it.questionType);
+  const typeLabel = meta ? meta.label : (it.questionType || "문항");
+  if (it.kind === "group") return `[${typeLabel}] 지문 1개 · 문항 ${(it.questions || []).length}개`;
+  return `[${typeLabel}] ${(it.questionText || "").slice(0, 30)}`;
+}
 function esExtractAnalysisMarker(raw) {
   const marker = raw.find((x) => x && x.questionType === "_analysis");
   if (!marker) return { analysis: null, rest: raw };
@@ -8978,6 +8998,29 @@ function esCloneEntryForPaper(entry) {
   if (copy.kind === "group") copy.questions = copy.questions.map((q) => ({ ...q, localId: uid() }));
   return copy;
 }
+// Converts an Exam Studio paper's entries (single items, all 5-choice MC, or groups sharing one
+// passage — see esNormalizeGeneratedItem/esNormalizeGeneratedGroup above) into the flat
+// {q,type,choices,answer} shape ExamEditor's "추가시험" system already stores in
+// student.examTests[].questions[] — used only by mobile exam-paper assignment (ExamStudioSection),
+// see the comment above its mobileAssignPaper(). A group's sharedPassage/contextNote gets folded
+// into each of its questions' own `q` text, since the 추가시험 schema has no shared-passage
+// concept — every question there is fully self-contained.
+function esEntryToExamTestQuestions(entries) {
+  const out = [];
+  (entries || []).forEach((e) => {
+    if (e.kind === "group") {
+      const passage = (e.sharedPassage || "").trim();
+      (e.questions || []).forEach((q) => {
+        const stem = [passage, q.contextNote, q.questionText].filter((s) => s && String(s).trim()).join("\n\n");
+        out.push({ q: stem, type: "mc", choices: q.choices || [], answer: Number.isInteger(q.answer) ? q.answer : 0 });
+      });
+    } else {
+      const stem = [e.displayPassage, e.contextNote, e.questionText].filter((s) => s && String(s).trim()).join("\n\n");
+      out.push({ q: stem, type: "mc", choices: e.choices || [], answer: Number.isInteger(e.answer) ? e.answer : 0 });
+    }
+  });
+  return out;
+}
 function esEscapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -9208,8 +9251,9 @@ function EsExamPaperLeaf({ scope, examPapers, savedItems, openPaperId, setOpenPa
 }
 
 // ---------- 최상위 Exam Studio 화면 (구 App(), Firestore 연동) ----------
-function ExamStudioSection() {
+function ExamStudioSection({ roster, updateData }) {
   const ES = window.SarahServices.examStudioService;
+  const isMobile = useIsMobile();
   const [loaded, setLoaded] = useState(false);
   const [page, setPage] = useState("setup");
   const [passageText, setPassageText] = useState("");
@@ -9238,6 +9282,17 @@ function ExamStudioSection() {
   const [savedPath, setSavedPath] = useState(() => esEmptyCategoryTag());
   const [paperPath, setPaperPath] = useState(() => esEmptyCategoryTag());
   const [pendingLibraryText, setPendingLibraryText] = useState(null);
+
+  // ---- 모바일 전용 상태(useIsMobile() === true일 때만 쓰는, 첨부된 exam-studio-mobile-preview.html
+  // 목업을 그대로 옮긴 3탭 화면) — 데스크탑의 page/libraryPath 등 폴더 탐색 상태는 그대로 두고
+  // 손대지 않는다. 모바일은 폴더 탐색 UI 없이 지문/문항을 평평한 목록으로 보여준다. ----
+  const [mobileTab, setMobileTab] = useState("library"); // "library" | "review" | "assign"
+  const [mobileShowGenerate, setMobileShowGenerate] = useState(false);
+  const [mobileSelectedPassageTitle, setMobileSelectedPassageTitle] = useState("");
+  const [mobileAssignPaperId, setMobileAssignPaperId] = useState(null);
+  const [mobileAssignStudentId, setMobileAssignStudentId] = useState("");
+  const [mobileAssignBusy, setMobileAssignBusy] = useState(false);
+  const [mobileAssignMsg, setMobileAssignMsg] = useState("");
 
   const items = questions.filter((q) => q.stage === "review");
   const savedItems = questions.filter((q) => q.stage === "saved");
@@ -9303,6 +9358,19 @@ function ExamStudioSection() {
     setSetupExamType(passage.examType || ES_EXAM_TYPES[0]);
     setPage("setup");
   }
+  // 모바일 "보관함" 탭의 "이 지문으로 문제 만들기" — useLibraryPassage로 grade/publisher/examType/
+  // passageText를 그대로 채운 뒤(그래야 onGenerate가 요구하는 3개 필드가 채워진다), 모바일 전용
+  // "생성" 오버레이를 띄운다. 선택한 지문 제목은 그 오버레이 헤더에 보여줄 용도로만 따로 저장한다
+  // (useLibraryPassage 자체는 제목을 안 들고 있어서).
+  function mobileUseLibraryPassage(passage) {
+    useLibraryPassage(passage);
+    setMobileSelectedPassageTitle(passage.title || "(제목 없음)");
+    setMobileShowGenerate(true);
+  }
+  async function mobileGenerate() {
+    const ok = await onGenerate();
+    if (ok) { setMobileShowGenerate(false); setMobileTab("review"); }
+  }
   async function deletePassageFromLibrary(id) {
     if (!confirm("이 지문을 보관함에서 삭제할까요? (되돌릴 수 없어요)")) return;
     try {
@@ -9345,16 +9413,19 @@ function ExamStudioSection() {
     }
   }
 
+  // Returns true/false on completion (added for the mobile "문제 생성하기" flow, which needs to
+  // know whether to advance to the 생성·검토 tab — desktop ignores the return value, so this is
+  // purely additive and changes no existing behavior).
   async function onGenerate() {
     const trimmed = passageText.trim();
-    if (trimmed.length < 20) { setGenStatus("지문을 20자 이상 입력해주세요."); return; }
-    if (!setupGrade || !setupPublisher || !setupExamType) { setGenStatus("학년/출판사/유형을 선택해주세요."); return; }
+    if (trimmed.length < 20) { setGenStatus("지문을 20자 이상 입력해주세요."); return false; }
+    if (!setupGrade || !setupPublisher || !setupExamType) { setGenStatus("학년/출판사/유형을 선택해주세요."); return false; }
     const typeList = ES_TYPE_META.filter((t) => selectedTypes.has(t.key));
-    if (typeList.length === 0) { setGenStatus("유형을 하나 이상 선택해주세요."); return; }
+    if (typeList.length === 0) { setGenStatus("유형을 하나 이상 선택해주세요."); return false; }
     const requestTypes = typeList.map((t) => ({ key: t.key, label: t.label, count: Math.max(1, Math.min(5, Number(typeCounts[t.key]) || 1)) }));
     const totalCount = requestTypes.reduce((sum, t) => sum + t.count, 0);
     const analysisNote = includeAnalysis ? "\n지문 분석(구문분석·직독직해·요약·글의 흐름·어휘)도 함께 만듭니다." : "";
-    if (!confirm(`AI 사용 — API 비용이 발생해요.\n\n[${setupGrade} · ${setupPublisher} · ${setupExamType}]\n${requestTypes.map((t) => `${t.label} ${t.count}개`).join(", ")} — 총 ${totalCount}개 문제를 생성합니다.${analysisNote} 계속할까요?`)) return;
+    if (!confirm(`AI 사용 — API 비용이 발생해요.\n\n[${setupGrade} · ${setupPublisher} · ${setupExamType}]\n${requestTypes.map((t) => `${t.label} ${t.count}개`).join(", ")} — 총 ${totalCount}개 문제를 생성합니다.${analysisNote} 계속할까요?`)) return false;
     setGenBusy(true);
     setGenStatus("AI가 문제를 만드는 중이에요 — 창을 닫지 말고 기다려 주세요...");
     try {
@@ -9368,8 +9439,10 @@ function ExamStudioSection() {
       setReviewPath(tag);
       setGenStatus(`${saved.length}개 항목을 생성했어요.${newAnalysis ? " 지문 분석도 함께 만들었어요." : ""} '생성 결과'에서 검토 후 저장하세요.`);
       setPage("review");
+      return true;
     } catch (err) {
       setGenStatus("생성에 실패했어요: " + String(err.message || err).slice(0, 300));
+      return false;
     } finally {
       setGenBusy(false);
     }
@@ -9458,6 +9531,12 @@ function ExamStudioSection() {
     setSelectedIds(new Set());
     try { await ES.setQuestionsStage(ids, "saved"); } catch (e) { setGenStatus("저장함 이동에 실패했어요: " + String(e.message || e)); }
   }
+  // 모바일 "생성·검토" 탭의 "승인" 버튼 — bulkMoveToSaved와 완전히 같은 동작(review→saved)을
+  // 항목 하나에만 적용한다. 모바일엔 다중 선택 체크박스 UI가 없어서 한 항목씩 승인한다.
+  async function approveReviewItem(localId) {
+    setQuestions((prev) => prev.map((x) => (x.localId === localId ? { ...x, stage: "saved" } : x)));
+    try { await ES.setQuestionsStage([localId], "saved"); } catch (e) { setGenStatus("저장함 이동에 실패했어요: " + String(e.message || e)); }
+  }
   async function bulkMarkReviewed() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -9488,6 +9567,50 @@ function ExamStudioSection() {
     if (toAdd.length === 0) return;
     createExamPaperFromSelection(toAdd, { grade: savedPath.grade, publisher: savedPath.publisher, examType: savedPath.examType });
     setSelectedIds(new Set());
+  }
+  // 모바일 "시험지·배정" 탭의 "선택 항목으로 시험지 만들기" — bulkCreateExamPaper와 같지만,
+  // 모바일엔 폴더 탐색(savedPath)이 없으므로 선택한 첫 항목 자신의 grade/publisher/examType
+  // (createQuestions가 생성 시점에 각 문항에 그대로 찍어둔 값, 위 onGenerate 참고)을 태그로 쓴다.
+  function mobileCreateExamPaperFromSelected() {
+    const toAdd = savedItems.filter((x) => selectedIds.has(x.localId));
+    if (toAdd.length === 0) return;
+    const first = toAdd[0];
+    createExamPaperFromSelection(toAdd, { grade: first.grade || "", publisher: first.publisher || "", examType: first.examType || "" });
+    setSelectedIds(new Set());
+    setMobileTab("assign");
+  }
+  // "학생에게 배정" — Exam Studio 시험지(examStudioExamPapers, entries 기반)에는 배정 기능이
+  // 원래 없었다(services/examStudioService.js 헤더 코멘트: "완전히 독립된 섬, 다른 화면이 이
+  // 컬렉션을 읽거나 쓰지 않는다" 참고) — 사용자 확인 후 신규로 추가한 기능. Phase 8
+  // examAssignmentService(다른 "시험" 시스템, 완전히 다른 컬렉션/문항 형식)는 전혀 건드리지
+  // 않고, 대신 ExamEditor("추가시험" 탭)가 이미 쓰는 가장 단순한 형식
+  // (student.examTests[] = [{id,title,date,questions:[{q,type:"mc",choices,answer}]}])으로
+  // 변환해 같은 방식(updateData(studentId, ...))으로 그 학생 문서에 써 넣는다 — 학생은 그대로
+  // "추가시험" 탭에서 응시한다. esEntryToExamTestQuestions(모듈 스코프, esCloneEntryForPaper
+  // 근처)가 그 변환을 맡고, esEntryIssues로 지문/선택지/정답이 덜 채워진 문항은 배정 전에 걸러
+  // 사용자에게 알린다(미완성 문항이 그대로 학생에게 나가지 않도록).
+  async function mobileAssignPaper() {
+    const paper = examPapers.find((p) => p.localId === mobileAssignPaperId);
+    if (!paper) return;
+    if (!mobileAssignStudentId) { alert("학생을 선택해주세요."); return; }
+    const badEntries = (paper.entries || []).filter((e) => esEntryIssues(e).length > 0);
+    if (badEntries.length > 0) { alert("이 시험지에 아직 완성되지 않은 문항이 있어요 — 지문/선택지/정답을 먼저 확인한 뒤 배정해주세요."); return; }
+    const testQuestions = esEntryToExamTestQuestions(paper.entries || []);
+    if (testQuestions.length === 0) { alert("배정할 문항이 없어요."); return; }
+    setMobileAssignBusy(true);
+    setMobileAssignMsg("");
+    try {
+      await updateData(mobileAssignStudentId, (d) => ({
+        ...d,
+        examTests: [{ id: uid(), title: paper.title || "Exam Studio 시험지", date: today(), questions: testQuestions }, ...(d.examTests || [])],
+      }));
+      setMobileAssignMsg("배정했어요 — 학생의 '추가시험' 탭에서 확인할 수 있어요.");
+      setMobileAssignStudentId("");
+    } catch (e) {
+      alert("배정에 실패했어요: " + String(e.message || e));
+    } finally {
+      setMobileAssignBusy(false);
+    }
   }
   async function createBlankExamPaper(tag) {
     try {
@@ -9542,6 +9665,122 @@ function ExamStudioSection() {
 
   if (!loaded) {
     return html`<div style=${{ padding: 40, textAlign: "center", color: C.slate }}>불러오는 중...</div>`;
+  }
+
+  // ---- 모바일 전용 레이아웃(useIsMobile() === true) — exam-studio-mobile-preview.html 목업의
+  // 레이아웃/색상/구조를 그대로 옮기고, 그 목업의 하드코딩된 예시 데이터 자리에 실제
+  // ExamStudioSection 상태(passageLibrary/items/savedItems/examPapers, 전부 위에서 이미 로드됨)를
+  // 그대로 연결했다. 데스크탑 return문(아래)의 es-shell/EsSidebar/EsFolderNav 등은 무수정.
+  // 상단 앱 타이틀바("🧪 Exam Studio"+로그아웃)와 아이콘 탭바(Today/Q Bank/Exam Studio/Reports)는
+  // 이 컴포넌트가 아니라 TeacherDash의 공용 모바일 셸(.ap-mobile-topbar/.ap-mobile-tabbar)이 이미
+  // 감싸고 있어서 여기서 다시 만들지 않는다 — 이 분기는 그 셸 안쪽 콘텐츠 영역만 그린다.
+  if (isMobile) {
+    const esMobileTabs = [
+      { key: "library", label: "📚 보관함" },
+      { key: "review", label: "🗂️ 생성·검토" },
+      { key: "assign", label: "📄 시험지·배정" },
+    ];
+    const sortedPassages = [...passageLibrary].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return html`
+      <div>
+        <div style=${{ display: "flex", overflowX: "auto", gap: 2, background: C.ivory, borderRadius: 6, padding: 3, marginBottom: 14 }}>
+          ${esMobileTabs.map((t) => html`
+            <button key=${t.key} onClick=${() => { setMobileTab(t.key); setMobileShowGenerate(false); }}
+              style=${{
+                flex: 1, padding: "7px 8px", fontSize: 11.5, fontWeight: 600, border: "none", borderRadius: 4, whiteSpace: "nowrap", cursor: "pointer",
+                background: mobileTab === t.key ? "#fff" : "none", color: mobileTab === t.key ? C.navy : C.slate,
+                boxShadow: mobileTab === t.key ? "0 1px 2px rgba(20,22,26,0.12)" : "none",
+              }}>${t.label}</button>
+          `)}
+        </div>
+
+        ${mobileShowGenerate ? html`
+          <div>
+            <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>${mobileSelectedPassageTitle}</div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 8 }}>문제 유형 선택</div>
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, maxHeight: 320, overflowY: "auto" }}>
+              ${ES_TYPE_META.map((t) => html`
+                <label key=${t.key} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12.5, color: C.ink }}>
+                  <input type="checkbox" checked=${selectedTypes.has(t.key)} onChange=${() => toggleType(t.key)} style=${{ width: 16, height: 16, flexShrink: 0 }} />
+                  <span>${t.icon} ${t.label}</span>
+                </label>
+              `)}
+            </div>
+            ${genStatus && html`<div style=${{ fontSize: 12, color: C.navy, marginBottom: 10 }}>${genStatus}</div>`}
+            <${Button} variant="gold" disabled=${genBusy} onClick=${mobileGenerate} style=${{ width: "100%", justifyContent: "center" }}>${genBusy ? "생성 중..." : "✨ 문제 생성하기"}<//>
+            <button onClick=${() => setMobileShowGenerate(false)} style=${{ width: "100%", marginTop: 8, padding: "6px 0", background: "none", border: "none", color: C.slate, fontSize: 12, cursor: "pointer" }}>‹ 보관함으로</button>
+          </div>
+        ` : mobileTab === "library" ? html`
+          <div>
+            ${sortedPassages.length === 0 ? html`<${Empty} text="저장된 지문이 없어요." />` : sortedPassages.map((p) => html`
+              <${Card} key=${p.localId}>
+                <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginBottom: 6 }}>${p.title || "(제목 없음)"}</div>
+                <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${p.text}</div>
+                <div style=${{ fontSize: 11, color: C.slate, marginBottom: 10 }}>${[p.grade, p.publisher].filter(Boolean).join(" · ")}${p.grade || p.publisher ? " · " : ""}저장일 ${p.createdAt ? fmtDate(p.createdAt.slice(0, 10)) : "-"}</div>
+                <${Button} onClick=${() => mobileUseLibraryPassage(p)} style=${{ width: "100%", justifyContent: "center" }}>✏️ 이 지문으로 문제 만들기<//>
+              <//>
+            `)}
+          </div>
+        ` : mobileTab === "review" ? html`
+          <div>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 8 }}>검토 대기 (${items.length})</div>
+            ${items.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>검토할 항목이 없어요.</div>` : html`
+              <div style=${{ marginBottom: 16 }}>
+                ${items.map((it) => html`
+                  <div key=${it.localId} style=${{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 4, padding: "12px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style=${{ minWidth: 0 }}>
+                      <div style=${{ fontSize: 12.5, fontWeight: 600, color: C.navy }}>${esMobileItemLabel(it)}</div>
+                      <div style=${{ fontSize: 11, color: C.slate, marginTop: 2 }}>AI 생성 · 검토 필요</div>
+                    </div>
+                    <button onClick=${() => approveReviewItem(it.localId)} style=${{ fontSize: 11.5, fontWeight: 700, color: C.gold, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>승인</button>
+                  </div>
+                `)}
+              </div>
+            `}
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 8 }}>저장함 (${savedItems.length})</div>
+            ${savedItems.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>저장된 문항이 없어요.</div>` : savedItems.map((it, i) => html`
+              <label key=${it.localId} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
+                <input type="checkbox" checked=${selectedIds.has(it.localId)} onChange=${() => toggleCheck(it.localId)} style=${{ width: 14, height: 14, flexShrink: 0 }} />
+                <span style=${{ fontSize: 12.5, color: C.ink, minWidth: 0, overflowWrap: "break-word" }}>${esMobileItemLabel(it)}</span>
+              </label>
+            `)}
+          </div>
+        ` : html`
+          <div>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 8 }}>저장된 문항으로 시험지 만들기</div>
+            <button onClick=${mobileCreateExamPaperFromSelected} disabled=${selectedIds.size === 0}
+              style=${{
+                width: "100%", padding: "9px 14px", borderRadius: 3, border: `1px solid ${C.line}`, background: "#fff", color: C.navy,
+                fontSize: 12.5, fontWeight: 600, marginBottom: 16, cursor: selectedIds.size === 0 ? "default" : "pointer", opacity: selectedIds.size === 0 ? 0.5 : 1,
+              }}>📄 선택 항목으로 시험지 만들기${selectedIds.size > 0 ? ` (${selectedIds.size}개 선택됨)` : ""}</button>
+
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, marginBottom: 8 }}>내 시험지</div>
+            ${examPapers.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>아직 만든 시험지가 없어요.</div>` : examPapers.map((p) => html`
+              <div key=${p.localId} style=${{ marginBottom: 16 }}>
+                <${Card} style=${{ marginBottom: mobileAssignPaperId === p.localId ? 8 : 12 }}>
+                  <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${p.title || "제목 없는 시험지"}</div>
+                  <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 3, marginBottom: 10 }}>문항 ${esCountPaperQuestions(p)}개</div>
+                  <button onClick=${() => { setMobileAssignPaperId(mobileAssignPaperId === p.localId ? null : p.localId); setMobileAssignMsg(""); }}
+                    style=${{ width: "100%", padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.gold}`, background: "#fff", color: C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📤 학생에게 배정</button>
+                <//>
+                ${mobileAssignPaperId === p.localId && html`
+                  <div style=${{ background: C.ivory, borderRadius: 4, padding: 16 }}>
+                    <div style=${{ fontSize: 12, color: C.slate, marginBottom: 5, fontWeight: 600 }}>학생에게 배정</div>
+                    <select value=${mobileAssignStudentId} onChange=${(e) => setMobileAssignStudentId(e.target.value)}
+                      style=${{ width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 3, border: `1px solid ${C.line}`, fontSize: 13.5, color: C.ink, background: "#fff", marginBottom: 8 }}>
+                      <option value="">학생 선택</option>
+                      ${(roster || []).map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
+                    </select>
+                    <${Button} variant="gold" disabled=${mobileAssignBusy} onClick=${mobileAssignPaper} style=${{ width: "100%", justifyContent: "center" }}>${mobileAssignBusy ? "배정 중..." : "배정하기"}<//>
+                    ${mobileAssignMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${mobileAssignMsg}</div>`}
+                  </div>
+                `}
+              </div>
+            `)}
+          </div>
+        `}
+      </div>
+    `;
   }
 
   return html`
@@ -9612,8 +9851,8 @@ function ExamStudioSection() {
   `;
 }
 
-function ReadingAnalysisSection() {
-  return html`<${ExamStudioSection} />`;
+function ReadingAnalysisSection({ roster, updateData }) {
+  return html`<${ExamStudioSection} roster=${roster} updateData=${updateData} />`;
 }
 
 // ---------- Grammar Bank (프로토타입 교체, 2026-09-03) ----------
@@ -15127,7 +15366,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               ${mobileHwChecklist.map((h, i) => html`
                 <label key=${h.id} style=${{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
                   <input type="checkbox" checked=${false} onChange=${() => toggleHwChecked(h)} style=${{ marginTop: 3, flexShrink: 0 }} />
-                  <span style=${{ flex: 1, fontSize: 12.5, color: C.ink }}><b style=${{ color: C.navy }}>${h.studentName}</b> — ${h.content}</span>
+                  <span style=${{ flex: 1, minWidth: 0, overflowWrap: "break-word", fontSize: 12.5, color: C.ink }}><b style=${{ color: C.navy }}>${h.studentName}</b> — ${h.content}</span>
                   ${h.dueDate < todayStr && html`
                     <span style=${{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "2px 8px", whiteSpace: "nowrap", flexShrink: 0 }}>기한지남</span>
                   `}
