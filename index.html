@@ -413,7 +413,7 @@
 <script src="services/roadmapService.js" defer></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
   // Phase 9-A — Teacher 로그인 백그라운드 Auth 세션용. 기존 passcode 로그인 흐름/Student·Parent
   // 로그인은 전혀 참조하지 않는다(syncTeacherFirebaseAuth에서만 사용).
@@ -429,7 +429,19 @@
     measurementId: "G-1SVW405RS7"
   };
   const firebaseApp = initializeApp(firebaseConfig);
-  window.__db = getFirestore(firebaseApp);
+  // Firestore 오프라인 지속성(2026-09-15) — 여러 탭을 동시에 열어도 안전한 멀티탭 매니저로 켠다.
+  // initializeFirestore()는 이 앱의 첫 Firestore 인스턴스 생성 호출이어야 하는데(이후 getFirestore
+  // 호출과 섞이면 "already initialized" 에러), 바로 이 지점이 그 유일한 최초 호출이라 안전하다.
+  // IndexedDB 미지원(사파리 사생활 보호 모드 등)이나 다른 이유로 실패해도 사이트를 막지 않고
+  // 콘솔에만 조용히 남긴 뒤 캐시 없는 기본 getFirestore()로 넘어간다 — 사용자에게 에러 팝업 없음.
+  try {
+    window.__db = initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch (e) {
+    console.warn("Firestore 오프라인 캐시를 켜지 못해 온라인 모드로 계속합니다:", e);
+    window.__db = getFirestore(firebaseApp);
+  }
   window.__doc = doc;
   window.__getDoc = getDoc;
   window.__setDoc = setDoc;
