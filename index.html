@@ -20929,7 +20929,7 @@ function StudyLogEntryCard({ entry, studentId, updateData }) {
 const STUDENT_HOME_ACTIONS = [
   { key: "homework", label: "숙제 제출", icon: "📝", bg: "#FBF4EA" },
   { key: "vocab", label: "단어 시험", icon: "🔤", bg: "#EAF1FB" },
-  { key: "flashcards", label: "나의 단어장", icon: "🎴", bg: "#FDF3F7" },
+  { key: "flashcards", label: "나의 단어장", icon: "📔", bg: "#FDF3F7" },
   { key: "materials", label: "자료실", icon: "📁", bg: "#F3EDF7" },
   { key: "mock", label: "모의고사 채점", icon: "📄", bg: "#E9F1EA" },
   { key: "examTests", label: "추가시험", icon: "📋", bg: "#FDF0E3" },
@@ -24727,7 +24727,7 @@ function FlashcardHome({ student, data, updateData }) {
   const VOCAB_TOP_TABS = [{ key: "cards", label: "🃏 플래시카드" }, { key: "practice", label: "✍️ 연습시험" }];
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>🎴 단어 암기</div>
+      <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 12 }}>📔 나의 단어장</div>
       <div style=${{ display: "flex", gap: 6, background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 999, padding: 4, marginBottom: 14 }}>
         ${VOCAB_TOP_TABS.map((t) => html`
           <button key=${t.key} onClick=${() => setTopTab(t.key)} style=${{
