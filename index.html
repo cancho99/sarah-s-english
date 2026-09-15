@@ -24749,8 +24749,10 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   const cvSvc = window.SarahServices.customVocabService;
   const fc = window.SarahServices.firebaseClient;
   // "books" 화면이 이제 "나의 단어장" 허브(선생님 교재 + 내가 만든 단어장 두 섹션)를 겸한다 —
-  // "createCustom"(사진/직접 입력으로 새 단어장 만들기)만 신규 화면이고 나머지는 기존 그대로.
-  const [screen, setScreen] = useState("books"); // "books" | "days" | "mode" | "session" | "summary" | "unknown" | "createCustom"
+  // "createCustom"(사진/직접 입력으로 새 단어장 만들기)과 "list"(단어 리스트 미리보기, 카드
+  // 세션 시작 전 거치는 화면)/"missedReview"(카드 세션 종료 직전 "몰라요" 단어 복습)가 신규
+  // 화면이고 나머지는 기존 그대로.
+  const [screen, setScreen] = useState("books"); // "books" | "days" | "list" | "mode" | "session" | "missedReview" | "summary" | "unknown" | "createCustom"
   const [allBooks, setAllBooks] = useState(null); // null = 아직 안 불러옴
   const [loadErr, setLoadErr] = useState("");
   // selectedBook은 선생님 교재(원래 그대로의 book 객체) 또는 커스텀 단어장을 감싼 합성 객체
@@ -24761,6 +24763,9 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   const [mode, setMode] = useState(null); // "cards" | "spelling"
   // 내가 만든 단어장(customVocabLists/<studentId>.lists) — null=아직 안 불러옴.
   const [customLists, setCustomLists] = useState(null);
+  // "createCustom" 화면 진입 맥락 — null이면 허브의 "+ 새로 만들기"(이름 새로 입력),
+  // {presetListId}면 "list" 화면의 "+ 사진으로 단어 추가"(그 단어장에 바로 이어서 추가) 경로.
+  const [createCustomContext, setCreateCustomContext] = useState(null);
   useEffect(() => {
     (async () => {
       try {
@@ -24780,6 +24785,9 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   const [sessionStartedAt, setSessionStartedAt] = useState(null);
   const [sessionDurationSec, setSessionDurationSec] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  // 이번 세션 중 "몰라요"를 눌렀던 단어(중복 없이, 단어 기준) — 세션 종료 직전 "헷갈렸던 단어
+  // 다시 보기" 화면에서만 쓰고 세션이 끝나면 사라진다(장기 보관되는 flashcardUnknown과는 별개).
+  const [sessionMissed, setSessionMissed] = useState([]);
   const resumedRef = useRef(false);
   // queue/knownCount를 state와 함께 ref에도 동기 반영 — 연타(모바일 더블탭 포함)로 클릭이
   // 리렌더보다 빨리 여러 번 들어와도, 각 핸들러가 항상 "방금 갱신된" 값을 읽도록 한다(state
@@ -24841,21 +24849,35 @@ function FlashcardSessionFlow({ student, data, updateData }) {
     setScreen("session");
   }, [books, customLists]);
 
-  function goMode(day) { setSelectedDay(day); setScreen("mode"); }
+  // Day를 고르면(수동 선택이든 허브의 자동 선택이든) 항상 먼저 "단어 리스트" 화면을 거친다 —
+  // 곧장 학습 방법 선택 화면으로 가지 않는다(2026-09-15 추가 요구사항).
+  function goMode(day) { setSelectedDay(day); setScreen("list"); }
   // 허브(섹션 1) 교재 카드 탭 — Day 선택 화면을 건너뛰고 "다음에 이어할 Day"를 자동으로 골라
-  // 곧장 학습 방법 선택 화면으로 간다. Day를 직접 바꾸고 싶으면 그 화면의 "‹ 뒤로"가 여전히
+  // 곧장 단어 리스트 화면으로 간다. Day를 직접 바꾸고 싶으면 그 리스트 화면의 "‹ 뒤로"가 여전히
   // 기존 Day 선택 화면으로 이어진다(기존 기능 그대로 보존, 진입 경로만 하나 더 생긴 것).
   function goToTeacherBook(book) {
     const day = cvSvc.nextIncompleteDay(svc.getDayList(book), data && data.flashcardSessions, book.id);
     setSelectedBook(book);
     setSelectedDay(day);
-    setScreen("mode");
+    setScreen("list");
   }
-  // 허브(섹션 2) 커스텀 단어장 카드 탭 — Day 개념이 없어서 곧장 학습 방법 선택 화면으로.
+  // 허브(섹션 2) 커스텀 단어장 카드 탭 — Day 개념이 없어서 곧장 단어 리스트 화면으로.
   function goToCustomList(list) {
     setSelectedBook(toSyntheticBook(list));
     setSelectedDay(null);
-    setScreen("mode");
+    setScreen("list");
+  }
+  // "list" 화면의 "+ 사진으로 단어 추가" — 지금 보고 있는 커스텀 단어장이 자동 선택된 채로
+  // CustomVocabCreator를 연다.
+  function goToAddPhotoForCurrentList() {
+    setCreateCustomContext({ presetListId: selectedBook.id });
+    setScreen("createCustom");
+  }
+  // 허브의 "+ 새로 만들기"/"+ 새 단어장 만들기" — 특정 단어장에 이어 붙이는 게 아니라 이름을
+  // 새로 정하는 경로라, 앞서 남아있을 수 있는 presetListId 맥락을 지운다.
+  function goToCreateNewCustom() {
+    setCreateCustomContext(null);
+    setScreen("createCustom");
   }
   function wordsForSelectedSource() {
     if (!selectedBook) return [];
@@ -24891,6 +24913,7 @@ function FlashcardSessionFlow({ student, data, updateData }) {
     setTotalCount(initialQueue.length);
     setSessionStartedAt(startedAt);
     setFlipped(false);
+    setSessionMissed([]);
     setMode("cards");
     setScreen("session");
     updateData(student.id, (d) => ({
@@ -24914,7 +24937,7 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   // "큐가 비어서 session 화면 조건은 더 이상 안 맞지만 summary로도 아직 안 바뀐" 빈 화면이 그
   // await 도는 동안 잠깐(네트워크 상황에 따라 눈에 띄게) 떴다. 쓰기 자체는 다른 persist*
   // 함수들처럼 실패해도 조용히 콘솔에만 기록하는 fire-and-forget.
-  function finishCardsSession(finalKnownCount) {
+  function finishCardsSession() {
     const endedAt = Date.now();
     const record = revSvc.buildFlashcardSessionRecord({
       bookId: selectedBook.id, bookName: selectedBook.name, day: selectedDay, mode: "cards",
@@ -24939,18 +24962,25 @@ function FlashcardSessionFlow({ student, data, updateData }) {
     setQueue(nextQueue);
     setKnownCount(nextKnown);
     setFlipped(false);
-    if (nextQueue.length === 0) finishCardsSession(nextKnown);
+    // 범위 전체를 "알아요"로 다 만들어도 곧장 완료 화면으로 가지 않고, 이번 세션에서 "몰라요"를
+    // 눌렀던 단어를 먼저 한 번 더 보여준다("헷갈렸던 단어 다시 보기") — 실제 세션 종료
+    // (Firestore 기록/activeFlashcardSession 정리)는 그 화면의 "확인 완료"를 눌러야 일어난다.
+    if (nextQueue.length === 0) setScreen("missedReview");
     else persistActiveCardsSession(nextQueue, nextKnown);
   }
   function cardUnknown() {
     const card = queueRef.current[0];
     if (!card) return;
     persistUnknownAdd(selectedBook, selectedDay, card);
+    setSessionMissed((m) => (m.some((x) => x.en === card.en) ? m : [...m, { en: card.en, ko: card.ko }]));
     const nextQueue = [...queueRef.current.slice(1), card];
     queueRef.current = nextQueue;
     setQueue(nextQueue);
     setFlipped(false);
     persistActiveCardsSession(nextQueue, knownCountRef.current);
+  }
+  function confirmMissedReview() {
+    finishCardsSession();
   }
 
   // ---- 스펠링 연습(기존 기능, 무수정) ----
@@ -25026,7 +25056,7 @@ function FlashcardSessionFlow({ student, data, updateData }) {
 
         <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink }}>내가 만든 단어장</div>
-          <span onClick=${() => setScreen("createCustom")} style=${{ fontSize: 11.5, fontWeight: 700, color: VU.accent, cursor: "pointer" }}>+ 새로 만들기</span>
+          <span onClick=${goToCreateNewCustom} style=${{ fontSize: 11.5, fontWeight: 700, color: VU.accent, cursor: "pointer" }}>+ 새로 만들기</span>
         </div>
         ${customLists === null ? html`<div style=${{ fontSize: 12.5, color: VU.inkSoft }}>불러오는 중...</div>` : html`
           <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -25039,7 +25069,7 @@ function FlashcardSessionFlow({ student, data, updateData }) {
                 <div style=${{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap", background: VU.accentSoft, color: VU.accent }}>${l.words.length}개</div>
               </div>
             `)}
-            <div onClick=${() => setScreen("createCustom")} style=${{ border: `1px dashed ${VU.border}`, borderRadius: 12, padding: "14px", textAlign: "center", color: VU.inkSoft, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>+ 새 단어장 만들기</div>
+            <div onClick=${goToCreateNewCustom} style=${{ border: `1px dashed ${VU.border}`, borderRadius: 12, padding: "14px", textAlign: "center", color: VU.inkSoft, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>+ 새 단어장 만들기</div>
           </div>
         `}
       `}
@@ -25058,8 +25088,32 @@ function FlashcardSessionFlow({ student, data, updateData }) {
         </div>
       `}
 
-      ${screen === "mode" && selectedBook && (selectedBook.isCustom || selectedDay) && html`
+      ${screen === "list" && selectedBook && (selectedBook.isCustom || selectedDay) && html`
         <${BackBtn} onClick=${() => setScreen(selectedBook.isCustom ? "books" : "days")} />
+        <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 10 }}>${selectedBook.name}${selectedBook.isCustom ? "" : ` · Day ${selectedDay}`} — 단어 리스트</div>
+        <${Card}>
+          ${wordsForSelectedSource().length === 0 ? html`<${Empty} text="이 목록엔 아직 단어가 없어요." />` : html`
+            <div>
+              ${wordsForSelectedSource().map((w, i, arr) => html`
+                <div key=${`${w.en}::${i}`} style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "11px 0", borderBottom: i === arr.length - 1 ? "none" : `1px solid ${VU.border}` }}>
+                  <div>
+                    <span style=${{ fontSize: 13.5, fontWeight: 700, color: VU.ink, marginRight: 6 }}>${w.en}</span>
+                    <span style=${{ fontSize: 10.5, color: VU.inkFaint }}>${cvSvc.posLabelForMeaning(w.ko)}</span>
+                  </div>
+                  <div style=${{ fontSize: 12.5, color: VU.inkSoft, textAlign: "right" }}>${w.ko}</div>
+                </div>
+              `)}
+            </div>
+          `}
+        <//>
+        <button onClick=${() => setScreen("mode")} style=${{ width: "100%", padding: 14, border: "none", borderRadius: 12, background: VU.ink, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", marginTop: 12 }}>플래시카드로 학습 시작</button>
+        ${selectedBook.isCustom && html`
+          <button onClick=${goToAddPhotoForCurrentList} style=${{ width: "100%", padding: 13, borderRadius: 12, marginTop: 8, background: VU.surface, border: `1.5px solid ${VU.border}`, color: VU.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>+ 사진으로 단어 추가</button>
+        `}
+      `}
+
+      ${screen === "mode" && selectedBook && (selectedBook.isCustom || selectedDay) && html`
+        <${BackBtn} onClick=${() => setScreen("list")} />
         <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${selectedBook.name}${selectedBook.isCustom ? "" : ` · Day ${selectedDay}`} — 학습 방법을 선택하세요</div>
         <div style=${{ display: "flex", flexDirection: "column", gap: 10 }}>
           <${Card} onClick=${() => startCardsSession(wordsForSelectedSource())} style=${{ textAlign: "center", padding: "24px 16px" }}>
@@ -25143,6 +25197,29 @@ function FlashcardSessionFlow({ student, data, updateData }) {
         `}
       `}
 
+      ${screen === "missedReview" && html`
+        <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 4 }}>헷갈렸던 단어 다시 보기</div>
+        <div style=${{ fontSize: 11.5, color: VU.inkSoft, marginBottom: 12 }}>세션 중 "몰라요"를 눌렀던 단어예요 · 한 번 더 훑어보세요</div>
+        <${Card}>
+          ${sessionMissed.length === 0 ? html`
+            <div style=${{ padding: "18px 0", textAlign: "center", fontSize: 12, color: VU.inkFaint }}>이번 세션에서 몰라요를 누른 단어가 없어요</div>
+          ` : html`
+            <div>
+              ${sessionMissed.map((w, i, arr) => html`
+                <div key=${`${w.en}::${i}`} style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "11px 0", borderBottom: i === arr.length - 1 ? "none" : `1px solid ${VU.border}` }}>
+                  <div>
+                    <span style=${{ fontSize: 13.5, fontWeight: 700, color: VU.ink, marginRight: 6 }}>${w.en}</span>
+                    <span style=${{ fontSize: 10.5, color: VU.inkFaint }}>${cvSvc.posLabelForMeaning(w.ko)}</span>
+                  </div>
+                  <div style=${{ fontSize: 12.5, color: VU.inkSoft, textAlign: "right" }}>${w.ko}</div>
+                </div>
+              `)}
+            </div>
+          `}
+        <//>
+        <button onClick=${confirmMissedReview} style=${{ width: "100%", padding: 14, border: "none", borderRadius: 12, background: VU.ink, color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", marginTop: 12 }}>확인 완료</button>
+      `}
+
       ${screen === "summary" && mode === "cards" && html`
         <div style=${{ textAlign: "center", padding: "34px 16px" }}>
           <div style=${{ width: 46, height: 46, borderRadius: "50%", background: VU.accent, color: "#fff", fontSize: 22, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>✓</div>
@@ -25192,8 +25269,19 @@ function FlashcardSessionFlow({ student, data, updateData }) {
 
       ${screen === "createCustom" && html`
         <${CustomVocabCreator} student=${student} customLists=${customLists || []}
-          onCancel=${() => setScreen("books")}
-          onSaved=${(nextLists) => { setCustomLists(nextLists); setScreen("books"); }} />
+          presetListId=${createCustomContext && createCustomContext.presetListId}
+          onCancel=${() => setScreen(createCustomContext && createCustomContext.presetListId ? "list" : "books")}
+          onSaved=${(nextLists) => {
+            setCustomLists(nextLists);
+            const presetListId = createCustomContext && createCustomContext.presetListId;
+            if (presetListId) {
+              const updated = nextLists.find((l) => l.id === presetListId);
+              if (updated) setSelectedBook(toSyntheticBook(updated));
+              setScreen("list");
+            } else {
+              setScreen("books");
+            }
+          }} />
       `}
     </div>
   `;
@@ -25205,11 +25293,13 @@ function FlashcardSessionFlow({ student, data, updateData }) {
 // customVocabLists/<studentId> 문서 하나를 읽고(최신 상태 재확인) 통째로 다시 쓰는 방식이다 —
 // 학생 한 명이 여러 기기/탭에서 동시에 이 화면을 열어놓고 저장할 가능성은 낮아서(다른
 // updateData류 Firestore 트랜잭션과 달리) 트랜잭션까지는 쓰지 않았다.
-function CustomVocabCreator({ student, customLists, onCancel, onSaved }) {
+function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSaved }) {
   const cvSvc = window.SarahServices.customVocabService;
   const fc = window.SarahServices.firebaseClient;
   const [newName, setNewName] = useState("새 단어장");
-  const [selectedExistingId, setSelectedExistingId] = useState(null);
+  // presetListId가 있으면("list" 화면의 "+ 사진으로 단어 추가"로 들어온 경우) 그 단어장이 처음부터
+  // 선택된 상태로 열려서, 이름을 새로 입력할 필요 없이 곧바로 그 단어장에 이어서 추가할 수 있다.
+  const [selectedExistingId, setSelectedExistingId] = useState(presetListId || null);
   const [photoStatus, setPhotoStatus] = useState("idle"); // "idle" | "recognizing" | "error"
   const [photoErr, setPhotoErr] = useState("");
   const [usedPhoto, setUsedPhoto] = useState(false);
@@ -25289,27 +25379,31 @@ function CustomVocabCreator({ student, customLists, onCancel, onSaved }) {
     }
   }
 
+  const presetList = presetListId ? customLists.find((l) => l.id === presetListId) : null;
+
   return html`
     <${BackBtn} onClick=${onCancel} />
-    <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 10 }}>새 단어장 만들기</div>
+    <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 10 }}>${presetList ? `${presetList.name}에 단어 추가` : "새 단어장 만들기"}</div>
 
-    <div style=${{ fontSize: 11.5, fontWeight: 700, color: VU.inkSoft, marginBottom: 5 }}>단어장 이름</div>
-    <input style=${{ ...inputStyle, opacity: selectedExistingId ? 0.5 : 1 }} value=${newName}
-      disabled=${!!selectedExistingId} placeholder="새 단어장"
-      onChange=${(e) => setNewName(e.target.value)} />
+    ${!presetList && html`
+      <div style=${{ fontSize: 11.5, fontWeight: 700, color: VU.inkSoft, marginBottom: 5 }}>단어장 이름</div>
+      <input style=${{ ...inputStyle, opacity: selectedExistingId ? 0.5 : 1 }} value=${newName}
+        disabled=${!!selectedExistingId} placeholder="새 단어장"
+        onChange=${(e) => setNewName(e.target.value)} />
 
-    ${customLists.length > 0 && html`
-      <div style=${{ fontSize: 11.5, color: VU.inkFaint, margin: "10px 0 6px" }}>또는 기존 단어장에 추가</div>
-      <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
-        ${customLists.map((l) => html`
-          <button key=${l.id} onClick=${() => selectExisting(l.id)} style=${{
-            padding: "7px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: "pointer",
-            border: `1px solid ${selectedExistingId === l.id ? VU.ink : VU.border}`,
-            background: selectedExistingId === l.id ? VU.ink : VU.surface,
-            color: selectedExistingId === l.id ? "#fff" : VU.inkSoft,
-          }}>${l.name}</button>
-        `)}
-      </div>
+      ${customLists.length > 0 && html`
+        <div style=${{ fontSize: 11.5, color: VU.inkFaint, margin: "10px 0 6px" }}>또는 기존 단어장에 추가</div>
+        <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+          ${customLists.map((l) => html`
+            <button key=${l.id} onClick=${() => selectExisting(l.id)} style=${{
+              padding: "7px 12px", borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              border: `1px solid ${selectedExistingId === l.id ? VU.ink : VU.border}`,
+              background: selectedExistingId === l.id ? VU.ink : VU.surface,
+              color: selectedExistingId === l.id ? "#fff" : VU.inkSoft,
+            }}>${l.name}</button>
+          `)}
+        </div>
+      `}
     `}
 
     <div style=${{ margin: "16px 0 18px" }}>

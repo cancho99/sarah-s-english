@@ -88,6 +88,22 @@ window.SarahServices = window.SarahServices || {};
     return next != null ? next : days[0];
   }
 
+  // ---- "단어 리스트" 화면의 품사 표시 ----
+  // 원본 데이터(워드뱅크/커스텀 단어장 모두 {en,ko}뿐)에 품사 필드가 없어, 한국어 뜻의 어미만
+  // 보는 아주 단순한 휴리스틱으로 추정한다(vocabTestService.inferKoreanPos와 같은 아이디어를
+  // 표시용 한글 라벨로 재구성한 것 — 정식 형태소 분석이 아니라 완벽하지 않다, 예: "높다"가
+  // 동사인지 형용사인지 구분 못 함). "~이"로 끝나는 어미는 일부러 부사 판정에서 뺐다 — 실제
+  // 브라우저 테스트에서 "고양이"(명사)가 "~이" 규칙에 걸려 "부사"로 잘못 표시되는 게 바로
+  // 재현됐다: "~이"로 끝나는 흔한 명사가 너무 많아(고양이/아이/구두 등) 오탐 위험이 크다.
+  // "~히"/"~게"는 그런 흔한 명사 어미 충돌이 훨씬 적어 남겨뒀다.
+  function posLabelForMeaning(ko) {
+    const m = String(ko || "").trim();
+    if (!m) return "";
+    if (/다$/.test(m)) return "동사·형용사";
+    if (/(히|게)$/.test(m) && m.length <= 6) return "부사";
+    return "명사";
+  }
+
   window.SarahServices.customVocabService = {
     splitWordMeaningLine,
     parseOcrText,
@@ -95,5 +111,6 @@ window.SarahServices = window.SarahServices || {};
     appendWordsToList,
     computeBookProgress,
     nextIncompleteDay,
+    posLabelForMeaning,
   };
 })();
