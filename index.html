@@ -15848,14 +15848,24 @@ function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateD
   `;
 }
 
-// 단어 복습 현황(2026-09-15 신규) — 로스터 전체를 세로로 쌓인 카드 목록으로 훑어보는 단순
-// 모니터링 화면(표 아님). 데이터 소스는 학생 문서의 flashcardSessions[]/vocabPracticeTests[]
-// (학생 쪽 FlashcardHome/VocabPracticeHome이 쓰는 것과 완전히 같은 필드) — 별도 집계 문서를
-// 새로 쓰지 않고 vocabReviewService.computeVocabReviewRoster()가 매 렌더마다 즉석 계산한다.
-// 교사가 따로 확인/승인하는 동작이 없어서(요구사항 명시) 클릭 가능한 행/버튼이 전혀 없다.
+// 날짜별 히스토리 안에서 "YYYY-MM-DD"를 "9월 17일 (수)"로 보여주기 위한 포맷터 — WEEKDAY_NAMES는
+// 이 파일 전역 상수(다른 화면들도 이미 씀), 새로 안 만들고 그대로 재사용한다.
+function formatVocabHistoryDate(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dayName = WEEKDAY_NAMES[new Date(y, m - 1, d).getDay()];
+  return `${m}월 ${d}일 (${dayName})`;
+}
+
+// 단어 복습 현황(2026-09-15 신규, 2026-09-17 날짜별 히스토리 펼치기 추가) — 로스터 전체를
+// 세로로 쌓인 카드 목록으로 훑어보는 단순 모니터링 화면(표 아님). 데이터 소스는 학생 문서의
+// flashcardSessions[]/vocabPracticeTests[](학생 쪽 FlashcardHome/VocabPracticeHome이 쓰는 것과
+// 완전히 같은 필드) — 별도 집계 문서를 새로 쓰지 않고 vocabReviewService의 계산 함수들이 매
+// 렌더마다 즉석 계산한다. 교사가 따로 확인/승인하는 동작은 없어서(요구사항 명시) 카드를 눌러도
+// 데이터를 바꾸는 액션은 전혀 없다 — 날짜별 학습 기록을 펼쳐보는 것뿐인 순수 열람 토글이다.
 function VocabReviewSection({ roster, dataCache }) {
   const svc = window.SarahServices.vocabReviewService;
   const [filter, setFilter] = useState("all"); // "all" | "stale"
+  const [expandedId, setExpandedId] = useState(null); // 날짜별 히스토리를 펼친 학생 id, 한 번에 하나만
 
   const rows = svc.computeVocabReviewRoster(roster, dataCache);
   const summary = svc.computeVocabReviewSummary(rows);
@@ -15887,19 +15897,46 @@ function VocabReviewSection({ roster, dataCache }) {
         `)}
       </div>
 
-      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : shown.map((r) => html`
-        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 9 }}>
+      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : shown.map((r) => {
+        const isOpen = expandedId === r.id;
+        const history = isOpen ? svc.computeVocabDailyHistory((dataCache && dataCache[r.id]) || null) : [];
+        return html`
+        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 9, cursor: "pointer" }}
+          onClick=${() => setExpandedId(isOpen ? null : r.id)}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style=${{ fontSize: 13.5, fontWeight: 700, color: VU.ink }}>${r.name}</div>
-            <div style=${{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: badgeBg[r.status.level], color: badgeFg[r.status.level] }}>${r.status.label}</div>
+            <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style=${{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: badgeBg[r.status.level], color: badgeFg[r.status.level] }}>${r.status.label}</div>
+              <div style=${{ fontSize: 11, color: VU.inkFaint }}>${isOpen ? "▲" : "▼"}</div>
+            </div>
           </div>
           <div style=${{ fontSize: 12.5, color: VU.inkSoft, marginBottom: 6 }}>오늘 학습시간 <b style=${{ color: VU.ink, fontSize: 14, fontWeight: 700 }}>${r.todayMinutes}분</b></div>
           <div style=${{ display: "flex", gap: 16 }}>
             <div style=${{ fontSize: 11.5, color: VU.inkSoft }}>카드 <b style=${{ color: VU.ink, fontWeight: 700 }}>${r.todayCardSessions}회</b></div>
             <div style=${{ fontSize: 11.5, color: VU.inkSoft }}>연습시험 <b style=${{ color: VU.ink, fontWeight: 700 }}>${r.todayPracticeTests}회</b></div>
           </div>
+          ${isOpen && html`
+            <div style=${{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${VU.border}` }} onClick=${(e) => e.stopPropagation()}>
+              <div style=${{ fontSize: 11.5, fontWeight: 700, color: VU.inkSoft, marginBottom: 6 }}>📅 날짜별 학습 기록</div>
+              ${history.length === 0 ? html`
+                <div style=${{ fontSize: 12, color: VU.inkFaint, padding: "6px 0" }}>아직 기록이 없어요.</div>
+              ` : html`
+                <div style=${{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                  ${history.map((h) => html`
+                    <div key=${h.date} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 8px", background: VU.bg, borderRadius: 8 }}>
+                      <div style=${{ fontSize: 12, color: VU.ink }}>${formatVocabHistoryDate(h.date)}</div>
+                      <div style=${{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                        <div style=${{ fontSize: 12.5, fontWeight: 700, color: VU.ink }}>${h.minutes}분</div>
+                        <div style=${{ fontSize: 10.5, color: VU.inkFaint }}>카드 ${h.cardSessions} · 연습시험 ${h.practiceTests}</div>
+                      </div>
+                    </div>
+                  `)}
+                </div>
+              `}
+            </div>
+          `}
         </div>
-      `)}
+      `})}
     </div>
   `;
 }

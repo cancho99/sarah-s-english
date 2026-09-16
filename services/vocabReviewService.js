@@ -119,6 +119,24 @@ window.SarahServices = window.SarahServices || {};
     };
   }
 
+  // 2026-09-17 추가 — 학생 한 명의 flashcardSessions[]/vocabPracticeTests[]를 날짜별로 묶어
+  // "오늘"뿐 아니라 과거 전체 기록을 볼 수 있게 한다. computeVocabReviewRoster와 같은 두 소스를
+  // 그대로 재사용하되, "오늘"로 필터링하지 않고 date별로 합산한다는 점만 다르다.
+  function computeVocabDailyHistory(data) {
+    const sessions = (data && data.flashcardSessions) || [];
+    const tests = (data && data.vocabPracticeTests) || [];
+    const byDate = new Map();
+    function bucket(date) {
+      if (!byDate.has(date)) byDate.set(date, { date, seconds: 0, cardSessions: 0, practiceTests: 0 });
+      return byDate.get(date);
+    }
+    sessions.forEach((s) => { if (s && s.date) { const b = bucket(s.date); b.seconds += s.durationSec || 0; b.cardSessions += 1; } });
+    tests.forEach((t) => { if (t && t.date) bucket(t.date).practiceTests += 1; });
+    return [...byDate.values()]
+      .map((b) => ({ date: b.date, minutes: Math.round(b.seconds / 60), cardSessions: b.cardSessions, practiceTests: b.practiceTests }))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // 최신 날짜가 먼저
+  }
+
   window.SarahServices.vocabReviewService = {
     buildFlashcardSessionRecord,
     buildPracticeQuestions,
@@ -128,5 +146,6 @@ window.SarahServices = window.SarahServices || {};
     reviewStatusFor,
     computeVocabReviewRoster,
     computeVocabReviewSummary,
+    computeVocabDailyHistory,
   };
 })();
