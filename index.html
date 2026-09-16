@@ -8,6 +8,32 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
 <title>Sarah's English</title>
+<!-- PWA(2026-09-16) — 매니페스트/아이콘은 상대경로로 연결한다. 이 사이트가 GitHub Pages의
+     서브패스(cancho99.github.io/sarah-s-english/)에서 서빙되므로, 절대경로("/manifest.json"
+     등)를 쓰면 로컬 테스트(localhost:8080/index.html)에서는 되다가 실제 배포에서 404가 난다
+     (firebase-messaging-sw.js 등록 때와 같은 이유, 위 <script type="module"> 주석 참고). -->
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1C2B4A" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Sarah's English" />
+<script>
+// PWA 오프라인 캐싱(2026-09-16) — React/Firebase 등 나머지 스크립트가 전부 로드되기 전에도
+// 최대한 일찍 등록해서, 다음 방문부터는 오프라인이어도 이 파일들이 뜰 수 있게 한다. 상대경로
+// 등록 이유는 위 manifest 주석과 동일(서브패스 배포). 지원 안 하는 브라우저나 등록 실패는
+// 전부 콘솔에만 남기고 조용히 넘어간다 — 사이트 자체는 서비스워커 없이도 100% 정상 동작한다.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch((err) => {
+      console.warn("[PWA] 서비스워커 등록 실패 — 오프라인 캐싱 없이 온라인 모드로 계속합니다:", err);
+    });
+  });
+} else {
+  console.warn("[PWA] 이 브라우저는 서비스워커를 지원하지 않아요 — 오프라인 캐싱 없이 온라인 모드로 계속합니다.");
+}
+</script>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #FAF7F1; font-family: 'Jua', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
@@ -480,6 +506,22 @@
 </script>
 </head>
 <body>
+<!-- 오프라인 배지(2026-09-16) — React 앱과 완전히 독립된 순수 JS/DOM이라, React/CDN 스크립트가
+     아직(또는 영영) 안 떠도 항상 동작한다. TeacherDash/StudentDash/ParentDash 등 App() 내부의
+     어느 화면 state에 있든 항상 같은 자리에 보이도록 #root 바깥, 고정 위치로 둔다. 학생이
+     "왜 안 되지"로 헷갈리지 않게 하는 용도라 화면을 가리지 않는 작은 배지로만 표시한다. -->
+<div id="pwa-offline-badge" style="display:none;position:fixed;top:8px;right:8px;z-index:9999;background:#1C2B4A;color:#F5E7C4;font:700 11px -apple-system,BlinkMacSystemFont,sans-serif;padding:5px 11px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,0.25);pointer-events:none;">📴 오프라인 모드</div>
+<script>
+(function () {
+  var badge = document.getElementById("pwa-offline-badge");
+  function updateOfflineBadge() {
+    if (badge) badge.style.display = navigator.onLine ? "none" : "block";
+  }
+  window.addEventListener("online", updateOfflineBadge);
+  window.addEventListener("offline", updateOfflineBadge);
+  updateOfflineBadge();
+})();
+</script>
 <div id="root">
   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;color:#5B6270;">불러오는 중...</div>
 </div>
@@ -646,10 +688,14 @@ async function enableNotifications() {
   }
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("알림 권한이 허용되지 않았어요.");
-  // Relative path (not "/firebase-messaging-sw.js") — the site is hosted under a subpath
-  // (github.io/sarah-s-english/), so an absolute root path would 404 there even though it
-  // resolves fine when testing locally at localhost:8080/index.html.
-  await navigator.serviceWorker.register("firebase-messaging-sw.js");
+  // service-worker.js(2026-09-16부터 FCM 백그라운드 처리까지 겸함, 위 <head> 등록 스크립트
+  // 참고)를 등록한다 — 예전엔 별도 firebase-messaging-sw.js를 여기서 등록했지만, 둘 다 스코프
+  // "/"라 나중에 등록되는 쪽이 그 스코프를 가져가 버려서(서비스워커 스펙상 한 스코프엔 스크립트
+  // 하나만 컨트롤 가능) 두 파일을 따로 두면 어느 한쪽이 밀려난다. Firebase 권장대로 한 파일로
+  // 합쳤다. 상대경로인 이유는 그대로(서브패스 배포, 위 주석 참고) — register()는 이미 등록된
+  // 스코프/스크립트에 다시 호출해도 안전(idempotent)하므로, <head>의 페이지 로드 시 등록과
+  // 순서가 겹쳐도 문제 없다.
+  await navigator.serviceWorker.register("service-worker.js");
   // register() resolves as soon as the worker is found/installing, not once it's actually
   // active — calling getToken() (which subscribes to PushManager) before activation finishes
   // throws "no active Service Worker". .ready waits for an active worker controlling this scope.
@@ -1481,6 +1527,16 @@ async function loadWordbankBooks() {
   const rec = snap.exists() ? snap.data() : {};
   _wordbankBooksCache = Array.isArray(rec.books) ? rec.books : [];
   return _wordbankBooksCache;
+}
+// loadWordbankBooks()가 실패했을 때(FlashcardSessionFlow/VocabPracticeHome 둘 다 같은 catch
+// 패턴을 쓴다) 보여줄 안내 문구 — 오프라인이면서 이 기기가 sarahsEnglishWordbank/main을 아직
+// 한 번도 온라인 상태로 읽어본 적이 없어 Firestore 오프라인 캐시(IndexedDB)에도 없는 경우를
+// 구분해서, "그냥 실패했어요"가 아니라 원인과 해결 방법을 알려준다. 한 번이라도 온라인으로 이
+// 화면을 열어본 기기라면 오프라인이어도 getDoc이 로컬 캐시에서 성공해 이 catch 자체를 안 탄다.
+function wordbankLoadErrorMessage() {
+  return navigator.onLine
+    ? "워드뱅크를 불러오지 못했어요."
+    : "오프라인 상태예요. 인터넷에 연결된 상태에서 이 단어장을 한 번 열어봐야 오프라인에서도 사용할 수 있어요.";
 }
 
 // ---------- Answer-key PDF import (e.g. 마더텅/수능기출 정답표) ----------
@@ -4429,7 +4485,7 @@ function StudentFlashcardBooksEditor({ student, updateStudentRosterEntry }) {
     setOpen(next);
     if (next && books === null) {
       try { setBooks(await loadWordbankBooks()); }
-      catch (e) { setBooks([]); setLoadErr("워드뱅크를 불러오지 못했어요."); }
+      catch (e) { setBooks([]); setLoadErr(wordbankLoadErrorMessage()); }
     }
   }
   function toggleBook(id) {
@@ -24817,7 +24873,7 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   useEffect(() => {
     (async () => {
       try { setAllBooks(await loadWordbankBooks()); }
-      catch (e) { setAllBooks([]); setLoadErr("워드뱅크를 불러오지 못했어요."); }
+      catch (e) { setAllBooks([]); setLoadErr(wordbankLoadErrorMessage()); }
     })();
   }, []);
 
@@ -25470,7 +25526,7 @@ function VocabPracticeHome({ student, data, updateData }) {
   useEffect(() => {
     (async () => {
       try { setAllBooks(await loadWordbankBooks()); }
-      catch (e) { setAllBooks([]); setLoadErr("워드뱅크를 불러오지 못했어요."); }
+      catch (e) { setAllBooks([]); setLoadErr(wordbankLoadErrorMessage()); }
     })();
   }, []);
 

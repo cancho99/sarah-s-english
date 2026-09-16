@@ -1,0 +1,19 @@
+{
+  "name": "Sarah's English",
+  "short_name": "Sarah's English",
+  "description": "Sarah's English 학생·학부모·선생님 포털 — 숙제, 단어시험, 리포트, 리딩 라이브러리를 한 곳에서.",
+  "id": "/sarah-s-english/",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "ko",
+  "background_color": "#FAF7F1",
+  "theme_color": "#1C2B4A",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
