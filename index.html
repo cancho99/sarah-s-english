@@ -8576,9 +8576,99 @@ function EsAnalysisSection({ analysis }) {
   `;
 }
 
+// ---------- 지문 분석 인쇄(2026-09-17) — 위 EsAnalysisSection이 화면에 그리는 것과 완전히
+// 같은 구조/CSS 클래스를 문자열로 재구성한다. esOpenPrintWindow가 여는 팝업 창은
+// document.write()로 처음부터 새로 만드는 문서라 이 페이지의 <style>을 전혀 물려받지 못하므로,
+// 화면에서 쓰는 .meta-block/.analysis-card/... 규칙을 그대로 복사해 인쇄용 <style>에 넣는다
+// (Exam Studio의 다른 인쇄 함수들 — esBuildQuestionPaperHtml 등 — 과 같은 패턴).
+const ES_ANALYSIS_PRINT_CSS = `
+  .meta-block { padding: 18px 24px; border: 1px solid #DCD8CF; border-radius: 6px; background: #FDFBF6; margin-bottom: 16px; page-break-inside: avoid; }
+  .meta-row { display: flex; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
+  .meta-box { flex: 1; min-width: 180px; border: 1px solid #DCD8CF; padding: 10px 14px; background: #fff; }
+  .meta-box .m-label { font-size: 10.5px; font-weight: 700; color: #1C2B4A; letter-spacing: .05em; margin-bottom: 4px; }
+  .meta-box .m-body { font-size: 12px; line-height: 1.7; color: #5B6270; }
+  .flow-row { display: flex; gap: 0; border: 1px solid #DCD8CF; }
+  .flow-col { flex: 1; padding: 10px 12px; border-right: 1px solid #DCD8CF; }
+  .flow-col:last-child { border-right: none; }
+  .flow-col .f-num { font-size: 10.5px; font-weight: 700; color: #B8935A; margin-bottom: 4px; }
+  .flow-col .f-body { font-size: 11.5px; line-height: 1.6; color: #5B6270; }
+  .analysis-card { padding: 20px 22px; border: 1px solid #DCD8CF; border-radius: 6px; background: #fff; margin-bottom: 16px; }
+  .analysis-card .a-title { font-size: 12px; font-weight: 700; color: #1C2B4A; margin-bottom: 18px; letter-spacing: .03em; }
+  .sent-block { margin-bottom: 26px; page-break-inside: avoid; }
+  .sent-block:last-child { margin-bottom: 0; }
+  .sent-row-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .sent-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #1C2B4A; color: #fff; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .sent-row { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 16px; row-gap: 10px; font-size: 14.5px; color: #1C2B4A; }
+  .seg { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+  .seg .txt { padding: 0 2px 2px; white-space: normal; overflow-wrap: break-word; word-break: keep-all; }
+  .seg.tag .txt { border-bottom: 1.5px solid #1C2B4A; }
+  .seg .lbl { font-size: 10px; font-weight: 600; color: #1C2B4A; margin-top: 5px; min-height: 13px; letter-spacing: .01em; }
+  .seg.tag.v .lbl { color: #A6473A; }
+  .seg:not(.tag) .lbl { visibility: hidden; }
+  .interpret-line { font-size: 12.5px; color: #5B6270; margin: 0 0 4px; padding-left: 32px; }
+  .tip-line { font-size: 11.5px; color: #5B6270; background: #F1ECDD; padding: 6px 10px; margin-left: 32px; border-left: 2px solid #B8935A; }
+  .vocab-block { padding: 18px 22px; border: 1px solid #DCD8CF; border-radius: 6px; background: #fff; page-break-inside: avoid; }
+  .vocab-block .a-title { font-size: 12px; font-weight: 700; color: #1C2B4A; margin-bottom: 12px; letter-spacing: .03em; }
+  .vocab-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 24px; font-size: 12.5px; }
+  .vocab-grid .vw { font-weight: 600; color: #14161A; }
+  .vocab-grid .vw span { font-weight: 400; color: #5B6270; }
+`;
+function esBuildAnalysisBodyHtml(analysis) {
+  if (!analysis) return "";
+  const hasMeta = (analysis.summary && (analysis.summary.topic || analysis.summary.summary)) || (analysis.flow && analysis.flow.length > 0);
+  const hasSentences = analysis.sentences && analysis.sentences.length > 0;
+  const hasVocab = analysis.vocab && analysis.vocab.length > 0;
+  const parts = [];
+  if (hasMeta) {
+    let meta = "";
+    if (analysis.summary && (analysis.summary.topic || analysis.summary.summary)) {
+      meta += `<div class="meta-row">
+        <div class="meta-box"><div class="m-label">주제</div><div class="m-body">${esEscapeHtml(analysis.summary.topic || "")}</div></div>
+        <div class="meta-box"><div class="m-label">요약</div><div class="m-body">${esEscapeHtml(analysis.summary.summary || "")}</div></div>
+      </div>`;
+    }
+    if (analysis.flow && analysis.flow.length > 0) {
+      meta += `<div class="flow-row">${analysis.flow.map((f) => `<div class="flow-col"><div class="f-num">${esEscapeHtml(f.stage || "")} (${esEscapeHtml(f.range || "")})</div><div class="f-body">${esEscapeHtml(f.desc || "")}</div></div>`).join("")}</div>`;
+    }
+    parts.push(`<div class="meta-block">${meta}</div>`);
+  }
+  if (hasSentences) {
+    const rows = analysis.sentences.map((s, i) => {
+      const segHtml = (s.segments || []).map((seg) => {
+        const tag = (seg.tag || "").trim();
+        const isTagged = !!tag;
+        const isVerb = /^V/.test(tag);
+        return `<div class="seg${isTagged ? " tag" : ""}${isVerb ? " v" : ""}"><div class="txt">${esEscapeHtml(seg.text)}</div><div class="lbl">${isTagged ? esEscapeHtml(tag) : "&nbsp;"}</div></div>`;
+      }).join("");
+      return `<div class="sent-block">
+        <div class="sent-row-wrap"><span class="sent-num">${i + 1}</span><div class="sent-row">${segHtml}</div></div>
+        <div class="interpret-line">해석: ${esEscapeHtml(s.interpretation || "")}</div>
+        <div class="tip-line">▸ ${esEscapeHtml(s.tip || "")}</div>
+      </div>`;
+    }).join("");
+    parts.push(`<div class="analysis-card"><div class="a-title">지문 분석 · 구문 분석 노트</div>${rows}</div>`);
+  }
+  if (hasVocab) {
+    const grid = analysis.vocab.map((v) => `<div class="vw">${esEscapeHtml(v.word)} <span>${esEscapeHtml(v.meaning)}</span></div>`).join("");
+    parts.push(`<div class="vocab-block"><div class="a-title">중요 어휘</div><div class="vocab-grid">${grid}</div></div>`);
+  }
+  return parts.join("");
+}
+function esBuildAnalysisPrintHtml(analysis, title) {
+  const bodyHtml = esBuildAnalysisBodyHtml(analysis);
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esEscapeHtml(title || "지문 분석")}</title>
+<style>
+  body{font-family:'Malgun Gothic',-apple-system,sans-serif;color:#14161A;padding:28px;max-width:800px;margin:0 auto;}
+  ${ES_LETTERHEAD_CSS}
+  h1{font-size:18px;margin-bottom:20px;}
+  ${ES_ANALYSIS_PRINT_CSS}
+  @media print { body{padding:0;} }
+</style></head><body>${esBuildLetterheadHtml("지문 분석")}<h1>${esEscapeHtml(title || "지문 분석")}</h1>${bodyHtml}</body></html>`;
+}
+
 // ---------- 지문 분석함(2026-09-17) — 지문 보관함(EsPassageLibraryCard/Leaf)과 완전히 같은
 // 카드 그리드 + 학년/출판사/유형 폴더 구조, 열람은 위 EsAnalysisSection을 그대로 재사용한다. ----------
-function EsAnalysisLibraryCard({ item, onOpen, onDelete }) {
+function EsAnalysisLibraryCard({ item, onOpen, onPrint, onDelete }) {
   const topic = item.analysis && item.analysis.summary && item.analysis.summary.topic;
   const preview = topic || (item.passageText || "").replace(/\s+/g, " ").slice(0, 100);
   return html`
@@ -8589,9 +8679,15 @@ function EsAnalysisLibraryCard({ item, onOpen, onDelete }) {
       </div>
       <div className="es-passage-box" style=${{ maxHeight: "none", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${preview}</div>
       <div style=${{ fontSize: 11, color: C.slate, margin: "8px 0 12px" }}>저장일 ${new Date(item.createdAt).toLocaleDateString("ko-KR")}</div>
-      <${Button} variant="primary" style=${{ width: "100%", justifyContent: "center", padding: "8px 14px", fontSize: 12.5 }} onClick=${onOpen}>📖 분석 열어보기<//>
+      <div style=${{ display: "flex", gap: 6 }}>
+        <${Button} variant="primary" style=${{ flex: 1, justifyContent: "center", padding: "8px 14px", fontSize: 12.5 }} onClick=${onOpen}>📖 분석 열어보기<//>
+        <${Button} variant="ghost" style=${{ padding: "8px 12px", fontSize: 12.5 }} onClick=${onPrint}>🖨<//>
+      </div>
     <//>
   `;
+}
+function esPrintAnalysisEntry(entry) {
+  esOpenPrintWindow(esBuildAnalysisPrintHtml(entry.analysis, (entry.analysis && entry.analysis.summary && entry.analysis.summary.topic) || "지문 분석"));
 }
 function EsAnalysisLibraryLeaf({ scope, library, onDeleteAnalysis }) {
   const [openId, setOpenId] = useState(null);
@@ -8601,11 +8697,14 @@ function EsAnalysisLibraryLeaf({ scope, library, onDeleteAnalysis }) {
     <div>
       ${items.length === 0 && html`<div style=${{ marginBottom: 16 }}><${Empty} text="이 폴더에 저장된 지문 분석이 없어요. '지문 입력 · 유형 선택'에서 '📖 지문 분석'으로 분석을 만든 뒤 저장해보세요." /></div>`}
       <div className="es-card-grid">
-        ${items.map((a) => html`<${EsAnalysisLibraryCard} key=${a.localId} item=${a} onOpen=${() => setOpenId(openId === a.localId ? null : a.localId)} onDelete=${() => onDeleteAnalysis(a.localId)} />`)}
+        ${items.map((a) => html`<${EsAnalysisLibraryCard} key=${a.localId} item=${a} onOpen=${() => setOpenId(openId === a.localId ? null : a.localId)} onPrint=${() => esPrintAnalysisEntry(a)} onDelete=${() => onDeleteAnalysis(a.localId)} />`)}
       </div>
       ${opened && html`
         <div style=${{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${C.line}` }}>
-          <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5, marginBottom: 12 }} onClick=${() => setOpenId(null)}>‹ 닫기<//>
+          <div style=${{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+            <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} onClick=${() => setOpenId(null)}>‹ 닫기<//>
+            <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5 }} onClick=${() => esPrintAnalysisEntry(opened)}>🖨 분석 인쇄<//>
+          </div>
           <${EsAnalysisSection} analysis=${opened.analysis} />
         </div>
       `}
@@ -10057,7 +10156,9 @@ function ExamStudioSection({ roster, updateData }) {
           ${page === "review" && html`
             <div>
               ${analysis && html`
-                <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                <div style=${{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
+                  <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }}
+                    onClick=${() => esOpenPrintWindow(esBuildAnalysisPrintHtml(analysis, (analysis.summary && analysis.summary.topic) || "지문 분석"))}>🖨 분석 인쇄<//>
                   <${Button} variant=${analysisSaved ? "ghost" : "gold"} disabled=${analysisSaved} style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${saveCurrentAnalysis}>
                     ${analysisSaved ? "✅ 지문 분석함에 저장됨" : "💾 이 분석 저장하기"}
                   <//>
