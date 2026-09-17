@@ -30,6 +30,14 @@
 //                                   independent snapshot copy (cloneEntryForPaper in index.html),
 //                                   bounded by how many questions one exam paper holds — safe as a
 //                                   single array field.
+//   examStudioAnalyses           — one doc per saved 지문 분석(구문분석/직독직해/요약/글의 흐름/
+//                                   어휘): {grade,publisher,examType,passageText,analysis,
+//                                   createdAt}. Added 2026-09-17 — 원래 "지문 분석"은
+//                                   ExamStudioSection의 로컬 React state(`analysis`)에만 있어서
+//                                   새로고침/페이지 이동하면 그냥 사라졌다(저장 버튼 자체가
+//                                   없었음). `analysis`는 EsAnalysisSection이 그리는 것과 완전히
+//                                   같은 모양{summary,flow,sentences,vocab}을 그대로 저장한다 —
+//                                   AI를 다시 부르지 않고도 나중에 그대로 재현해서 보여줄 수 있게.
 window.SarahServices = window.SarahServices || {};
 
 (function () {
@@ -40,6 +48,7 @@ window.SarahServices = window.SarahServices || {};
   const PASSAGES_COLLECTION = "examStudioPassages";
   const QUESTIONS_COLLECTION = "examStudioQuestions";
   const EXAM_PAPERS_COLLECTION = "examStudioExamPapers";
+  const ANALYSES_COLLECTION = "examStudioAnalyses";
 
   const LIBRARY_GRADES = ["중1", "중2", "중3", "고1", "고2", "고3"];
 
@@ -148,11 +157,30 @@ window.SarahServices = window.SarahServices || {};
     await FS.deleteDocAt(EXAM_PAPERS_COLLECTION, id);
   }
 
+  // ---- 지문 분석함 ----
+  async function listAnalyses() {
+    const docs = await FS.getAllDocs(ANALYSES_COLLECTION);
+    return Object.entries(docs).map(([id, data]) => ({ localId: id, id, ...data }));
+  }
+  async function createAnalysis(entry) {
+    const doc = {
+      grade: entry.grade || "", publisher: entry.publisher || "", examType: entry.examType || "",
+      passageText: entry.passageText || "", analysis: entry.analysis || null,
+      createdAt: new Date().toISOString(),
+    };
+    const id = await FS.addDocTo(ANALYSES_COLLECTION, doc);
+    return { localId: id, id, ...doc };
+  }
+  async function deleteAnalysis(id) {
+    await FS.deleteDocAt(ANALYSES_COLLECTION, id);
+  }
+
   window.SarahServices.examStudioService = {
     LIBRARY_GRADES,
     loadFolders, addFolder, deleteFolder,
     listPassages, createPassage, deletePassage,
     listQuestions, createQuestions, updateQuestion, deleteQuestion, setQuestionsStage, setQuestionsReviewed, deleteQuestions,
     listExamPapers, createExamPaper, updateExamPaper, deleteExamPaper,
+    listAnalyses, createAnalysis, deleteAnalysis,
   };
 })();

@@ -81,6 +81,12 @@ service cloud.firestore {
     match /examStudioExamPapers/{id} {
       allow read, create, update, delete: if isTeacher();
     }
+    // 2026-09-17 — 지문 분석함(examStudioAnalyses) 신규 추가. 위 4개와 완전히 같은 실수를
+    // 반복하지 않기 위해 처음부터 같이 등록한다 — 화이트리스트에 없으면 저장 버튼을 눌러도
+    // permission-denied로 조용히 실패한다(콘솔에만 에러가 남고 화면엔 안 보일 수 있음).
+    match /examStudioAnalyses/{id} {
+      allow read, create, update, delete: if isTeacher();
+    }
 
     // ── Phase 9-D: examAssignments — 본인 배정만 read, 상태 전이만 update ──
     // create/delete는 teacher만(9-B와 동일, 변화 없음). update는 teacher 전체 허용 + 학생 본인

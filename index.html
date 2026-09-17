@@ -8576,14 +8576,52 @@ function EsAnalysisSection({ analysis }) {
   `;
 }
 
+// ---------- 지문 분석함(2026-09-17) — 지문 보관함(EsPassageLibraryCard/Leaf)과 완전히 같은
+// 카드 그리드 + 학년/출판사/유형 폴더 구조, 열람은 위 EsAnalysisSection을 그대로 재사용한다. ----------
+function EsAnalysisLibraryCard({ item, onOpen, onDelete }) {
+  const topic = item.analysis && item.analysis.summary && item.analysis.summary.topic;
+  const preview = topic || (item.passageText || "").replace(/\s+/g, " ").slice(0, 100);
+  return html`
+    <${Card} style=${{ margin: 0 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${topic || "제목 없음"}</div>
+        <button type="button" className="es-card-trash" title="이 분석 삭제" onClick=${onDelete}>🗑</button>
+      </div>
+      <div className="es-passage-box" style=${{ maxHeight: "none", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${preview}</div>
+      <div style=${{ fontSize: 11, color: C.slate, margin: "8px 0 12px" }}>저장일 ${new Date(item.createdAt).toLocaleDateString("ko-KR")}</div>
+      <${Button} variant="primary" style=${{ width: "100%", justifyContent: "center", padding: "8px 14px", fontSize: 12.5 }} onClick=${onOpen}>📖 분석 열어보기<//>
+    <//>
+  `;
+}
+function EsAnalysisLibraryLeaf({ scope, library, onDeleteAnalysis }) {
+  const [openId, setOpenId] = useState(null);
+  const items = library.filter((a) => a.grade === scope.grade && a.publisher === scope.publisher && a.examType === scope.examType);
+  const opened = items.find((a) => a.localId === openId) || null;
+  return html`
+    <div>
+      ${items.length === 0 && html`<div style=${{ marginBottom: 16 }}><${Empty} text="이 폴더에 저장된 지문 분석이 없어요. '지문 입력 · 유형 선택'에서 '📖 지문 분석'으로 분석을 만든 뒤 저장해보세요." /></div>`}
+      <div className="es-card-grid">
+        ${items.map((a) => html`<${EsAnalysisLibraryCard} key=${a.localId} item=${a} onOpen=${() => setOpenId(openId === a.localId ? null : a.localId)} onDelete=${() => onDeleteAnalysis(a.localId)} />`)}
+      </div>
+      ${opened && html`
+        <div style=${{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${C.line}` }}>
+          <${Button} variant="ghost" style=${{ padding: "7px 12px", fontSize: 12.5, marginBottom: 12 }} onClick=${() => setOpenId(null)}>‹ 닫기<//>
+          <${EsAnalysisSection} analysis=${opened.analysis} />
+        </div>
+      `}
+    </div>
+  `;
+}
+
 // ---------- Left sidebar navigation ----------
-function EsSidebar({ page, onNavigate, reviewCount, savedCount, paperCount, libraryCount }) {
+function EsSidebar({ page, onNavigate, reviewCount, savedCount, paperCount, libraryCount, analysisCount }) {
   const menu = [
     { key: "setup", icon: "📝", label: "지문 입력 · 유형 선택" },
     { key: "library", icon: "📚", label: "지문 보관함", badge: libraryCount },
     { key: "review", icon: "🗂️", label: "생성 결과", badge: reviewCount },
     { key: "saved", icon: "💾", label: "저장함", badge: savedCount },
     { key: "examPapers", icon: "📄", label: "시험지 생성", badge: paperCount },
+    { key: "analyses", icon: "📖", label: "지문 분석함", badge: analysisCount },
   ];
   return html`
     <div className="es-sidebar">
@@ -9380,6 +9418,12 @@ function ExamStudioSection({ roster, updateData }) {
   const [savedPath, setSavedPath] = useState(() => esEmptyCategoryTag());
   const [paperPath, setPaperPath] = useState(() => esEmptyCategoryTag());
   const [pendingLibraryText, setPendingLibraryText] = useState(null);
+  // 지문 분석함(2026-09-17 신규) — "지문 분석"(구문분석/직독직해/요약/글의 흐름/어휘)이 그동안
+  // analysis 로컬 state에만 있어서 새로고침/페이지 이동하면 사라졌다는 제보로 추가. 지문
+  // 보관함과 완전히 같은 학년→출판사→내신형/수능형 폴더 구조(EsFolderNav 재사용)를 쓴다.
+  const [analysesLibrary, setAnalysesLibrary] = useState([]);
+  const [analysisPath, setAnalysisPath] = useState(() => esEmptyCategoryTag());
+  const [analysisSaved, setAnalysisSaved] = useState(false); // 지금 review 화면에 떠 있는 analysis를 이미 저장했는지
 
   // ---- 모바일 전용 상태(useIsMobile() === true일 때만 쓰는, 첨부된 exam-studio-mobile-preview.html
   // 목업을 그대로 옮긴 3탭 화면) — 데스크탑의 page/libraryPath 등 폴더 탐색 상태는 그대로 두고
@@ -9400,12 +9444,13 @@ function ExamStudioSection({ roster, updateData }) {
     let cancelled = false;
     (async () => {
       try {
-        const [folders, passages, qs, papers] = await Promise.all([ES.loadFolders(), ES.listPassages(), ES.listQuestions(), ES.listExamPapers()]);
+        const [folders, passages, qs, papers, analyses] = await Promise.all([ES.loadFolders(), ES.listPassages(), ES.listQuestions(), ES.listExamPapers(), ES.listAnalyses()]);
         if (cancelled) return;
         setPassageFolders(folders);
         setPassageLibrary(passages);
         setQuestions(qs);
         setExamPapers(papers);
+        setAnalysesLibrary(analyses);
       } catch (e) {
         if (!cancelled) setGenStatus("데이터를 불러오는 중 오류가 발생했어요: " + String(e.message || e));
       } finally {
@@ -9422,6 +9467,7 @@ function ExamStudioSection({ roster, updateData }) {
     if (key === "review") setReviewPath(esEmptyCategoryTag());
     if (key === "saved") setSavedPath(esEmptyCategoryTag());
     if (key === "examPapers") { setPaperPath(esEmptyCategoryTag()); setOpenPaperId(null); }
+    if (key === "analyses") setAnalysisPath(esEmptyCategoryTag());
     setPage(key);
   }
 
@@ -9477,6 +9523,29 @@ function ExamStudioSection({ roster, updateData }) {
       setPassageLibrary((prev) => prev.filter((p) => p.localId !== id));
     } catch (e) { alert("지문 삭제에 실패했어요: " + String(e.message || e)); }
   }
+  // 지금 review 화면에 떠 있는 analysis를 저장 — grade/publisher/examType은 generate 시점에
+  // 이미 정해진 setupGrade/setupPublisher/setupExamType을 그대로 태그로 쓴다(analysis 자체엔
+  // 태그가 없어서, 만들 당시 설정을 그대로 재사용). 저장 직후 목록에도 즉시 반영해서, 바로
+  // "지문 분석함"으로 이동해도 방금 저장한 게 보인다.
+  async function saveCurrentAnalysis() {
+    if (!analysis || analysisSaved) return;
+    // "📖 지문 분석"(분석만 보기) 버튼은 onGenerate와 달리 학년/출판사 선택을 강제하지 않아서,
+    // 여기서 비어 있을 수 있다 — 지문 분석함이 지문 보관함과 같은 학년 폴더 구조를 쓰는 이상
+    // grade가 없으면 어느 폴더에도 안 보이는 채로 저장돼버리니, 저장 시점에 한 번 더 확인한다.
+    if (!setupGrade || !setupPublisher) { alert("분석을 저장하려면 먼저 학년/출판사를 선택해주세요."); return; }
+    try {
+      const doc = await ES.createAnalysis({ grade: setupGrade, publisher: setupPublisher, examType: setupExamType, passageText: passageText.trim(), analysis });
+      setAnalysesLibrary((prev) => [doc, ...prev]);
+      setAnalysisSaved(true);
+    } catch (e) { alert("분석 저장에 실패했어요: " + String(e.message || e)); }
+  }
+  async function deleteAnalysisFromLibrary(id) {
+    if (!confirm("이 지문 분석을 삭제할까요? (되돌릴 수 없어요)")) return;
+    try {
+      await ES.deleteAnalysis(id);
+      setAnalysesLibrary((prev) => prev.filter((a) => a.localId !== id));
+    } catch (e) { alert("분석 삭제에 실패했어요: " + String(e.message || e)); }
+  }
   function saveCurrentToLibrary() {
     setPendingLibraryText(passageText.trim());
     setLibraryPath({
@@ -9530,7 +9599,7 @@ function ExamStudioSection({ roster, updateData }) {
     try {
       const raw = await esCallAiWorker({ mode: "generateMultiTypeQuestions", passageText: trimmed, types: requestTypes, includeAnalysis, grade: setupGrade });
       const { analysis: newAnalysis, rest } = esExtractAnalysisMarker(raw);
-      if (newAnalysis) setAnalysis(newAnalysis);
+      if (newAnalysis) { setAnalysis(newAnalysis); setAnalysisSaved(false); }
       const tag = { grade: setupGrade, publisher: setupPublisher, examType: setupExamType };
       const normalized = rest.map(esNormalizeGeneratedRaw);
       const saved = await ES.createQuestions(normalized, tag);
@@ -9557,6 +9626,7 @@ function ExamStudioSection({ roster, updateData }) {
       const raw = await esCallAiWorker({ mode: "generateMultiTypeQuestions", passageText: trimmed, types: [], includeAnalysis: true, grade: setupGrade });
       const { analysis: newAnalysis } = esExtractAnalysisMarker(raw);
       setAnalysis(newAnalysis);
+      setAnalysisSaved(false);
       setGenStatus(newAnalysis ? "지문 분석을 완료했어요. '생성 결과'에서 확인하세요." : "분석 결과를 받지 못했어요.");
       setPage("review");
     } catch (err) {
@@ -9760,7 +9830,7 @@ function ExamStudioSection({ roster, updateData }) {
     if (nextEntries) { try { await ES.updateExamPaper(paperId, { entries: nextEntries }); } catch (e) { setGenStatus("시험지 저장에 실패했어요: " + String(e.message || e)); } }
   }
 
-  const breadcrumbMap = { setup: "지문 입력", library: "지문 보관함", review: "생성 결과", saved: "저장함", examPapers: "시험지 생성" };
+  const breadcrumbMap = { setup: "지문 입력", library: "지문 보관함", review: "생성 결과", saved: "저장함", examPapers: "시험지 생성", analyses: "지문 분석함" };
 
   if (!loaded) {
     return html`<div style=${{ padding: 40, textAlign: "center", color: C.slate }}>불러오는 중...</div>`;
@@ -9957,7 +10027,7 @@ function ExamStudioSection({ roster, updateData }) {
 
   return html`
     <div className="es-shell">
-      <${EsSidebar} page=${page} onNavigate=${onSidebarNavigate} reviewCount=${items.length} savedCount=${savedItems.length} paperCount=${examPapers.length} libraryCount=${passageLibrary.length} />
+      <${EsSidebar} page=${page} onNavigate=${onSidebarNavigate} reviewCount=${items.length} savedCount=${savedItems.length} paperCount=${examPapers.length} libraryCount=${passageLibrary.length} analysisCount=${analysesLibrary.length} />
       <div className="es-main">
         <div className="es-topbar"><div className="es-breadcrumb">문제 생성<span className="sep">·</span>${breadcrumbMap[page]}</div></div>
         <div className="es-content">
@@ -9986,6 +10056,13 @@ function ExamStudioSection({ roster, updateData }) {
           `}
           ${page === "review" && html`
             <div>
+              ${analysis && html`
+                <div style=${{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <${Button} variant=${analysisSaved ? "ghost" : "gold"} disabled=${analysisSaved} style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${saveCurrentAnalysis}>
+                    ${analysisSaved ? "✅ 지문 분석함에 저장됨" : "💾 이 분석 저장하기"}
+                  <//>
+                </div>
+              `}
               <${EsAnalysisSection} analysis=${analysis} />
               <${EsFolderNav} sectionIcon="🗂️" sectionLabel="생성 결과" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
                 items=${items} path=${reviewPath} setPath=${setReviewPath}
@@ -10016,6 +10093,11 @@ function ExamStudioSection({ roster, updateData }) {
                 openPaperId=${openPaperId} setOpenPaperId=${setOpenPaperId}
                 onCreateBlank=${createBlankExamPaper} onUpdate=${updateExamPaper} onDeletePaper=${deleteExamPaper}
                 onReorder=${reorderPaperEntries} onRemoveEntry=${removeEntryFromPaper} onAddFromSaved=${addSavedEntriesToPaper} />`} />
+          `}
+          ${page === "analyses" && html`
+            <${EsFolderNav} sectionIcon="📖" sectionLabel="지문 분석함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+              items=${analysesLibrary} path=${analysisPath} setPath=${setAnalysisPath}
+              renderLeaf=${(scope) => html`<${EsAnalysisLibraryLeaf} scope=${scope} library=${analysesLibrary} onDeleteAnalysis=${deleteAnalysisFromLibrary} />`} />
           `}
         </div>
       </div>
