@@ -26210,8 +26210,9 @@ function VocabPracticeHome({ student, data, updateData }) {
   const [loadErr, setLoadErr] = useState("");
   const [bookId, setBookId] = useState(null);
   const [selectedDays, setSelectedDays] = useState(new Set());
-  const [countMode, setCountMode] = useState("10"); // "10" | "20" | "all"
-  const [format, setFormat] = useState("mc"); // "mc" | "typing"
+  const [countMode, setCountMode] = useState("10"); // "10" | "20" | "all" | "custom"
+  const [customCount, setCustomCount] = useState("");
+  const [format, setFormat] = useState("mc"); // "mc" | "typing" | "mix"
 
   const [questions, setQuestions] = useState([]);
   const [qIndex, setQIndex] = useState(0);
@@ -26255,7 +26256,9 @@ function VocabPracticeHome({ student, data, updateData }) {
 
   function startPractice() {
     if (totalAvailable === 0) return;
-    const requested = countMode === "all" ? totalAvailable : Number(countMode);
+    const requested = countMode === "all" ? totalAvailable
+      : countMode === "custom" ? Math.min(Math.max(1, Number(customCount) || 1), totalAvailable)
+      : Number(countMode);
     const words = window.SarahServices.vocabTestService.sampleWords(availableWords, requested);
     const built = revSvc.buildPracticeQuestions(words, format);
     qIndexRef.current = 0;
@@ -26377,8 +26380,8 @@ function VocabPracticeHome({ student, data, updateData }) {
           `}
 
           <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 8 }}>문항 수</div>
-          <div style=${{ display: "flex", border: `1px solid ${VU.border}`, borderRadius: 10, overflow: "hidden", marginBottom: 16 }}>
-            ${[{ key: "10", label: "10문항" }, { key: "20", label: "20문항" }, { key: "all", label: `전체 (${totalAvailable})` }].map((o, i) => html`
+          <div style=${{ display: "flex", border: `1px solid ${VU.border}`, borderRadius: 10, overflow: "hidden", marginBottom: countMode === "custom" ? 8 : 16 }}>
+            ${[{ key: "10", label: "10문항" }, { key: "20", label: "20문항" }, { key: "all", label: `전체 (${totalAvailable})` }, { key: "custom", label: "직접 입력" }].map((o, i) => html`
               <div key=${o.key} onClick=${() => setCountMode(o.key)} style=${{
                 flex: 1, textAlign: "center", padding: "10px 4px", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
                 borderLeft: i > 0 ? `1px solid ${VU.border}` : "none",
@@ -26387,10 +26390,16 @@ function VocabPracticeHome({ student, data, updateData }) {
               }}>${o.label}</div>
             `)}
           </div>
+          ${countMode === "custom" && html`
+            <input type="number" min="1" max=${totalAvailable} value=${customCount}
+              onChange=${(e) => setCustomCount(e.target.value)}
+              placeholder=${`문항 수 (최대 ${totalAvailable})`}
+              style=${{ ...inputStyle, marginBottom: 16 }} />
+          `}
 
           <div style=${{ fontSize: 13, fontWeight: 700, color: VU.ink, marginBottom: 8 }}>출제 방식</div>
           <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-            ${[{ key: "mc", label: "단어 보고 뜻 고르기 (객관식)" }, { key: "typing", label: "뜻 보고 단어 타이핑 (주관식)" }].map((o) => html`
+            ${[{ key: "mc", label: "단어 보고 뜻 고르기 (객관식)" }, { key: "typing", label: "뜻 보고 단어 타이핑 (주관식)" }, { key: "mix", label: "객관식 + 주관식 섞어서" }].map((o) => html`
               <div key=${o.key} onClick=${() => setFormat(o.key)} style=${{
                 display: "flex", alignItems: "center", gap: 10, border: `1px solid ${format === o.key ? VU.accent : VU.border}`,
                 background: format === o.key ? VU.accentSoft : "transparent", borderRadius: 10, padding: "11px 12px", fontSize: 13, cursor: "pointer",
@@ -26401,10 +26410,10 @@ function VocabPracticeHome({ student, data, updateData }) {
             `)}
           </div>
 
-          <button onClick=${startPractice} disabled=${selectedDays.size === 0 || totalAvailable === 0} style=${{
+          <button onClick=${startPractice} disabled=${selectedDays.size === 0 || totalAvailable === 0 || (countMode === "custom" && (!customCount || Number(customCount) < 1))} style=${{
             width: "100%", padding: 14, border: "none", borderRadius: 12, background: VU.ink, color: "#fff",
-            fontSize: 14, fontWeight: 700, cursor: (selectedDays.size === 0 || totalAvailable === 0) ? "not-allowed" : "pointer",
-            opacity: (selectedDays.size === 0 || totalAvailable === 0) ? 0.5 : 1,
+            fontSize: 14, fontWeight: 700, cursor: (selectedDays.size === 0 || totalAvailable === 0 || (countMode === "custom" && (!customCount || Number(customCount) < 1))) ? "not-allowed" : "pointer",
+            opacity: (selectedDays.size === 0 || totalAvailable === 0 || (countMode === "custom" && (!customCount || Number(customCount) < 1))) ? 0.5 : 1,
           }}>연습시험 시작</button>
         </div>
 

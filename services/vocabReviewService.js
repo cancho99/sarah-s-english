@@ -35,6 +35,7 @@ window.SarahServices = window.SarahServices || {};
   // format: "mc"(단어→뜻 객관식) | "typing"(뜻→단어 주관식). vocabTestService.buildVocabQuestions의
   // 기존 방향 코드(w2m/m2w)를 그대로 매핑만 한다 — 새 채점/생성 로직을 만들지 않는다.
   function directionForFormat(format) {
+    if (format === "mix") return "mix";
     return format === "typing" ? "m2w" : "w2m";
   }
   function buildPracticeQuestions(words, format) {
