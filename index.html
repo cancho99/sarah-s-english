@@ -19475,7 +19475,7 @@ function HomeworkEditor({ student, data, updateData }) {
         <//>
       `}
 
-      ${list.length === 0 && !adding ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` : html`
+      ${html`
         <div className="ap-cal-shell">
           <div className="ap-cal-main">
             <${ItemMonthCalendar} items=${calItems} viewMonth=${viewMonth} onMonthChange=${setViewMonth} selectedDate=${selectedDate} onSelectDate=${(d) => { setSelectedDate(d); setEditId(null); setAdding(false); }} renderChip=${hwChip} />
