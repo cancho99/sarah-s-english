@@ -8738,8 +8738,9 @@ function EsSidebar({ page, onNavigate, reviewCount, savedCount, paperCount, libr
 }
 
 // ---------- 공통 폴더 네비게이션 (학년 → 출판사 → 내신형/수능형) ----------
-function EsFolderNav({ sectionIcon, sectionLabel, folders, onAddFolder, onDeleteFolder, items, path, setPath, renderLeaf }) {
+function EsFolderNav({ sectionIcon, sectionLabel, folders, onAddFolder, onDeleteFolder, onRenameFolder, items, path, setPath, renderLeaf }) {
   const [showAddFolder, setShowAddFolder] = useState(false);
+  const [renamingFolder, setRenamingFolder] = useState(null); // publisher name currently being renamed, or null
   const { grade, publisher, examType } = path;
 
   function countAt(g, p, e) {
@@ -8780,7 +8781,10 @@ function EsFolderNav({ sectionIcon, sectionLabel, folders, onAddFolder, onDelete
             <${Card} key=${pub} onClick=${() => setPath({ grade, publisher: pub, examType: ES_EXAM_TYPES[0] })} style=${{ margin: 0, cursor: "pointer" }}>
               <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                 <div style=${{ fontSize: 22 }}>📁</div>
-                <button type="button" className="es-card-trash" title="이 폴더 삭제" onClick=${(e) => { e.stopPropagation(); onDeleteFolder(grade, pub); }}>🗑</button>
+                <div style=${{ display: "flex", gap: 4 }}>
+                  ${onRenameFolder && html`<button type="button" className="es-card-trash" title="폴더 이름 바꾸기" onClick=${(e) => { e.stopPropagation(); setRenamingFolder(pub); }}>✏️</button>`}
+                  <button type="button" className="es-card-trash" title="이 폴더 삭제" onClick=${(e) => { e.stopPropagation(); onDeleteFolder(grade, pub); }}>🗑</button>
+                </div>
               </div>
               <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5, marginTop: 8 }}>${pub}</div>
               <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${countAt(grade, pub, null)}개</div>
@@ -8792,6 +8796,8 @@ function EsFolderNav({ sectionIcon, sectionLabel, folders, onAddFolder, onDelete
           <//>
         </div>
         ${showAddFolder && html`<${EsAddFolderModal} onClose=${() => setShowAddFolder(false)} onAdd=${(name) => { onAddFolder(grade, name); setShowAddFolder(false); }} />`}
+        ${renamingFolder && html`<${EsRenameFolderModal} currentName=${renamingFolder} onClose=${() => setRenamingFolder(null)}
+          onRename=${(name) => { onRenameFolder(grade, renamingFolder, name); setRenamingFolder(null); }} />`}
       </div>
     `;
   }
@@ -8827,20 +8833,84 @@ function EsAddFolderModal({ onClose, onAdd }) {
     </div>
   `;
 }
+function EsRenameFolderModal({ currentName, onClose, onRename }) {
+  const [name, setName] = useState(currentName || "");
+  const trimmed = name.trim();
+  const canSubmit = trimmed && trimmed !== currentName;
+  return html`
+    <div style=${{ position: "fixed", inset: 0, background: "rgba(20,22,26,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style=${{ background: C.white, borderRadius: 6, padding: 24, width: 340, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>✏️ 폴더 이름 바꾸기</div>
+        <${Field} label="출판사 이름"><input style=${inputStyle} value=${name} onChange=${(e) => setName(e.target.value)} autoFocus onKeyDown=${(e) => { if (e.key === "Enter" && canSubmit) onRename(trimmed); }} /><//>
+        <div style=${{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${onClose}>취소<//>
+          <${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12.5 }} disabled=${!canSubmit} onClick=${() => canSubmit && onRename(trimmed)}>저장<//>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
 // ---------- 지문 보관함 ----------
-function EsPassageLibraryCard({ passage, onUse, onDelete }) {
+function EsPassageLibraryCard({ passage, folders, onUse, onDelete, onMove }) {
+  const [showMove, setShowMove] = useState(false);
   const preview = passage.text.replace(/\s+/g, " ").slice(0, 160);
   return html`
     <${Card} style=${{ margin: 0 }}>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
         <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>${passage.title}</div>
-        <button type="button" className="es-card-trash" title="이 지문 삭제" onClick=${onDelete}>🗑</button>
+        <div style=${{ display: "flex", gap: 4, flexShrink: 0 }}>
+          ${onMove && html`<button type="button" className="es-card-trash" title="다른 폴더로 이동" onClick=${() => setShowMove(true)}>📂</button>`}
+          <button type="button" className="es-card-trash" title="이 지문 삭제" onClick=${onDelete}>🗑</button>
+        </div>
       </div>
       <div className="es-passage-box" style=${{ maxHeight: "none", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${preview}</div>
       <div style=${{ fontSize: 11, color: C.slate, margin: "8px 0 12px" }}>저장일 ${new Date(passage.createdAt).toLocaleDateString("ko-KR")}</div>
       <${Button} variant="primary" style=${{ width: "100%", justifyContent: "center", padding: "8px 14px", fontSize: 12.5 }} onClick=${onUse}>✏️ 이 지문으로 문제 만들기<//>
     <//>
+    ${showMove && html`<${EsMoveItemModal} current=${passage} folders=${folders} onClose=${() => setShowMove(false)}
+      onMove=${(dest) => { onMove(dest); setShowMove(false); }} />`}
+  `;
+}
+// 지문/문항/시험지/분석 등 학년-출판사-내신형 폴더 구조를 쓰는 항목을 다른 폴더로 옮기는 공용 모달.
+// "새 폴더 추가"는 지원하지 않는다 — 폴더 추가는 EsFolderNav의 "폴더 추가" 카드에서 이미 하고
+// 있으니, 여기서는 이미 존재하는 폴더 중 골라 이동하는 것만 담당한다.
+function EsMoveItemModal({ current, folders, onClose, onMove }) {
+  const [grade, setGrade] = useState(current.grade || LIBRARY_GRADES[0]);
+  const [publisher, setPublisher] = useState(current.publisher || "");
+  const [examType, setExamType] = useState(current.examType || ES_EXAM_TYPES[0]);
+  const pubOptions = (folders && folders[grade]) || [];
+  useEffect(() => {
+    if (!pubOptions.includes(publisher)) setPublisher(pubOptions[0] || "");
+  }, [grade]);
+  const isSame = grade === current.grade && publisher === current.publisher && examType === current.examType;
+  return html`
+    <div style=${{ position: "fixed", inset: 0, background: "rgba(20,22,26,0.5)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style=${{ background: C.white, borderRadius: 6, padding: 24, width: 340, boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 16 }}>📂 다른 폴더로 이동</div>
+        <${Field} label="학년">
+          <select style=${inputStyle} value=${grade} onChange=${(e) => setGrade(e.target.value)}>
+            ${LIBRARY_GRADES.map((g) => html`<option key=${g} value=${g}>${g}<//>`)}
+          </select>
+        <//>
+        <${Field} label="출판사 폴더">
+          ${pubOptions.length === 0
+            ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>이 학년에는 폴더가 없어요. 먼저 폴더를 추가해주세요.</div>`
+            : html`<select style=${inputStyle} value=${publisher} onChange=${(e) => setPublisher(e.target.value)}>
+                ${pubOptions.map((p) => html`<option key=${p} value=${p}>${p}<//>`)}
+              </select>`}
+        <//>
+        <${Field} label="유형">
+          <select style=${inputStyle} value=${examType} onChange=${(e) => setExamType(e.target.value)}>
+            ${ES_EXAM_TYPES.map((t) => html`<option key=${t} value=${t}>${t}<//>`)}
+          </select>
+        <//>
+        <div style=${{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+          <${Button} variant="ghost" style=${{ padding: "7px 14px", fontSize: 12.5 }} onClick=${onClose}>취소<//>
+          <${Button} variant="primary" style=${{ padding: "7px 14px", fontSize: 12.5 }} disabled=${!publisher || isSame} onClick=${() => onMove({ grade, publisher, examType })}>이동<//>
+        </div>
+      </div>
+    </div>
   `;
 }
 function EsAddPassageModal({ initialText, currentSetupText, onConsumePending, onClose, onSave }) {
@@ -8867,14 +8937,15 @@ function EsAddPassageModal({ initialText, currentSetupText, onConsumePending, on
     </div>
   `;
 }
-function EsPassageLibraryLeaf({ scope, library, pendingLibraryText, onConsumePending, currentSetupText, onAddPassage, onUseInSetup, onDeletePassage }) {
+function EsPassageLibraryLeaf({ scope, library, folders, pendingLibraryText, onConsumePending, currentSetupText, onAddPassage, onUseInSetup, onDeletePassage, onMovePassage }) {
   const [showAdd, setShowAdd] = useState(false);
   const passages = library.filter((p) => p.grade === scope.grade && p.publisher === scope.publisher && p.examType === scope.examType);
   return html`
     <div>
       ${passages.length === 0 && html`<div style=${{ marginBottom: 16 }}><${Empty} text="이 폴더에 저장된 지문이 없어요. 아래에서 지문을 추가해보세요." /></div>`}
       <div className="es-card-grid">
-        ${passages.map((p) => html`<${EsPassageLibraryCard} key=${p.localId} passage=${p} onUse=${() => onUseInSetup(p)} onDelete=${() => onDeletePassage(p.localId)} />`)}
+        ${passages.map((p) => html`<${EsPassageLibraryCard} key=${p.localId} passage=${p} folders=${folders} onUse=${() => onUseInSetup(p)} onDelete=${() => onDeletePassage(p.localId)}
+          onMove=${onMovePassage ? (dest) => onMovePassage(p.localId, dest) : null} />`)}
         <${Card} onClick=${() => setShowAdd(true)} style=${{ margin: 0, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: `1.5px dashed ${C.line}`, color: C.slate, minHeight: 140 }}>
           <div style=${{ fontSize: 22 }}>+</div>
           <div style=${{ fontSize: 12.5, fontWeight: 600, marginTop: 6 }}>추가지문</div>
@@ -9588,6 +9659,33 @@ function ExamStudioSection({ roster, updateData }) {
       setPassageLibrary((prev) => prev.filter((p) => !(p.grade === grade && p.publisher === publisher)));
     } catch (e) { alert("폴더 삭제에 실패했어요: " + String(e.message || e)); }
   }
+  // 폴더(출판사) 이름 변경 — taxonomy뿐 아니라 그 폴더에 이미 들어있는 지문/생성결과·저장함
+  // 문항/시험지/지문분석까지 전부 publisher 필드를 새 이름으로 옮겨줘야, 이름을 바꾼 뒤에도
+  // 기존 항목들이 그대로 그 폴더 안에서 계속 보인다(안 옮기면 옛 이름표를 단 채 어느 폴더
+  // 목록에도 안 걸리는 고아 데이터가 된다).
+  async function renameFolder(grade, oldName, newName) {
+    const trimmed = (newName || "").trim();
+    if (!trimmed || trimmed === oldName) return;
+    if ((passageFolders[grade] || []).includes(trimmed)) { alert("이미 같은 이름의 폴더가 있어요."); return; }
+    try {
+      const next = await ES.renameFolder(passageFolders, grade, oldName, trimmed);
+      setPassageFolders(next);
+      const matches = (it) => it.grade === grade && it.publisher === oldName;
+      const relabel = (it) => (matches(it) ? { ...it, publisher: trimmed } : it);
+      await Promise.all([
+        ...passageLibrary.filter(matches).map((p) => ES.updatePassage(p.localId, { publisher: trimmed })),
+        ...questions.filter(matches).map((q) => ES.updateQuestion(q.localId, { publisher: trimmed })),
+        ...examPapers.filter(matches).map((p) => ES.updateExamPaper(p.localId, { publisher: trimmed })),
+        ...analysesLibrary.filter(matches).map((a) => ES.updateAnalysis(a.localId, { publisher: trimmed })),
+      ]);
+      setPassageLibrary((prev) => prev.map(relabel));
+      setQuestions((prev) => prev.map(relabel));
+      setExamPapers((prev) => prev.map(relabel));
+      setAnalysesLibrary((prev) => prev.map(relabel));
+      [[libraryPath, setLibraryPath], [reviewPath, setReviewPath], [savedPath, setSavedPath], [paperPath, setPaperPath], [analysisPath, setAnalysisPath]]
+        .forEach(([p, setP]) => { if (p.grade === grade && p.publisher === oldName) setP({ ...p, publisher: trimmed }); });
+    } catch (e) { alert("폴더 이름 변경에 실패했어요: " + String(e.message || e)); }
+  }
 
   async function savePassageToLibrary({ grade, publisher, examType, title, text }) {
     try {
@@ -9621,6 +9719,12 @@ function ExamStudioSection({ roster, updateData }) {
       await ES.deletePassage(id);
       setPassageLibrary((prev) => prev.filter((p) => p.localId !== id));
     } catch (e) { alert("지문 삭제에 실패했어요: " + String(e.message || e)); }
+  }
+  async function movePassageInLibrary(id, dest) {
+    try {
+      await ES.updatePassage(id, dest);
+      setPassageLibrary((prev) => prev.map((p) => (p.localId === id ? { ...p, ...dest } : p)));
+    } catch (e) { alert("지문 이동에 실패했어요: " + String(e.message || e)); }
   }
   // 지금 review 화면에 떠 있는 analysis를 저장 — grade/publisher/examType은 generate 시점에
   // 이미 정해진 setupGrade/setupPublisher/setupExamType을 그대로 태그로 쓴다(analysis 자체엔
@@ -10146,12 +10250,12 @@ function ExamStudioSection({ roster, updateData }) {
             <${EsTransformResultSection} result=${transformResult} onUseAsNewPassage=${useTransformedAsPassage} onSaveToLibrary=${saveTransformedToLibrary} />
           `}
           ${page === "library" && html`
-            <${EsFolderNav} sectionIcon="📚" sectionLabel="지문 보관함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+            <${EsFolderNav} sectionIcon="📚" sectionLabel="지문 보관함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
               items=${passageLibrary} path=${libraryPath} setPath=${setLibraryPath}
-              renderLeaf=${(scope) => html`<${EsPassageLibraryLeaf} scope=${scope} library=${passageLibrary}
+              renderLeaf=${(scope) => html`<${EsPassageLibraryLeaf} scope=${scope} library=${passageLibrary} folders=${passageFolders}
                 pendingLibraryText=${pendingLibraryText} onConsumePending=${consumePendingLibraryText}
                 currentSetupText=${passageText}
-                onAddPassage=${savePassageToLibrary} onUseInSetup=${useLibraryPassage} onDeletePassage=${deletePassageFromLibrary} />`} />
+                onAddPassage=${savePassageToLibrary} onUseInSetup=${useLibraryPassage} onDeletePassage=${deletePassageFromLibrary} onMovePassage=${movePassageInLibrary} />`} />
           `}
           ${page === "review" && html`
             <div>
@@ -10165,7 +10269,7 @@ function ExamStudioSection({ roster, updateData }) {
                 </div>
               `}
               <${EsAnalysisSection} analysis=${analysis} />
-              <${EsFolderNav} sectionIcon="🗂️" sectionLabel="생성 결과" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+              <${EsFolderNav} sectionIcon="🗂️" sectionLabel="생성 결과" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
                 items=${items} path=${reviewPath} setPath=${setReviewPath}
                 renderLeaf=${(scope) => html`<${EsTaggedItemsLeaf} scope=${scope} items=${items}
                   selectedIds=${selectedIds} toggleCheck=${toggleCheck} toggleCheckAll=${toggleCheckAll}
@@ -10177,7 +10281,7 @@ function ExamStudioSection({ roster, updateData }) {
             </div>
           `}
           ${page === "saved" && html`
-            <${EsFolderNav} sectionIcon="💾" sectionLabel="저장함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+            <${EsFolderNav} sectionIcon="💾" sectionLabel="저장함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
               items=${savedItems} path=${savedPath} setPath=${setSavedPath}
               renderLeaf=${(scope) => html`<${EsTaggedItemsLeaf} scope=${scope} items=${savedItems}
                 selectedIds=${selectedIds} toggleCheck=${toggleCheck} toggleCheckAll=${toggleCheckAll}
@@ -10188,7 +10292,7 @@ function ExamStudioSection({ roster, updateData }) {
                 emptyText="이 폴더에는 아직 저장된 문항이 없어요." />`} />
           `}
           ${page === "examPapers" && html`
-            <${EsFolderNav} sectionIcon="📄" sectionLabel="시험지 생성" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+            <${EsFolderNav} sectionIcon="📄" sectionLabel="시험지 생성" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
               items=${examPapers} path=${paperPath} setPath=${setPaperPath}
               renderLeaf=${(scope) => html`<${EsExamPaperLeaf} scope=${scope} examPapers=${examPapers} savedItems=${savedItems}
                 openPaperId=${openPaperId} setOpenPaperId=${setOpenPaperId}
@@ -10196,7 +10300,7 @@ function ExamStudioSection({ roster, updateData }) {
                 onReorder=${reorderPaperEntries} onRemoveEntry=${removeEntryFromPaper} onAddFromSaved=${addSavedEntriesToPaper} />`} />
           `}
           ${page === "analyses" && html`
-            <${EsFolderNav} sectionIcon="📖" sectionLabel="지문 분석함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder}
+            <${EsFolderNav} sectionIcon="📖" sectionLabel="지문 분석함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
               items=${analysesLibrary} path=${analysisPath} setPath=${setAnalysisPath}
               renderLeaf=${(scope) => html`<${EsAnalysisLibraryLeaf} scope=${scope} library=${analysesLibrary} onDeleteAnalysis=${deleteAnalysisFromLibrary} />`} />
           `}

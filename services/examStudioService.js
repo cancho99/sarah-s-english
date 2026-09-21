@@ -81,6 +81,15 @@ window.SarahServices = window.SarahServices || {};
     await FS.setDocAt(FOLDERS_COLLECTION, FOLDERS_DOC_ID, next, { merge: true });
     return next;
   }
+  async function renameFolder(current, grade, oldName, newName) {
+    const trimmed = (newName || "").trim();
+    if (!trimmed || !grade || trimmed === oldName) return current;
+    const existing = current[grade] || [];
+    if (existing.includes(trimmed)) return current;
+    const next = { ...current, [grade]: existing.map((p) => (p === oldName ? trimmed : p)) };
+    await FS.setDocAt(FOLDERS_COLLECTION, FOLDERS_DOC_ID, next, { merge: true });
+    return next;
+  }
 
   // ---- 지문 보관함 ----
   async function listPassages() {
@@ -95,6 +104,9 @@ window.SarahServices = window.SarahServices || {};
     };
     const id = await FS.addDocTo(PASSAGES_COLLECTION, doc);
     return { localId: id, id, ...doc };
+  }
+  async function updatePassage(id, patch) {
+    await FS.setDocAt(PASSAGES_COLLECTION, id, patch, { merge: true });
   }
   async function deletePassage(id) {
     await FS.deleteDocAt(PASSAGES_COLLECTION, id);
@@ -171,16 +183,19 @@ window.SarahServices = window.SarahServices || {};
     const id = await FS.addDocTo(ANALYSES_COLLECTION, doc);
     return { localId: id, id, ...doc };
   }
+  async function updateAnalysis(id, patch) {
+    await FS.setDocAt(ANALYSES_COLLECTION, id, patch, { merge: true });
+  }
   async function deleteAnalysis(id) {
     await FS.deleteDocAt(ANALYSES_COLLECTION, id);
   }
 
   window.SarahServices.examStudioService = {
     LIBRARY_GRADES,
-    loadFolders, addFolder, deleteFolder,
-    listPassages, createPassage, deletePassage,
+    loadFolders, addFolder, deleteFolder, renameFolder,
+    listPassages, createPassage, updatePassage, deletePassage,
     listQuestions, createQuestions, updateQuestion, deleteQuestion, setQuestionsStage, setQuestionsReviewed, deleteQuestions,
     listExamPapers, createExamPaper, updateExamPaper, deleteExamPaper,
-    listAnalyses, createAnalysis, deleteAnalysis,
+    listAnalyses, createAnalysis, updateAnalysis, deleteAnalysis,
   };
 })();
