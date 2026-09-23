@@ -71,6 +71,68 @@ function parseAnalysisFields(parsed) {
   };
 }
 
+// 2026-09-21 — includeAnalysis:true일 때 generateMultiTypeQuestions가 문제 생성(최대 25유형)과
+// 지문 분석을 한 번의 호출·하나의 고정 max_tokens(12000)에 같이 담다 보니, 지문이 길면 분석이
+// 중간에 잘리는 사례가 실사용에서 반복 신고됐다 — 그런데 그 잘림은 "문제 생성 max_tokens는
+// 건드리지 않는다"는 원칙과 구조적으로 충돌했다(같은 호출·같은 예산을 공유하므로). 그래서
+// 지문 분석만 별도 API 호출로 분리한다 — 문제 생성 호출(기존 MULTI_TYPE_SYSTEM_PROMPT,
+// max_tokens: 12000)은 완전히 그대로 두고, 이 프롬프트/함수들은 "_analysis" 단독 호출 전용이다.
+// buildAnalysisPromptSection()의 tag/vocab 공통 규칙은 그대로 재사용하되, 그 안의 "8문장 넘으면
+// 단순 문장은 생략 가능" 문구는 문제 생성과 예산을 나눠 쓰던 시절의 타협이었으므로 이 전용
+// 호출에서는 명시적으로 무효화한다(아래 프롬프트 끝부분 참고) — buildAnalysisPromptSection()
+// 자체는 손대지 않는다(SYSTEM_PROMPT/MULTI_TYPE_SYSTEM_PROMPT 등 다른 호출자들이 여전히 그
+// 생략 허용에 기대는 좁은 예산으로 돌아가고 있어서, 공유 함수를 바꾸면 그쪽들이 회귀한다).
+const PASSAGE_ANALYSIS_ONLY_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 지문을 분석하는 전문 교육 평가 개발자입니다.
+주어진 지문 하나에 대해 구문분석·직독직해·요약·글의 흐름·어휘 분석을 만듭니다. 이 요청에는 문제(question) 생성이 포함되지 않습니다 — 지문 분석에만 집중하세요.
+
+[중요 규칙]
+- 반드시 아래 JSON 스키마 형식의 객체 하나로만 답하세요("_analysis" 같은 래퍼나 배열이 아니라 필드를 최상위에 직접 담은 객체입니다). 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON 객체만 출력합니다.
+${buildAnalysisPromptSection()}
+
+[문장 누락 절대 금지 — 위 구문분석 규칙 중 "8문장 넘으면 생략 가능" 부분보다 이 지침이 우선합니다]
+이 호출은 지문 분석 전용이라(문제 생성이 없어서) 응답 분량에 여유가 충분합니다. 바로 위에서 "아주 단순한 문장은 생략할 수 있다"고 했더라도 이 호출에서는 절대 생략하지 마세요 — sentences 배열은 지문의 첫 문장부터 마지막 문장까지 하나도 빠짐없이 담아야 합니다. 답을 작성하기 전에 지문을 처음부터 끝까지 직접 세어 총 몇 개의 문장인지 파악하고(사용자 메시지에 근사 문장 수가 함께 주어지면 대조하세요), sentences 배열을 다 채운 뒤 마지막 sentences 항목이 지문의 실제 마지막 문장을 담고 있는지 스스로 확인한 뒤에만 답을 마치세요.
+
+[JSON 스키마]
+{
+  "summary": { "topic": "주제 한 줄", "summary": "전체 요약 2~3문장" },
+  "flow": [ { "stage": "도입|전개|마무리", "range": "문장 범위 예: 1~2", "desc": "설명" } ],
+  "sentences": [
+    {
+      "segments": [ { "text": "구간 텍스트", "tag": "S 또는 null" } ],
+      "interpretation": "해석",
+      "tip": "문법 설명"
+    }
+  ],
+  "vocab": [ { "word": "단어", "meaning": "뜻" } ]
+}`;
+
+function buildAnalysisOnlyPrompt({ passageText, grade, approxSentenceCount }) {
+  const gradeLine = grade ? `\n[학년] ${grade}` : "";
+  return `[지문]\n${passageText}${gradeLine}\n[참고: 지문의 문장부호(.!?) 기준 근사 문장 수는 약 ${approxSentenceCount}개입니다 — 자동 계산한 근사치라 실제와 한두 개 다를 수 있지만, sentences 배열이 지문 끝까지 이 개수 근처까지 채워졌는지 스스로 대조하는 기준으로 삼으세요.]\n\n위 지문에 대해 구문분석·직독직해·요약·글의 흐름·어휘 분석을 JSON 스키마 형식으로만 답하세요. 지문의 마지막 문장까지 절대 생략하지 마세요.`;
+}
+
+// isReadingAnalyze(죽은 코드, 어떤 화면에서도 호출되지 않음)의 checkReadingAnalysisCoverage와
+// 같은 이유·같은 방식의 안전장치를 여기(실제로 쓰이는 경로)에도 둔다 — stop_reason이
+// "max_tokens"가 아니어도(모델이 스스로 일찍 끝내도) 뒷부분 문장이 누락될 수 있고, 그런 응답은
+// JSON 구조 자체는 멀쩡해서 별도 체크 없이는 그대로 "성공"으로 반환돼 왔다.
+function checkPassageAnalysisCoverage(analysisObj, passageText) {
+  const sentences = Array.isArray(analysisObj && analysisObj.sentences) ? analysisObj.sentences : [];
+  if (sentences.length === 0) return ["sentences 배열이 없거나 비어 있습니다."];
+  const strip = (s) => String(s || "").replace(/\s+/g, "");
+  const coveredLen = sentences.reduce((sum, s) => {
+    const segs = Array.isArray(s && s.segments) ? s.segments : [];
+    return sum + segs.reduce((segSum, seg) => segSum + strip(seg && seg.text).length, 0);
+  }, 0);
+  const passageLen = strip(passageText).length;
+  if (passageLen > 0 && coveredLen < passageLen * 0.9) {
+    return [
+      `분석이 지문 전체를 커버하지 못했습니다(원문 공백제외 ${passageLen}자 중 약 ${coveredLen}자만 sentences에 담김, ` +
+        `${Math.round((coveredLen / passageLen) * 100)}%) — 지문 뒷부분 문장이 누락된 채 응답이 끝났을 수 있습니다.`,
+    ];
+  }
+  return [];
+}
+
 const SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어 내신 및 수능 대비 표준화 시험 문항을 제작하는 전문 교육 평가 개발자입니다.
 이 요청은 정식 학교 시험 대비 학습 자료(정답이 있는 객관식 평가 문항)를 만들기 위한 것입니다. 주어진 영어 지문을 분석하고, 요청받은 유형의 평가 문항(정답 1개 + 오답 선택지 4개로 구성된 표준 객관식 문항)을 만듭니다.
 
@@ -393,6 +455,9 @@ const READING_ANALYZE_SYSTEM_PROMPT = `당신은 한국 중·고등학교 영어
 - sentences[].chunks[]는 원문을 빠짐없이, 원문에 없는 단어를 추가하지 않고 순서대로 나눕니다. 쉼표(,)·마침표(.) 등 문장부호도 원문에 있는 그대로 절대 빠뜨리지 마세요 — 특히 절이나 구 경계 바로 앞의 쉼표(예: "..., which"의 쉼표, "Because ..., 주어..."의 쉼표)를 그 앞 chunk의 text 끝에 반드시 포함시키세요(별도 chunk로 떼어내지도, 아예 빠뜨리지도 마세요). 한 문장의 모든 chunk의 text를 순서대로 이어 붙이면(공백 차이 제외) originalText와 문장부호까지 정확히 일치해야 합니다. 스스로 이 대조를 반드시 확인한 뒤 답하세요 — 일치하지 않으면 이 응답 전체가 폐기됩니다.
 - 반드시 아래 JSON 스키마 형식으로만 답하세요. 설명, 인사말, 코드블록 기호(\`\`\`) 없이 순수 JSON만 출력합니다.
 
+[문장 누락 절대 금지 — 가장 중요]
+sentences 배열은 지문의 첫 문장부터 마지막 문장까지 하나도 빠짐없이 담아야 합니다. 지문 뒷부분을 요약하거나, 비슷한 패턴이 반복된다는 이유로 뒷부분 문장을 생략하거나, 중간에서 스스로 분석을 끝내는 것은 절대 허용되지 않습니다. 답을 작성하기 전에 지문을 처음부터 끝까지 직접 세어 총 몇 개의 문장으로 이루어져 있는지 파악하세요(사용자 메시지에 근사치 문장 수가 함께 주어지면 그 숫자와 비슷한지도 대조하세요). 그런 다음 sentences 배열을 다 채운 뒤, 마지막 sentences 항목의 index가 그 총 문장 수와 정확히 일치하는지, 그리고 그 마지막 항목의 originalText가 지문의 실제 마지막 문장(마지막 마침표까지)과 정확히 일치하는지 스스로 확인한 뒤에만 답을 마치세요. 이 대조에 실패하면(마지막 문장이 누락됐으면) 응답을 마치지 말고 나머지 문장을 마저 채우세요.
+
 [Chunk 분리 기준]
 문장 길이로 임의로 자르지 말고, 다음 문장 구조/의미 단위를 기준으로 나누세요: 주어, 동사, 목적어, 보어, 수식어, 절, 구, 병렬구조. **절 내부(종속절/관계사절/to부정사구 등 안)도 절대 하나의 chunk로 뭉뚱그리지 말고, 그 안에서도 다시 주어/동사/목적어/보어/수식어 단위로 계속 쪼개세요.** chunks 배열은 문장 전체를 통틀어 하나의 순서열이며, 종속절이라고 별도 배열에 담지 않습니다(종속절의 범위는 clauses[]가 별도로 startChunkIdx~endChunkIdx로 표시).
 
@@ -469,14 +534,15 @@ grammarAnnotations/vocabAnnotations와 내용이 겹칠 수 있지만, 목적이
   ]
 }`;
 
-function buildReadingAnalyzePrompt({ passage, grade, difficulty }) {
+function buildReadingAnalyzePrompt({ passage, grade, difficulty, approxSentenceCount }) {
   return `[지문]
 ${passage}
 
 [학년] ${grade || "지정 없음"}
 [난이도] ${difficulty || "지정 없음"}
+[참고: 지문의 문장부호(.!?) 기준 근사 문장 수는 약 ${approxSentenceCount}개입니다 — 자동 계산한 근사치라 실제와 한두 개 다를 수 있지만, sentences 배열이 지문 끝까지 이 개수 근처까지 채워졌는지 스스로 대조하는 기준으로 삼으세요.]
 
-위 지문을 문장 단위부터 전체 구조까지 빠짐없이 분석해서, JSON 스키마 형식으로만 답하세요. [학년]을 passageLevel.levelGrammarPoints 선별에 실제로 반영하세요.`;
+위 지문을 문장 단위부터 전체 구조까지 빠짐없이 분석해서, JSON 스키마 형식으로만 답하세요. 지문의 마지막 문장까지 절대 생략하지 마세요. [학년]을 passageLevel.levelGrammarPoints 선별에 실제로 반영하세요.`;
 }
 
 // Question Generator (Reading Analysis 재설계) — READING_GENERATE_SYSTEM_PROMPT와 거의 동일한
@@ -1079,6 +1145,28 @@ function validateReadingAnalysis(parsed) {
   return { valid: errors.length === 0, errors };
 }
 
+// validateReadingAnalysis는 "반환된 문장 각각"의 내부 정합성(chunk↔originalText 등)만 본다 —
+// 모델이 max_tokens에 걸리지 않고도(stop_reason: "end_turn") 지문 뒷부분 문장들을 통째로 생략한
+// 채 스스로 일찍 답을 끝내면, 남은 문장들은 각각 내부적으로는 멀쩡하니 위 검증을 그대로 통과해서
+// "검증 성공"으로 저장돼 왔다 — 실사용에서 반복 신고된 "분석이 끝까지 안 된다"의 실제 원인이
+// 이 커버리지 누락일 가능성이 높다. 지문 자체의 문장 분리 규칙(raSentenceCount, 구두점 기반
+// 근사치)에 기대지 않기 위해, 반환된 sentences[].originalText를 전부 이어붙인 글자 수가 원문
+// 글자 수의 몇 %를 커버하는지로 판단한다 — 정확한 문장 개수 매칭보다 모델의 문장 분리 방식
+// 차이에 훨씬 덜 민감하다.
+function checkReadingAnalysisCoverage(parsed, passage) {
+  const sentences = Array.isArray(parsed && parsed.sentences) ? parsed.sentences : [];
+  const strip = (s) => String(s || "").replace(/\s+/g, "");
+  const coveredLen = sentences.reduce((sum, s) => sum + strip(s && s.originalText).length, 0);
+  const passageLen = strip(passage).length;
+  if (passageLen > 0 && coveredLen < passageLen * 0.9) {
+    return [
+      `분석이 지문 전체를 커버하지 못했습니다(원문 공백제외 ${passageLen}자 중 약 ${coveredLen}자만 sentences에 담김, ` +
+        `${Math.round((coveredLen / passageLen) * 100)}%) — 지문 뒷부분 문장이 누락된 채 응답이 끝났을 수 있습니다.`,
+    ];
+  }
+  return [];
+}
+
 // Prompt wording alone can't fully guarantee the model's "changes" list stays in sync with what
 // it actually marked inside transformed_html — testing found cases where a "changes" entry
 // described a swap (e.g. build → develop) that the <span class="chg"> in the passage never
@@ -1394,44 +1482,140 @@ exports.aiWorker = onRequest(
         res.status(400).json({ error: "생성할 유형을 하나 이상 선택하거나, 지문 분석을 요청해주세요." });
         return;
       }
-      let mtRes;
-      try {
-        mtRes = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({
-            model: MULTI_TYPE_MODEL,
-            max_tokens: 12000,
-            system: MULTI_TYPE_SYSTEM_PROMPT,
-            messages: [{ role: "user", content: buildMultiTypePrompt({ passageText: passageInput, types: reqTypes, includeAnalysis: !!includeAnalysis, grade }) }],
-          }),
-        });
-      } catch (e) {
-        res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
-        return;
+
+      // 문제 생성(reqTypes가 있을 때만) — max_tokens(12000)/프롬프트/폴백 파서 전부 기존 그대로,
+      // 2026-09-21 분리 작업에서 이 호출은 손대지 않았다(§API 비용 정책 "다른 mode는 건드리지
+      // 않는다" — 지문 분석 예산 문제를 여기로 새어 들어오게 하지 않기 위해).
+      let typeResults = [];
+      if (reqTypes.length > 0) {
+        let mtRes;
+        try {
+          mtRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: MULTI_TYPE_MODEL,
+              max_tokens: 12000,
+              system: MULTI_TYPE_SYSTEM_PROMPT,
+              // includeAnalysis는 항상 false로 보낸다 — 분석은 아래에서 완전히 별도 호출로
+              // 처리하므로, 이 호출의 프롬프트/응답에는 더 이상 "_analysis" 항목이 섞이지 않는다.
+              messages: [{ role: "user", content: buildMultiTypePrompt({ passageText: passageInput, types: reqTypes, includeAnalysis: false, grade }) }],
+            }),
+          });
+        } catch (e) {
+          res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e) });
+          return;
+        }
+        if (!mtRes.ok) {
+          const errText = await mtRes.text();
+          res.status(502).json({ error: "AI 응답 오류", detail: errText });
+          return;
+        }
+        const mtData = await mtRes.json();
+        const mtText = (mtData.content || []).map((b) => b.text || "").join("");
+        let mtParsed;
+        try {
+          mtParsed = JSON.parse(stripFences(mtText));
+        } catch {
+          mtParsed = extractLastJsonArray(stripFences(mtText));
+        }
+        if (!Array.isArray(mtParsed)) {
+          res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: mtText });
+          return;
+        }
+        typeResults = mtParsed;
       }
-      if (!mtRes.ok) {
-        const errText = await mtRes.text();
-        res.status(502).json({ error: "AI 응답 오류", detail: errText });
-        return;
+
+      // 지문 분석(includeAnalysis일 때만) — 2026-09-21부터 완전히 별도 호출. 지문 길이(문장 수)에
+      // 비례한 동적 max_tokens를 쓴다 — 이 스키마(segments/interpretation/tip, chunk 단위
+      // S/V/O 세분화 없음)는 readingAnalyze의 전체 chunk/clause 스키마보다 가벼워서 같은
+      // 문장당 3200을 그대로 쓰지 않고 더 가벼운 1200으로 잡았다(실사용 로그 기반 실측치가 아직
+      // 없어 첫 추정치 — stop_reason 로그로 추후 조정 가능하도록 항상 로그를 남긴다). 최소 3000,
+      // 최대 64000(이 저장소에서 이미 비-스트리밍으로 검증된 안전 상한, readingAnalyze 참고).
+      let analysisObj = null;
+      if (includeAnalysis) {
+        const paSentenceCount = Math.max(1, (passageInput.match(/[.!?](?:\s|$)/g) || []).length);
+        const paMaxTokens = Math.min(64000, Math.max(3000, paSentenceCount * 1200));
+
+        async function callAnalysisOnce() {
+          const r = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+              model: MULTI_TYPE_MODEL,
+              max_tokens: paMaxTokens,
+              system: PASSAGE_ANALYSIS_ONLY_SYSTEM_PROMPT,
+              messages: [{ role: "user", content: buildAnalysisOnlyPrompt({ passageText: passageInput, grade, approxSentenceCount: paSentenceCount }) }],
+            }),
+          });
+          if (!r.ok) {
+            const errText = await r.text();
+            console.error("generateMultiTypeQuestions analysis-only API error:", r.status, errText.slice(0, 1000));
+            throw new Error("AI 응답 오류: " + errText);
+          }
+          const data = await r.json();
+          const text = (data.content || []).map((b) => b.text || "").join("");
+          // stop_reason을 항상 로그로 남긴다 — max_tokens 잘림인지 모델이 스스로 끝낸 건지
+          // 구분해서, 위 paMaxTokens 추정치가 실제로 충분한지 로그로 검증/조정할 수 있게 한다.
+          console.log(
+            "generateMultiTypeQuestions analysis-only stop_reason:", data.stop_reason,
+            "| output_tokens:", data.usage && data.usage.output_tokens,
+            "| paMaxTokens(budget):", paMaxTokens,
+            "| paSentenceCount(passage, approx):", paSentenceCount,
+            "| passageInput.length:", passageInput.length
+          );
+          if (data.stop_reason === "max_tokens") {
+            throw new Error("지문 분석 응답이 너무 길어 중간에 잘렸습니다(지문이 너무 길 수 있어요).");
+          }
+          let parsed;
+          try {
+            parsed = JSON.parse(stripFences(text));
+          } catch (e) {
+            console.error("generateMultiTypeQuestions analysis-only JSON parse failed:", String(e.message || e), "raw tail:", text.slice(-500));
+            throw new Error("AI 응답을 JSON으로 해석하지 못했습니다.");
+          }
+          return parsed;
+        }
+
+        try {
+          let paParsed = await callAnalysisOnce();
+          let paErrors = checkPassageAnalysisCoverage(paParsed, passageInput);
+          if (paErrors.length > 0) {
+            // 재생성 1회만 시도(§2 "무한 재시도로 비용이 새지 않도록") — readingAnalyze와 동일 원칙.
+            paParsed = await callAnalysisOnce();
+            paErrors = checkPassageAnalysisCoverage(paParsed, passageInput);
+          }
+          if (paErrors.length === 0) {
+            analysisObj = { questionType: "_analysis", ...parseAnalysisFields(paParsed) };
+          } else {
+            console.error("generateMultiTypeQuestions analysis-only coverage check failed after retry:", JSON.stringify(paErrors));
+            if (reqTypes.length === 0) {
+              // 분석 말고는 반환할 게 없다 — 불완전한 분석을 "성공"으로 조용히 내보내지 않는다.
+              res.status(502).json({ error: "AI 분석 결과가 지문 전체를 커버하지 못했습니다. 다시 시도해 주세요.", detail: paErrors.join(" / ") });
+              return;
+            }
+            // 문제 생성은 이미 성공했다 — 그 결과(이미 비용을 지불한 데이터)를 버리지 않고,
+            // 분석만 빠진 채로 반환한다(프론트도 newAnalysis가 null이면 이미 정상적으로
+            // "분석 없이" 표시하도록 되어 있다, esExtractAnalysisMarker 참고).
+          }
+        } catch (e) {
+          console.error("generateMultiTypeQuestions analysis-only failed:", String(e.message || e));
+          if (reqTypes.length === 0) {
+            res.status(502).json({ error: "AI 서버 호출 중 오류가 발생했습니다.", detail: String(e.message || e) });
+            return;
+          }
+        }
       }
-      const mtData = await mtRes.json();
-      const mtText = (mtData.content || []).map((b) => b.text || "").join("");
-      let mtParsed;
-      try {
-        mtParsed = JSON.parse(stripFences(mtText));
-      } catch {
-        mtParsed = extractLastJsonArray(stripFences(mtText));
-      }
-      if (!Array.isArray(mtParsed)) {
-        res.status(502).json({ error: "AI 응답을 JSON으로 해석하지 못했습니다.", raw: mtText });
-        return;
-      }
-      res.status(200).json(mtParsed);
+
+      res.status(200).json(analysisObj ? [...typeResults, analysisObj] : typeResults);
       return;
     }
 
@@ -1680,6 +1864,18 @@ exports.aiWorker = onRequest(
       // validation error로 응답하고 절대 저장 가능한 형태로 반환하지 않는다 — 호출한 쪽
       // (readingAnalysisService.createAnalysis)이 res.ok가 아닌 응답을 받으면 Firestore에
       // 쓰지 않는 기존 흐름을 그대로 이용한다(§2 "정상 데이터로 저장하지 마라").
+
+      // 문장별 chunks/clauses/annotations를 전부 담는 스키마라, 짧은 지문에도 항상 64000을
+      // 고정 배정하는 건 낭비다. 문장 수에 비례해 동적으로 계산하되, 문장당 배정량(3200)은
+      // 임의값이 아니라 이 프로젝트의 실제 장애 이력에서 역산한 값이다 — 기존에 16000/32000
+      // 고정값으로도 실사용 지문(4405자, 약 20문장대)에서 응답이 중간에 잘리는 사례가 서버
+      // 로그로 확인돼 claude-haiku-4-5 동기 Messages API 최대치인 64000까지 고정값을 올려서야
+      // 해결됐었다. 즉 20문장 안팎에서 필요한 실측 상한이 64000이므로, 문장당 3200토큰(=20문장일
+      // 때 정확히 64000)으로 잡아야 그 문제가 재발하지 않으면서도 더 짧은 지문에서는 비례해서
+      // 절감된다. 최소 4000, 최대 64000(모델 한도)으로 clamp.
+      const raSentenceCount = Math.max(1, (passage.match(/[.!?](?:\s|$)/g) || []).length);
+      const raMaxTokens = Math.min(64000, Math.max(4000, raSentenceCount * 3200));
+
       async function callAndParseOnce() {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -1690,13 +1886,9 @@ exports.aiWorker = onRequest(
           },
           body: JSON.stringify({
             model: MODEL,
-            // 문장별 chunks/clauses/annotations를 전부 담는 스키마라 지문이 길면(20문장대) 응답이
-            // 16000토큰을 넘어 중간에 잘려 JSON.parse가 깨지는 사례가 실제로 있었다 — 32000으로
-            // 올려도 실사용 지문(4405자)에서 재발이 서버 로그로 확인돼, claude-haiku-4-5의 동기
-            // Messages API 최대치인 64000까지 올린다.
-            max_tokens: 64000,
+            max_tokens: raMaxTokens,
             system: READING_ANALYZE_SYSTEM_PROMPT,
-            messages: [{ role: "user", content: buildReadingAnalyzePrompt({ passage, grade, difficulty }) }],
+            messages: [{ role: "user", content: buildReadingAnalyzePrompt({ passage, grade, difficulty, approxSentenceCount: raSentenceCount }) }],
           }),
         });
         if (!r.ok) {
@@ -1706,6 +1898,17 @@ exports.aiWorker = onRequest(
         }
         const data = await r.json();
         const text = (data.content || []).map((b) => b.text || "").join("");
+        // stop_reason을 항상 로그로 남긴다 — "max_tokens"(진짜로 배정한 토큰을 다 써서 강제로
+        // 잘린 경우)와 "end_turn"(모델이 스스로 일찍 답을 끝낸 경우)은 원인이 완전히 다른데,
+        // 지금까지는 max_tokens인 경우만 로그를 남겨서 "잘리진 않았는데도 분석이 불완전한"
+        // 케이스(모델이 스스로 생략)를 구분할 방법이 없었다.
+        console.log(
+          "readingAnalyze stop_reason:", data.stop_reason,
+          "| output_tokens:", data.usage && data.usage.output_tokens,
+          "| raMaxTokens(budget):", raMaxTokens,
+          "| raSentenceCount(passage, approx):", raSentenceCount,
+          "| passage.length:", passage.length
+        );
         if (data.stop_reason === "max_tokens") {
           console.error("readingAnalyze truncated at max_tokens, passage length:", passage.length);
           throw new Error("응답이 너무 길어 중간에 잘렸습니다(지문이 너무 길 수 있어요). 지문을 나눠서 다시 시도해 주세요.");
@@ -1720,15 +1923,25 @@ exports.aiWorker = onRequest(
         return parsed;
       }
 
+      // 반환된 JSON의 구조적 정합성(validateReadingAnalysis)뿐 아니라, 지문 전체를 실제로
+      // 끝까지 커버했는지(checkReadingAnalysisCoverage)도 같이 검증한다 — stop_reason이
+      // "max_tokens"가 아니어도(모델이 스스로 일찍 끝내도) 뒷부분 문장이 누락될 수 있고, 그런
+      // 응답은 각 문장 자체는 멀쩡해서 기존 validateReadingAnalysis만으로는 통과됐었다.
+      function validateFull(parsed) {
+        const structural = validateReadingAnalysis(parsed);
+        const coverageErrors = checkReadingAnalysisCoverage(parsed, passage);
+        return { valid: structural.valid && coverageErrors.length === 0, errors: [...structural.errors, ...coverageErrors] };
+      }
+
       let raParsed;
       let validation;
       try {
         raParsed = await callAndParseOnce();
-        validation = validateReadingAnalysis(raParsed);
+        validation = validateFull(raParsed);
         if (!validation.valid) {
           // 재생성 1회 시도(§2 "AI에게 재생성을 요청하거나 validation error로 처리해라")
           raParsed = await callAndParseOnce();
-          validation = validateReadingAnalysis(raParsed);
+          validation = validateFull(raParsed);
         }
       } catch (e) {
         console.error("readingAnalyze failed:", String(e.message || e));
