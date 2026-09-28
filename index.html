@@ -19936,6 +19936,16 @@ function VocabEditor({ student, data, updateData }) {
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
   function addRow() { setWords((w) => [...w, { word: "", meaning: "" }]); }
   function removeRow(i) { setWords((w) => w.filter((_, idx) => idx !== i)); }
+  // HomeworkEditor의 openAdd()와 같은 패턴(2026-09-28) — 달력에서 이미 클릭해 둔 날짜
+  // (selectedDate)를 "올리는 날짜"뿐 아니라 재시험 예정일에도 그대로 넘겨서, 숙제 등록처럼
+  // "날짜를 클릭하고 나서 추가"하면 그 날짜가 그대로 쓰이게 한다. 아래 캘린더 옆 "+ 이 날짜에
+  // 시험 추가" 버튼과, 캘린더가 아직 없을 때(등록된 시험이 하나도 없을 때) 쓰는 위쪽
+  // "+ 새 단어 시험 만들기" 버튼 둘 다 이 함수 하나를 쓴다.
+  function openCreate() {
+    setTestDate(selectedDate);
+    setRetestDate(selectedDate);
+    setCreating(true);
+  }
   async function save() {
     setCountMsg("");
     const usableWords = words.filter((w) => w.word && w.meaning);
@@ -19981,7 +19991,7 @@ function VocabEditor({ student, data, updateData }) {
         </div>
       `}
       ${!creating ? html`
-        <${Button} variant="ghost" onClick=${() => { setTestDate(selectedDate); setCreating(true); }} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
+        <${Button} variant="ghost" onClick=${openCreate} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
       ` : html`
         <div className="ap-wizard">
           <div className="ap-wizard-col">
@@ -20127,7 +20137,10 @@ function VocabEditor({ student, data, updateData }) {
                 <${ItemMonthCalendar} items=${calItems} viewMonth=${viewMonth} onMonthChange=${setViewMonth} selectedDate=${selectedDate} onSelectDate=${setSelectedDate} renderChip=${vocabChip} />
               </div>
               <div className="ap-cal-side">
-                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 8 }}>단어 시험 ${fmtDateDay(selectedDate)}${selectedDate === today() ? " · 오늘" : ""} (${dayItems.length}건)</div>
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>단어 시험 ${fmtDateDay(selectedDate)}${selectedDate === today() ? " · 오늘" : ""} (${dayItems.length}건)</div>
+                  ${!creating && html`<${Button} variant="gold" onClick=${openCreate} style=${{ padding: "6px 12px", fontSize: 12 }}>＋ 이 날짜에 시험 추가<//>`}
+                </div>
                 ${dayItems.length === 0 ? html`<div style=${{ fontSize: 12, color: C.slate }}>이 날짜에 예정된 재시험이 없어요.</div>` : dayItems.map(testCard)}
               </div>
             </div>
