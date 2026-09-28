@@ -19784,7 +19784,12 @@ function VocabRetestSchedule({ t, updateData }) {
 // Reading Vocabulary 쪽은 synonyms 자체가 없으므로). 유효성 검사(제목/최소 2단어/재시험 일시)를
 // 통과 못 하면 { ok:false }만 반환하고 아무것도 만들지 않는다 — 기존 VocabEditor.save()의 무음
 // 실패(return만 하고 아무 처리 없음) 동작을 그대로 보존한다.
-function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime }) {
+// date(2026-09-28 추가) — 시험을 "등록한 날짜"(vocabTests[].date, 목록에 fmtDate(t.date)로
+// 표시되고 오래된 시험 정리/주간 통계 계산에 쓰임)는 지금까지 항상 오늘 날짜로 고정돼 있었다.
+// 선생님이 특정 날짜에 시험을 "올린 것"으로 기록하고 싶을 수 있어(예: 다른 날 미리 만들어두고
+// 특정 날짜에 배정한 것처럼 남기고 싶을 때) date를 선택적으로 받는다 — 안 넘기면(다른 호출부
+// 전부) 기존과 동일하게 오늘 날짜를 쓴다.
+function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date }) {
   const raw = (wordsRaw || []).filter((w) => w.word && w.meaning).map((w) => ({
     word: w.word, meaning: w.meaning,
     synonyms: Array.isArray(w.synonyms) ? w.synonyms : (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
@@ -19799,13 +19804,17 @@ function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime }) 
     return true;
   });
   if (!title || clean.length < 2 || !retestDate || !retestTime) return { ok: false, clean };
-  return { ok: true, entry: { id: uid(), title, date: today(), words: clean, mode, retestDate, retestTime } };
+  return { ok: true, entry: { id: uid(), title, date: date || today(), words: clean, mode, retestDate, retestTime } };
 }
 
 function VocabEditor({ student, data, updateData }) {
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [mode, setMode] = useState("mix");
   const [retestDate, setRetestDate] = useState(""); const [retestTime, setRetestTime] = useState("15:00");
+  // 시험 "등록일"(vocabTests[].date) — 기본은 오늘이지만, 아래 재시험 예정일 캘린더에서
+  // 이미 클릭해 둔 날짜(selectedDate)가 있으면 "+ 새 단어 시험 만들기"를 누르는 순간 그 날짜로
+  // 먼저 채워준다(2026-09-28, "클릭한 날짜에 올릴 수 있게" 요청) — STEP 1에서 직접 다시 바꿀 수도 있다.
+  const [testDate, setTestDate] = useState(today());
   const [words, setWords] = useState([{ word: "", meaning: "" }]);
   // Vocabulary 화면 정돈(2026-08-27) — 직접입력/붙여넣기/워드뱅크 3가지 단어 수집 방식을 팝업
   // 버튼 대신 세그먼트 컨트롤(SubTabs)로 명확히 분리. 실제 수집 로직(runParse/importFromBank)과
@@ -19938,11 +19947,11 @@ function VocabEditor({ student, data, updateData }) {
       if (!check.ok) { setCountMsg(check.message); return; }
       wordsRaw = window.SarahServices.vocabTestService.sampleWords(usableWords, questionCount);
     }
-    const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime });
+    const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date: testDate });
     if (!result.ok) return;
     await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setCreating(false);
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setTestDate(today()); setCreating(false);
   }
   // 시험을 지우면 그 시험을 본 학생들의 응시 기록(vocabResults)도 같이 지운다 — 안 지우면
   // vocabTests에서만 사라진 testId를 가리키는 고아 vocabResults가 남아, Daily/Monthly Report의
@@ -19972,12 +19981,13 @@ function VocabEditor({ student, data, updateData }) {
         </div>
       `}
       ${!creating ? html`
-        <${Button} variant="ghost" onClick=${() => setCreating(true)} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
+        <${Button} variant="ghost" onClick=${() => { setTestDate(selectedDate); setCreating(true); }} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
       ` : html`
         <div className="ap-wizard">
           <div className="ap-wizard-col">
             <div className="ap-wizard-step-label">STEP 1 · 시험 기본 설정</div>
             <${Field} label="시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 시험" /><//>
+            <${Field} label="올리는 날짜"><${DateField} value=${testDate} onChange=${setTestDate} /><//>
             <${Field} label="출제 방식">
               <div style=${{ display: "flex", flexDirection: "column", gap: 6 }}>
                 ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
@@ -26146,6 +26156,53 @@ function FlashcardSessionFlow({ student, data, updateData }) {
   `;
 }
 
+// 사진 OCR 전처리(2026-09-23) — Tesseract에 원본 사진을 그대로 넘기는 대신, canvas로
+// (1) EXIF 회전 정보를 반영해 올바른 방향으로 세우고(createImageBitmap의 imageOrientation:
+// "from-image" — 이 옵션이 없으면 세로로 찍은 사진이 옆으로 누운 채로 인식될 수 있다),
+// (2) 긴 변을 최대 2000px로 줄이고(너무 큰 사진은 인식 시간만 늘어나고 정확도에 도움 안 됨),
+// (3) 흑백 변환 + 대비 강화(손글씨/인쇄 상태가 고르지 않은 사진에서 Tesseract 인식률을
+// 실사용에서 눈에 띄게 올려준다는 게 이 라이브러리의 잘 알려진 관행)를 한다. 실패하면(구형
+// 브라우저의 createImageBitmap 옵션 미지원, canvas 오류 등) 원본 파일을 그대로 반환해서
+// 전처리가 OCR 자체를 막지 않게 한다.
+async function preprocessPhotoForOcr(file) {
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const maxSide = 2000;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+    const CONTRAST = 1.4; // 1.0 = 무변화, 값이 클수록 대비 강화
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const v = Math.min(255, Math.max(0, (gray - 128) * CONTRAST + 128));
+      d[i] = d[i + 1] = d[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+    return blob || file;
+  } catch (err) {
+    console.error("사진 전처리 실패 — 원본으로 인식 시도", err);
+    return file;
+  }
+}
+// Tesseract logger가 주는 status 문자열(영문, 라이브러리 내부 문구라 버전마다 조금씩 다를 수
+// 있음)을 학생에게 보여줄 짧은 한국어 라벨로 매핑 — "recognizing"이 포함되면 실제 글자 인식
+// 단계, 그 외(언어팩/엔진 준비)는 전부 "준비 중" 계열로 뭉뚱그린다.
+function ocrStatusLabel(status) {
+  const s = String(status || "");
+  if (s.includes("recognizing")) return "글자를 읽는 중";
+  if (s.includes("load") && s.includes("language")) return "언어 데이터를 준비하는 중";
+  if (s.includes("initializ")) return "엔진을 준비하는 중";
+  return "준비하는 중";
+}
+
 // "나의 단어장" 허브의 "+ 새로 만들기" — 단어장 이름(신규) 또는 기존 커스텀 단어장(추가) 선택 +
 // 사진 OCR(Tesseract.js, 브라우저 내 처리, 서버/API 호출 없음) 또는 "+ 단어 직접 추가"로 후보
 // 줄을 만들고, 체크박스+입력칸으로 학생이 직접 고쳐서 저장한다. 저장은 항상 이 화면 안에서
@@ -26161,6 +26218,8 @@ function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSa
   const [selectedExistingId, setSelectedExistingId] = useState(presetListId || null);
   const [photoStatus, setPhotoStatus] = useState("idle"); // "idle" | "recognizing" | "error"
   const [photoErr, setPhotoErr] = useState("");
+  const [photoProgress, setPhotoProgress] = useState(0); // 0~100
+  const [photoStatusLabel, setPhotoStatusLabel] = useState("");
   const [usedPhoto, setUsedPhoto] = useState(false);
   const [candidates, setCandidates] = useState([]); // [{id,en,ko,checked}]
   const [saving, setSaving] = useState(false);
@@ -26181,9 +26240,28 @@ function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSa
     }
     setPhotoStatus("recognizing");
     setPhotoErr("");
+    setPhotoProgress(0);
+    setPhotoStatusLabel("준비하는 중");
+    // "eng"(영어 전용) 언어팩만 쓰면 손글씨 한글 뜻이 거의 항상 빈칸/깨진 글자로 나와서(실사용
+    // 제보로 확인됨) "eng+kor"로 돌린다. 또한 output:{tsv:true}로 단어별 좌표까지 받아야
+    // cvSvc.parseOcrResult가 표(단어/뜻/출처/복습체크 4칸) 형식을 행/열로 재구성할 수 있다 —
+    // 최상위 Tesseract.recognize() 축약형은 좌표 출력을 요청할 방법이 없어 createWorker를
+    // 직접 쓴다(2026-09-22). createWorker의 세 번째 인자로 logger를 넘기면 언어팩 다운로드
+    // (처음 한 번만, 캐시된 뒤로는 순식간)부터 실제 인식까지 진행률(m.progress, 0~1)을 받을 수
+    // 있다 — 두 번째 인자(oem)는 라이브러리 기본값을 그대로 쓰기 위해 일부러 undefined로 둔다
+    // (임의의 숫자를 넣는 대신 "인자를 생략한 것과 같은" 상태를 명시적으로 만든 것).
+    let worker = null;
     try {
-      const { data } = await window.Tesseract.recognize(file, "eng");
-      const parsed = cvSvc.parseOcrText(data.text);
+      const processedImage = await preprocessPhotoForOcr(file);
+      worker = await window.Tesseract.createWorker("eng+kor", undefined, {
+        logger: (m) => {
+          if (!m) return;
+          if (typeof m.progress === "number") setPhotoProgress(Math.round(m.progress * 100));
+          if (m.status) setPhotoStatusLabel(ocrStatusLabel(m.status));
+        },
+      });
+      const { data } = await worker.recognize(processedImage, {}, { text: true, tsv: true });
+      const parsed = cvSvc.parseOcrResult(data);
       if (parsed.length === 0) {
         setPhotoStatus("error");
         setPhotoErr("사진에서 글자를 찾지 못했어요. 더 선명한 사진으로 다시 시도하거나 직접 입력해주세요.");
@@ -26196,6 +26274,8 @@ function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSa
       console.error("OCR 인식 실패", err);
       setPhotoStatus("error");
       setPhotoErr("사진에서 단어를 읽는 데 실패했어요. 다시 시도해주세요.");
+    } finally {
+      if (worker) worker.terminate().catch(() => {});
     }
   }
 
@@ -26269,7 +26349,11 @@ function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSa
       <input ref=${fileInputRef} type="file" accept="image/*" capture="environment" style=${{ display: "none" }} onChange=${onPhotoChosen} />
       ${photoStatus === "recognizing" ? html`
         <div style=${{ border: `1px dashed ${VU.border}`, borderRadius: 12, padding: "28px 16px", textAlign: "center", color: VU.inkSoft, fontSize: 12.5 }}>
-          사진에서 단어 인식 중…
+          <div style=${{ fontWeight: 700, color: VU.ink, marginBottom: 4 }}>${photoStatusLabel || "사진에서 단어 인식 중…"} ${photoProgress}%</div>
+          <div style=${{ height: 6, background: VU.bg, borderRadius: 999, overflow: "hidden", margin: "8px auto", maxWidth: 220 }}>
+            <div style=${{ height: "100%", width: `${photoProgress}%`, background: VU.accent, borderRadius: 999, transition: "width .2s ease" }}></div>
+          </div>
+          <div style=${{ fontSize: 11, color: VU.inkFaint, marginTop: 4 }}>처음 사용할 때는 언어 데이터를 받느라 30초 정도 걸릴 수 있어요</div>
         </div>
       ` : html`
         <div onClick=${() => fileInputRef.current && fileInputRef.current.click()} style=${{ border: `1px dashed ${VU.border}`, borderRadius: 12, padding: "28px 16px", textAlign: "center", cursor: "pointer" }}>
@@ -26283,14 +26367,17 @@ function CustomVocabCreator({ student, customLists, presetListId, onCancel, onSa
 
     ${candidates.length > 0 && html`
       <div style=${{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-        ${candidates.map((c) => html`
-          <div key=${c.id} style=${{ display: "flex", alignItems: "center", gap: 6, background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 10, padding: "8px 10px" }}>
+        ${candidates.map((c) => {
+          const needsMeaning = !c.ko.trim();
+          return html`
+          <div key=${c.id} style=${{ display: "flex", alignItems: "center", gap: 6, background: needsMeaning ? VU.warnSoft : VU.surface, border: `1px solid ${needsMeaning ? VU.warn : VU.border}`, borderRadius: 10, padding: "8px 10px" }}>
             <input type="checkbox" checked=${c.checked} onChange=${() => toggleCandidate(c.id)} style=${{ width: 15, height: 15, appearance: "auto", flex: "none" }} />
             <input style=${{ ...inputStyle, marginBottom: 0, padding: "7px 8px", fontSize: 12.5, flex: 1 }} placeholder="단어" value=${c.en} onChange=${(e) => updateCandidate(c.id, "en", e.target.value)} />
-            <input style=${{ ...inputStyle, marginBottom: 0, padding: "7px 8px", fontSize: 12.5, flex: 1 }} placeholder="뜻" value=${c.ko} onChange=${(e) => updateCandidate(c.id, "ko", e.target.value)} />
+            <input style=${{ ...inputStyle, marginBottom: 0, padding: "7px 8px", fontSize: 12.5, flex: 1, background: needsMeaning ? VU.warnSoft : undefined }} placeholder="뜻을 직접 입력해주세요" value=${c.ko} onChange=${(e) => updateCandidate(c.id, "ko", e.target.value)} />
             <span onClick=${() => removeCandidate(c.id)} style=${{ color: VU.inkFaint, fontSize: 16, cursor: "pointer", padding: "0 2px" }}>×</span>
           </div>
-        `)}
+        `;
+        })}
       </div>
     `}
     <div onClick=${addBlankRow} style=${{ fontSize: 12, fontWeight: 700, color: VU.accent, cursor: "pointer", marginBottom: 18 }}>+ 단어 직접 추가</div>
