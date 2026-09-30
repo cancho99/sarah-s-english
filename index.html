@@ -2954,7 +2954,7 @@ function HomePage({ setScreen, announcement }) {
         <div style=${{ ...serif, fontSize: 19, color: C.ink, textAlign: "center", marginBottom: 24 }}>믿을 수 있는 건, 결국 시스템</div>
         <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(215px, 1fr))", gap: 1, background: C.line, border: `1px solid ${C.line}` }}>
           ${[
-            { title: "단어시험 → 재시험까지 한 번에", body: "신규 단어는 오답률 20% 이하, 누적 단어는 10% 이하만 합격. 기준 미달 시 재시험 일정이 바로 잡히고, 통과 여부가 이 관리 페이지에 즉시 반영됩니다." },
+            { title: "단어시험 → 재시험까지 한 번에", body: "신규 단어는 오답률 10% 이하, 누적 단어는 20% 이하만 합격. 기준 미달 시 재시험 일정이 바로 잡히고, 통과 여부가 이 관리 페이지에 즉시 반영됩니다." },
             { title: "전용 관리 페이지로 기록", body: html`숙제 완료 여부, 단어시험 점수, 학습 내용을 카카오톡 대화 속에 흘려보내지 않고 이 페이지 안에 날짜별로 정리해 남깁니다.<br />학부모님도 로그인해서 언제든 확인하실 수 있어요.` },
             { title: "내신 4주 시스템", body: "시험 4주 전부터 내신 대비 집중 기간으로 전환. 학교별 기출 경향을 분석한 자료로 직전 보강까지 진행합니다." },
             { title: "정기 레벨테스트 · 모의고사", body: "감이 아니라 데이터로 확인하는 성장. 학년별 주기로 레벨테스트와 모의고사를 시행하고 결과를 리포트로 전달합니다." },
@@ -3015,7 +3015,7 @@ function HomePage({ setScreen, announcement }) {
           <div>
             ${[
               { n: "01", title: "수업 직후 — 학습 기록", body: "그날 다룬 문법·독해 내용을 바로 기록해 남깁니다. 무슨 수업을 했는지 기억에 의존하지 않아요." },
-              { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 80% 이상, 누적 단어는 90% 이상이어야 합격. 기준에 못 미치면 재시험 일정이 바로 잡히고 이 페이지에 표시됩니다." },
+              { n: "02", title: "단어시험 볼 때마다 — 자동 합격 판정", body: "신규 단어는 90% 이상, 누적 단어는 80% 이상이어야 합격. 기준에 못 미치면 재시험 일정이 바로 잡히고 이 페이지에 표시됩니다." },
               { n: "03", title: "숙제 낼 때마다 — 완료 여부 기록", body: "그날 숙제 완료·미완료가 그대로 남아, 밀리는 패턴이 있으면 바로 눈에 띕니다. 완료하지 않으면 학부모님께도 알림이 가요." },
               { n: "04", title: "정기시험 볼 때마다 — 성적 추이 기록", body: "내신·모의고사 점수를 목표 대비로 기록해, 등락이 아니라 흐름을 봅니다." },
               { n: "05", title: "학생이 직접 — 온라인 서재에서 읽고 단어장 쌓기", body: "레벨에 맞는 영어 동화·소설을 따로 만든 서재 사이트에서 읽습니다. 모르는 단어를 누르면 그 학생의 개인 단어장에 자동으로 쌓여요." },
@@ -17431,9 +17431,11 @@ function VocabLogEditor({ data, updateData }) {
 
   const allBooks = [...BOOK_LIST, ...customBooks];
   const isCumulative = range.includes("누적");
-  const threshold = isCumulative ? 90 : 80;
+  // 2026-09-28 — 누적/신규 합격 기준을 서로 맞바꿨다: 누적 80%(재시험 79점 이하), 신규 90%
+  // (재시험 89점 이하). 기존엔 누적 90%/신규 80%였다.
+  const threshold = isCumulative ? 80 : 90;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
-  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.10 : 0.20)) : null;
+  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.20 : 0.10)) : null;
   const wrongCount = total && correct !== "" ? Number(total) - Number(correct) : null;
   const willPass = wrongCount !== null ? wrongCount <= allowedWrong : null;
 
@@ -17460,7 +17462,7 @@ function VocabLogEditor({ data, updateData }) {
   async function add() {
     if (!date || !total || !range || !book) return;
     const scorePct = Math.round((Number(correct) / Number(total)) * 100);
-    const allowed = Math.round(Number(total) * (range.includes("누적") ? 0.10 : 0.20));
+    const allowed = Math.round(Number(total) * (range.includes("누적") ? 0.20 : 0.10));
     const passed = (Number(total) - Number(correct)) <= allowed;
     await updateData((d) => ({
       ...d,
@@ -17482,7 +17484,7 @@ function VocabLogEditor({ data, updateData }) {
 
   return html`
     <div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 90%(오답 10% 이내), 아니면 80%(오답 20% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>단어 시험을 직접 보고 채점한 결과를 기록하세요. 범위에 "누적"이 들어가면 80%(오답 20% 이내), 아니면 90%(오답 10% 이내) 기준으로 자동 합격 판정돼요. 문항 수에 맞춰 반올림한 허용 오답 개수를 기준으로 판정합니다.</div>
       <${Card} style=${{ borderTop: `3px solid ${C.gold}` }}>
         <div style=${{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <div style=${{ flex: "1 1 200px" }}>
@@ -21578,10 +21580,10 @@ function QuickHomeworkPanel({ student, updateData }) {
   `;
 }
 
-// 단어시험 탭 — VocabLogEditor.add()와 정확히 같은 판정식(오답 허용 개수 반올림, 누적이면 90%/
-// 10%, 아니면 80%/20%)·쓰기(vocabLog[] 배열) 패턴. 날짜는 목업에 입력칸이 없어서 항상 today()로
-// 저장한다(VocabLogEditor의 date state 기본값과 동일). 교재 직접 추가(+) 버튼은 목업에 없어서
-// 생략 — 이미 등록된 교재 중에서 고르는 용도로만 쓴다.
+// 단어시험 탭 — VocabLogEditor.add()와 정확히 같은 판정식(오답 허용 개수 반올림, 누적이면 80%/
+// 20%, 아니면 90%/10%, 2026-09-28 기준 변경)·쓰기(vocabLog[] 배열) 패턴. 날짜는 목업에 입력칸이
+// 없어서 항상 today()로 저장한다(VocabLogEditor의 date state 기본값과 동일). 교재 직접 추가(+)
+// 버튼은 목업에 없어서 생략 — 이미 등록된 교재 중에서 고르는 용도로만 쓴다.
 function QuickVocabPanel({ data, updateData }) {
   const [customBooks, setCustomBooks] = useState([]);
   const [book, setBook] = useState(BOOK_LIST[0]);
@@ -21604,9 +21606,9 @@ function QuickVocabPanel({ data, updateData }) {
 
   const allBooks = [...BOOK_LIST, ...customBooks];
   const isCumulative = range.includes("누적");
-  const threshold = isCumulative ? 90 : 80;
+  const threshold = isCumulative ? 80 : 90;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
-  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.10 : 0.20)) : null;
+  const allowedWrong = total ? Math.round(Number(total) * (isCumulative ? 0.20 : 0.10)) : null;
   const wrongCount = total && correct !== "" ? Number(total) - Number(correct) : null;
   const willPass = wrongCount !== null ? wrongCount <= allowedWrong : null;
 
