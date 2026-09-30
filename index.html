@@ -9614,7 +9614,16 @@ function ExamStudioSection({ roster, updateData }) {
     let cancelled = false;
     (async () => {
       try {
-        const [folders, passages, qs, papers, analyses] = await Promise.all([ES.loadFolders(), ES.listPassages(), ES.listQuestions(), ES.listExamPapers(), ES.listAnalyses()]);
+        // 2026-09-30 — 교사 로그인 직후(또는 탭 전환 시 Auth 세션이 아직 안 붙었을 때) 이
+        // Promise.all이 permission-denied로 통째로 실패하면 passageFolders/passageLibrary가
+        // useState 초기값(빈 폴더/빈 배열)에 영구히 머물러 "지문이 다 사라졌다"처럼 보이는
+        // 버그를 실제로 겪었다 — TeacherCenterSection/ExamBuilderView/MobileAssignExamTab이
+        // 이미 겪고 고친 것과 동일한 Auth 경합(loadWithAuthRaceRetry, 위 syncTeacherFirebaseAuth
+        // 주석 참고)인데 ExamStudioSection만 이 보호막이 빠져 있었다. 데이터 자체는 지워진 적
+        // 없고, Firestore Rules가 아직 준비 안 된 Auth 세션의 읽기를 정당하게 막은 것뿐이다.
+        const [folders, passages, qs, papers, analyses] = await loadWithAuthRaceRetry(() => Promise.all([
+          ES.loadFolders(), ES.listPassages(), ES.listQuestions(), ES.listExamPapers(), ES.listAnalyses(),
+        ]));
         if (cancelled) return;
         setPassageFolders(folders);
         setPassageLibrary(passages);
