@@ -18,9 +18,11 @@ window.SarahServices = window.SarahServices || {};
     return (studentData && studentData.vocabLog) || [];
   }
 
-  // Matches index.html's vocabPassThreshold(): 90% if the test title contains "누적", else 80%.
+  // Matches index.html's vocabPassThreshold(): 80% if the test title contains "누적", else 90%.
+  // 2026-10-01 — index.html의 vocabPassThreshold()와 같이 누적/신규 기준을 맞바꿨다(d14ed2c가
+  // VocabLogEditor/QuickVocabPanel만 바꾸고 이 둘을 놓쳤던 걸 실사용 제보로 발견해 뒤늦게 맞춤).
   function passThreshold(testTitle) {
-    return (testTitle || "").includes("누적") ? 90 : 80;
+    return (testTitle || "").includes("누적") ? 80 : 90;
   }
 
   // Phase 2 (Teacher Center "최근 시험" card): joins vocabResults with their vocabTests title,

@@ -1214,8 +1214,12 @@ function homeworkStats(data, month) {
 }
 // Same rule VocabLogEditor already uses for manually-recorded in-person tests (range.includes
 // "누적")), applied to online 단어 시험 tests too via their title: 누적(cumulative-range) tests
-// pass at 90%+, everything else (new-range tests) passes at 80%+.
-function vocabPassThreshold(label) { return (label || "").includes("누적") ? 90 : 80; }
+// pass at 80%+, everything else (new-range tests) passes at 90%+.
+// 2026-10-01 — VocabLogEditor/QuickVocabPanel의 기준은 d14ed2c(2026-09-30)에서 이미
+// 누적 80%/신규 90%로 바뀌었는데, 온라인 단어시험(학생이 실제로 응시하는 쪽)이 쓰는 이
+// 함수는 그때 같이 안 바뀌어서 옛 기준(누적 90%/신규 80%)이 그대로 남아있었다 — 실사용
+// 제보로 발견.
+function vocabPassThreshold(label) { return (label || "").includes("누적") ? 80 : 90; }
 // 단어 합격율 — same month-scoping as homeworkStats, one row per online 단어 시험 attempt
 // (vocabResults), graded against that test's own pass threshold via vocabPassThreshold.
 function vocabPassStats(data, month) {
