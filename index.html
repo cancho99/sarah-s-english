@@ -21239,11 +21239,11 @@ function MockResultRow({ r, answerKey, updateData }) {
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6, background: C.ivory, padding: 8, borderRadius: 4 }}>
           ${answerKey.map((correct, i) => {
             const mine = r.answers[i];
-            const isWrong = normText(mine) !== normText(String(correct));
+            const isWrong = !mockAcceptedAnswers(correct).includes(normText(mine));
             return html`
               <div key=${i} style=${{ width: 46, textAlign: "center", fontSize: 10.5, padding: "3px 2px", borderRadius: 3, background: isWrong ? "#F7E9E6" : "#E9F1EA", color: isWrong ? C.danger : "#3D6B4F" }}>
                 <div style=${{ fontWeight: 700 }}>${i + 1}</div>
-                <div>${mine || "-"}${isWrong ? html`<span style=${{ color: C.slate }}> (${correct})</span>` : ""}</div>
+                <div>${mine || "-"}${isWrong ? html`<span style=${{ color: C.slate }}> (${String(correct).split(",").join("/")})</span>` : ""}</div>
               </div>
             `;
           })}
@@ -21257,19 +21257,46 @@ function MockResultRow({ r, answerKey, updateData }) {
 // comma-separated string — the teacher kept losing track of which number was which question's
 // answer in a long "2,3,1,4,5,2,1,3,4,5" blob. Answers are held as an array (one string per
 // question) so the box grid can render directly off it.
-function AnswerKeyBoxes({ answers, onChangeCount, onChangeAt }) {
+// 2026-10-02 — format="abcd" 추가(기존엔 숫자 전용이었음). 한 문항에 정답이 2개인 경우(복수
+// 정답 처리)를 지원하려고, 글자 칩을 "토글"(여러 개 동시 선택 가능)로 만들었다 — 보통은 하나만
+// 클릭하면 되고, 드물게 복수 정답이면 두 번째 글자를 추가로 클릭하면 된다. 값은 내부적으로
+// "B,D"처럼 쉼표로 합쳐 저장되고, gradeMockAnswers가 이 쉼표 목록 중 하나만 맞으면 정답 처리한다.
+// format="number"는 기존 자유 입력 그대로지만, 같은 이유로 쉼표(,)만 추가로 허용한다(예: "2,4").
+const MOCK_ABCD_LETTERS = ["A", "B", "C", "D"];
+function toggleMockLetter(value, letter) {
+  const set = (value || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const idx = set.indexOf(letter);
+  if (idx === -1) set.push(letter); else set.splice(idx, 1);
+  return set.join(",");
+}
+function AnswerKeyBoxes({ answers, onChangeCount, onChangeAt, format }) {
+  const isAbcd = format === "abcd";
   return html`
     <div>
       <${Field} label="문항 수">
         <input style=${{ ...inputStyle, width: 100 }} type="number" min="0" max="200" value=${answers.length} onChange=${(e) => onChangeCount(e.target.value)} />
       <//>
       ${answers.length > 0 && html`
-        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>문항 번호 아래에 정답 번호를 입력하세요.</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 6 }}>
+          ${isAbcd ? "문항 번호 아래에서 정답 기호를 선택하세요. 정답이 2개인 문항은 두 개를 모두 선택하세요." : "문항 번호 아래에 정답 번호를 입력하세요. 정답이 2개인 문항은 쉼표로 구분해서 입력하세요(예: 2,4)."}
+        </div>
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
           ${answers.map((v, i) => html`
-            <div key=${i} style=${{ width: 62 }}>
+            <div key=${i} style=${{ width: isAbcd ? 100 : 62 }}>
               <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 3, textAlign: "center" }}>${i + 1}</div>
-              <input style=${{ ...inputStyle, marginBottom: 0, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" value=${v} onChange=${(e) => onChangeAt(i, e.target.value.replace(/[^0-9]/g, ""))} />
+              ${isAbcd ? html`
+                <div style=${{ display: "flex", gap: 2 }}>
+                  ${MOCK_ABCD_LETTERS.map((L) => {
+                    const on = (v || "").split(",").includes(L);
+                    return html`
+                      <button key=${L} type="button" onClick=${() => onChangeAt(i, toggleMockLetter(v, L))}
+                        style=${{ flex: 1, padding: "7px 0", fontSize: 11.5, fontWeight: 700, borderRadius: 3, cursor: "pointer", border: `1px solid ${on ? C.navy : C.line}`, background: on ? C.navy : C.white, color: on ? C.white : C.slate }}>${L}<//>
+                    `;
+                  })}
+                </div>
+              ` : html`
+                <input style=${{ ...inputStyle, marginBottom: 0, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" value=${v} onChange=${(e) => onChangeAt(i, e.target.value.replace(/[^0-9,]/g, ""))} />
+              `}
             </div>
           `)}
         </div>
@@ -21280,10 +21307,18 @@ function AnswerKeyBoxes({ answers, onChangeCount, onChangeAt }) {
 
 // Shared by MockExamTaker's initial submit and MockExamEditor's saveEdit (regrading after an
 // answer-key correction) so the two never drift into different pass/fail logic.
+// 2026-10-02 — 복수 정답(한 문항에 정답이 2개) 지원: answerKey[i]가 "2,4"처럼 쉼표로 구분된
+// 여러 값을 담을 수 있다 — 학생은 그중 하나만 답하면 되고(실제 시험에서도 한 문제엔 한 답만
+// 고르니까), 그 답이 허용된 값 중 하나면 정답 처리한다. 기존처럼 쉼표 없는 단일 값("2")은
+// 그대로 "허용된 값이 1개뿐인 목록"으로 취급되어 동작이 전혀 안 바뀐다.
+function mockAcceptedAnswers(correct) {
+  return String(correct ?? "").split(",").map(normText).filter(Boolean);
+}
 function gradeMockAnswers(answers, answerKey) {
   let score = 0; const wrong = [];
   answerKey.forEach((correct, i) => {
-    if (normText(answers[i]) === normText(correct) && normText(answers[i]).length > 0) score++;
+    const mine = normText(answers[i]);
+    if (mine.length > 0 && mockAcceptedAnswers(correct).includes(mine)) score++;
     else wrong.push(i + 1);
   });
   return { score, wrong };
@@ -21292,10 +21327,14 @@ function gradeMockAnswers(answers, answerKey) {
 function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState(""); const [date, setDate] = useState(today()); const [pageRange, setPageRange] = useState(""); const [keyAnswers, setKeyAnswers] = useState([]);
+  // 2026-10-02 — 정답 형식(숫자 1-5 / 기호 A-D). 기존 모의고사는 이 필드가 없는 채로 저장돼
+  // 있으므로 읽을 때 항상 `t.answerFormat || "number"`로 기본값을 매겨 기존 동작을 그대로 유지한다.
+  const [format, setFormat] = useState("number");
   const [pickId, setPickId] = useState("");
   const [msg, setMsg] = useState("");
   const [editId, setEditId] = useState(null);
   const [editTitle, setEditTitle] = useState(""); const [editDate, setEditDate] = useState(""); const [editPageRange, setEditPageRange] = useState(""); const [editKeyAnswers, setEditKeyAnswers] = useState([]);
+  const [editFormat, setEditFormat] = useState("number");
   const [editMsg, setEditMsg] = useState("");
 
   const [rangeFrom, setRangeFrom] = useState("");
@@ -21335,11 +21374,15 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
     setKeyAnswers(pickedSet.answers.slice(from - 1, to).map(String));
   }
   async function save() {
-    const key = keyAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
-    if (!title || key.length === 0 || key.length !== keyAnswers.length) { setMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
-    await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key }, ...(d.mockExams || [])] }));
+    // 2026-10-02 — 예전엔 Number(s)로 강제 변환+필터링해서 "B"나 "2,4" 같은 값이 전부 NaN
+    // 취급돼 조용히 사라졌다(숫자만 정답으로 저장 가능했던 이유). 기호(A-D)/복수 정답(쉼표)을
+    // 넣으려면 원문 문자열 그대로 저장해야 한다 — 비교는 어차피 normText 기반 문자열 비교라
+    // 숫자든 글자든 동작은 똑같다.
+    const key = keyAnswers.map((s) => String(s).trim());
+    if (!title || key.length === 0 || key.some((s) => !s)) { setMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
+    await updateData((d) => ({ ...d, mockExams: [{ id: uid(), title, date, pageRange, answerKey: key, answerFormat: format }, ...(d.mockExams || [])] }));
     notifyStudent(student.studentFcmToken, "mock_exam_assigned", title);
-    setTitle(""); setKeyAnswers([]); setPageRange(""); setMsg(""); setCreating(false); setPickId("");
+    setTitle(""); setKeyAnswers([]); setPageRange(""); setMsg(""); setCreating(false); setPickId(""); setFormat("number");
   }
   async function removeExam(id) { await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).filter((t) => t.id !== id) })); }
   // Mirrors homework's 기간만료 — for a mock exam whose deadline has passed and isn't realistically
@@ -21349,14 +21392,14 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
     await updateData((d) => ({ ...d, mockExams: (d.mockExams || []).map((t) => (t.id === id ? { ...t, expired: !t.expired } : t)) }));
   }
   function startEdit(t) {
-    setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyAnswers((t.answerKey || []).map(String)); setEditMsg("");
+    setEditId(t.id); setEditTitle(t.title); setEditDate(t.date); setEditPageRange(t.pageRange || ""); setEditKeyAnswers((t.answerKey || []).map(String)); setEditFormat(t.answerFormat || "number"); setEditMsg("");
   }
   async function saveEdit() {
-    const key = editKeyAnswers.map((s) => Number(s)).filter((n) => !isNaN(n));
-    if (!editTitle || key.length === 0 || key.length !== editKeyAnswers.length) { setEditMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
+    const key = editKeyAnswers.map((s) => String(s).trim());
+    if (!editTitle || key.length === 0 || key.some((s) => !s)) { setEditMsg("이름과 모든 문항의 정답을 입력해 주세요."); return; }
     await updateData((d) => ({
       ...d,
-      mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key } : t)),
+      mockExams: (d.mockExams || []).map((t) => (t.id === editId ? { ...t, title: editTitle, date: editDate, pageRange: editPageRange, answerKey: key, answerFormat: editFormat } : t)),
       // 정답을 고친 뒤에도 이미 채점된 응시 기록의 점수/틀린 문제가 옛 정답 기준으로 남아있지
       // 않도록, 학생이 실제로 제출한 답(r.answers)이 남아있는 기록만 새 정답으로 재채점한다.
       mockExamResults: (d.mockExamResults || []).map((r) => {
@@ -21387,7 +21430,15 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               <${MiniCalendar} selected=${date} onSelect=${setDate} />
             </div>
             <div className="ap-split-form-right">
-              ${(examKeyLibrary || []).length > 0 && html`
+              <${Field} label="정답 형식">
+                <div style=${{ display: "flex", gap: 8 }}>
+                  ${[["number", "숫자 (1-5)"], ["abcd", "기호 (A-D)"]].map(([v, label]) => html`
+                    <button key=${v} type="button" onClick=${() => setFormat(v)}
+                      style=${{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${format === v ? C.navy : C.line}`, background: format === v ? C.navy : C.white, color: format === v ? C.white : C.slate }}>${label}<//>
+                  `)}
+                </div>
+              <//>
+              ${format === "number" && (examKeyLibrary || []).length > 0 && html`
                 <${Field} label="정답표 라이브러리에서 불러오기 (선택)">
                   <select style=${inputStyle} value=${pickId} onChange=${(e) => pickFromLibrary(e.target.value)}>
                     <option value="">직접 입력</option>
@@ -21416,7 +21467,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
               `}
               <${Field} label="모의고사 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: 7월 모의고사" /><//>
               <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${pageRange} onChange=${(e) => setPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
-              <${AnswerKeyBoxes} answers=${keyAnswers} onChangeCount=${setKeyCount} onChangeAt=${setKeyAt} />
+              <${AnswerKeyBoxes} answers=${keyAnswers} onChangeCount=${setKeyCount} onChangeAt=${setKeyAt} format=${format} />
               ${msg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${msg}</div>`}
               <div style=${{ display: "flex", gap: 8 }}>
                 <${Button} variant="gold" onClick=${save}>저장<//>
@@ -21453,7 +21504,15 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
                       <${Field} label="모의고사 이름"><input style=${inputStyle} value=${editTitle} onChange=${(e) => setEditTitle(e.target.value)} /><//>
                       <${Field} label="답안 제출 마감일"><${DateField} value=${editDate} onChange=${setEditDate} /><//>
                       <${Field} label="페이지 / 범위 (선택)"><input style=${inputStyle} value=${editPageRange} onChange=${(e) => setEditPageRange(e.target.value)} placeholder="예: p.12-45, 1~45번" /><//>
-                      <${AnswerKeyBoxes} answers=${editKeyAnswers} onChangeCount=${setEditKeyCount} onChangeAt=${setEditKeyAt} />
+                      <${Field} label="정답 형식">
+                        <div style=${{ display: "flex", gap: 8 }}>
+                          ${[["number", "숫자 (1-5)"], ["abcd", "기호 (A-D)"]].map(([v, label]) => html`
+                            <button key=${v} type="button" onClick=${() => setEditFormat(v)}
+                              style=${{ padding: "7px 14px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${editFormat === v ? C.navy : C.line}`, background: editFormat === v ? C.navy : C.white, color: editFormat === v ? C.white : C.slate }}>${label}<//>
+                          `)}
+                        </div>
+                      <//>
+                      <${AnswerKeyBoxes} answers=${editKeyAnswers} onChangeCount=${setEditKeyCount} onChangeAt=${setEditKeyAt} format=${editFormat} />
                       ${editMsg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 8 }}>${editMsg}</div>`}
                       <div style=${{ display: "flex", gap: 8 }}>
                         <${Button} variant="gold" onClick=${saveEdit}>저장<//>
@@ -21490,6 +21549,7 @@ function MockExamEditor({ student, data, updateData, examKeyLibrary }) {
 
 function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
   const total = test.answerKey.length;
+  const isAbcd = test.answerFormat === "abcd";
   const [answers, setAnswers] = useState(initialAnswers && initialAnswers.length === total ? initialAnswers : Array(total).fill(""));
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState(null);
@@ -21534,9 +21594,18 @@ function MockExamTaker({ test, onExit, onSubmit, initialAnswers, editMode }) {
       <${Card}>
         <div style=${{ display: "flex", flexWrap: "wrap", gap: 10 }}>
           ${test.answerKey.map((_, i) => html`
-            <div key=${i} style=${{ width: 62 }}>
+            <div key=${i} style=${{ width: isAbcd ? 100 : 62 }}>
               <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 3, textAlign: "center" }}>${i + 1}</div>
-              <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" autocomplete="off" name=${`mock-ans-${test.id}-${i}`} value=${answers[i]} onChange=${(e) => pick(i, e.target.value.replace(/[^0-9]/g, ""))} />
+              ${isAbcd ? html`
+                <div style=${{ display: "flex", gap: 2 }}>
+                  ${MOCK_ABCD_LETTERS.map((L) => html`
+                    <button key=${L} type="button" disabled=${submitted} onClick=${() => pick(i, L)}
+                      style=${{ flex: 1, padding: "8px 0", fontSize: 12.5, fontWeight: 700, borderRadius: 3, cursor: "pointer", border: `1px solid ${answers[i] === L ? C.navy : C.line}`, background: answers[i] === L ? C.navy : C.white, color: answers[i] === L ? C.white : C.slate }}>${L}<//>
+                  `)}
+                </div>
+              ` : html`
+                <input style=${{ ...inputStyle, padding: "8px 6px", textAlign: "center" }} inputMode="numeric" pattern="[0-9]*" autocomplete="off" name=${`mock-ans-${test.id}-${i}`} value=${answers[i]} onChange=${(e) => pick(i, e.target.value.replace(/[^0-9]/g, ""))} />
+              `}
             </div>
           `)}
         </div>
@@ -21688,7 +21757,10 @@ function QuickMockPanel({ data, updateData }) {
     /* eslint-disable-next-line */
   }, [testId]);
 
-  function pick(i, val) { setAnswers((a) => a.map((v, idx) => (idx === i ? val.replace(/[^0-9]/g, "") : v))); }
+  function pick(i, val) {
+    const cleaned = test && test.answerFormat === "abcd" ? val : val.replace(/[^0-9]/g, "");
+    setAnswers((a) => a.map((v, idx) => (idx === i ? cleaned : v)));
+  }
 
   async function save() {
     if (!test || saving || answers.some((a) => !a.trim())) return;
@@ -21718,11 +21790,20 @@ function QuickMockPanel({ data, updateData }) {
       <//>
       ${test && html`
         <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>문항별 답 입력</div>
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 6, marginBottom: 14 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: test.answerFormat === "abcd" ? "repeat(2, 1fr)" : "repeat(5, 1fr)", gap: 6, marginBottom: 14 }}>
           ${test.answerKey.map((_, i) => html`
             <div key=${i} style=${{ textAlign: "center" }}>
               <div style=${{ fontSize: 9.5, color: C.slate, marginBottom: 2 }}>${i + 1}</div>
-              <input inputMode="numeric" pattern="[0-9]*" autocomplete="off" value=${answers[i] || ""} onChange=${(e) => pick(i, e.target.value)} style=${{ ...inputStyle, marginBottom: 0, padding: "6px 0", textAlign: "center" }} />
+              ${test.answerFormat === "abcd" ? html`
+                <div style=${{ display: "flex", gap: 2 }}>
+                  ${MOCK_ABCD_LETTERS.map((L) => html`
+                    <button key=${L} type="button" onClick=${() => pick(i, L)}
+                      style=${{ flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 700, borderRadius: 3, cursor: "pointer", border: `1px solid ${answers[i] === L ? C.navy : C.line}`, background: answers[i] === L ? C.navy : C.white, color: answers[i] === L ? C.white : C.slate }}>${L}<//>
+                  `)}
+                </div>
+              ` : html`
+                <input inputMode="numeric" pattern="[0-9]*" autocomplete="off" value=${answers[i] || ""} onChange=${(e) => pick(i, e.target.value)} style=${{ ...inputStyle, marginBottom: 0, padding: "6px 0", textAlign: "center" }} />
+              `}
             </div>
           `)}
         </div>
