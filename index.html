@@ -15970,7 +15970,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     });
     if (picked.length === 0) { setQuickVocabMsg("해당 범위에 저장된 단어가 없어요."); return; }
     const title = `${book.name} Day ${from}-${to}`;
-    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime });
+    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
     setQuickVocabSaving(true);
     try {
@@ -19804,7 +19804,7 @@ function VocabRetestSchedule({ t, updateData }) {
 // 선생님이 특정 날짜에 시험을 "올린 것"으로 기록하고 싶을 수 있어(예: 다른 날 미리 만들어두고
 // 특정 날짜에 배정한 것처럼 남기고 싶을 때) date를 선택적으로 받는다 — 안 넘기면(다른 호출부
 // 전부) 기존과 동일하게 오늘 날짜를 쓴다.
-function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date }) {
+function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date, source }) {
   const raw = (wordsRaw || []).filter((w) => w.word && w.meaning).map((w) => ({
     word: w.word, meaning: w.meaning,
     synonyms: Array.isArray(w.synonyms) ? w.synonyms : (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
@@ -19819,7 +19819,7 @@ function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, da
     return true;
   });
   if (!title || clean.length < 2 || !retestDate || !retestTime) return { ok: false, clean };
-  return { ok: true, entry: { id: uid(), title, date: date || today(), words: clean, mode, retestDate, retestTime } };
+  return { ok: true, entry: { id: uid(), title, date: date || today(), words: clean, mode, retestDate, retestTime, ...(source ? { source } : {}) } };
 }
 
 function VocabEditor({ student, data, updateData }) {
@@ -19839,6 +19839,7 @@ function VocabEditor({ student, data, updateData }) {
   const [bankBooks, setBankBooks] = useState(null);
   const [bankBookId, setBankBookId] = useState(""); const [bankFrom, setBankFrom] = useState(1); const [bankTo, setBankTo] = useState(1);
   const [bankCount, setBankCount] = useState("");
+  const [bankSource, setBankSource] = useState(null); // 워드뱅크에서 가져온 시험이면 {bookId,from,to,count} — 불합격 재시험 자동 생성이 같은 범위를 다시 뽑는 데 쓴다
   const [bankMsg, setBankMsg] = useState("");
   const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(today());
@@ -19944,6 +19945,7 @@ function VocabEditor({ student, data, updateData }) {
     const n = Number(bankCount);
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
+    setBankSource({ bookId: book.id, from, to, ...(n > 0 && n < deduped.length ? { count: n } : {}) });
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
     setBankMsg(`${picked.length}개 단어를 불러왔어요${dupCount > 0 ? ` (중복 ${dupCount}개 제외)` : ""}. 아래에서 확인 후 저장하세요.`);
     setInputMode("manual");
@@ -19972,11 +19974,11 @@ function VocabEditor({ student, data, updateData }) {
       if (!check.ok) { setCountMsg(check.message); return; }
       wordsRaw = window.SarahServices.vocabTestService.sampleWords(usableWords, questionCount);
     }
-    const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date: testDate });
+    const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date: testDate, source: bankSource });
     if (!result.ok) return;
     await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setTestDate(today()); setCreating(false);
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setTestDate(today()); setBankSource(null); setCreating(false);
   }
   // 시험을 지우면 그 시험을 본 학생들의 응시 기록(vocabResults)도 같이 지운다 — 안 지우면
   // vocabTests에서만 사라진 testId를 가리키는 고아 vocabResults가 남아, Daily/Monthly Report의
@@ -24402,6 +24404,50 @@ function buildVocabBreakdownRow(q, answer, timing) {
   const correctDisplay = (q.synonyms && q.synonyms.length) ? `${q.word} (${q.synonyms.join(", ")}도 정답)` : q.word;
   return { prompt: q.meaning, given: answer || "(빈칸)", correct: correctDisplay, ok, suspectedAutofill };
 }
+// 불합격 시 같은 교재·같은 Day 범위로 재시험을 자동 생성한다(합격할 때까지 반복). 같은 "단어"가
+// 아니라 같은 "범위"에서 워드뱅크를 다시 읽어 새로 뽑는다 — 범위 정보는 test.source
+// ({bookId,from,to,count})에 있고, 없으면(예전 시험) 제목 "<교재명> Day a-b"에서 복원한다.
+// 범위를 못 찾으면 마지막 수단으로 원래 시험의 단어를 그대로 쓴다. 응시 대기 중인 같은 제목의
+// 재시험이 이미 있으면 중복 생성하지 않는다. AI 호출 없음.
+async function resolveRetestSource(test) {
+  if (test.source && test.source.bookId) return test.source;
+  const m = /^(.*?)\s*Day\s*(\d+)\s*-\s*(\d+)/.exec(test.title || "");
+  if (!m) return null;
+  const books = await loadWordbankBooks();
+  const book = books.find((b) => b.name && m[1].includes(b.name)) || books.find((b) => b.name === m[1].trim());
+  return book ? { bookId: book.id, from: Number(m[2]), to: Number(m[3]) } : null;
+}
+async function createAutoVocabRetest(student, test, updateData) {
+  const retitle = test.title.replace(/\s*\(재시험\)$/, "") + " (재시험)";
+  let words = test.words;
+  let source = test.source || null;
+  try {
+    const src = await resolveRetestSource(test);
+    if (src) {
+      const book = (await loadWordbankBooks()).find((b) => b.id === src.bookId);
+      if (book) {
+        let picked = [];
+        for (let d = src.from; d <= src.to; d++) picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko })));
+        const seen = new Set();
+        picked = picked.filter((w) => { const k = (w.word || "").trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+        if (src.count > 0 && src.count < picked.length) picked = shuffle(picked).slice(0, src.count);
+        if (picked.length >= 2) { words = picked; source = src; }
+      }
+    }
+  } catch (e) { console.error("재시험 범위 단어 불러오기 실패 — 원래 단어로 대체", e); }
+  const built = buildVocabTestEntry({ title: retitle, wordsRaw: words, mode: test.mode || "mix", retestDate: today(), retestTime: test.retestTime || "15:00", source });
+  if (!built.ok) return null;
+  let created = null;
+  await updateData(student.id, (d) => {
+    created = null;
+    const tests = d.vocabTests || [];
+    const pending = tests.some((t) => t.id !== test.id && t.title === retitle && !t.expired && !(d.vocabResults || []).some((r) => r.testId === t.id));
+    if (pending) return d;
+    created = built.entry;
+    return { ...d, vocabTests: [built.entry, ...tests] };
+  });
+  return created;
+}
 // Main Test + Instant Recall이 모두 끝난 시점에 vocabResults[] entry 하나를 완성한다.
 // score/total은 항상 Main Test 기준(기존 의미 그대로, §14) — recallScore/recallTotal/mastery/
 // finalStatus/integrity/questions는 전부 새로 추가되는 필드일 뿐, 기존 필드의 의미는 바꾸지 않는다.
@@ -24574,6 +24620,12 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
       });
       if (isRecall && isLast) {
         if (savedEntry) notifyTeacher(student.name, "vocab_test_submit", `${savedEntry.score}/${savedEntry.total}점`);
+        if (savedEntry && savedEntry.total && (savedEntry.score / savedEntry.total) * 100 < vocabPassThreshold(test.title)) {
+          try {
+            const created = await createAutoVocabRetest(student, test, updateData);
+            if (created && student.studentFcmToken) notifyStudent(student.studentFcmToken, "vocab_test_assigned", created.title);
+          } catch (e) { console.error("재시험 자동 생성 실패", e); }
+        }
         onDone();
         return;
       }
