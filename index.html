@@ -17276,6 +17276,8 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
   const vocabResultCount = (data.vocabResults || []).length;
   const examResultCount = (data.examResults || []).length;
   const logCount = (data.logs || []).length;
+  // 어떤 필드가 용량을 차지하는지 — "정리했는데도 가득 차 있다"를 진단하는 용도.
+  const fieldSizes = Object.keys(data || {}).map((k) => ({ k, kb: Math.round(new Blob([JSON.stringify(data[k])]).size / 1024) })).sort((x, y) => y.kb - x.kb).slice(0, 6);
   const currentMonth = today().slice(0, 7);
   const isOld = (dateStr) => dateStr && dateStr.slice(0, 7) < currentMonth;
   const oldCount = (data.homework || []).filter((h) => isOld(h.dueDate)).length
@@ -17336,6 +17338,7 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
 
       <${Card}>
         <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건 · 지난달 이전 숙제/모의고사/단어시험 ${oldCount}건</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>용량 큰 항목: ${fieldSizes.map((f) => `${f.k} ${f.kb}KB`).join(" · ")}</div>
         <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
           <${Button} variant="ghost" onClick=${clearOldMonths}>지난달 이전 숙제·모의고사·단어시험 정리 (${oldCount}건)<//>
           <${Button} variant="ghost" onClick=${clearAllPhotos}>숙제 사진 전체 삭제 (내용은 유지)<//>
@@ -24331,7 +24334,13 @@ function shrinkStudentData(d) {
   return {
     ...d,
     homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: (h.photos || (h.photo ? [h.photo] : [])).filter((p) => p && photoUrl(p).length < 120000) })),
-    vocabResults: (d.vocabResults || []).slice(0, 30),
+    // 응시 기록 하나가 문항별 상세(questions/recallQuestions)까지 들고 있어 가장 큰 덩어리다 — 최근 10건 뒤의
+    // 것은 점수·breakdown만 남기고 상세만 덜어낸다(합격률/평균 점수는 그대로).
+    vocabResults: (d.vocabResults || []).slice(0, 30).map((r, i) => {
+      if (i < 10) return r;
+      const { questions, recallQuestions, ...rest } = r;
+      return rest;
+    }),
     examResults: (d.examResults || []).slice(0, 30),
     mockExamResults: (d.mockExamResults || []).slice(0, 30),
     logs: (d.logs || []).slice(0, 60),
@@ -24547,7 +24556,15 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
         });
         setVocab(next.activeTestSession.vocab);
       } catch (e) {
-        setInitError("시험을 시작하지 못했어요: " + String((e && e.message) || e).slice(0, 200));
+        // 학생 문서가 1MB 한도에 닿아 세션을 못 쓰는 경우 — 다른 저장 경로처럼 자동 정리 후 한 번 더 시도한다.
+        let recovered = false;
+        if (isDocSizeError(e)) {
+          recovered = await attemptAutoShrinkAndRetry(student.id, updateData, async () => {
+            const next = await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "vocab", testId: test.id, testTitle: test.title, startedAt: Date.now(), vocab: fresh } }));
+            setVocab(next.activeTestSession.vocab);
+          });
+        }
+        if (!recovered) setInitError(isDocSizeError(e) ? "이 학생의 저장 공간이 가득 차서 시험을 시작할 수 없어요. 선생님께 '저장 공간 정리'를 요청해 주세요." : "시험을 시작하지 못했어요: " + String((e && e.message) || e).slice(0, 200));
       }
     })();
   }, []);
