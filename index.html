@@ -24483,7 +24483,10 @@ async function createAutoVocabRetest(student, test, updateData) {
         for (let d = src.from; d <= src.to; d++) picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko })));
         const seen = new Set();
         picked = picked.filter((w) => { const k = (w.word || "").trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
-        if (src.count > 0 && src.count < picked.length) picked = shuffle(picked).slice(0, src.count);
+        // 재시험은 항상 "내가 내준 단어 개수"만큼만 — src.count가 저장돼 있지 않은 시험(빠른 생성,
+        // 출제 문항 수 입력, 예전 시험)도 있어서, 원래 시험의 단어 수(test.words.length)를 상한으로 건다.
+        const limit = Math.min(src.count > 0 ? src.count : Infinity, (test.words || []).length || Infinity);
+        if (limit < picked.length) picked = shuffle(picked).slice(0, limit);
         if (picked.length >= 2) { words = picked; source = src; }
       }
     }
