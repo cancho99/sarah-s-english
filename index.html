@@ -17683,6 +17683,7 @@ function buildExamTrendChartSVG(rows) {
 function NeltUploadSection({ data, updateData }) {
   const [uploading, setUploading] = useState(false);
   const [draft, setDraft] = useState(null);
+  const [editingId, setEditingId] = useState(null); // 저장된 결과를 수정 중이면 그 id, 새 입력/PDF 추출이면 null
   const [err, setErr] = useState("");
   const results = data.neltResults || [];
   const CATS = [["vocab", "어휘"], ["grammar", "문법"], ["listening", "듣기"], ["reading", "독해"]];
@@ -17699,7 +17700,7 @@ function NeltUploadSection({ data, updateData }) {
   async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setUploading(true); setErr(""); setDraft(null);
+    setUploading(true); setErr(""); setDraft(null); setEditingId(null);
     try {
       const pdfBase64 = await fileToBase64(file);
       const res = await fetch(NELT_WORKER_URL, {
@@ -17732,9 +17733,24 @@ function NeltUploadSection({ data, updateData }) {
   function updateDraftField(field, val) { setDraft((d) => ({ ...d, [field]: val })); }
   function updateDraftCat(cat, field, val) { setDraft((d) => ({ ...d, categories: { ...d.categories, [cat]: { ...d.categories[cat], [field]: val } } })); }
 
+  // AI 호출 없이 직접 입력(PDF를 못 올리거나 추출이 틀렸을 때) — 빈 폼을 연다.
+  function startManual() {
+    setErr(""); setEditingId(null);
+    setDraft({ test_name: "NELT", student_name: "", grade: "", test_date: today(), overall_level: "", overall_level_desc: "", overall_percentile: "",
+      categories: { vocab: {}, grammar: {}, listening: {}, reading: {} } });
+  }
+  function startEdit(r) {
+    setErr(""); setEditingId(r.id);
+    setDraft({ ...r, categories: { vocab: {}, grammar: {}, listening: {}, reading: {}, ...(r.categories || {}) } });
+  }
   async function saveDraft() {
-    await updateData((d) => ({ ...d, neltResults: [{ id: uid(), ...draft }, ...(d.neltResults || [])] }));
-    setDraft(null);
+    if (editingId) {
+      const { id, ...fields } = draft;
+      await updateData((d) => ({ ...d, neltResults: (d.neltResults || []).map((r) => (r.id === editingId ? { ...r, ...fields } : r)) }));
+    } else {
+      await updateData((d) => ({ ...d, neltResults: [{ id: uid(), ...draft }, ...(d.neltResults || [])] }));
+    }
+    setDraft(null); setEditingId(null);
   }
   async function removeResult(id) { await updateData((d) => ({ ...d, neltResults: (d.neltResults || []).filter((r) => r.id !== id) })); }
 
@@ -17754,11 +17770,12 @@ function NeltUploadSection({ data, updateData }) {
         <input type="file" accept="application/pdf" onChange=${handleFile} disabled=${uploading} style=${{ fontSize: 12.5 }} />
         ${uploading && html`<div style=${{ fontSize: 12.5, color: C.gold, marginTop: 8 }}>분석 중... (10~20초 정도 걸려요)</div>`}
         ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 8 }}>${err}</div>`}
+        <div style=${{ marginTop: 10 }}><${Button} variant="ghost" onClick=${startManual} disabled=${uploading}>✍️ 직접 입력 (AI 사용 안 함, 무료)<//></div>
       <//>
 
       ${draft && html`
         <${Card} style=${{ marginBottom: 20, borderLeft: `3px solid ${C.gold}` }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>추출된 내용 확인 (필요하면 수정 후 저장하세요)</div>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${editingId ? "저장된 NELT 성적 수정" : "내용 확인 (필요하면 수정 후 저장하세요)"}</div>
           <div style=${{ display: "flex", gap: 8 }}>
             <div style=${{ flex: 1 }}><${Field} label="테스트명"><input style=${inputStyle} value=${draft.test_name} onChange=${(e) => updateDraftField("test_name", e.target.value)} /><//></div>
             <div style=${{ flex: 1 }}><${Field} label="응시일"><${DateField} value=${draft.test_date} onChange=${(v) => updateDraftField("test_date", v)} /><//></div>
@@ -17780,7 +17797,7 @@ function NeltUploadSection({ data, updateData }) {
           `)}
           <div style=${{ display: "flex", gap: 8, marginTop: 6 }}>
             <${Button} variant="gold" onClick=${saveDraft}>저장<//>
-            <${Button} variant="ghost" onClick=${() => setDraft(null)}>취소<//>
+            <${Button} variant="ghost" onClick=${() => { setDraft(null); setEditingId(null); }}>취소<//>
           </div>
         <//>
       `}
@@ -17801,7 +17818,10 @@ function NeltUploadSection({ data, updateData }) {
               <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>${fmtDate(r.test_date)} · ${r.test_name}</div>
               <div style=${{ fontSize: 13, marginTop: 4 }}><b>${r.overall_level}</b> ${r.overall_level_desc} · ${r.overall_percentile}</div>
             </div>
-            <button onClick=${() => removeResult(r.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            <div style=${{ display: "flex", gap: 6 }}>
+              <button onClick=${() => startEdit(r)} title="수정" style=${{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 12 }}>✏️ 수정</button>
+              <button onClick=${() => removeResult(r.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
           </div>
           <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginTop: 10 }}>
             ${CATS.map(([key, label]) => {
@@ -17855,14 +17875,39 @@ function RegularExamEditor({ data, updateData }) {
   const [scoreNum, setScoreNum] = useState("");
   const [target, setTarget] = useState("");
   const [note, setNote] = useState("");
+  const [editingId, setEditingId] = useState(null); // 이미 등록한 기록을 수정 중이면 그 id
+  const formRef = useRef(null);
 
+  function resetForm() { setEditingId(null); setExamDetail(""); setScore(""); setScoreNum(""); setTarget(""); setNote(""); }
+  function startEdit(x) {
+    setEditingId(x.id);
+    setDate(x.date || today());
+    setExamType(EXAM_TYPES.includes(x.examType) ? x.examType : EXAM_TYPES[0]);
+    setMaterialCategory(x.materialCategory || MATERIAL_CATEGORIES[0]);
+    setExamDetail(x.examDetail || x.examName || "");
+    setSubject(x.subject || "영어");
+    setScore(x.score != null ? String(x.score) : "");
+    setScoreNum(x.scoreNum != null ? String(x.scoreNum) : "");
+    setTarget(x.target || ""); setNote(x.note || "");
+    if (formRef.current) formRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
   async function add() {
     const detail = examDetail.trim();
     if (!date || !detail) return;
-    const record = { id: uid(), date, examType, examDetail: detail, subject, score, scoreNum: scoreNum === "" ? null : Number(scoreNum), target, note };
+    const record = { id: editingId || uid(), date, examType, examDetail: detail, subject, score, scoreNum: scoreNum === "" ? null : Number(scoreNum), target, note };
     if (examType === "교재성취평가") record.materialCategory = materialCategory;
-    await updateData((d) => ({ ...d, regularExams: [record, ...(d.regularExams || [])] }));
-    setExamDetail(""); setScore(""); setScoreNum(""); setTarget(""); setNote("");
+    if (editingId) {
+      // 수정 — 기존 항목을 덮어쓰되, 폼에 없는 기존 필드(예: 예전 examName)는 그대로 보존한다.
+      await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).map((x) => {
+        if (x.id !== editingId) return x;
+        const merged = { ...x, ...record };
+        if (examType !== "교재성취평가") delete merged.materialCategory;
+        return merged;
+      }) }));
+    } else {
+      await updateData((d) => ({ ...d, regularExams: [record, ...(d.regularExams || [])] }));
+    }
+    resetForm();
   }
   async function remove(id) { await updateData((d) => ({ ...d, regularExams: (d.regularExams || []).filter((x) => x.id !== id) })); }
 
@@ -17882,7 +17927,9 @@ function RegularExamEditor({ data, updateData }) {
           <//>
         `;
       })}
-      <${Card}>
+      <${Card} style=${editingId ? { borderLeft: `3px solid ${C.gold}` } : undefined}>
+        <div ref=${formRef} />
+        ${editingId && html`<div style=${{ fontSize: 12, fontWeight: 700, color: C.gold, marginBottom: 8 }}>✏️ 등록된 기록 수정 중</div>`}
         <div className="ap-split-form">
           <div className="ap-split-form-left">
             <div style=${{ fontSize: 12, color: C.slate, marginBottom: 8, fontWeight: 600 }}>날짜</div>
@@ -17907,7 +17954,10 @@ function RegularExamEditor({ data, updateData }) {
             <${Field} label="숫자 점수 (그래프에 쓰여요, 선택)"><input style=${inputStyle} type="number" value=${scoreNum} onChange=${(e) => setScoreNum(e.target.value)} placeholder="예: 92" /><//>
             <${Field} label="목표 대비 (선택)"><input style=${inputStyle} value=${target} onChange=${(e) => setTarget(e.target.value)} placeholder="예: 목표 90점 대비 +2" /><//>
             <${Field} label="비고 (선택)"><input style=${inputStyle} value=${note} onChange=${(e) => setNote(e.target.value)} /><//>
-            <${Button} variant="gold" onClick=${add}>기록 추가<//>
+            <div style=${{ display: "flex", gap: 8 }}>
+              <${Button} variant="gold" onClick=${add}>${editingId ? "수정 저장" : "기록 추가"}<//>
+              ${editingId && html`<${Button} variant="ghost" onClick=${resetForm}>취소<//>`}
+            </div>
           </div>
         </div>
       <//>
@@ -17920,7 +17970,10 @@ function RegularExamEditor({ data, updateData }) {
               <div style=${{ fontSize: 13, marginTop: 4 }}>${x.score} ${x.target ? "· " + x.target : ""}</div>
               ${x.note && html`<div style=${{ fontSize: 12, color: C.slate, marginTop: 2 }}>${x.note}</div>`}
             </div>
-            <button onClick=${() => remove(x.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            <div style=${{ display: "flex", gap: 6 }}>
+              <button onClick=${() => startEdit(x)} title="수정" style=${{ background: "none", border: "none", color: C.gold, cursor: "pointer", fontSize: 12 }}>✏️ 수정</button>
+              <button onClick=${() => remove(x.id)} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer" }}>✕</button>
+            </div>
           </div>
         <//>
       `)}
