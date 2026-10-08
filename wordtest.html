@@ -926,17 +926,8 @@ function generateSheet(book){
   let words = [];
   days.forEach(d => { words = words.concat(book.days['day' + d] || []); });
 
-  // A word can appear under more than one Day (review days re-including earlier words, entry
-  // mistakes) — dedupe by English word + meaning so a printed sheet never asks the exact same item
-  // twice. Same word with a different meaning (e.g. 한글 뜻 row + 영영풀이 row) is a separate question.
-  const seenWords = new Set();
-  words = words.filter(w => {
-    const key = (w.en || '').trim().toLowerCase() + '\u0000' + (w.ko || '').trim().toLowerCase();
-    if (!(w.en || '').trim()) return false;
-    if (!key || seenWords.has(key)) return false;
-    seenWords.add(key);
-    return true;
-  });
+  // 중복 제거 없음 — Day에 저장된 단어(영어가 있는 줄)는 전부 시험지에 나온다.
+  words = words.filter(w => (w.en || '').trim());
 
   if(words.length === 0){
     output.innerHTML = '<p class="no-data-msg">선택한 Day에 저장된 단어가 없습니다. 먼저 ① 단어 입력 탭에서 단어를 저장해 주세요.</p>';
