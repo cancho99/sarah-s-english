@@ -1543,12 +1543,17 @@ const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], voc
 // 이 앱의 다른 데이터(roster 등)도 이미 세션당 한 번만 불러오는 것과 같은 수준의 신선도이므로
 // 새로운 트레이드오프를 들여오는 게 아니다.
 let _wordbankBooksCache = null;
-async function loadWordbankBooks() {
-  if (_wordbankBooksCache) return _wordbankBooksCache;
+let _wordbankBooksCacheAt = 0;
+// 워드뱅크는 wordtest.html(다른 화면/iframe)에서 계속 바뀌는데, 예전엔 한 번 읽으면 새로고침 전까지
+// 영영 그 값을 썼다 — 새 단어장에 단어를 등록해도 "저장된 단어가 없어요"가 뜨던 원인. 15초만 캐시하고,
+// 시험을 실제로 만드는 순간에는 force로 항상 새로 읽는다.
+async function loadWordbankBooks(force) {
+  if (!force && _wordbankBooksCache && Date.now() - _wordbankBooksCacheAt < 15000) return _wordbankBooksCache;
   const ref = window.__doc(window.__db, "sarahsEnglishWordbank", "main");
   const snap = await window.__getDoc(ref);
   const rec = snap.exists() ? snap.data() : {};
   _wordbankBooksCache = Array.isArray(rec.books) ? rec.books : [];
+  _wordbankBooksCacheAt = Date.now();
   return _wordbankBooksCache;
 }
 // loadWordbankBooks()가 실패했을 때(FlashcardSessionFlow/VocabPracticeHome 둘 다 같은 catch
@@ -15910,7 +15915,9 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   async function createQuickVocabTest() {
     setQuickVocabMsg("");
     if (!quickVocabStudentId) { setQuickVocabMsg("학생을 선택해 주세요."); return; }
-    const book = (quickVocabBooks || []).find((b) => b.id === quickVocabBookId);
+    let fresh = quickVocabBooks || [];
+    try { fresh = await loadWordbankBooks(true); setQuickVocabBooks(fresh); } catch (e) { /* 새로 못 읽으면 화면에 있는 목록으로 계속 */ }
+    const book = fresh.find((b) => b.id === quickVocabBookId);
     if (!book) { setQuickVocabMsg("교재를 선택해 주세요."); return; }
     if (!quickVocabRetestDate || !quickVocabRetestTime) { setQuickVocabMsg("재시험 예정일과 시간을 입력해 주세요."); return; }
     const from = Math.max(1, Number(quickVocabDayFrom) || 1);
@@ -19935,8 +19942,10 @@ function VocabEditor({ student, data, updateData }) {
       } catch (e) { setBankBooks([]); setBankMsg("워드뱅크를 불러오지 못했어요."); }
     }
   }
-  function importFromBank() {
-    const book = (bankBooks || []).find((b) => b.id === bankBookId);
+  async function importFromBank() {
+    let fresh = bankBooks || [];
+    try { fresh = await loadWordbankBooks(true); setBankBooks(fresh); } catch (e) { /* 새로 못 읽으면 화면에 있는 목록으로 계속 */ }
+    const book = fresh.find((b) => b.id === bankBookId);
     if (!book) return;
     const from = Math.max(1, Number(bankFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(bankTo) || from));
