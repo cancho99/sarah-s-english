@@ -4470,9 +4470,11 @@ function StudentFlashcardBooksEditor({ student, updateStudentRosterEntry }) {
   async function toggleOpen() {
     const next = !open;
     setOpen(next);
-    if (next && books === null) {
-      try { setBooks(await loadWordbankBooks()); }
-      catch (e) { setBooks([]); setLoadErr(wordbankLoadErrorMessage()); }
+    // 열 때마다 워드뱅크를 새로 읽는다 — 단어 시험지 생성(wordtest)에서 교재를 새로 만들거나 영영풀이를
+    // 분리한 직후에도, 이 패널을 다시 열면 그 교재가 바로 목록에 뜬다(예전엔 처음 연 목록이 그대로 남았다).
+    if (next) {
+      try { setBooks(await loadWordbankBooks(true)); setLoadErr(""); }
+      catch (e) { if (books === null) setBooks([]); setLoadErr(wordbankLoadErrorMessage()); }
     }
   }
   function toggleBook(id) {
@@ -4500,15 +4502,15 @@ function StudentFlashcardBooksEditor({ student, updateStudentRosterEntry }) {
       </div>
       ${open && html`
         <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>여기서 체크한 교재만 학생이 플래시카드 암기 화면에서 볼 수 있어요.</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>여기서 체크한 교재만 학생이 플래시카드 암기 화면에서 볼 수 있어요. 워드뱅크의 모든 교재(영영풀이 교재 포함)가 아래에 나와요.</div>
           ${books === null ? html`<div style=${{ fontSize: 12, color: C.slate }}>불러오는 중...</div>` :
             books.length === 0 ? html`<${Empty} text=${loadErr || "워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요."} />` : html`
-            <div style=${{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 240, overflowY: "auto" }}>
+            <div style=${{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 420, overflowY: "auto" }}>
               ${books.map((b) => html`
                 <label key=${b.id} style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, cursor: "pointer" }}>
                   <input type="checkbox" checked=${selected.has(b.id)} onChange=${() => toggleBook(b.id)} style=${{ width: 14, height: 14, appearance: "auto" }} />
                   <span>${b.name}</span>
-                  <span style=${{ color: C.slate, fontSize: 11 }}>Day ${b.totalDays || 0}</span>
+                  <span style=${{ color: C.slate, fontSize: 11 }}>Day ${b.totalDays || 0} · 단어 ${Object.values(b.days || {}).reduce((n, arr) => n + (arr ? arr.length : 0), 0)}개</span>
                 </label>
               `)}
             </div>
