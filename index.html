@@ -1543,6 +1543,29 @@ const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], voc
 // 이 앱의 다른 데이터(roster 등)도 이미 세션당 한 번만 불러오는 것과 같은 수준의 신선도이므로
 // 새로운 트레이드오프를 들여오는 게 아니다.
 let _wordbankBooksCache = null;
+// 워드뱅크 범위에서 단어를 뽑을 때 "원래 몇 개였고 왜 줄었는지"를 같이 돌려준다 — 뜻(ko)이 비었거나
+// 영어(en)가 비어서 못 쓰는 단어, 같은 영어 단어가 두 번 들어 있는 중복이 조용히 빠지면서 "53개인데
+// 27개만 떠요" 같은 혼란이 생기던 걸 눈으로 확인할 수 있게 한다.
+function pickBankWords(book, from, to) {
+  let raw = [];
+  for (let d = from; d <= to; d++) raw = raw.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: (w.en || "").trim(), meaning: (w.ko || "").trim() })));
+  const noMeaning = raw.filter((w) => w.word && !w.meaning).length;
+  const noWord = raw.filter((w) => !w.word).length;
+  const seen = new Set();
+  let dup = 0;
+  const words = [];
+  raw.forEach((w) => {
+    if (!w.word || !w.meaning) return;
+    const k = w.word.toLowerCase();
+    if (seen.has(k)) { dup++; return; }
+    seen.add(k); words.push(w);
+  });
+  const parts = [];
+  if (noMeaning) parts.push(`뜻이 비어 있는 단어 ${noMeaning}개`);
+  if (noWord) parts.push(`영어가 비어 있는 항목 ${noWord}개`);
+  if (dup) parts.push(`중복 ${dup}개`);
+  return { words, rawCount: raw.length, note: parts.length ? `(저장된 ${raw.length}개 중 ${parts.join(", ")} 제외)` : "" };
+}
 let _wordbankBooksCacheAt = 0;
 // 워드뱅크는 wordtest.html(다른 화면/iframe)에서 계속 바뀌는데, 예전엔 한 번 읽으면 새로고침 전까지
 // 영영 그 값을 썼다 — 새 단어장에 단어를 등록해도 "저장된 단어가 없어요"가 뜨던 원인. 15초만 캐시하고,
@@ -15922,19 +15945,9 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     if (!quickVocabRetestDate || !quickVocabRetestTime) { setQuickVocabMsg("재시험 예정일과 시간을 입력해 주세요."); return; }
     const from = Math.max(1, Number(quickVocabDayFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(quickVocabDayTo) || from));
-    let picked = [];
-    for (let d = from; d <= to; d++) {
-      const arr = (book.days || {})["day" + d] || [];
-      picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
-    }
-    const seen = new Set();
-    picked = picked.filter((w) => {
-      const key = (w.word || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (picked.length === 0) { setQuickVocabMsg("해당 범위에 저장된 단어가 없어요."); return; }
+    const pickedInfo = pickBankWords(book, from, to);
+    const picked = pickedInfo.words;
+    if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     const title = `${book.name} Day ${from}-${to}`;
     const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
@@ -15943,7 +15956,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
       await updateData(quickVocabStudentId, (d) => ({ ...d, vocabTests: [result.entry, ...(d.vocabTests || [])] }));
       const student = roster.find((s) => s.id === quickVocabStudentId);
       if (student && student.studentFcmToken) notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험을 만들었어요.`);
+      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험(${picked.length}개)을 만들었어요. ${pickedInfo.note}`);
       setQuickVocabDayFrom(1); setQuickVocabDayTo(book.totalDays || 1); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00");
     } catch (e) {
       setQuickVocabMsg("저장하지 못했어요: " + String(e.message || e));
@@ -19949,30 +19962,16 @@ function VocabEditor({ student, data, updateData }) {
     if (!book) return;
     const from = Math.max(1, Number(bankFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(bankTo) || from));
-    let picked = [];
-    for (let d = from; d <= to; d++) {
-      const arr = (book.days || {})["day" + d] || [];
-      picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
-    }
-    if (picked.length === 0) { setBankMsg("해당 범위에 저장된 단어가 없어요."); return; }
-    // A wide Day range can pull in the same word twice if it appears in more than one Day's list
-    // (review days re-including earlier words, a word entered under two Days by mistake, etc.) —
-    // dedupe by the word itself so the same question never shows up twice in one retest.
-    const seen = new Set();
-    const deduped = picked.filter((w) => {
-      const key = (w.word || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    const dupCount = picked.length - deduped.length;
-    picked = deduped;
+    const pickedInfo = pickBankWords(book, from, to);
+    let picked = pickedInfo.words;
+    if (picked.length === 0) { setBankMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
+    const deduped = picked;
     const n = Number(bankCount);
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
     setBankSource({ bookId: book.id, from, to, ...(n > 0 && n < deduped.length ? { count: n } : {}) });
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
-    setBankMsg(`${picked.length}개 단어를 불러왔어요${dupCount > 0 ? ` (중복 ${dupCount}개 제외)` : ""}. 아래에서 확인 후 저장하세요.`);
+    setBankMsg(`${picked.length}개 단어를 불러왔어요${pickedInfo.note ? " " + pickedInfo.note : ""}. 아래에서 확인 후 저장하세요.`);
     setInputMode("manual");
   }
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
