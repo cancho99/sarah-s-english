@@ -1556,7 +1556,9 @@ function pickBankWords(book, from, to) {
   const words = [];
   raw.forEach((w) => {
     if (!w.word || !w.meaning) return;
-    const k = w.word.toLowerCase();
+    // 같은 영어 단어라도 뜻이 다르면(예: 한글 뜻 줄 + 영영풀이 줄, 다의어) 서로 다른 문제다 — 영어+뜻이
+    // 둘 다 똑같은 줄만 중복으로 본다. 예전엔 영어 단어만 같아도 빼서 77개가 50여 개로 줄었다.
+    const k = w.word.toLowerCase() + "\u0000" + w.meaning.toLowerCase();
     if (seen.has(k)) { dup++; return; }
     seen.add(k); words.push(w);
   });
@@ -19846,10 +19848,10 @@ function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, da
     synonyms: Array.isArray(w.synonyms) ? w.synonyms : (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
   }));
   // Final safety net regardless of how the words got here (bank import, paste, typed in by hand,
-  // or picked from Reading Vocabulary) — a saved test should never ask the same word twice.
+  // or picked from Reading Vocabulary) — a saved test should never ask the exact same word+meaning twice (same word with a different meaning is a different question).
   const seenWords = new Set();
   const clean = raw.filter((w) => {
-    const key = w.word.trim().toLowerCase();
+    const key = w.word.trim().toLowerCase() + "\u0000" + w.meaning.trim().toLowerCase();
     if (seenWords.has(key)) return false;
     seenWords.add(key);
     return true;
@@ -24459,7 +24461,7 @@ async function createAutoVocabRetest(student, test, updateData) {
         let picked = [];
         for (let d = src.from; d <= src.to; d++) picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko })));
         const seen = new Set();
-        picked = picked.filter((w) => { const k = (w.word || "").trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+        picked = picked.filter((w) => { const k = (w.word || "").trim().toLowerCase() + "\u0000" + (w.meaning || "").trim().toLowerCase(); if (!(w.word || "").trim() || seen.has(k)) return false; seen.add(k); return true; });
         // 재시험은 항상 "내가 내준 단어 개수"만큼만 — src.count가 저장돼 있지 않은 시험(빠른 생성,
         // 출제 문항 수 입력, 예전 시험)도 있어서, 원래 시험의 단어 수(test.words.length)를 상한으로 건다.
         const limit = Math.min(src.count > 0 ? src.count : Infinity, (test.words || []).length || Infinity);
