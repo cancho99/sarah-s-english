@@ -82,9 +82,12 @@ window.SarahServices = window.SarahServices || {};
     const seen = new Set([normalizeForCompare(correctMeaning)]);
     const correctPos = inferKoreanPos(correctMeaning);
     const samePos = []; const otherPos = [];
+    // 뜻이 한글인 문제에 영영풀이(영어) 오답이 섞이면 글자만 봐도 정답이 드러난다 — 같은 문자(한글/영어)끼리만.
+    const isKo = (x) => /[\uAC00-\uD7A3]/.test(String(x || ""));
+    const correctIsKo = isKo(correctMeaning);
     shuffleArr(poolMeanings).forEach((m) => {
       const norm = normalizeForCompare(m);
-      if (!norm || seen.has(norm)) return;
+      if (!norm || seen.has(norm) || isKo(m) !== correctIsKo) return;
       seen.add(norm);
       (inferKoreanPos(m) === correctPos ? samePos : otherPos).push(m);
     });

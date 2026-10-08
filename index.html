@@ -1208,8 +1208,11 @@ function homeworkStats(data, month) {
   const list = ((data && data.homework) || []).filter(
     (h) => (h.dueDate || "").slice(0, 7) === targetMonth && h.dueDate < now
   );
-  const total = list.length;
-  const done = list.filter((h) => h.done).length;
+  // 지난달 이전 숙제는 pruneOldMonths가 원본을 지우고 monthlyStats[월]에 스냅샷만 남기므로, 그 달을
+  // 볼 때는 남은 원본 + 스냅샷을 합산한다(원본이 아직 있으면 스냅샷은 비어 있어 이중 집계 없음).
+  const snap = ((data && data.monthlyStats) || {})[targetMonth] || {};
+  const total = list.length + (snap.hwTotal || 0);
+  const done = list.filter((h) => h.done).length + (snap.hwDone || 0);
   return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
 }
 // Same rule VocabLogEditor already uses for manually-recorded in-person tests (range.includes
@@ -1232,7 +1235,12 @@ function vocabPassStats(data, month) {
     const pct = r.total > 0 ? (r.score / r.total) * 100 : 0;
     return pct >= vocabPassThreshold(titleById[r.testId] || "");
   }).length;
-  return { total, passed, pct: total > 0 ? Math.round((passed / total) * 100) : 0 };
+  // pruneOldMonths가 지운 달은 monthlyStats 스냅샷(응시 횟수/점수% 합/합격 수)을 합산한다.
+  const snap = ((data && data.monthlyStats) || {})[targetMonth] || {};
+  const pctSum = results.reduce((sum, r) => sum + (r.total > 0 ? Math.round((r.score / r.total) * 100) : 0), 0) + (snap.vocabPctSum || 0);
+  const all = total + (snap.vocabCount || 0);
+  const allPassed = passed + (snap.vocabPassed || 0);
+  return { total: all, passed: allPassed, pct: all > 0 ? Math.round((allPassed / all) * 100) : 0, avg: all > 0 ? Math.round(pctSum / all) : 0 };
 }
 // Manually triggered from StorageCleanupPanel (교사가 그 달 리포트를 다 쓴 뒤 직접 눌러서 실행 —
 // 자동으로는 절대 안 지워짐, 월말 리포트가 그 달 data.homework를 직접 읽기 때문에 리포트 작성 전에
@@ -1253,9 +1261,13 @@ function pruneOldMonths(d, currentMonth) {
   vocabTests.forEach((t) => { titleById[t.id] = t.title; });
   const droppedVocabResults = (d.vocabResults || []).filter((r) => isOld(r.date));
 
+  const keptVocabTestIds = new Set((d.vocabResults || []).filter((r) => keep(r.date)).map((r) => r.testId));
+  const keptMockTestIds = new Set((d.mockExamResults || []).filter((r) => keep(r.date)).map((r) => r.testId));
+  const droppedMockResults = (d.mockExamResults || []).filter((r) => isOld(r.date));
+
   const monthlyStats = { ...(d.monthlyStats || {}) };
   function bump(month, field, delta) {
-    monthlyStats[month] = { hwTotal: 0, hwDone: 0, vocabCount: 0, vocabPctSum: 0, vocabPassed: 0, ...monthlyStats[month] };
+    monthlyStats[month] = { hwTotal: 0, hwDone: 0, vocabCount: 0, vocabPctSum: 0, vocabPassed: 0, mockCount: 0, mockPctSum: 0, ...monthlyStats[month] };
     monthlyStats[month][field] += delta;
   }
   droppedHomework.forEach((h) => {
@@ -1271,13 +1283,20 @@ function pruneOldMonths(d, currentMonth) {
     bump(month, "vocabPctSum", pct);
     if (pct >= vocabPassThreshold(titleById[r.testId] || "")) bump(month, "vocabPassed", 1);
   });
+  droppedMockResults.forEach((r) => {
+    if (!r.total) return;
+    const month = monthOf(r.date);
+    bump(month, "mockCount", 1);
+    bump(month, "mockPctSum", Math.round((r.score / r.total) * 100));
+  });
 
   return {
     ...d,
     homework: homework.filter((h) => keep(h.dueDate)),
-    mockExams: (d.mockExams || []).filter((t) => keep(t.date)),
+    // 이번 달 이후 응시 기록이 남아 있는 시험은 지우지 않는다 — 안 그러면 결과만 남은 고아가 생긴다.
+    mockExams: (d.mockExams || []).filter((t) => keep(t.date) || keptMockTestIds.has(t.id)),
     mockExamResults: (d.mockExamResults || []).filter((r) => keep(r.date)),
-    vocabTests: vocabTests.filter((t) => keep(t.date)),
+    vocabTests: vocabTests.filter((t) => keep(t.date) || keptVocabTestIds.has(t.id)),
     vocabResults: (d.vocabResults || []).filter((r) => keep(r.date)),
     monthlyStats,
   };
@@ -1524,12 +1543,33 @@ const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], voc
 // 이 앱의 다른 데이터(roster 등)도 이미 세션당 한 번만 불러오는 것과 같은 수준의 신선도이므로
 // 새로운 트레이드오프를 들여오는 게 아니다.
 let _wordbankBooksCache = null;
-async function loadWordbankBooks() {
-  if (_wordbankBooksCache) return _wordbankBooksCache;
+// 워드뱅크 범위에서 단어를 뽑을 때 "원래 몇 개였고 왜 줄었는지"를 같이 돌려준다 — 뜻(ko)이 비었거나
+// 영어(en)가 비어서 못 쓰는 항목이 조용히 빠지면서 "53개인데
+// 27개만 떠요" 같은 혼란이 생기던 걸 눈으로 확인할 수 있게 한다.
+function pickBankWords(book, from, to) {
+  let raw = [];
+  for (let d = from; d <= to; d++) raw = raw.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: (w.en || "").trim(), meaning: (w.ko || "").trim() })));
+  const noMeaning = raw.filter((w) => w.word && !w.meaning).length;
+  const noWord = raw.filter((w) => !w.word).length;
+  // 중복 제거는 하지 않는다 — 단어장에 저장된 줄(뜻이 있는 것)은 전부 출제한다(영어+뜻이 똑같은 줄이
+  // 두 번 있어도 그대로 두 번). 선생님이 "이 Day에 77개"라고 정한 개수와 시험 문항 수가 항상 같아야 한다.
+  const words = raw.filter((w) => w.word && w.meaning);
+  const parts = [];
+  if (noMeaning) parts.push(`뜻이 비어 있는 단어 ${noMeaning}개`);
+  if (noWord) parts.push(`영어가 비어 있는 항목 ${noWord}개`);
+  return { words, rawCount: raw.length, note: parts.length ? `(저장된 ${raw.length}개 중 ${parts.join(", ")} 제외)` : "" };
+}
+let _wordbankBooksCacheAt = 0;
+// 워드뱅크는 wordtest.html(다른 화면/iframe)에서 계속 바뀌는데, 예전엔 한 번 읽으면 새로고침 전까지
+// 영영 그 값을 썼다 — 새 단어장에 단어를 등록해도 "저장된 단어가 없어요"가 뜨던 원인. 15초만 캐시하고,
+// 시험을 실제로 만드는 순간에는 force로 항상 새로 읽는다.
+async function loadWordbankBooks(force) {
+  if (!force && _wordbankBooksCache && Date.now() - _wordbankBooksCacheAt < 15000) return _wordbankBooksCache;
   const ref = window.__doc(window.__db, "sarahsEnglishWordbank", "main");
   const snap = await window.__getDoc(ref);
   const rec = snap.exists() ? snap.data() : {};
   _wordbankBooksCache = Array.isArray(rec.books) ? rec.books : [];
+  _wordbankBooksCacheAt = Date.now();
   return _wordbankBooksCache;
 }
 // loadWordbankBooks()가 실패했을 때(FlashcardSessionFlow/VocabPracticeHome 둘 다 같은 catch
@@ -4140,7 +4180,6 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
       ${tab === "data" && html`
         <div>
           <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
-          <${VocabOrphanCleanupPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />
         </div>
       `}
     </div>
@@ -4216,65 +4255,6 @@ function SettingsDataPanel({ roster, ensureData, dataCache, updateData, onSelect
         `)}
         <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} onClick=${bulkClearOldPhotos}>예전 방식 사진 한꺼번에 정리<//>
         <div style=${{ fontSize: 11, color: C.slate, marginTop: 6 }}>학생 이름을 누르면 그 학생의 Overview 하단 "저장 공간" 탭에서 세부적으로 정리할 수도 있어요.</div>
-      `}
-    <//>
-  `;
-}
-
-// 단어시험 삭제 시 그 응시 기록(vocabResults)이 같이 안 지워지던 예전 버그(2026-09-01 수정)
-// 때문에 이미 쌓인 고아 기록을 정리하는 일회성 도구. "고아" = testId가 그 학생의 현재 vocabTests
-// 어디에도 없는 vocabResults 항목 — Daily/Monthly Report의 단어 합격율·평균 점수를 실제보다
-// 왜곡시키는 원인이었다. 실제로 존재하는 시험의 응시 기록은 절대 건드리지 않는다.
-function VocabOrphanCleanupPanel({ roster, ensureData, dataCache, updateData }) {
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(null);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await Promise.all(roster.map((s) => ensureData(s.id)));
-      if (!cancelled) setLoaded(true);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const orphanInfo = roster.map((s) => {
-    const d = dataCache[s.id] || emptyData();
-    const testIds = new Set((d.vocabTests || []).map((t) => t.id));
-    const orphans = (d.vocabResults || []).filter((r) => !testIds.has(r.testId));
-    return { student: s, count: orphans.length };
-  }).filter((x) => x.count > 0);
-  const totalOrphans = orphanInfo.reduce((sum, x) => sum + x.count, 0);
-
-  async function cleanup() {
-    if (!confirm(`삭제된 단어 시험을 가리키는 고아 응시 기록 ${totalOrphans}건을 ${orphanInfo.length}명의 학생에게서 지울까요? 실제로 지금 존재하는 시험의 응시 기록은 전혀 건드리지 않아요.`)) return;
-    setBusy(true);
-    try {
-      for (const { student } of orphanInfo) {
-        await updateData(student.id, (d) => {
-          const testIds = new Set((d.vocabTests || []).map((t) => t.id));
-          return { ...d, vocabResults: (d.vocabResults || []).filter((r) => testIds.has(r.testId)) };
-        });
-      }
-      setDone(totalOrphans);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return html`
-    <${Card} style=${{ marginTop: 14 }}>
-      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🧹 단어시험 고아 기록 정리</div>
-      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>시험을 삭제해도 응시 기록이 함께 지워지지 않던 예전 버그로 남은 기록을 찾아 정리해요. 지금 존재하는 시험의 응시 기록은 건드리지 않아요.</div>
-      ${!loaded ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : done != null ? html`
-        <div style=${{ fontSize: 12.5, color: C.navy }}>✓ ${done}건 정리 완료했어요.</div>
-      ` : orphanInfo.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>고아 기록이 없어요.</div>` : html`
-        ${orphanInfo.map((x) => html`
-          <div key=${x.student.id} style=${{ fontSize: 12.5, padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
-            <span>${x.student.name}</span><span style=${{ color: C.danger, fontWeight: 700 }}>${x.count}건</span>
-          </div>
-        `)}
-        <${Button} variant="danger" style=${{ marginTop: 10, padding: "7px 14px", fontSize: 12 }} disabled=${busy} onClick=${cleanup}>${busy ? "정리 중..." : `고아 기록 ${totalOrphans}건 정리`}<//>
       `}
     <//>
   `;
@@ -15951,24 +15931,16 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   async function createQuickVocabTest() {
     setQuickVocabMsg("");
     if (!quickVocabStudentId) { setQuickVocabMsg("학생을 선택해 주세요."); return; }
-    const book = (quickVocabBooks || []).find((b) => b.id === quickVocabBookId);
+    let fresh = quickVocabBooks || [];
+    try { fresh = await loadWordbankBooks(true); setQuickVocabBooks(fresh); } catch (e) { /* 새로 못 읽으면 화면에 있는 목록으로 계속 */ }
+    const book = fresh.find((b) => b.id === quickVocabBookId);
     if (!book) { setQuickVocabMsg("교재를 선택해 주세요."); return; }
     if (!quickVocabRetestDate || !quickVocabRetestTime) { setQuickVocabMsg("재시험 예정일과 시간을 입력해 주세요."); return; }
     const from = Math.max(1, Number(quickVocabDayFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(quickVocabDayTo) || from));
-    let picked = [];
-    for (let d = from; d <= to; d++) {
-      const arr = (book.days || {})["day" + d] || [];
-      picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
-    }
-    const seen = new Set();
-    picked = picked.filter((w) => {
-      const key = (w.word || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    if (picked.length === 0) { setQuickVocabMsg("해당 범위에 저장된 단어가 없어요."); return; }
+    const pickedInfo = pickBankWords(book, from, to);
+    const picked = pickedInfo.words;
+    if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     const title = `${book.name} Day ${from}-${to}`;
     const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
@@ -15977,7 +15949,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
       await updateData(quickVocabStudentId, (d) => ({ ...d, vocabTests: [result.entry, ...(d.vocabTests || [])] }));
       const student = roster.find((s) => s.id === quickVocabStudentId);
       if (student && student.studentFcmToken) notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험을 만들었어요.`);
+      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험(${picked.length}개)을 만들었어요. ${pickedInfo.note}`);
       setQuickVocabDayFrom(1); setQuickVocabDayTo(book.totalDays || 1); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00");
     } catch (e) {
       setQuickVocabMsg("저장하지 못했어요: " + String(e.message || e));
@@ -17317,6 +17289,8 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
   const vocabResultCount = (data.vocabResults || []).length;
   const examResultCount = (data.examResults || []).length;
   const logCount = (data.logs || []).length;
+  // 어떤 필드가 용량을 차지하는지 — "정리했는데도 가득 차 있다"를 진단하는 용도.
+  const fieldSizes = Object.keys(data || {}).map((k) => ({ k, kb: Math.round(new Blob([JSON.stringify(data[k])]).size / 1024) })).sort((x, y) => y.kb - x.kb).slice(0, 6);
   const currentMonth = today().slice(0, 7);
   const isOld = (dateStr) => dateStr && dateStr.slice(0, 7) < currentMonth;
   const oldCount = (data.homework || []).filter((h) => isOld(h.dueDate)).length
@@ -17326,7 +17300,7 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
     + (data.vocabResults || []).filter((r) => isOld(r.date)).length;
 
   async function clearOldMonths() {
-    if (!confirm(`지난달 이전 숙제·모의고사·단어시험(응시 기록 포함)을 전부 정리할까요? 이번 달·앞으로의 일정은 그대로 남고, 숙제 진행율·단어시험 합격율·총 공부시간은 항상 "이번 달" 기준이라 영향 없어요. 이번 달 월말 리포트를 아직 안 쓰셨다면, 먼저 쓰고 나서 정리하는 걸 추천드려요.`)) return;
+    if (!confirm(`지난달 이전 숙제·모의고사·단어시험(퀴즈와 응시 원본)을 지울까요? 숙제 이행율·단어 합격율·평균 점수 같은 월별 결과 통계만 남고, 이번 달·앞으로의 일정은 그대로예요. 이번 달 월말 리포트를 아직 안 쓰셨다면, 먼저 쓰고 나서 정리하는 걸 추천드려요.`)) return;
     await updateData((d) => pruneOldMonths(d, currentMonth));
     setMsg("지난달 이전 기록을 정리했어요.");
   }
@@ -17343,10 +17317,11 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
     await updateData((d) => ({ ...d, homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: [], photoCount: 0 })) }));
     setMsg("사진을 모두 삭제했어요.");
   }
-  async function clearVocabResults() {
-    if (!confirm("단어 시험(퀴즈) 응시 기록을 전부 삭제할까요? 퀴즈 자체(문제)는 남고, 학생이 응시했던 결과 기록만 지워져요.")) return;
-    await updateData((d) => ({ ...d, vocabResults: [] }));
-    setMsg("단어 시험 응시 기록을 정리했어요.");
+  // 퀴즈(vocabTests) 자체만 지우고 학생의 응시 결과(vocabResults)는 그대로 남긴다.
+  async function clearVocabTests() {
+    if (!confirm("단어 시험(퀴즈)을 전부 삭제할까요? 퀴즈 자체(문제)가 사라지고, 학생이 응시했던 결과 기록만 남아요.")) return;
+    await updateData((d) => ({ ...d, vocabTests: [] }));
+    setMsg("단어 시험(퀴즈)을 삭제했어요. 응시 결과 기록은 남아 있어요.");
   }
   async function clearExamResults() {
     if (!confirm("추가 시험 응시 기록을 전부 삭제할까요? 시험 자체(문제)는 남고, 응시 결과 기록만 지워져요.")) return;
@@ -17376,10 +17351,11 @@ function StorageCleanupPanel({ studentId, data, updateData }) {
 
       <${Card}>
         <div style=${{ fontSize: 12.5, marginBottom: 10 }}>사진 ${photoCount}장 · 단어시험 응시기록 ${vocabResultCount}건 · 추가시험 응시기록 ${examResultCount}건 · 학습기록 ${logCount}건 · 지난달 이전 숙제/모의고사/단어시험 ${oldCount}건</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>용량 큰 항목: ${fieldSizes.map((f) => `${f.k} ${f.kb}KB`).join(" · ")}</div>
         <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
           <${Button} variant="ghost" onClick=${clearOldMonths}>지난달 이전 숙제·모의고사·단어시험 정리 (${oldCount}건)<//>
           <${Button} variant="ghost" onClick=${clearAllPhotos}>숙제 사진 전체 삭제 (내용은 유지)<//>
-          <${Button} variant="ghost" onClick=${clearVocabResults}>단어 시험 응시 기록 정리<//>
+          <${Button} variant="ghost" onClick=${clearVocabTests}>단어 시험(퀴즈) 삭제 — 응시 기록은 유지<//>
           <${Button} variant="ghost" onClick=${clearExamResults}>추가 시험 응시 기록 정리<//>
           <${Button} variant="danger" onClick=${resetEverything}>이 학생 전체 데이터 초기화<//>
         </div>
@@ -19862,15 +19838,8 @@ function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, da
     word: w.word, meaning: w.meaning,
     synonyms: Array.isArray(w.synonyms) ? w.synonyms : (w.synonyms || "").split(",").map((s) => s.trim()).filter(Boolean),
   }));
-  // Final safety net regardless of how the words got here (bank import, paste, typed in by hand,
-  // or picked from Reading Vocabulary) — a saved test should never ask the same word twice.
-  const seenWords = new Set();
-  const clean = raw.filter((w) => {
-    const key = w.word.trim().toLowerCase();
-    if (seenWords.has(key)) return false;
-    seenWords.add(key);
-    return true;
-  });
+  // 단어 목록은 들어온 그대로(뜻이 있는 것 전부) 쓴다 — 같은 단어가 여러 줄이어도 줄이는 일은 없다.
+  const clean = raw;
   if (!title || clean.length < 2 || !retestDate || !retestTime) return { ok: false, clean };
   return { ok: true, entry: { id: uid(), title, date: date || today(), words: clean, mode, retestDate, retestTime, ...(source ? { source } : {}) } };
 }
@@ -19972,35 +19941,23 @@ function VocabEditor({ student, data, updateData }) {
       } catch (e) { setBankBooks([]); setBankMsg("워드뱅크를 불러오지 못했어요."); }
     }
   }
-  function importFromBank() {
-    const book = (bankBooks || []).find((b) => b.id === bankBookId);
+  async function importFromBank() {
+    let fresh = bankBooks || [];
+    try { fresh = await loadWordbankBooks(true); setBankBooks(fresh); } catch (e) { /* 새로 못 읽으면 화면에 있는 목록으로 계속 */ }
+    const book = fresh.find((b) => b.id === bankBookId);
     if (!book) return;
     const from = Math.max(1, Number(bankFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(bankTo) || from));
-    let picked = [];
-    for (let d = from; d <= to; d++) {
-      const arr = (book.days || {})["day" + d] || [];
-      picked = picked.concat(arr.map((w) => ({ word: w.en, meaning: w.ko })));
-    }
-    if (picked.length === 0) { setBankMsg("해당 범위에 저장된 단어가 없어요."); return; }
-    // A wide Day range can pull in the same word twice if it appears in more than one Day's list
-    // (review days re-including earlier words, a word entered under two Days by mistake, etc.) —
-    // dedupe by the word itself so the same question never shows up twice in one retest.
-    const seen = new Set();
-    const deduped = picked.filter((w) => {
-      const key = (w.word || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    const dupCount = picked.length - deduped.length;
-    picked = deduped;
+    const pickedInfo = pickBankWords(book, from, to);
+    let picked = pickedInfo.words;
+    if (picked.length === 0) { setBankMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
+    const deduped = picked;
     const n = Number(bankCount);
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
     setBankSource({ bookId: book.id, from, to, ...(n > 0 && n < deduped.length ? { count: n } : {}) });
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
-    setBankMsg(`${picked.length}개 단어를 불러왔어요${dupCount > 0 ? ` (중복 ${dupCount}개 제외)` : ""}. 아래에서 확인 후 저장하세요.`);
+    setBankMsg(`${picked.length}개 단어를 불러왔어요${pickedInfo.note ? " " + pickedInfo.note : ""}. 아래에서 확인 후 저장하세요.`);
     setInputMode("manual");
   }
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
@@ -24371,7 +24328,13 @@ function shrinkStudentData(d) {
   return {
     ...d,
     homework: (d.homework || []).map((h) => ({ ...withoutLegacyPhoto(h), photos: (h.photos || (h.photo ? [h.photo] : [])).filter((p) => p && photoUrl(p).length < 120000) })),
-    vocabResults: (d.vocabResults || []).slice(0, 30),
+    // 응시 기록 하나가 문항별 상세(questions/recallQuestions)까지 들고 있어 가장 큰 덩어리다 — 최근 10건 뒤의
+    // 것은 점수·breakdown만 남기고 상세만 덜어낸다(합격률/평균 점수는 그대로).
+    vocabResults: (d.vocabResults || []).slice(0, 30).map((r, i) => {
+      if (i < 10) return r;
+      const { questions, recallQuestions, ...rest } = r;
+      return rest;
+    }),
     examResults: (d.examResults || []).slice(0, 30),
     mockExamResults: (d.mockExamResults || []).slice(0, 30),
     logs: (d.logs || []).slice(0, 60),
@@ -24481,9 +24444,11 @@ async function createAutoVocabRetest(student, test, updateData) {
       if (book) {
         let picked = [];
         for (let d = src.from; d <= src.to; d++) picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko })));
-        const seen = new Set();
-        picked = picked.filter((w) => { const k = (w.word || "").trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; });
-        if (src.count > 0 && src.count < picked.length) picked = shuffle(picked).slice(0, src.count);
+        picked = picked.filter((w) => (w.word || "").trim() && (w.meaning || "").trim());
+        // 재시험은 항상 "내가 내준 단어 개수"만큼만 — src.count가 저장돼 있지 않은 시험(빠른 생성,
+        // 출제 문항 수 입력, 예전 시험)도 있어서, 원래 시험의 단어 수(test.words.length)를 상한으로 건다.
+        const limit = Math.min(src.count > 0 ? src.count : Infinity, (test.words || []).length || Infinity);
+        if (limit < picked.length) picked = shuffle(picked).slice(0, limit);
         if (picked.length >= 2) { words = picked; source = src; }
       }
     }
@@ -24584,7 +24549,15 @@ function VocabTestTaker({ student, test, data, updateData, onExit, onDone }) {
         });
         setVocab(next.activeTestSession.vocab);
       } catch (e) {
-        setInitError("시험을 시작하지 못했어요: " + String((e && e.message) || e).slice(0, 200));
+        // 학생 문서가 1MB 한도에 닿아 세션을 못 쓰는 경우 — 다른 저장 경로처럼 자동 정리 후 한 번 더 시도한다.
+        let recovered = false;
+        if (isDocSizeError(e)) {
+          recovered = await attemptAutoShrinkAndRetry(student.id, updateData, async () => {
+            const next = await updateData(student.id, (d) => ({ ...d, activeTestSession: { type: "vocab", testId: test.id, testTitle: test.title, startedAt: Date.now(), vocab: fresh } }));
+            setVocab(next.activeTestSession.vocab);
+          });
+        }
+        if (!recovered) setInitError(isDocSizeError(e) ? "이 학생의 저장 공간이 가득 차서 시험을 시작할 수 없어요. 선생님께 '저장 공간 정리'를 요청해 주세요." : "시험을 시작하지 못했어요: " + String((e && e.message) || e).slice(0, 200));
       }
     })();
   }, []);
