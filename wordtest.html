@@ -324,8 +324,18 @@ async function loadStore(){
     store = { books: [], activeBookId: null };
   }
 }
+// 저장 실패(권한/용량/네트워크)를 조용히 삼키면 화면에는 바뀐 것처럼 보이는데 서버에는 안 올라가는 일이
+// 생긴다 — 실패하면 반드시 화면에 알리고, 호출부가 결과를 기다릴 수 있게 Promise를 돌려준다.
 function saveStore(){
-  setDoc(storeDocRef, store).catch(e => console.error('saveStore failed', e));
+  // setDoc은 서버가 받았다고 답해야 끝난다 — 네트워크가 막혔거나 다른 탭이 멈춰 있으면(멀티탭 캐시) 영영 안
+  // 끝나고 화면에만 반영된 채 남는다. 10초 안에 안 끝나면 그 사실을 알린다.
+  const slow = setTimeout(() => alert('⚠️ 10초가 지나도 서버에서 저장 확인이 오지 않았어요.\n화면에는 바뀐 것처럼 보여도 아직 서버에 저장되지 않았어요.\n\n이 사이트를 열어 둔 다른 탭/창을 모두 닫고, 인터넷 연결을 확인한 뒤 새로고침해서 다시 시도해 주세요.'), 10000);
+  return setDoc(storeDocRef, store).then(() => { clearTimeout(slow); return true; }).catch(e => {
+    clearTimeout(slow);
+    console.error('saveStore failed', e);
+    alert('⚠️ 저장에 실패했어요. 화면에는 바뀐 것처럼 보여도 서버에는 저장되지 않았어요.\n\n오류: ' + (e && (e.code || e.message) || e) + '\n\n새로고침하면 저장된 상태로 돌아가요.');
+    return false;
+  });
 }
 function getActiveBook(){
   return store.books.find(b => b.id === store.activeBookId) || null;
@@ -559,9 +569,9 @@ function wireMainEvents(book){
     Object.keys(defDays).forEach(k => { book.days[k] = (book.days[k] || []).filter(w => !isDef(w)); });
     const id = 'book_' + Date.now();
     store.books.splice(store.books.indexOf(book) + 1, 0, { id, name: newName, totalDays: book.totalDays, kind: 'definition', days: defDays });
-    saveStore();
-    alert('옮겼어요: "' + newName + '" (' + total + '개)');
     renderAll();
+    // 서버 저장이 끝난 걸 확인한 뒤에만 "옮겼어요"라고 알린다(실패하면 saveStore가 오류를 보여준다).
+    saveStore().then(ok => { if(ok) alert('옮겼어요: "' + newName + '" (' + total + '개) — 서버에 저장 완료'); });
   });
 document.getElementById('renameBookBtn').addEventListener('click', () => {
     const newName = prompt('새 교재 이름을 입력하세요.', book.name);
