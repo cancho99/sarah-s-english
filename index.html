@@ -1559,6 +1559,9 @@ function pickBankWords(book, from, to) {
   if (noWord) parts.push(`영어가 비어 있는 항목 ${noWord}개`);
   return { words, rawCount: raw.length, note: parts.length ? `(저장된 ${raw.length}개 중 ${parts.join(", ")} 제외)` : "" };
 }
+// "영영풀이" 단어장(wordtest.html의 "영영풀이 분리"로 만들어짐, kind:"definition") — 영어 뜻풀이를 보여주고
+// 학생이 영단어를 직접 쓰는 시험(뜻 → 영단어만, m2w)으로만 출제한다.
+function isDefinitionBook(book) { return !!book && (book.kind === "definition" || /영영풀이/.test(book.name || "")); }
 let _wordbankBooksCacheAt = 0;
 // 워드뱅크는 wordtest.html(다른 화면/iframe)에서 계속 바뀌는데, 예전엔 한 번 읽으면 새로고침 전까지
 // 영영 그 값을 썼다 — 새 단어장에 단어를 등록해도 "저장된 단어가 없어요"가 뜨던 원인. 15초만 캐시하고,
@@ -15942,7 +15945,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     const picked = pickedInfo.words;
     if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     const title = `${book.name} Day ${from}-${to}`;
-    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
+    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: isDefinitionBook(book) ? "m2w" : "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
     setQuickVocabSaving(true);
     try {
@@ -19955,6 +19958,7 @@ function VocabEditor({ student, data, updateData }) {
     const n = Number(bankCount);
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
+    if (isDefinitionBook(book)) setMode("m2w");
     setBankSource({ bookId: book.id, from, to, ...(n > 0 && n < deduped.length ? { count: n } : {}) });
     setTitle((t) => t || `${book.name} Day ${from}-${to}`);
     setBankMsg(`${picked.length}개 단어를 불러왔어요${pickedInfo.note ? " " + pickedInfo.note : ""}. 아래에서 확인 후 저장하세요.`);

@@ -385,7 +385,7 @@ document.getElementById('confirmAddBook').addEventListener('click', () => {
 });
 
 // ---------- backup / restore (whole store) ----------
-document.getElementById('exportBtn').addEventListener('click', () => {
+function downloadStoreBackup(){
   const blob = new Blob([JSON.stringify(store, null, 2)], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -397,7 +397,8 @@ document.getElementById('exportBtn').addEventListener('click', () => {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-});
+}
+document.getElementById('exportBtn').addEventListener('click', downloadStoreBackup);
 document.getElementById('importBtn').addEventListener('click', () => {
   document.getElementById('importFile').click();
 });
@@ -448,6 +449,7 @@ function renderAll(){
         <p>총 Day ${book.totalDays} · 단어 시험지 생성</p>
       </div>
       <div class="book-actions">
+        <button id="splitDefBtn">영영풀이 분리</button>
         <button id="renameBookBtn">교재 이름 변경</button>
         <button id="deleteBookBtn">교재 삭제</button>
       </div>
@@ -538,7 +540,30 @@ function renderAll(){
 }
 
 function wireMainEvents(book){
-  document.getElementById('renameBookBtn').addEventListener('click', () => {
+    document.getElementById('splitDefBtn').addEventListener('click', () => {
+    // 뜻(ko)에 한글이 하나도 없는 줄 = 영영풀이(영어 뜻풀이). 이 줄들을 "<교재명> 영영풀이" 새 교재로 옮긴다
+    // (같은 Day 번호 그대로). 학생 시험에서는 이 교재가 "뜻(영영풀이)을 보고 영단어를 쓰는" 시험으로 나간다.
+    const isDef = (w) => !/[\uAC00-\uD7A3]/.test(w.ko || '');
+    const defDays = {};
+    let total = 0;
+    Object.keys(book.days || {}).forEach(k => {
+      const defs = (book.days[k] || []).filter(isDef);
+      if(defs.length){ defDays[k] = defs; total += defs.length; }
+    });
+    if(total === 0){ alert('이 교재에는 영영풀이(한글이 없는 뜻) 줄이 없습니다.'); return; }
+    const newName = book.name + ' 영영풀이';
+    if(store.books.some(b => b.name === newName)){ alert('"' + newName + '" 교재가 이미 있어요. 먼저 확인해 주세요.'); return; }
+    const dayList = Object.keys(defDays).sort((x, y) => parseInt(x.slice(3), 10) - parseInt(y.slice(3), 10)).map(k => 'Day ' + k.slice(3) + ' ' + defDays[k].length + '개').join(', ');
+    if(!confirm('영영풀이 ' + total + '개(' + dayList + ')를 "' + newName + '" 교재로 옮길까요?\n원래 교재에서는 그 줄들이 빠지고, 백업 파일이 먼저 자동으로 다운로드됩니다.')) return;
+    downloadStoreBackup();
+    Object.keys(defDays).forEach(k => { book.days[k] = (book.days[k] || []).filter(w => !isDef(w)); });
+    const id = 'book_' + Date.now();
+    store.books.splice(store.books.indexOf(book) + 1, 0, { id, name: newName, totalDays: book.totalDays, kind: 'definition', days: defDays });
+    saveStore();
+    alert('옮겼어요: "' + newName + '" (' + total + '개)');
+    renderAll();
+  });
+document.getElementById('renameBookBtn').addEventListener('click', () => {
     const newName = prompt('새 교재 이름을 입력하세요.', book.name);
     if(newName && newName.trim()){
       book.name = newName.trim();
