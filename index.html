@@ -15993,6 +15993,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const [quickVocabDayTo, setQuickVocabDayTo] = useState(1);
   const [quickVocabRetestDate, setQuickVocabRetestDate] = useState("");
   const [quickVocabRetestTime, setQuickVocabRetestTime] = useState("15:00");
+  const [quickVocabMode, setQuickVocabMode] = useState("mix"); // 출제 방식: mix(혼합) | w2m(영단어→뜻) | m2w(뜻→영단어)
   const [quickVocabSaving, setQuickVocabSaving] = useState(false);
   const [quickVocabMsg, setQuickVocabMsg] = useState("");
   useEffect(() => {
@@ -16005,7 +16006,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         const books = Array.isArray(rec.books) ? rec.books : [];
         if (cancelled) return;
         setQuickVocabBooks(books);
-        if (books[0]) { setQuickVocabBookId(books[0].id); setQuickVocabDayTo(books[0].totalDays || 1); }
+        if (books[0]) { setQuickVocabBookId(books[0].id); setQuickVocabDayTo(books[0].totalDays || 1); setQuickVocabMode(isDefinitionBook(books[0]) ? "m2w" : "mix"); }
         if (books.length === 0) setQuickVocabMsg("워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요.");
       } catch (e) {
         if (!cancelled) { setQuickVocabBooks([]); setQuickVocabMsg("워드뱅크를 불러오지 못했어요."); }
@@ -16028,7 +16029,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     const picked = pickedInfo.words;
     if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     const title = `${book.name} Day ${from}-${to}`;
-    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: isDefinitionBook(book) ? "m2w" : "mix", retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
+    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: quickVocabMode, retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
     setQuickVocabSaving(true);
     try {
@@ -16135,7 +16136,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           <//>
           <${Field} label="교재">
             ${quickVocabBooks === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : quickVocabBooks.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>${quickVocabMsg}</div>` : html`
-              <select style=${inputStyle} value=${quickVocabBookId} onChange=${(e) => { setQuickVocabBookId(e.target.value); const b = quickVocabBooks.find((x) => x.id === e.target.value); setQuickVocabDayFrom(1); setQuickVocabDayTo(b ? b.totalDays : 1); }}>
+              <select style=${inputStyle} value=${quickVocabBookId} onChange=${(e) => { setQuickVocabBookId(e.target.value); const b = quickVocabBooks.find((x) => x.id === e.target.value); setQuickVocabDayFrom(1); setQuickVocabDayTo(b ? b.totalDays : 1); setQuickVocabMode(isDefinitionBook(b) ? "m2w" : "mix"); }}>
                 ${quickVocabBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
               </select>
             `}
@@ -16145,6 +16146,13 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayFrom} onChange=${(e) => setQuickVocabDayFrom(e.target.value)} /><//></div>
               <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayTo} onChange=${(e) => setQuickVocabDayTo(e.target.value)} /><//></div>
             </div>
+            <${Field} label="출제 방식">
+              <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+                ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
+                  <button key=${val} onClick=${() => setQuickVocabMode(val)} style=${{ minHeight: 48, borderRadius: 12, cursor: "pointer", fontSize: 14.5, border: `1.5px solid ${quickVocabMode === val ? C.gold : C.line}`, background: quickVocabMode === val ? "#FBF6EA" : "#fff", fontWeight: quickVocabMode === val ? 700 : 500, color: quickVocabMode === val ? C.navy : C.slate }}>${label}</button>
+                `)}
+              </div>
+            <//>
             <div style=${{ display: "flex", gap: 8 }}>
               <div style=${{ flex: 1 }}><${Field} label="재시험 예정일"><${DateField} value=${quickVocabRetestDate} onChange=${setQuickVocabRetestDate} /><//></div>
               <div style=${{ flex: 1 }}><${Field} label="시간"><${TimeField} value=${quickVocabRetestTime} onChange=${setQuickVocabRetestTime} /><//></div>
