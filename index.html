@@ -266,6 +266,11 @@ if ("serviceWorker" in navigator) {
     .m-app textarea { min-height: 88px; }
     .m-app img, .m-app video, .m-app canvas, .m-app iframe { max-width: 100%; }
     .m-app .ap-subtabs button, .m-app .ap-chip { min-height: 38px; }
+    /* 모바일 마법사(단어 시험 만들기 등) 하단 고정 액션 바 — 하단 탭바 바로 위에 붙는다. */
+    .m-actionbar { position: fixed; left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 55; display: flex; gap: 10px; padding: 10px 16px; background: rgba(250,247,241,0.97); border-top: 1px solid #DCD8CF; }
+    .m-actionbar button { flex: 1; min-height: 50px; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; border: 1.5px solid #DCD8CF; background: #fff; color: #1C2B4A; }
+    .m-actionbar button.go { flex: 2; background: #B8935A; border-color: #B8935A; color: #fff; }
+    .m-actionbar button:disabled { opacity: 0.45; cursor: default; }
     .ap-mobile-tab.active { background: rgba(255,255,255,0.14); color: #FAF7F1; }
   }
   /* Icon-grid launcher — used for the category-first drill-down (학생 정보/학생 관리, on both
@@ -19869,6 +19874,9 @@ function buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, da
 }
 
 function VocabEditor({ student, data, updateData }) {
+  const isMobile = useIsMobile();
+  const [mStep, setMStep] = useState(1); // 모바일 전용 3단계 마법사(2026-10-12): 1 단어 고르기 · 2 설정 · 3 확인/저장
+  const [mSaving, setMSaving] = useState(false);
   const [creating, setCreating] = useState(false); const [title, setTitle] = useState("");
   const [mode, setMode] = useState("mix");
   const [retestDate, setRetestDate] = useState(""); const [retestTime, setRetestTime] = useState("15:00");
@@ -19996,6 +20004,7 @@ function VocabEditor({ student, data, updateData }) {
   function openCreate() {
     setTestDate(selectedDate);
     setRetestDate(selectedDate);
+    setMStep(1);
     setCreating(true);
   }
   async function save() {
@@ -20011,9 +20020,12 @@ function VocabEditor({ student, data, updateData }) {
     }
     const result = buildVocabTestEntry({ title, wordsRaw, mode, retestDate, retestTime, date: testDate, source: bankSource });
     if (!result.ok) return;
-    await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
+    setMSaving(true);
+    try {
+      await updateData((d) => ({ ...d, vocabTests: [result.entry, ...d.vocabTests] }));
+    } finally { setMSaving(false); }
     notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setTestDate(today()); setBankSource(null); setCreating(false);
+    setTitle(""); setWords([{ word: "", meaning: "" }]); setMode("mix"); setRetestDate(""); setRetestTime("15:00"); setQuestionCount(""); setTestDate(today()); setBankSource(null); setPasteMsg(""); setBankMsg(""); setMStep(1); setCreating(false);
   }
   // 시험을 지우면 그 시험을 본 학생들의 응시 기록(vocabResults)도 같이 지운다 — 안 지우면
   // vocabTests에서만 사라진 testId를 가리키는 고아 vocabResults가 남아, Daily/Monthly Report의
@@ -20034,6 +20046,132 @@ function VocabEditor({ student, data, updateData }) {
 
   const activeVocabSession = data.activeTestSession && data.activeTestSession.type === "vocab" ? data.activeTestSession : null;
 
+  // ---- 모바일 전용 단어 시험 만들기(useIsMobile() === true) — PC의 4칸(STEP 1~4) 마법사를 세로로 쌓는 대신,
+  // 한 화면에 한 가지씩: ① 단어 고르기 ② 설정 ③ 확인·저장. 저장/가져오기 로직(save/importFromBank/
+  // runParse/buildVocabTestEntry)은 PC와 완전히 같은 함수를 그대로 쓴다 — 화면만 다르다.
+  const usableCount = words.filter((w) => w.word && w.meaning).length;
+  const mStepOk = mStep === 1 ? usableCount >= 2 : mStep === 2 ? !!(title && retestDate && retestTime) : true;
+  const modeLabel = { mix: "혼합 (영↔한 랜덤)", w2m: "영단어 → 뜻만", m2w: "뜻 → 영단어만" }[mode];
+  const mobileWordRows = html`
+    <div>
+      ${words.map((w, i) => html`
+        <div key=${i} style=${{ marginBottom: 12, paddingBottom: 12, borderBottom: `1px solid ${C.line}` }}>
+          <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input style=${{ ...inputStyle, flex: 1 }} placeholder="단어" value=${w.word} onChange=${(e) => setRow(i, "word", e.target.value)} />
+            ${words.length > 1 && html`<button onClick=${() => removeRow(i)} aria-label="삭제" style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 18, minWidth: 40, minHeight: 44 }}>✕</button>`}
+          </div>
+          <input style=${{ ...inputStyle, marginTop: 6 }} placeholder="뜻" value=${w.meaning} onChange=${(e) => setRow(i, "meaning", e.target.value)} />
+          <input style=${{ ...inputStyle, marginTop: 6 }} placeholder="비슷한 정답 (선택, 콤마로 구분)" value=${w.synonyms || ""} onChange=${(e) => setRow(i, "synonyms", e.target.value)} />
+        </div>
+      `)}
+      <${Button} variant="ghost" onClick=${addRow} style=${{ width: "100%", justifyContent: "center", minHeight: 44 }}>+ 단어 추가<//>
+    </div>
+  `;
+  const mobileWizard = (creating && isMobile) ? html`
+    <div style=${{ paddingBottom: 96 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style=${{ ...serif, fontSize: 18, color: C.navy }}>새 단어 시험</div>
+        <button onClick=${() => setCreating(false)} style=${{ background: "none", border: "none", color: C.slate, fontSize: 14, minHeight: 44, padding: "0 4px", cursor: "pointer" }}>취소 ✕</button>
+      </div>
+      <div style=${{ display: "flex", gap: 6, marginBottom: 16 }}>
+        ${[[1, "단어"], [2, "설정"], [3, "확인"]].map(([n, label]) => html`
+          <div key=${n} style=${{ flex: 1, textAlign: "center", padding: "8px 0", borderRadius: 20, fontSize: 12.5, fontWeight: 700, background: mStep === n ? C.navy : mStep > n ? "#E9F1EA" : C.ivory, color: mStep === n ? "#fff" : mStep > n ? "#3D6B4F" : C.slate, border: `1px solid ${mStep === n ? C.navy : C.line}` }}>${mStep > n ? "✓ " : n + " · "}${label}</div>
+        `)}
+      </div>
+
+      ${mStep === 1 && html`
+        <div>
+          <div style=${{ fontSize: 15, fontWeight: 700, color: C.navy, marginBottom: 10 }}>어떤 단어로 낼까요?</div>
+          <div style=${{ display: "flex", gap: 8, marginBottom: 14 }}>
+            ${[["bank", "📚", "워드뱅크"], ["paste", "📋", "붙여넣기"], ["manual", "✍️", "직접 입력"]].map(([key, icon, label]) => html`
+              <button key=${key} onClick=${() => { if (key === "manual") { setPasteMsg(""); setBankMsg(""); } selectInputMode(key); }} style=${{ flex: 1, minHeight: 64, borderRadius: 12, border: `1.5px solid ${inputMode === key ? C.gold : C.line}`, background: inputMode === key ? "#FBF6EA" : "#fff", color: C.navy, fontSize: 13.5, fontWeight: 700, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}><span style=${{ fontSize: 22 }}>${icon}</span>${label}</button>
+            `)}
+          </div>
+          ${inputMode === "bank" && html`
+            ${bankBooks === null ? html`<div style=${{ fontSize: 13, color: C.slate }}>불러오는 중...</div>` : bankBooks.length === 0 ? html`<div style=${{ fontSize: 13, color: C.slate }}>${bankMsg}</div>` : html`
+              <${Field} label="교재">
+                <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankFrom(1); setBankTo(b ? b.totalDays : 1); }}>
+                  ${bankBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
+                </select>
+              <//>
+              <div style=${{ display: "flex", gap: 10 }}>
+                <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankFrom} onChange=${(e) => setBankFrom(e.target.value)} /><//></div>
+                <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankTo} onChange=${(e) => setBankTo(e.target.value)} /><//></div>
+              </div>
+              <${Field} label="문항 수 (비우면 범위 전체)"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankCount} onChange=${(e) => setBankCount(e.target.value)} placeholder="예: 20" /><//>
+              <${Button} variant="gold" onClick=${importFromBank} style=${{ width: "100%", justifyContent: "center", minHeight: 48 }}>이 범위로 가져오기<//>
+            `}
+          `}
+          ${inputMode === "paste" && html`
+            <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 6 }}>한 줄에 하나씩 "단어 - 뜻" 형식으로 붙여넣어 주세요.</div>
+            <textarea style=${{ ...inputStyle, minHeight: 140, fontFamily: "monospace" }} placeholder=${"apple - 사과\nhesitate - 주저하다, 망설이다"} value=${pasteText} onChange=${(e) => setPasteText(e.target.value)} />
+            <${Button} variant="gold" onClick=${runParse} style=${{ width: "100%", justifyContent: "center", minHeight: 48, marginTop: 8 }}>가져오기<//>
+          `}
+          ${inputMode === "manual" && !(pasteMsg || bankMsg) && html`
+            <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 8 }}>단어와 뜻을 직접 입력하세요. (최소 2개)</div>
+            ${mobileWordRows}
+          `}
+          ${inputMode === "manual" && (pasteMsg || bankMsg) && html`
+            <div style=${{ fontSize: 14, color: C.navy, background: "#FBF6EA", border: `1px solid ${C.gold}`, borderRadius: 12, padding: "14px 16px" }}>
+              <div style=${{ fontWeight: 700, marginBottom: 4 }}>✅ ${usableCount}개 단어를 불러왔어요</div>
+              <div style=${{ fontSize: 12.5, color: C.slate }}>${pasteMsg || bankMsg}</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginTop: 6 }}>단어 목록은 3단계에서 확인하고 고칠 수 있어요. 다시 고르려면 위에서 방식을 눌러 주세요.</div>
+            </div>
+          `}
+          <div style=${{ fontSize: 13, fontWeight: 700, color: usableCount >= 2 ? "#3D6B4F" : C.slate, marginTop: 14 }}>선택된 단어 ${usableCount}개${usableCount < 2 ? " (2개 이상 필요)" : ""}</div>
+        </div>
+      `}
+
+      ${mStep === 2 && html`
+        <div>
+          <${Field} label="시험 이름"><input style=${inputStyle} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder="예: Unit 5 단어 시험" /><//>
+          <${Field} label="출제 방식">
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+              ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
+                <button key=${val} onClick=${() => setMode(val)} style=${{ minHeight: 48, borderRadius: 12, cursor: "pointer", fontSize: 14.5, border: `1.5px solid ${mode === val ? C.gold : C.line}`, background: mode === val ? "#FBF6EA" : "#fff", fontWeight: mode === val ? 700 : 500, color: mode === val ? C.navy : C.slate }}>${label}</button>
+              `)}
+            </div>
+          <//>
+          <${Field} label=${`출제 단어 수 (비우면 ${usableCount}개 전부)`}>
+            <input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${questionCount} onChange=${(e) => { setQuestionCount(e.target.value); setCountMsg(""); }} placeholder="예: 20" />
+          <//>
+          ${countMsg && html`<div style=${{ fontSize: 12.5, color: C.danger, whiteSpace: "pre-wrap", marginBottom: 10 }}>${countMsg}</div>`}
+          <${Field} label="올리는 날짜"><${DateField} value=${testDate} onChange=${setTestDate} /><//>
+          <${Field} label="재시험 날짜·시간 (필수 — 5분 전·정각에 알림)">
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <${DateField} value=${retestDate} onChange=${setRetestDate} />
+              <${TimeField} value=${retestTime} onChange=${setRetestTime} />
+            </div>
+          <//>
+        </div>
+      `}
+
+      ${mStep === 3 && html`
+        <div>
+          <div style=${{ background: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+            <div style=${{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 8, overflowWrap: "break-word" }}>${title}</div>
+            <div style=${{ fontSize: 13.5, color: C.ink, lineHeight: 1.9 }}>
+              <div>🔤 ${modeLabel}</div>
+              <div>📝 단어 ${questionCount ? `${Math.min(Number(questionCount) || usableCount, usableCount)}개 (전체 ${usableCount}개 중 무작위)` : `${usableCount}개 전부`}</div>
+              <div>📅 올리는 날 ${fmtDate(testDate)}</div>
+              <div>⏰ 재시험 ${fmtDate(retestDate)} ${retestTime}</div>
+            </div>
+          </div>
+          ${countMsg && html`<div style=${{ fontSize: 12.5, color: C.danger, whiteSpace: "pre-wrap", marginBottom: 10 }}>${countMsg}</div>`}
+          <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 8 }}>단어 목록 (${usableCount}개) — 필요하면 여기서 고칠 수 있어요</div>
+          ${mobileWordRows}
+        </div>
+      `}
+
+      <div className="m-actionbar">
+        ${mStep > 1 && html`<button className="back" onClick=${() => setMStep((n) => n - 1)}>‹ 이전</button>`}
+        ${mStep < 3
+          ? html`<button className="go" disabled=${!mStepOk} onClick=${() => setMStep((n) => n + 1)}>다음 ›</button>`
+          : html`<button className="go" disabled=${mSaving || !title || usableCount < 2 || !retestDate || !retestTime} onClick=${save}>${mSaving ? "내는 중..." : "시험 내주기"}</button>`}
+      </div>
+    </div>
+  ` : null;
+
   return html`
     <div>
       ${activeVocabSession && html`
@@ -20044,7 +20182,7 @@ function VocabEditor({ student, data, updateData }) {
       `}
       ${!creating ? html`
         <${Button} variant="ghost" onClick=${openCreate} style=${{ width: "100%", justifyContent: "center", marginBottom: 12 }}>+ 새 단어 시험 만들기<//>
-      ` : html`
+      ` : isMobile ? mobileWizard : html`
         <div className="ap-wizard">
           <div className="ap-wizard-col">
             <div className="ap-wizard-step-label">STEP 1 · 시험 기본 설정</div>
