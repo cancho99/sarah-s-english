@@ -15994,6 +15994,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const [quickVocabRetestDate, setQuickVocabRetestDate] = useState("");
   const [quickVocabRetestTime, setQuickVocabRetestTime] = useState("15:00");
   const [quickVocabMode, setQuickVocabMode] = useState("mix"); // 출제 방식: mix(혼합) | w2m(영단어→뜻) | m2w(뜻→영단어)
+  const [quickVocabCount, setQuickVocabCount] = useState(""); // 출제 단어 수(비우면 범위 전체)
   const [quickVocabSaving, setQuickVocabSaving] = useState(false);
   const [quickVocabMsg, setQuickVocabMsg] = useState("");
   useEffect(() => {
@@ -16026,10 +16027,20 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     const from = Math.max(1, Number(quickVocabDayFrom) || 1);
     const to = Math.max(from, Math.min(book.totalDays || from, Number(quickVocabDayTo) || from));
     const pickedInfo = pickBankWords(book, from, to);
-    const picked = pickedInfo.words;
+    let picked = pickedInfo.words;
     if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
+    // 출제 단어 수 — 비우면 범위 전체, 넣으면 그 개수만 무작위로 뽑는다(PC/모바일 시험 만들기와 같은 검증·추출 함수).
+    // 재시험 자동 생성이 같은 개수로 다시 뽑도록 source.count에도 남긴다.
+    let countForSource = null;
+    if (quickVocabCount) {
+      const vts = window.SarahServices.vocabTestService;
+      const check = vts.validateQuestionCount(picked.length, quickVocabCount);
+      if (!check.ok) { setQuickVocabMsg(check.message); return; }
+      const n = Number(quickVocabCount);
+      if (n < picked.length) { picked = vts.sampleWords(picked, n); countForSource = n; }
+    }
     const title = `${book.name} Day ${from}-${to}`;
-    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: quickVocabMode, retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to } });
+    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: quickVocabMode, retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to, ...(countForSource ? { count: countForSource } : {}) } });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
     setQuickVocabSaving(true);
     try {
@@ -16037,7 +16048,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
       const student = roster.find((s) => s.id === quickVocabStudentId);
       if (student && student.studentFcmToken) notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
       setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험(${picked.length}개)을 만들었어요. ${pickedInfo.note}`);
-      setQuickVocabDayFrom(1); setQuickVocabDayTo(book.totalDays || 1); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00");
+      setQuickVocabDayFrom(1); setQuickVocabDayTo(book.totalDays || 1); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00"); setQuickVocabCount("");
     } catch (e) {
       setQuickVocabMsg("저장하지 못했어요: " + String(e.message || e));
     } finally {
@@ -16146,6 +16157,9 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayFrom} onChange=${(e) => setQuickVocabDayFrom(e.target.value)} /><//></div>
               <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayTo} onChange=${(e) => setQuickVocabDayTo(e.target.value)} /><//></div>
             </div>
+            <${Field} label="출제 단어 수 (비우면 범위 전체)">
+              <input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${quickVocabCount} onChange=${(e) => { setQuickVocabCount(e.target.value); setQuickVocabMsg(""); }} placeholder="예: 20" />
+            <//>
             <${Field} label="출제 방식">
               <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
                 ${[["mix", "혼합 (영↔한 랜덤)"], ["w2m", "영단어 → 뜻만"], ["m2w", "뜻 → 영단어만"]].map(([val, label]) => html`
