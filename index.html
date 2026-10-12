@@ -221,6 +221,27 @@ if ("serviceWorker" in navigator) {
       color: #8A93A6; cursor: pointer;
     }
     .ap-mobile-tab .ic { font-size: 23px; line-height: 1; }
+    /* 모바일 전용 선생님 셸(2026-10-12) — 엄지가 닿는 하단 탭바 + "더보기" 전체 화면 시트. 예전 상단
+       아이콘 탭바는 5개만 보여서 Students/Classes/Reading/Settings에 아예 못 들어갔다. 하단 4탭 +
+       더보기(나머지 전부)로 모든 메뉴가 항상 한 번에 도달된다. */
+    .m-bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #fff; border-top: 1px solid #DCD8CF; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(20,22,26,0.06); }
+    .m-bottombar button { flex: 1; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: none; border: none; font-size: 11px; font-weight: 700; color: #5B6270; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .m-bottombar button .ic { font-size: 22px; line-height: 1; }
+    .m-bottombar button.active { color: #1C2B4A; box-shadow: inset 0 3px 0 #B8935A; background: #FAF7F1; }
+    .m-sheet { position: fixed; inset: 0; z-index: 70; background: #FAF7F1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+    .m-sheet-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; padding: 14px 0; background: #FAF7F1; font-size: 17px; font-weight: 700; color: #1C2B4A; }
+    .m-sheet-head button { background: none; border: none; font-size: 15px; color: #5B6270; padding: 8px 4px; cursor: pointer; }
+    .m-sheet-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 60px; padding: 12px 16px; background: #fff; border: 1px solid #DCD8CF; border-radius: 12px; margin-bottom: 10px; font-size: 16px; font-weight: 700; color: #1C2B4A; text-align: left; cursor: pointer; }
+    .m-sheet-row.active { border-color: #B8935A; background: #FBF6EA; }
+    .m-sheet-row .ic { font-size: 24px; flex: none; }
+    .m-sheet-row .sub { display: block; font-size: 12px; font-weight: 400; color: #5B6270; margin-top: 2px; }
+    /* 모바일 선생님 화면 공통 보정 — 넓은 표는 가로 스크롤, 입력창은 16px(iOS 자동 확대 방지)·터치 높이 44px. */
+    .m-app { overflow-x: hidden; max-width: 100vw; }
+    .m-app table { display: block; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+    .m-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), .m-app select, .m-app textarea { font-size: 16px !important; min-height: 44px; box-sizing: border-box; max-width: 100%; }
+    .m-app textarea { min-height: 88px; }
+    .m-app img, .m-app video, .m-app canvas, .m-app iframe { max-width: 100%; }
+    .m-app .ap-subtabs button, .m-app .ap-chip { min-height: 38px; }
     .ap-mobile-tab.active { background: rgba(255,255,255,0.14); color: #FAF7F1; }
   }
   /* Icon-grid launcher — used for the category-first drill-down (학생 정보/학생 관리, on both
@@ -3769,21 +3790,13 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   `;
 }
 
-// 모바일 하단 탭바에 남길 4개 항목(2026-09-14, 사용자 요청) — 데스크탑 SideNav는 navItems
-// 전체를 그대로 쓰고, 이 목록은 모바일 탭바 렌더링에서만 필터로 쓰인다. 나머지 항목은
-// handleNavChange/setSection 라우팅이 그대로 살아있어 다른 화면의 링크·버튼을 통해 계속
-// 진입 가능하다(예: Today의 학생 카드 → studentArea, 시험지 배정 화면의 학생 선택 등).
-const MOBILE_TABBAR_KEYS = new Set(["dashboard", "questionBank", "readingAnalysis", "reports"]);
-
-// "✏️ 빠른 기록" 모바일 전용 탭(2026-09-14, 사용자 첨부 quick-record-tab-mobile-preview.html)
-// — 데스크탑 SideNav는 절대 안 건드려야 해서 공용 navItems 배열에는 넣지 않고, 모바일 탭바
-// 렌더링에서만 Exam Studio(readingAnalysis)와 Reports 사이에 끼워 넣는 별도 항목으로 둔다.
-// section 값("quickRecord")은 desktop의 navItems/SideNav 어디에도 없어서 데스크탑에서는
-// 절대 도달할 수 없다.
-const MOBILE_QUICK_RECORD_ITEM = { key: "quickRecord", label: "빠른 기록", icon: "✏️" };
+// 모바일 하단 탭바/더보기 구성은 TeacherDash의 isMobile 분기 안(MOBILE_BOTTOM, 2026-10-12)에 있다 —
+// 예전 MOBILE_TABBAR_KEYS/MOBILE_QUICK_RECORD_ITEM(5개 아이콘만 노출)은 모든 메뉴에 접근 가능한
+// 하단 4탭 + 더보기로 대체돼 제거했다.
 
 function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selectedStudentId, setSelectedStudentId, ensureData, updateData, dataCache, onLogout, levelTestBookings, saveBookingsList, announcement, saveAnnouncement, examKeyLibrary, saveExamKeyLibrary, teacherTodos, saveTeacherTodos, addTeacherFcmToken, teacherAuth, saveTeacherAuthGlobal, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   const isMobile = useIsMobile();
+  const [moreOpen, setMoreOpen] = useState(false); // 모바일 "더보기" 전체 화면 시트
   // Teacher OS 통합 (Phase 1) — 로그인 후 첫 화면을 기존 "mainpage"(TeacherOverview)에서 새
   // "dashboard"(TeacherCenterHome 재사용)로 바꾼다. "mainpage"는 삭제하지 않고 여전히 아래
   // navItems/기존 onBack 콜백(hwstatus/bookings)에서 그대로 접근 가능하다.
@@ -4104,30 +4117,51 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   // SideNav와 동일하게 navItems 전체를 보여주므로 "readingAnalysis"가 옛 MOBILE_TEACHER_SECTIONS
   // 배열에서 누락돼 있던 문제도 같이 해결된다.
   if (isMobile) {
-    // Exam Studio(readingAnalysis)와 Reports 사이에 "✏️ 빠른 기록"을 끼워 넣는다 — navItems
-    // 자체는 안 건드리므로(데스크탑 SideNav 무수정) 이 배열은 모바일 탭바 렌더링에만 쓰인다.
-    const mobileTabs = [];
-    navItems.filter((n) => MOBILE_TABBAR_KEYS.has(n.key)).forEach((n) => {
-      mobileTabs.push(n);
-      if (n.key === "readingAnalysis") mobileTabs.push(MOBILE_QUICK_RECORD_ITEM);
-    });
-    const activeLabel = (mobileTabs.find((n) => n.key === activeKey) || navItems.find((n) => n.key === activeKey) || {}).label || "Sarah's English";
+    // 모바일 전용 셸 — 하단 4탭(홈/학생/빠른 기록/리포트) + "더보기"(나머지 전부). navItems는 안 건드리므로
+    // 데스크탑 SideNav는 그대로다. "빠른 기록"(quickRecord)은 모바일에만 있는 탭이다.
+    const MOBILE_BOTTOM = [
+      { key: "dashboard", label: "홈", icon: "🏠" },
+      { key: "studentArea", label: "학생", icon: "👩‍🎓" },
+      { key: "quickRecord", label: "빠른 기록", icon: "✏️" },
+      { key: "reports", label: "리포트", icon: "📊" },
+    ];
+    const MOBILE_MORE_DESC = {
+      classes: ["수업", "수업 일정·출결·반 관리"], questionBank: ["문제은행", "문법·독해·단어 문제, 시험지, 배정·결과"],
+      readingAnalysis: ["시험 스튜디오", "지문 분석·시험지 만들기"], readingArea: ["독서 라이브러리", "읽기 자료·독서 기록"],
+      settingsHub: ["설정", "프로필·수업료·공지·자료실·데이터 정리"],
+    };
+    const bottomKeys = new Set(MOBILE_BOTTOM.map((t) => t.key));
+    const moreItems = navItems.filter((n) => !bottomKeys.has(n.key));
+    const inMore = !bottomKeys.has(activeKey);
+    const activeLabel = (section === "quickRecord" ? "빠른 기록" : ((navItems.find((n) => n.key === activeKey) || {}).label)) || "Sarah's English";
+    const goTab = (key) => { setMoreOpen(false); handleNavChange(key); };
     return html`
-      <div style=${{ minHeight: "100vh", background: C.ivory }}>
+      <div className="m-app" style=${{ minHeight: "100vh", background: C.ivory, paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}>
         <div className="ap-mobile-topbar">
           <span className="title">${activeLabel}</span>
-          <button onClick=${onLogout}>로그아웃</button>
-        </div>
-        <div className="ap-mobile-tabbar">
-          ${mobileTabs.map((n) => html`
-            <button key=${n.key} className=${"ap-mobile-tab" + (activeKey === n.key ? " active" : "")} onClick=${() => handleNavChange(n.key)} title=${n.label} aria-label=${n.label}>
-              <span className="ic">${n.icon}</span>
-            </button>
-          `)}
         </div>
         <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
           ${section === "quickRecord" ? html`<${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />` : body}
         </div>
+        <nav className="m-bottombar" aria-label="메인 메뉴">
+          ${MOBILE_BOTTOM.map((t) => html`
+            <button key=${t.key} className=${!moreOpen && activeKey === t.key ? "active" : ""} onClick=${() => goTab(t.key)}><span className="ic">${t.icon}</span>${t.label}</button>
+          `)}
+          <button className=${moreOpen || inMore ? "active" : ""} onClick=${() => setMoreOpen(true)}><span className="ic">☰</span>더보기</button>
+        </nav>
+        ${moreOpen && html`
+          <div className="m-sheet" role="dialog" aria-label="더보기">
+            <div className="m-sheet-head"><span>더보기</span><button onClick=${() => setMoreOpen(false)}>닫기 ✕</button></div>
+            ${moreItems.map((n) => html`
+              <button key=${n.key} className=${"m-sheet-row" + (activeKey === n.key ? " active" : "")} onClick=${() => goTab(n.key)}>
+                <span className="ic">${n.icon}</span>
+                <span>${(MOBILE_MORE_DESC[n.key] || [n.label])[0]}${MOBILE_MORE_DESC[n.key] && html`<span className="sub">${MOBILE_MORE_DESC[n.key][1]}</span>`}</span>
+              </button>
+            `)}
+            <div style=${{ margin: "14px 0 10px" }}><${NotifyButton} onEnable=${addTeacherFcmToken} /></div>
+            <button className="m-sheet-row" onClick=${onLogout} style=${{ color: C.danger }}><span className="ic">🚪</span><span>로그아웃</span></button>
+          </div>
+        `}
         ${ReactDOM.createPortal(html`<${ReadingLibraryAdminSection} />`, readingLibraryContainerRef.current)}
       </div>
     `;
@@ -5312,7 +5346,7 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
   // 되도록 한다(데스크탑은 기존 그대로 "overview"가 기본값). deepTarget이 명시적으로 다른 탭을
   // 지정하면(예: Growth Report의 "View Vocabulary" 딥링크) 모바일/데스크탑 모두 그 값을 우선한다.
   const isMobile = useIsMobile();
-  const visibleDetailTabs = isMobile ? STUDENT_DETAIL_TABS.filter((t) => t.key !== "overview") : STUDENT_DETAIL_TABS;
+  const visibleDetailTabs = STUDENT_DETAIL_TABS; // 모바일에서도 Overview 포함 전부 노출(2026-10-12 — 예전엔 모바일에서 Overview를 숨겼다)
   const [tab, setTab] = useState((myDeepTarget && myDeepTarget.tab) || (isMobile ? "study" : "overview"));
   useEffect(() => {
     if (myDeepTarget && myDeepTarget.tab) setTab(myDeepTarget.tab);
@@ -5965,7 +5999,7 @@ function StudentStudyTab({ student, data, updateData, onViewGrowthReport, deepTa
   // (데스크탑은 5개 전부 그대로). 딥링크로 reading/materials sub가 직접 지정되면 내용은
   // 그대로 렌더링되고 탭 바에서만 강조 표시가 빠진다 — 기존 딥링크 동작을 막지 않기 위함.
   const isMobile = useIsMobile();
-  const visibleStudyTabs = isMobile ? STUDENT_STUDY_SUBTABS.filter((t) => ["homework", "vocab", "wrongNote"].includes(t.key)) : STUDENT_STUDY_SUBTABS;
+  const visibleStudyTabs = STUDENT_STUDY_SUBTABS; // 모바일에서도 Reading/Materials 포함 전부 노출(2026-10-12)
   return html`
     <div>
       <${SubTabs} tabs=${visibleStudyTabs} active=${sub} onChange=${setSub} />
@@ -6092,7 +6126,7 @@ function StudentAssessmentTab({ student, data, updateData, examKeyLibrary, analy
   // Performance는 숨긴다(데스크탑은 5개 전부 그대로) — 기본 선택 탭도 숨겨진 "timeline" 대신
   // 보이는 탭 중 첫 번째("mock")로 맞춘다.
   const isMobile = useIsMobile();
-  const visibleAssessmentTabs = isMobile ? STUDENT_ASSESSMENT_SUBTABS.filter((t) => ["mock", "examTests"].includes(t.key)) : STUDENT_ASSESSMENT_SUBTABS;
+  const visibleAssessmentTabs = STUDENT_ASSESSMENT_SUBTABS; // 모바일에서도 Timeline/Exams/Question Performance 포함 전부 노출(2026-10-12)
   const [sub, setSub] = useState(() => (isMobile ? "mock" : "timeline"));
   return html`
     <div>
@@ -16880,12 +16914,10 @@ function MasterScheduleView({ roster, saveRosterList }) {
       `}
 
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        ${!isMobile && html`
-          <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
-            <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
-            빈 시간대도 보기 (00:00 ~ 다음날 01:00 전체)
-          </label>
-        `}
+        <label style=${{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.slate, cursor: "pointer" }}>
+          <input type="checkbox" checked=${showEmpty} onChange=${(e) => setShowEmpty(e.target.checked)} />
+          빈 시간대도 보기 (00:00 ~ 다음날 01:00 전체)
+        </label>
         <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 11.5 }} onClick=${() => setAdding({ studentId: roster[0]?.id || "", day: "월", time: "18:00", endTime: "19:00" })}>+ 새 수업 추가<//>
       </div>
 
