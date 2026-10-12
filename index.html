@@ -248,11 +248,16 @@ if ("serviceWorker" in navigator) {
     /* 모바일 전용 선생님 셸(2026-10-12) — 엄지가 닿는 하단 탭바 + "더보기" 전체 화면 시트. 예전 상단
        아이콘 탭바는 5개만 보여서 Students/Classes/Reading/Settings에 아예 못 들어갔다. 하단 4탭 +
        더보기(나머지 전부)로 모든 메뉴가 항상 한 번에 도달된다. */
+    /* 상태바(시간·배터리) 아래부터 화면을 그린다(2026-10-12) — viewport-fit=cover + black-translucent라 앱이 상태바
+       뒤까지 그려져서, 맨 위 로고/제목/버튼이 시간·배터리 표시에 가려지고 흰 글씨가 안 보였다. 상태바 영역은 진한
+       남색 띠로 채워 글씨가 보이게 하고, 본문은 그 아래(safe-area-inset-top)부터 시작한다. 데스크탑은 값이 0이다. */
+    body { padding-top: env(safe-area-inset-top, 0px); }
+    body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: #1C2B4A; z-index: 9999; pointer-events: none; }
     .m-bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #fff; border-top: 1px solid #DCD8CF; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(20,22,26,0.06); }
     .m-bottombar button { flex: 1; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: none; border: none; font-size: 11px; font-weight: 700; color: #5B6270; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .m-bottombar button .ic { font-size: 22px; line-height: 1; }
     .m-bottombar button.active { color: #1C2B4A; box-shadow: inset 0 3px 0 #B8935A; background: #FAF7F1; }
-    .m-sheet { position: fixed; top: 0; left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 58; background: #FAF7F1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
+    .m-sheet { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 58; background: #FAF7F1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
     .m-sheet-head { position: sticky; top: 0; z-index: 1; padding: 16px 0 12px; background: #FAF7F1; font-size: 18px; font-weight: 700; color: #1C2B4A; }
     /* 닫기 버튼은 엄지가 닿는 아래쪽(하단 고정) — 위쪽 "닫기 ✕"는 손이 안 닿아서 옮겼다. */
     .m-sheet-close { position: sticky; bottom: 0; width: 100%; min-height: 54px; margin-top: 6px; border: none; border-radius: 14px; background: #1C2B4A; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; box-shadow: 0 -6px 14px #FAF7F1; }
@@ -569,7 +574,7 @@ if ("serviceWorker" in navigator) {
      아직(또는 영영) 안 떠도 항상 동작한다. TeacherDash/StudentDash/ParentDash 등 App() 내부의
      어느 화면 state에 있든 항상 같은 자리에 보이도록 #root 바깥, 고정 위치로 둔다. 학생이
      "왜 안 되지"로 헷갈리지 않게 하는 용도라 화면을 가리지 않는 작은 배지로만 표시한다. -->
-<div id="pwa-offline-badge" style="display:none;position:fixed;top:8px;right:8px;z-index:9999;background:#1C2B4A;color:#F5E7C4;font:700 11px -apple-system,BlinkMacSystemFont,sans-serif;padding:5px 11px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,0.25);pointer-events:none;">📴 오프라인 모드</div>
+<div id="pwa-offline-badge" style="display:none;position:fixed;top:calc(8px + env(safe-area-inset-top, 0px));right:8px;z-index:9999;background:#1C2B4A;color:#F5E7C4;font:700 11px -apple-system,BlinkMacSystemFont,sans-serif;padding:5px 11px;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,0.25);pointer-events:none;">📴 오프라인 모드</div>
 <script>
 (function () {
   var badge = document.getElementById("pwa-offline-badge");
