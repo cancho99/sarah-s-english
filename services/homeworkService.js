@@ -73,7 +73,9 @@ window.SarahServices = window.SarahServices || {};
       submissionStatus, // "submitted" | "not_submitted" | "expired"
       overdue,
       late,
-      checked: !!hw.checkedAt,
+      // 학생이 제출(done)하면 그걸로 끝 — 선생님이 따로 "확인"을 누르는 단계는 없다(2026-10-12). 그래서 제출한
+      // 숙제는 항상 checked=true로 취급해 "미확인" 집계가 생기지 않는다. 예전에 눌러둔 checkedAt도 그대로 존중한다.
+      checked: !!hw.done || !!hw.checkedAt,
       checkedAt: hw.checkedAt || null,
       checkedBy: hw.checkedBy || null,
     };
