@@ -999,6 +999,28 @@ const BOOK_LIST = [
   "능률 Voca 중등 고난도", "능률VOCA 수능 고난도", "능률 VOCA 중등 필수", "능률 VOCA 중등 기본",
   "달곰한 Literacy 2", "달곰한 Literacy 5", "Hacker's TOEFL", "능률 VOCA 초등 기본", "워드마스터 고등 베이직",
 ];
+// 단어시험 수기 기록의 교재 목록 — 예전엔 위 BOOK_LIST(고정 9권)만 보여서 워드뱅크에 새로 만든 교재(중1 동아(윤),
+// 영영풀이, Word Up 등)가 안 떴다. 이제 워드뱅크의 모든 교재를 끌어온다(null = 아직 불러오는 중). 워드뱅크를 못
+// 읽거나 비어 있으면 호출부가 BOOK_LIST로 대체한다.
+function useWordbankBookNames() {
+  const [names, setNames] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const books = await loadWordbankBooks(true);
+        if (!cancelled) setNames(books.map((b) => b && b.name).filter(Boolean));
+      } catch (e) { if (!cancelled) setNames([]); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  return names;
+}
+function mergeBookNames(wordbankNames, customBooks) {
+  const base = wordbankNames && wordbankNames.length > 0 ? wordbankNames : BOOK_LIST;
+  const seen = new Set();
+  return [...base, ...(customBooks || [])].filter((n) => { if (!n || seen.has(n)) return false; seen.add(n); return true; });
+}
 
 // ---- Free, offline English synonym dictionary (no API calls / no cost) ----
 // Covers common middle/high-school + TOEFL-level vocabulary so students' answers using a
@@ -17509,7 +17531,12 @@ function VocabLogEditor({ data, updateData }) {
     return () => { cancelled = true; };
   }, []);
 
-  const allBooks = [...BOOK_LIST, ...customBooks];
+  const wbNames = useWordbankBookNames();
+  const allBooks = mergeBookNames(wbNames, customBooks);
+  useEffect(() => {
+    if (wbNames && wbNames.length > 0 && !allBooks.includes(book)) setBook(wbNames[0]);
+    /* eslint-disable-next-line */
+  }, [wbNames]);
   const isCumulative = range.includes("누적");
   // 2026-09-28 — 누적/신규 합격 기준을 서로 맞바꿨다: 누적 80%(재시험 79점 이하), 신규 90%
   // (재시험 89점 이하). 기존엔 누적 90%/신규 80%였다.
@@ -17536,7 +17563,7 @@ function VocabLogEditor({ data, updateData }) {
     const next = customBooks.filter((b) => b !== name);
     setCustomBooks(next);
     await window.SarahServices.firebaseClient.setDocAt("sarahsEnglishSettings", "main", { vocabBooks: next }, { merge: true });
-    if (book === name) setBook(BOOK_LIST[0]);
+    if (book === name) setBook((wbNames && wbNames[0]) || BOOK_LIST[0]);
   }
 
   async function add() {
@@ -21823,7 +21850,12 @@ function QuickVocabPanel({ data, updateData }) {
     return () => { cancelled = true; };
   }, []);
 
-  const allBooks = [...BOOK_LIST, ...customBooks];
+  const wbNames = useWordbankBookNames();
+  const allBooks = mergeBookNames(wbNames, customBooks);
+  useEffect(() => {
+    if (wbNames && wbNames.length > 0 && !allBooks.includes(book)) setBook(wbNames[0]);
+    /* eslint-disable-next-line */
+  }, [wbNames]);
   const isCumulative = range.includes("누적");
   const threshold = isCumulative ? 80 : 90;
   const pct = total ? Math.round((Number(correct) / Number(total)) * 100) : null;
