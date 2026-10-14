@@ -1,19 +1,12 @@
 // Firebase Storage rules for the "sarah-s-english" project.
 //
-// 2026-09-03 — first use of Cloud Storage in this project (everything else stores files as
-// base64 inside Firestore docs, per CLAUDE.md). reading-library.html has no Firebase Auth session
-// at all (see CLAUDE.md "No Firebase Authentication") — student/teacher identity there is just a
-// URL param, never a request.auth claim — so this can't gate access by auth like firestore.rules
-// does for index.html's collections. It uses the same fully-open trust model as every
-// reading-library.html-owned Firestore collection (readingLibrary/readingVocab/readingJournal/...).
+// 2026-10 — 리딩 라이브러리와 함께 유일하게 Storage를 쓰던 쉐도잉 녹음 규칙을 제거했다. 이 프로젝트의 나머지 파일은 전부 Firestore 문서 안의
+// base64로 저장되므로(CLAUDE.md 참고) 지금은 Storage를 쓰는 코드가 없다 — 규칙 구조는 그대로 두되
+// match 블록이 하나도 없어서 모든 읽기/쓰기가 기본 차단된다. 나중에 Storage를 다시 쓰게 되면
+// 아래 `match /b/{bucket}/o { ... }` 안에 필요한 경로만 명시적으로 추가할 것.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Shadowing (읽기 따라 말하기) practice recordings, one file per student+story
-    // (shadowingRecordings/{studentId}/{storyId}/latest.webm) — reading-library.html uploads,
-    // index.html's teacher view (ReadingHistoryEntry) only reads.
-    match /shadowingRecordings/{studentId}/{storyId}/{fileName} {
-      allow read, write: if true;
-    }
+    // (의도적으로 비어 있음 — 모든 접근 차단)
   }
 }

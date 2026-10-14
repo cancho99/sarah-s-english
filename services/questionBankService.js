@@ -455,8 +455,8 @@ window.SarahServices = window.SarahServices || {};
   // Query / exam-builder foundation (§13). Client-side filtering over listQuestions() — this repo
   // has no firestore.rules/index config to audit (ARCHITECTURE.md §1.3), so compound server-side
   // `where` queries would need composite indexes this repo can't manage; every other content
-  // collection (readingLibrary etc.) already filters client-side after a full fetch, so this stays
-  // consistent rather than introducing a new access pattern for one collection.
+  // collection already filters client-side after a full fetch, so this stays consistent rather
+  // than introducing a new access pattern for one collection.
   // ---------------------------------------------------------------------------------------------
   // Generic over any bank's doc shape — grammar (mainCategory/subCategory) and reading
   // (examType/passageId/targetSkill, Phase 6 §12.9) filters below are just equality checks that

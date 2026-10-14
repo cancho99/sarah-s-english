@@ -40,8 +40,7 @@ window.SarahServices = window.SarahServices || {};
       // built, so a full backup always covers every question-bank collection that exists.
       grammarQuestions: grammarQuestions || {},
       // readingPassages/<id> + readingQuestions/<id> as-is (Phase 6, ARCHITECTURE.md §12.3) — the
-      // Reading Question Bank, NOT the student-facing readingLibrary/readingActivity/readingJournal
-      // collections (those are already inside `students` and unaffected by this bank).
+      // Reading Question Bank.
       readingPassages: readingPassages || {},
       readingQuestions: readingQuestions || {},
       // examPapers/<id> as-is (Phase 7, ARCHITECTURE.md §13.3) — Exam Builder papers, references
@@ -50,8 +49,7 @@ window.SarahServices = window.SarahServices || {};
       // readingAnalyses/<id> + readingAnalysisQuestions/<id> as-is (Reading Analysis 재설계 Phase C,
       // 2026-08-26 설계 승인) — the NEW teacher Passage Analysis / Question Generator / Passage
       // Variation workflow. Completely separate from readingPassages/readingQuestions above (now
-      // legacy/frozen) and from the student-facing readingLibrary/readingActivity/readingJournal/
-      // readingVocab collections (already inside `students`, unaffected by any of this).
+      // legacy/frozen).
       readingAnalyses: readingAnalyses || {},
       readingAnalysisQuestions: readingAnalysisQuestions || {},
     };

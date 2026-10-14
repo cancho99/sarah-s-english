@@ -6,8 +6,8 @@
 
 ## 0. TL;DR — 가장 중요한 3가지
 
-1. **CLAUDE.md가 실제와 어긋나 있다.** "이 repo에는 Cloudflare Worker 외 서버 코드가 없다"는 설명과 달리, `functions/index.js`는 그 Worker를 대체하려고 만든 **완전한 AI 백엔드 이식본**이다(지문 변형/문제 생성/NELT 파싱/오답노트 변형/모의고사 등 6개 모드, Anthropic API 직접 호출). 그리고 CLAUDE.md의 3파일 구성(`index.html`/`wordtest.html`/`passage-transform.html`) 설명에는 **`reading-library.html`(1,096줄)이 통째로 빠져 있다** — 이 파일은 자체 Firestore 컬렉션 3개(`readingLibrary`, `readingVocab`, `readingJournal`)를 갖는, 사실상 4번째 핵심 페이지다.
-2. **Firestore 컬렉션은 문서화된 4개가 아니라 11개다(Phase 4에서 `readingActivity` 추가로 10→11).** `sarahsEnglishMeta/main`, `sarahsEnglishStudents/{id}`, `sarahsEnglishWordbank/main`, `passageArchive` 외에 `readingLibrary`, `readingVocab/{id}`, `readingJournal/{id}`, `materialsLibrary`, `sharedMaterialsLibrary`, `materialDownloadLog`가 더 있다. 이 중 뒤 3개+wordbank는 `index.html`의 중앙 데이터 레이어(`App()`의 `loadStore`/`saveMeta`/`ensureData`/`updateData`)를 거치지 않고 leaf 컴포넌트가 직접 읽고 쓴다.
+1. **CLAUDE.md가 실제와 어긋나 있다.** "이 repo에는 Cloudflare Worker 외 서버 코드가 없다"는 설명과 달리, `functions/index.js`는 그 Worker를 대체하려고 만든 **완전한 AI 백엔드 이식본**이다(지문 변형/문제 생성/NELT 파싱/오답노트 변형/모의고사 등 6개 모드, Anthropic API 직접 호출).
+2. **Firestore 컬렉션은 4개보다 훨씬 많다.** `sarahsEnglishMeta/main`, `sarahsEnglishStudents/{id}`, `sarahsEnglishWordbank/main`, `passageArchive` 외에 `materialsLibrary`, `sharedMaterialsLibrary`, `materialDownloadLog` 등이 더 있다(§2.1). 이 중 일부는 `index.html`의 중앙 데이터 레이어를 거치지 않고 leaf 컴포넌트가 직접 읽고 쓴다. (Reading Library 관련 컬렉션/페이지는 이후 제거됨.)
 3. **매출관리(Business), Reading, Roadmap 기능은 이미 존재한다** — 요청서가 "새로 만들라"고 한 것처럼 보이는 기능 중 상당수가 이미 구현돼 있다: `tuitionRecords`(학생 doc) + `RevenueOverviewSection`(매출 집계), `roadmap`(학생 doc) + `ParentRoadmapSection`, `monthlyReports`/`MonthlyReportView`(월간 리포트), `attendance`(출결). 이것들을 삭제 후 재작성하는 게 아니라 **재배치/재구성**하는 게 이번 작업의 실제 성격이다.
 
 ---
@@ -19,21 +19,18 @@
 | 파일 | 줄 수 | 프레임워크 | 역할 |
 |---|---|---|---|
 | `index.html` | 9,618줄 (~674KB) | React 18 UMD + `htm` (JSX 없음, 빌드 없음) | 메인 앱 — 교사/학생/학부모 포털 |
-| `reading-library.html` | 1,096줄 | 순수 JS/DOM | 영어 동화·소설 리딩 라이브러리 + 학생별 단어장/독서기록 (**CLAUDE.md 미기재**) |
 | `wordtest.html` | 930줄 | 순수 JS/DOM | 단어시험지 생성/관리 |
 | `passage-transform.html` | 703줄 | 순수 JS/DOM | AI 지문 변형/문제 생성 + 아카이브 |
 | `functions/index.js` | 935줄 | Firebase Functions v2 (Node 20) | AI 프록시 6모드 + FCM 알림 2종 + 스케줄 알림 2종 |
 
-4개 HTML 모두 **동일한 `firebaseConfig`를 각자 인라인으로 복붙**하고 있다(`index.html:108-117`, `reading-library.html:188-197`, `wordtest.html:262-271`, `passage-transform.html:265-274`) — 프로젝트 설정이 바뀌면 4곳을 손으로 고쳐야 한다.
+3개 HTML 모두 **동일한 `firebaseConfig`를 각자 인라인으로 복붙**하고 있다(`index.html`, `wordtest.html`, `passage-transform.html`) — 프로젝트 설정이 바뀌면 3곳을 손으로 고쳐야 한다.
 
 임베딩 관계:
 ```
 index.html
  ├─ <iframe src="wordtest.html">              (WordbankSection)
- ├─ <iframe src="reading-library.html#admin"> (ReadingLibraryAdminSection)
  ├─ <iframe src="passage-transform.html">     (PassageToolSection)
  ├─ <iframe src="passage-transform.html#archive"> (ArchiveSection)
- └─ <a href="reading-library.html?student=<id>&name=<name>">  (학생 홈에서 링크 이동, 임베딩 아님)
 ```
 **iframe 간 `postMessage`/`contentWindow` 통신은 전혀 없다** (전체 grep 확인). 부모-자식 페이지는 URL 해시(`#admin`, `#archive`)로 초기 모드만 전달하고, 이후 상태 공유는 전부 같은 Firebase 프로젝트를 통해서만 이뤄진다. 즉 오늘 시점엔 "DOM 경계를 넘는 이벤트/상태 브릿지"를 고려할 필요가 없다는 뜻이지만, 반대로 나중에 실시간 연동(예: 학생이 리딩 라이브러리에서 읽은 걸 index.html 대시보드에 즉시 반영)이 필요해지면 새로 만들어야 한다.
 
@@ -50,25 +47,21 @@ index.html
 ### 1.3 Firebase 구조 (C)
 
 - 프로젝트 id: `sarah-s-english` (`.firebaserc`). **Firebase Hosting은 설정돼 있지 않다** (`firebase.json`에 `functions` 키만 있음) — 실제 사이트는 GitHub Pages(`https://cancho99.github.io/sarah-s-english/`)에서 서빙되고, `functions/index.js`의 CORS 허용 목록(`ALLOWED_ORIGINS`, `:23-26`)도 `https://cancho99.github.io`와 `http://localhost:8080`만 허용한다.
-- **Firestore 보안 규칙 파일이 repo 어디에도 없다** (`firestore.rules` 검색 결과 없음, `firebase.json`에 `firestore` 키도 없음) — 접근 제어는 Firebase Console에서 관리되고 있고 이 repo에서는 감사 불가능하다. 매출/개인정보(주소·생년월일·연락처)가 걸린 프로젝트인 만큼, 규칙 관리를 repo로 끌어오는 것을 Phase 1 이전에 짧게 짚고 넘어갈 가치가 있다(선택사항으로 사용자에게 확인 필요, 이번 요청 범위 밖일 수 있음).
+- **보안 규칙은 repo에 있다**: `firestore.rules`, `storage.rules`(`firebase.json`에 연결). 로그인은 `teacherLogin`/`studentLogin` Cloud Function이 발급하는 Firebase **Custom Token**(`role`, `studentId` 클레임)을 `signInWithCustomToken`으로 사용하며, Rules는 `request.auth.token.role/studentId`를 본다. 아직 좁히지 않은 컬렉션(`sarahsEnglishMeta` 등)은 `firestore.rules` 주석대로 개방 상태다. `storage.rules`에는 현재 match 블록이 없어 Storage 접근이 전부 차단된다.
 - Firestore 쓰기는 두 가지 패턴이 공존한다: (a) `sarahsEnglishMeta`/`sarahsEnglishStudents`는 `App()`이 소유하고 전부 `runTransaction` 기반 read-modify-write(`updateData`, `updateStudentRosterEntry`, `addTeacherFcmToken`)로 나간다. (b) `materialsLibrary`/`sharedMaterialsLibrary`/`materialDownloadLog`/`sarahsEnglishWordbank`(읽기)는 leaf 컴포넌트가 모듈 레벨 헬퍼 함수로 직접 접근한다 — 의도적 설계(1MB 캡을 피하려고 큰 base64를 별도 컬렉션에 분리)지만, "Firestore 접근은 전부 한 데이터 레이어를 거친다"는 가정은 컬렉션의 약 1/3에는 적용되지 않는다.
 
 ---
 
 ## 2. Current Firestore Schema
 
-### 2.1 컬렉션 전체 목록 (11개, Phase 4에서 `readingActivity` 추가)
+### 2.1 컬렉션 전체 목록
 
 | 컬렉션 | 소유 파일 | 구조 |
 |---|---|---|
 | `sarahsEnglishMeta/main` | index.html | 단일 meta 문서 |
 | `sarahsEnglishStudents/{studentId}` | index.html | 학생당 1문서 |
-| `sarahsEnglishWordbank/main` | wordtest.html (index.html·reading-library.html이 읽기/쓰기로 개입) | 단일 문서, 교재별 Day 단어장 |
+| `sarahsEnglishWordbank/main` | wordtest.html (index.html이 읽기로 개입) | 단일 문서, 교재별 Day 단어장 |
 | `passageArchive` | passage-transform.html | 저장 결과당 1문서 |
-| `readingLibrary` | reading-library.html | 스토리당 1문서 |
-| `readingVocab/{studentId}` | reading-library.html | 학생당 1문서 |
-| `readingJournal/{studentId}` | reading-library.html | 학생당 1문서 |
-| `readingActivity/{studentId}` | reading-library.html (Phase 4 신규) | 학생당 1문서 — 읽기 상태/시간, §8.1 |
 | `materialsLibrary` | index.html | 자료당 1문서 (학생 개인 자료실) |
 | `sharedMaterialsLibrary` | index.html | 자료당 1문서 (전체 공유 자료실) |
 | `materialDownloadLog` | index.html | 다운로드 이벤트당 1문서 |
@@ -140,48 +133,9 @@ dailyReports                      // { "YYYY-MM-DD": {text, published, updatedAt
 ```
 통과 기준: 제목에 "누적" 포함 시 90%, 아니면 80% (`vocabPassThreshold`, `:635`).
 
-### 2.6 Reading schema (H)
+### 2.6 (삭제됨) Reading Library schema
 
-`index.html` 자체에는 리딩 로그가 전혀 없다 — 전부 `reading-library.html` 소유 3개 컬렉션에 있다.
-```js
-// readingLibrary/{autoId}
-{
-  title, level: 1-10, category: "Fiction"|"Nonfiction"|"Informational",
-  genre, source, sourceUrl, license, text,
-  vocabulary: [ {word, meaning, example} | {word, pos, meaningInContext, example} ],  // 레벨에 따라 3/4필드 혼용
-  journalLevel: "1-4"|"5-10",  // 2026-08-26 이전엔 "1-3"|"4-6"|"7-8"|"9-10" 4단계 — 저장은 되지만
-  // reading-library.html은 이 저장된 값을 더 이상 읽지 않고 매번 level에서 새로 계산한다(아래 참고).
-  createdAt,
-}
-// readingVocab/{studentId}
-{ words: [{ word, meaning, lemma, partOfSpeech, contextSentence, source, readingId, addedAt }] }
-// 2026-08-26 이전 항목은 { word, meaning, source, addedAt }뿐 — lemma/partOfSpeech/contextSentence/
-// readingId는 그 이후 저장된 항목에만 있다(마이그레이션 없음, 읽는 쪽은 undefined를 허용해야 함).
-// readingJournal/{studentId} — Reading Log. tier는 이제 "1-4"|"5-10" 둘뿐(아래 참고).
-{ entries: [{ id, storyId, storyTitle, level, tier, answers: [{q,a}], submittedAt }] }
-```
-Level 1~10 / 초3~고3 커리큘럼은 **완전히 JS 하드코딩**(`LEVELS`/`GRADE_BY_LEVEL`, `reading-library.html:359-363`)이며, 스토리의 `level` 값이 실제로 그 설계를 따르는지 강제하는 검증은 없다.
-
-**"읽음/완료" 개념(2026-08-26, 같은 날 두 번 개편)**: 스토리를 여는 것 자체는 처음부터 지금까지
-쭉 Firestore에 아무것도 안 남긴다(순수 클라이언트 상태 전환) — 한때(Phase 4~그 다음 세션 사이)
-열람만으로 `readingActivity`에 `IN_PROGRESS` 레코드를 만들던 시기가 있었으나 "그냥 훑어보기만
-해도 진행중 처리된다"는 문제로 되돌렸다(1차 개편, "다 읽었어요" 버튼 신설). 같은 날 안에 다시
-한번 개편해서 그 "다 읽었어요" 버튼조차 없앴다 — **지금은 "완료"의 유일한 신호가 Reading Log
-제출(`readingJournal`에 항목이 생기는 것)이다.** Reading Log를 제출하는 순간 내부적으로
-`readingActivity`에도 `status: "COMPLETED"` 레코드가 같이 쓰이지만, 이건 읽은 시간
-(`readingTimeSec`) 을 남기기 위한 부가 데이터일 뿐 — **"완료했는가"를 판단하는 화면(Student
-Reading History, Reading Summary, Reading Growth Report, Teacher Reading Dashboard)은 전부
-`readingActivity`가 아니라 `readingJournal`만 본다.** `IN_PROGRESS`를 실제로 생성하는 코드
-경로는 이제 없다(레거시로 남아있는 기존 `IN_PROGRESS` 문서는 지우지 않았지만, 어느 화면도
-읽지 않는다).
-
-**Reading Log 작성 기준(2026-08-26)**: Level 1~4는 한국어 4문항(내용 요약/중요한 내용/기억에
-남는 내용/나의 생각), Level 5~10은 영어 4문항(Summary/Key Details/Explanation/Personal
-Response) — 딱 두 그룹으로만 나뉜다(레벨을 더 세분화하지 않음). 제출 시 `functions/index.js`의
-`aiWorker` `journalValidate` 모드가 "완전한 문장인지, 단어 나열이 아닌지, 실제 내용과 자신의
-생각이 담겼는지"를 판단해 불충분하면 제출 자체를 막는다(문법 오류만으로는 막지 않음) — 정확한
-안내 문구는 `reading-library.html`의 `journalBannerHtml`/`journalRejectHtml`이 고정 문구로
-보여준다(AI는 valid 여부만 판단).
+Reading Library 기능은 사이트에서 제거되었다(코드·규칙·문서 정리 완료). 해당 Firestore 컬렉션의 기존 데이터는 코드에서 더 이상 참조하지 않으며 Firebase 콘솔에서 별도로 정리한다. 출제용 `readingPassages`/`readingQuestions`는 별개 기능이라 그대로 유지된다(§12).
 
 ### 2.7 Report schema (I)
 
@@ -209,7 +163,7 @@ Response) — 딱 두 그룹으로만 나뉜다(레벨을 더 세분화하지 �
 ```
 `getReportStatus()`(services/reportService.js)가 하위호환을 처리한다: `status` 필드가 없는 기존 리포트는 `published:true`면 COMPLETED, 아니면 DRAFT로 간주 — 기존 데이터에 아무것도 새로 쓰지 않는다.
 
-Homework/Vocabulary/Exam/Reading은 Daily/Monthly Report에 복제 저장하지 않고, 매번 각자의 원본 소스(`data.homework`/`data.vocabTests`+`vocabResults`/`data.regularExams`+`mockExamResults`+`examResults`/`readingVocab`+`readingJournal`)에서 `services/*.js`를 통해 실시간 계산한다 — 상세는 §7 참고.
+Homework/Vocabulary/Exam은 Daily/Monthly Report에 복제 저장하지 않고, 매번 각자의 원본 소스(`data.homework`/`data.vocabTests`+`vocabResults`/`data.regularExams`+`mockExamResults`+`examResults``)에서 `services/*.js`를 통해 실시간 계산한다 — 상세는 §7 참고.
 
 ### 2.8 매출관리(Business) schema (J)
 
@@ -294,7 +248,6 @@ Homework/Vocabulary/Exam/Reading은 Daily/Monthly Report에 복제 저장하지 
 | `passage` / `archive` | AI 지문 변형 도구 (iframe) |
 | `wordbank` | 단어시험 관리 (iframe) |
 | `examkeys` | 정답표 라이브러리 (AI vision PDF 파싱) |
-| `readingLibrary` | 리딩 라이브러리 관리 (iframe) |
 | `reports` | Daily/Monthly Report |
 | `revenue` | 매출 개요 |
 | `settings` | 교사 비밀번호 |
@@ -306,9 +259,9 @@ Homework/Vocabulary/Exam/Reading은 Daily/Monthly Report에 복제 저장하지 
 
 StudentDash: 홈/`studyTimer`/`homework`/`vocab`/`mock`/`examTests`/`materials`/`schedule`. ParentDash는 의도적으로 더 좁음 — 시험 응시 탭 없음, `materials` 없음, `published`된 report/tuition만, 대신 `roadmap`(학생 쪽엔 전용 탭이 없음)과 `studyTime`(읽기전용 집계)을 가짐.
 
-### reading-library.html / wordtest.html / passage-transform.html
+### wordtest.html / passage-transform.html
 
-기능 인벤토리는 §2.6, CLAUDE.md 원문에 이미 정확히 기술돼 있어 반복하지 않음. 다만 `reading-library.html`은 관리자 모드(`#admin`)에서 스토리 CRUD + 학생별 단어장/독서기록 열람 + 선택 단어를 wordtest.html 단어장으로 전송 + 온라인 단어시험 생성까지 수행하는, CLAUDE.md 미기재 대비 실제로는 매우 무거운 페이지다.
+기능 인벤토리는 CLAUDE.md 원문에 이미 정확히 기술돼 있어 반복하지 않음.
 
 ---
 
@@ -319,17 +272,13 @@ sarahsEnglishMeta/main ──┬── index.html (App, 중앙 관리)
                           └── functions/index.js (읽기 전용: roster/teacherFcmTokens)
 
 sarahsEnglishStudents/{id} ──┬── index.html (App, 중앙 관리, updateData 트랜잭션)
-                               ├── reading-library.html (vocabTests 배열에 트랜잭션으로 append)
                                └── functions/index.js (읽기 전용: homework/mockExams/vocabTests)
 
 sarahsEnglishWordbank/main ──┬── wordtest.html (소유, 중앙 관리)
                                ├── index.html VocabEditor (읽기, App() 우회 — window.__doc 직접 호출)
-                               └── reading-library.html sendToWordbank() (쓰기 — books/days/day1/{en,ko} 구조를 코드 공유 없이 하드코딩)
 
 passageArchive ── passage-transform.html (단독 소유, 다른 파일 접근 없음)
 
-readingLibrary / readingVocab / readingJournal ── reading-library.html (단독 소유)
-   └─ readingVocab에서 선택한 단어 → sarahsEnglishWordbank로 전송 (위 참고)
 
 materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.html
    (App()을 거치지 않는 모듈 레벨 헬퍼 함수로 직접 접근)
@@ -343,7 +292,7 @@ materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.htm
 
 | 함수 | 트리거 | 역할 |
 |---|---|---|
-| `aiWorker` | `onRequest` (secret: `ANTHROPIC_API_KEY`) | 단일 엔드포인트, `mode`로 분기: (기본)문제생성 / `transform`지문변형 / `monthlyReport`월간리포트초안 / `examkey`정답표AI비전파싱 / `examVariant`오답노트변형생성 / `nelt`NELT성적표파싱 / **`wordMeaning`Reading 단어 클릭 문맥 뜻풀이(2026-08-26 신규, `reading-library.html` 전용 — word+sentence를 받아 `{lemma, partOfSpeech, meaningKo, confidence}` 반환, hallucination 방지를 위해 불확실하면 빈 값+low를 명시적으로 반환)**. 이 표는 완전한 모드 목록이 아니다 — `grammarGenerate`/`readingGenerate`/`readingAnalyze`/`readingAnalysisGenerate`(Exam Builder/Reading Analysis 재설계 세션에서 추가됨) 등 이후 세션에서 추가된 모드가 더 있을 수 있으니 실제 모드 목록은 `functions/index.js`의 `is*` 플래그들을 직접 확인할 것. 전부 Anthropic Messages API를 raw `fetch`로 직접 호출(SDK 미사용). 대부분 `claude-haiku-4-5-20251001` + `claude-sonnet-5`(정답표 비전 파싱, 정확도 우선). **Firestore 접근 없음.** |
+| `aiWorker` | `onRequest` (secret: `ANTHROPIC_API_KEY`) | 단일 엔드포인트, `mode`로 분기: (기본)문제생성 / `transform`지문변형 / `monthlyReport`월간리포트초안 / `examkey`정답표AI비전파싱 / `examVariant`오답노트변형생성 / `nelt`NELT성적표파싱. 이 표는 완전한 모드 목록이 아니다 — `grammarGenerate`/`readingGenerate`/`readingAnalyze`/`readingAnalysisGenerate`(Exam Builder/Reading Analysis 재설계 세션에서 추가됨) 등 이후 세션에서 추가된 모드가 더 있을 수 있으니 실제 모드 목록은 `functions/index.js`의 `is*` 플래그들을 직접 확인할 것. 전부 Anthropic Messages API를 raw `fetch`로 직접 호출(SDK 미사용). 대부분 `claude-haiku-4-5-20251001` + `claude-sonnet-5`(정답표 비전 파싱, 정확도 우선). **Firestore 접근 없음.** |
 | `notifyTeacher` | `onRequest` | `sarahsEnglishMeta/main.teacherFcmTokens`로 data-only FCM 발송, 이벤트 종류 11가지 |
 | `notifyStudent` | `onRequest` | 호출자가 넘긴 토큰 1개로 FCM 발송, 이벤트 3가지 |
 | `sendTestNotification` | `onRequest` | 알림 테스트용 단발 발송 |
@@ -361,8 +310,7 @@ materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.htm
 ### M. 중복되거나 지나치게 결합된 코드
 
 1. **"새 창 인쇄" 로직이 4곳에 독립 구현**: `index.html`의 `MonthlyReportView.printReport()`(`:5967-6087`)와 `TuitionEditor` 청구서 인쇄(`:~8246-8250`), `wordtest.html`의 `printSheet()`, `passage-transform.html`의 print 핸들러. 견고함이 제각각이다 — `wordtest.html`만 `printed` 가드 + onload/700ms 폴백 타이머 + 팝업 차단 시 인라인 인쇄 폴백까지 갖췄고, `passage-transform.html`은 단일 300ms 타이머뿐이라 가장 취약하다.
-2. **`firebaseConfig` 4중 복붙** — 프로젝트 설정 변경 시 4개 파일을 손으로 동기화해야 함.
-3. **`reading-library.html` ↔ `wordtest.html`/`index.html` 스키마 결합**: `sendToWordbank()`가 wordbank의 `books/days/day1/{en,ko}` 구조를, `createOnlineVocabTest()`가 index.html의 `vocabTests` 구조를 공유 코드 없이 하드코딩. 한쪽 스키마가 바뀌면 다른 쪽이 조용히 깨진다.
+2. **`firebaseConfig` 3중 복붙** — 프로젝트 설정 변경 시 3개 파일을 손으로 동기화해야 함.
 4. **`index.html` 내부 상태 이중 관리**: 모듈 레벨 `let store`(`:194`)가 React 상태와 나란히 수동으로 동기화된다(`if (store) store.X = ...`가 거의 모든 setter에 반복). 둘 중 하나만 갱신하면 드리프트 발생 — 이번 감사에서 실제로 몇 군데 setter가 그렇게 돼 있는지까진 확인하지 않았지만, 패턴 자체가 위험 소지다.
 5. **Firestore 접근 3분의 1가량이 중앙 데이터 레이어 우회**: `materialsLibrary`/`sharedMaterialsLibrary`/`materialDownloadLog`(쓰기까지)와 `sarahsEnglishWordbank`(읽기)는 leaf 컴포넌트가 직접 호출한다.
 6. ~~(Phase 3에서 발견) 학부모 월말리포트 화면에 "숙제/단어" 관련 지표가 두 세트 나란히 노출됨~~ — **Phase 4 STEP 1에서 해결함.** §7 "Historical Snapshot vs Live Analytics" 참고.
@@ -370,13 +318,12 @@ materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.htm
 ### N. 리팩토링 위험 요소
 
 1. **9,618줄 단일 파일, 빌드 없음, `htm` 태그드 템플릿(JSX 아님)**. 모듈화하려면 "번들러 없이 CDN 스크립트 로딩 순서를 유지하면서 어떻게 코드를 여러 파일로 쪼갤 것인가"부터 풀어야 한다. React/htm은 ESM으로 바로 못 옮긴다(전역 `window.__db` 브릿지가 그 증거).
-2. **CLAUDE.md 자체가 부정확** — 그대로 믿고 설계하면 안 되는 지점 2곳: (a) AI 백엔드가 Worker 단독이 아니라 `functions/index.js`와 이중화돼 있음, (b) `reading-library.html`이 문서에서 완전히 빠짐. Phase 1 착수 전에 CLAUDE.md 갱신을 권장(선택, 승인 필요).
+2. **CLAUDE.md는 과거에 부정확했던 적이 있다** — AI 백엔드가 Worker 단독이 아니라 `functions/index.js`와 이중화돼 있었고, 인증/규칙 서술도 코드와 어긋나 있었다(이후 정정됨). 문서보다 코드를 신뢰할 것.
 3. **`emptyData()`가 스키마 문서로서 신뢰 불가** — 실사용 필드 7개가 빠져 있다. 새 스키마를 설계할 때 `emptyData()`만 보고 판단하면 안 되고, 위 §2.2 표를 참고해야 한다.
 4. **네비게이션 상태 4중 분열**(App.screen / TeacherDash.section / StudentDash.tab / ParentDash.tab) — 전부 React state뿐, URL 비반영. 요청서가 원하는 "HOME / TEACHER CENTER / STUDENTS / ..." 같은 상위 네비게이션 구조로 재편하려면 이 4개를 하나의 라우팅 개념으로 통합할지, 아니면 유지한 채 상위에 한 겹 더 씌울지 결정이 필요함(§7에서 제안).
-5. **Firestore 보안 규칙이 repo 밖에 있다** — 새 컬렉션(예: `dailyReports`, `grammarQuestions`)을 추가해도 이 repo만 봐서는 권한 설계가 맞는지 검증할 수 없다.
+5. **일부 컬렉션은 규칙이 아직 개방 상태다** — `firestore.rules`에 명시된 컬렉션만 Custom Token 클레임으로 제한되고, 나머지는 주석에 적힌 대로 열려 있다. 새 컬렉션을 추가하면 `firestore.rules`에 블록을 직접 추가해야 한다.
 6. **정답표 파싱은 CLAUDE.md가 설명한 로컬 텍스트 파서(`extractPdfTextForKeys`/`parseExamKeyPdfText`)가 이미 폐기되고 AI 비전 파싱으로 대체된 상태** — 문서와 코드가 어긋난 또 하나의 사례. 마스너리형(단마다 배치가 다른) 정답지 레이아웃 때문에 좌표 클러스터링이 실패해서 버린 것으로 코드 주석에 명시돼 있음 — 향후 "Grammar/Reading Exam Builder"에서 유사한 PDF 파싱이 필요하면 로컬 파서보다 AI 비전 경로를 우선 고려해야 함.
 7. **`passage-transform.html`에 쓰이지 않는 `.sidenav` CSS**(장식용으로 만들었다가 실제 DOM엔 없음) — 사소하지만 정리 대상.
-8. **`reading-library.html`이 문서화 안 된 Google 번역 공개 엔드포인트에 의존** — 폴백 없음, 차단되면 리딩 라이브러리의 "단어 클릭 → 자동 번역" 기능 전체가 조용히 멈춤.
 9. **실데이터에서 확인된 로스터-학생문서 불일치 (조사 완료, 2026-08-24)**: `sarahsEnglishStudents` 컬렉션에 `sarahsEnglishMeta/main.roster`(8명)에는 없는 학생 문서가 1건 존재한다. **원인 코드까지 특정했다** — `removeStudent(id)` (`index.html:2856-2859`, `TeacherDash` 내부)는 `saveRosterList(roster.filter(...))`로 로스터 배열에서만 해당 학생을 지우고, `sarahsEnglishStudents/<id>` Firestore 문서 자체는 **한 번도 삭제하지 않는다.** 즉 교사가 "학생 정보"에서 학생을 삭제할 때마다 구조적으로 이런 orphan 문서가 만들어진다 — 이번 건은 우연한 1건짜리 사고가 아니라 재현 가능한 설계상의 동작이다.
 
    **문서 상세** (읽기 전용 조사, 데이터는 수정/삭제하지 않음):
@@ -399,7 +346,7 @@ Phase 3에서 학부모 월말리포트 화면에 같은 의미의 지표(숙제
 | | Historical Snapshot | Live Analytics |
 |---|---|---|
 | 예시 | `data.monthlyReports[month].attendance` (`{classDays, attended, absent, hwRate, vocabRate}`) | `services/homeworkService.js`의 `getMonthlyHomeworkStats()` 등 |
-| 언제 계산되는가 | 교사가 `MonthlyReportView`에서 그 리포트를 만들 때 1회 계산되어 **저장**됨. 이후 교사가 수기로 고칠 수 있음(예: 결석 처리를 나중에 조정) | 화면을 열 때마다 원본 데이터(`homework`/`vocabTests`+`vocabResults`/`regularExams`/`logs`/`readingVocab`+`readingJournal`)에서 **매번 다시 계산**됨. 저장되지 않음 |
+| 언제 계산되는가 | 교사가 `MonthlyReportView`에서 그 리포트를 만들 때 1회 계산되어 **저장**됨. 이후 교사가 수기로 고칠 수 있음(예: 결석 처리를 나중에 조정) | 화면을 열 때마다 원본 데이터(`homework`/`vocabTests`+`vocabResults`/`regularExams`/`logs``)에서 **매번 다시 계산**됨. 저장되지 않음 |
 | 나중에 원본 데이터가 바뀌면? | 안 바뀜 (저장 당시 값 그대로 고정) | 바뀜 (다음에 열 때 최신값 반영) |
 | 용도 | 그 시점에 교사가 "확정"한 기록 — 인쇄물(`printReport()`)의 근거 데이터, 감사/이력 추적용 | 지금 이 순간의 실제 상태를 보여주는 대시보드 |
 | 어디서 보이는가 | 교사용 `MonthlyReportView`(편집 탭)와 그 인쇄 출력 — **교사 전용** | `MonthlyReportDashboard`("월간 분석" 탭, 교사), `ParentMonthlySummary`(학부모) |
@@ -419,7 +366,7 @@ Phase 3에서 학부모 월말리포트 화면에 같은 의미의 지표(숙제
 ```
 Teacher OS      ← TeacherDash 전체 (이미 존재, mainpage/hwstatus를 "오늘 할 일" 랜딩으로 승격)
 Student OS      ← StudentDash + roster 스케줄 필드 + roadmap
-Content OS      ← reading-library.html(readingLibrary) + wordtest.html(wordbank)
+Content OS      ← wordtest.html(wordbank)
                   + 신규: grammarQuestions, readingQuestions, originalQuestions
 Exam Studio     ← examTests/mockExams/regularExams/examKeyLibrary (기존) + 신규 Builder UI
 Report Center   ← monthlyReports/dailyReport 관련 기존 코드 + 신규 자동집계 로직
@@ -453,56 +400,13 @@ features/    // Teacher Center 대시보드 등 신규 화면 단위
   status, createdAt, updatedAt, usageCount, correctRate }
 
 // readingPassages/{id}  +  readingQuestions/{id}
-// (요청서 §14 스키마 그대로 — readingLibrary와는 별개 컬렉션. readingLibrary는 "읽기용 콘텐츠",
-//  readingQuestions는 "출제용 문제은행"으로 성격이 다르므로 통합하지 않는다.)
+// (요청서 §14 스키마 그대로.)
 
 // originalQuestions/{id}  — "Sarah's Original"
 { ...grammarQuestions 또는 readingQuestions와 동일 필드 + status: AI_DRAFT|AI_CHECKED|TEACHER_REVIEW|REVISION|APPROVED|PUBLISHED|ARCHIVED }
 ```
 
 **Homework Service 확장 경로**(요청서 §5): 지금 당장 `students/{id}/homework/{hwId}` 서브컬렉션으로 옮기지 않는다. 대신 `HomeworkService`(신규 `services/homeworkService.js`)가 기존 `data.homework[]` 배열을 읽고 쓰는 어댑터로 시작하고, 서브컬렉션 이관은 실제 필요(예: 숙제 개수가 1MB 캡에 영향 줄 만큼 늘어남)가 확인된 뒤 별도 승인 하에 진행한다.
-
-## 8.1 Reading Activity Schema (Phase 4 제안, 2026-08-24)
-
-착수 전 실제 `reading-library.html`을 다시 읽어 확인한 사실:
-- **오늘 시점 "읽음/완료" 개념이 전혀 없다.** 스토리를 여는 것(`view.screen = "reader"`)은 순수 클라이언트 상태 전환이고 Firestore에 아무것도 안 남는다. 실제 저장되는 유일한 학생 활동 신호는 (a) 본문 단어 클릭 → `readingVocab/<studentId>.words[]`, (b) 다 읽은 뒤 "독서 기록" 제출 → `readingJournal/<studentId>.entries[]` 둘뿐이다.
-- **Reading Time/Quiz 기능이 전혀 없다.** 세션 시간 측정 코드도, 퀴즈 채점 코드도 없다.
-- 스토리(`readingLibrary/<id>`) 스키마: `{title, level(1-10), category, genre, source, sourceUrl, license, text, vocabulary[], journalLevel, createdAt}`.
-- `reading-library.html`은 이미 자체적으로 `sarahsEnglishMeta/main`을 읽어 로스터 드롭다운을 쓰고 있다(`va-student`/`ja-student` 셀렉트, `:830`) — 새 교사용 Reading Dashboard도 index.html이 아니라 이 파일 안(`#admin` 뷰의 4번째 `<details>` 패널)에 같은 방식으로 넣는 게 기존 구조와 가장 자연스럽게 맞는다.
-
-**설계 원칙(§17 "복제 저장 금지"를 그대로 따름)**: activity 레코드에는 **다른 소스에서 다시 구할 수 없는 사실만** 저장한다. `storyTitle`/`level`은 `storyId`로 `readingLibrary`를 조인해서 구하고, "새 단어 수"는 `readingVocab.words[]`를 `source`(스토리 제목)로 필터링해 매번 계산한다 — activity 문서 자체에 중복 저장하지 않는다.
-
-```js
-// readingActivity/<studentId>  — readingVocab/readingJournal과 동일한 패턴(학생당 문서 1개, 배열)
-{
-  activities: [
-    {
-      id,
-      storyId,                 // readingLibrary 문서 id — title/level/genre는 여기서 조인
-      status: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED",
-      // ASSIGNED는 스키마에 문자열로만 예약 — 교사가 특정 학생에게 특정 스토리를 "배정"하는 기능
-      // 자체가 현재 없어서(학생은 레벨별로 자유 열람) 이번 Phase에서 구현하지 않는다.
-      startedAt,                // 처음 열었을 때 1회만 기록, 재방문해도 안 바뀜
-      completedAt,              // 학생이 명시적으로 "다 읽었어요" 눌렀을 때만 기록 — 그냥 열람만으론 안 채워짐
-      readingTimeSec,           // 탭 visibility 기준 best-effort 누적치, §6 참고 — 정밀 측정 시스템 아님
-      quizScore, quizTotal,     // 예약 필드 — 현재 Reading Library에 퀴즈 기능이 없어 항상 null, UI도 없음.
-                                 // 향후 퀴즈 기능이 생기면 이 필드만 채우면 되게 미리 자리만 잡아둠.
-    },
-  ],
-}
-```
-
-**status 전이 규칙(2026-08-24 최초 제안 당시 — 지금은 바뀜)**: 문서가 아예 없으면 NOT_STARTED(저장 안 함, 상태 없음 = NOT_STARTED로 간주). 처음 열면 IN_PROGRESS+startedAt 기록. "다 읽었어요" 버튼을 눌러야만 COMPLETED+completedAt 기록 — 열람만으로는 자동 완료 처리하지 않는다(요청서 §5 원칙 그대로).
-
-> ⚠️ **위 문단은 2026-08-24 최초 제안 당시 규칙이고, 2026-08-26에 두 차례 더 바뀌어서 지금은
-> 다르다** — 최신 규칙은 §2.6의 "읽음/완료" 개념 문단을 볼 것: (1) IN_PROGRESS는 이제 어떤 코드
-> 경로로도 생성되지 않는다("열람=IN_PROGRESS" 자체를 없앰), (2) "다 읽었어요" 버튼도 없어졌고
-> Reading Log 제출이 유일한 완료 신호다. 이 문단은 이 스키마가 왜 이런 필드(`status`/`startedAt`
-> 등)를 갖게 됐는지 역사적 맥락을 보여주기 위해 남겨둔다 — 현재 동작의 근거로 읽지 말 것.
-
-**Reading Time 측정 방식**(요청서 §6): start/pause/resume/complete 구조를 `document.visibilitychange` + 리더 화면 진입/이탈 이벤트로 best-effort 구현한다. 브라우저를 강제 종료하는 경우까지 완벽히 잡으려 하지 않는다(요청서 §6에 명시된 그대로) — `beforeunload`/`pagehide`에서 한 번 더 저장을 시도하지만 실패해도 앱을 막지 않는다.
-
----
 
 ## 9. Migration Strategy
 
@@ -533,9 +437,9 @@ New UI                          ← Teacher Center, Exam Studio 등 신규 화�
 | 1 | Service/Data Model/Compatibility Layer | **완료** — 백업/export(`services/backupService.js`) + `services/` 파일들 + `HomeworkService` 어댑터. (Phase 1 당시 8개로 기록됐으나 실제 파일 수는 그 시점에도 10개였다 — `aiService.js`/`revenueService.js` 누락. Phase 5에서 `questionBankService.js` 추가로 현재 11개) |
 | 2 | Teacher Center + Homework | **완료** — 신규 "Teacher Center" 섹션(오늘 확인할 숙제 보드, 필터/검색/확인 처리) + 기존 `TeacherOverview`/`HomeworkStatusOverview`는 그대로 보존 |
 | 3 | Daily Report + Monthly Report | **완료** — `DailyReportGenerator`에 구조화된 "오늘 학습 기록" 카드(Homework/Vocab/Exam/Reading 자동연결, 평가, status) 추가(기존 메시지 초안 카드 보존) + `ReportsSection`에 "월간 분석" 탭(`MonthlyReportDashboard`) 신설 + Parent 화면에 자동집계 요약 노출. §2.7 참고 |
-| 4 | Reading Log + Reading Analytics | **완료** — 신규 `readingActivity` 컬렉션(§8.1)으로 실제 읽기 상태/시간 추적 추가, `reading-library.html`에 Teacher Reading Dashboard 신설, Daily/Monthly/Parent Report에 연결 |
+| 4 | Reading Log + Reading Analytics | **제거됨** — Reading Library 기능 전체가 사이트에서 삭제됨(당시 추가했던 읽기 활동 컬렉션 포함). Daily/Monthly/Parent Report에서도 Reading 활동 항목 제거 |
 | 5 | Grammar Question Bank | **완료** — Question Bank Core(`services/questionBankService.js`) + `grammarQuestions` 컬렉션 + Teacher UI(`QuestionBankSection`). §11 참고 |
-| 6 | Reading Passage/Question Bank | **완료** — Question Bank Core 확장(§12.9) + `readingPassages`/`readingQuestions` 컬렉션 + Teacher UI(`ReadingQuestionBankView`). §12 참고. `readingLibrary`와는 완전히 별개(§12.1) |
+| 6 | Reading Passage/Question Bank | **완료** — Question Bank Core 확장(§12.9) + `readingPassages`/`readingQuestions` 컬렉션 + Teacher UI(`ReadingQuestionBankView`). §12 참고.  |
 | 7 | ~~Sarah's Original + 품질관리~~ → **Exam Builder로 대체 진행됨(완료)** | 사용자가 실제 세션에서 "PHASE 7"을 Sarah's Original이 아니라 Exam Builder로 지정해 진행했다(§13). `examPapers` 컬렉션 + Question Bank Core 최소 확장(`incrementUsageCount`, §13.9) + Teacher UI(`ExamBuilderView`). Grammar/Reading 두 은행에서 문제를 조합해 시험지를 만드는 기능 — `examTests`/`mockExams`/`examKeyLibrary`는 손대지 않음(§13.1). **Sarah's Original + 품질관리는 아직 미착수 상태로 남아있다** — 번호가 비게 됐으니 향후 별도 Phase로 다시 배정 필요(§10-정정 참고) |
 | 8 | Exam Studio | 원래 계획: `examTests`/`mockExams`/`examKeyLibrary`/`ExamKeyLibrarySection`(AI vision 파싱 이미 구현) 재배치 위주. **Phase 7에서 먼저 만들어진 Exam Builder(`examPapers`)가 사실상 이 Phase의 핵심 산출물을 상당 부분 선점했다** — 남은 범위는 기존 `examTests`/`mockExams`/`examKeyLibrary`를 Exam Builder와 어떻게 연결할지(또는 그대로 병존시킬지) 결정하는 것으로 좁혀졌다. 착수 전 사용자와 범위 재확인 필요 |
 | 9 | Vocabulary/Mock Exam 통합 | 이미 대부분 구현됨 — Daily/Monthly Report 자동조인에 연결하는 게 남은 일 |
@@ -608,7 +512,7 @@ Phase 5의 목적은 "문법 문제 저장 화면" 하나가 아니라, 앞으�
   version,                        // 1부터
   supersedesId,                   // 이 문서가 대체한 이전 버전 id (fork로 생성된 경우)
   replacedBy,                     // 이 문서를 대체한 새 버전 id (fork 당한 경우)
-  createdAt, updatedAt, createdBy, // createdBy는 현재 항상 "teacher" (인증 없음, §1.3)
+  createdAt, updatedAt, createdBy, // createdBy는 현재 항상 "teacher" (§1.3)
 }
 ```
 
@@ -653,7 +557,7 @@ Phase 5의 목적은 "문법 문제 저장 화면" 하나가 아니라, 앞으�
 | 21 | 준동사 종합 `verbals` | 부정사·동명사·분사 통합 오류 (수능 어법 대표 유형) |
 | 22 | 기타 `etc` | 생략 / 무생물 주어 / 삽입·동격 |
 
-22번 "기타"는 의도적 overflow 버킷이며 **UI에서 기본 선택되지 않는다**(기본값은 1번). 커리큘럼은 JS 하드코딩이고 데이터 기반이 아니다 — `reading-library.html`의 `LEVELS`와 같은 트레이드오프(§2.6).
+22번 "기타"는 의도적 overflow 버킷이며 **UI에서 기본 선택되지 않는다**(기본값은 1번). 커리큘럼은 JS 하드코딩이고 데이터 기반이 아니다.
 
 ### 11.5 문제 유형 (questionType) + 출처 (source.type) + 상태 (status)
 
@@ -766,7 +670,6 @@ versioning이 이 구조의 전제다: 문제를 수정해도 과거 응시가 �
 
 | | 목적 | 사용자 | 컬렉션 | 소유 파일 |
 |---|---|---|---|---|
-| **기존** Reading Library | 학생이 **읽는** 자료실 | 학생 | `readingLibrary` / `readingActivity` / `readingJournal` / `readingVocab` | `reading-library.html` |
 | **신규** Reading Question Bank | 교사가 **출제하는** 시험 문제은행 | 교사 | `readingPassages` / `readingQuestions` | `index.html` (`QuestionBankSection`) |
 
 **데이터를 서로 복제하지 않는다.** 같은 영어 지문이 양쪽에 있을 수 있지만 이번 Phase에서 강제 통합하지 않는다 — 목적·수명주기·상태머신이 전부 다르다(읽기 자료는 status가 없고, 문제은행은 DRAFT→PUBLISHED 검수 파이프라인을 갖는다). 향후 "이 읽기자료로 문제 만들기" 연결이 필요해지면 `readingPassages.sourceLibraryId` 같은 **참조 필드 한 개**로 잇는다(TODO, 이번 Phase 미구현).
@@ -786,7 +689,7 @@ readingPassages/P001  ("The future of ...")
 
 **왜 서브컬렉션(`readingPassages/{id}/questions/{id}`)이 아니라 최상위 2개 컬렉션인가:**
 1. Exam Builder는 "고1 + MOCK_EXAM + 빈칸 + Advanced 3문제"처럼 **지문을 가로질러** 문제를 뽑아야 한다. 서브컬렉션이면 `collectionGroup` 쿼리가 필요한데, 이 repo는 Firestore 인덱스 설정을 관리하지 않는다(§1.3 — `firebase.json`에 firestore 키 없음, 규칙도 Console 관리).
-2. 이 repo의 모든 콘텐츠 컬렉션(`readingLibrary`/`materialsLibrary`/`passageArchive`/`grammarQuestions`)이 이미 **플랫 최상위 + 클라이언트 필터** 패턴이다. 한 컬렉션만 다른 접근 패턴을 쓰면 일관성이 깨진다.
+2. 이 repo의 모든 콘텐츠 컬렉션(`materialsLibrary`/`passageArchive`/`grammarQuestions`)이 이미 **플랫 최상위 + 클라이언트 필터** 패턴이다. 한 컬렉션만 다른 접근 패턴을 쓰면 일관성이 깨진다.
 3. 지문 없이 존재하는 문제(향후 독립 어휘문항 등)를 나중에 허용하기 쉽다.
 
 **지문을 지문 문서에 문제 배열로 넣지 않는 이유**: 지문 본문 자체가 길고(수능 지문 ~150 words, 장문 ~350 words), 문제 5~10개를 배열로 안으면 1MB 캡(§2.2)과 별개로 "문제 1개 수정 = 지문 문서 전체 재작성"이 되어 버저닝이 지문 단위로 오염된다.
@@ -958,7 +861,7 @@ student → exam → questionId → 정/오
 
 - **`services/questionBankService.js` 내부 리팩터링**: `updateQuestion`의 fork-or-merge 로직을 `forkOrUpdate(collectionName, existingDoc, patch, contentFields, opts, fingerprintField, deriveFields)` 공용 함수로 추출했다(§12.9에서 예고한 "공용 내부 함수로 추출해 재사용"의 실제 형태). `updateQuestion`/`updatePassage` 둘 다 이 함수를 얇게 감싼다 — `deriveFields`가 은행별 파생 필드(문법은 `choices`/`answerFormat`/`answer`, 리딩 지문은 `wordCount`/`estimatedReadingTime`)만 계산하고, fork/archive/fingerprint 로직 자체는 완전히 공유된다.
 - **삭제 정책 문구 보강**: 사용자가 승인 메시지에서 "REVIEW/APPROVED/PUBLISHED는 삭제 불가 → ARCHIVED"를 재확인 요청함에 따라, `canHardDelete`(Phase 5부터 이미 `status === "DRAFT" && usageCount === 0`로 이 규칙을 만족)가 Passage/Question 양쪽에 동일 적용됨을 실제 브라우저에서 재검증했다(§13 regression 결과 참고). 코드 변경 없음, 기존 Phase 5 가드가 이미 스펙을 만족.
-- **`estimatedReadingTime`의 학년별 WPM**은 실측 데이터가 아니라 휴리스틱 추정치임을 코드 주석에 명시했다(`중1:80 ~ 고3:130`, L2 독해 속도의 대략적 근사) — 향후 실제 학생 읽기시간 데이터(Phase 4 `readingActivity.readingTimeSec`)가 쌓이면 보정할 수 있는 자리로만 존재한다.
+- **`estimatedReadingTime`의 학년별 WPM**은 실측 데이터가 아니라 휴리스틱 추정치임을 코드 주석에 명시했다(`중1:80 ~ 고3:130`, L2 독해 속도의 대략적 근사) — 실측 읽기시간 데이터는 없다(Reading Library 제거).
 
 ---
 
@@ -1031,7 +934,7 @@ examPapers/{autoId}
 }
 ```
 
-**지문(Passage)이 시험지 안에서 어떻게 표현되는가**: `passageId`만 저장하고 본문은 복제하지 않는다(readingLibrary/readingQuestions의 "복제 저장 금지" 원칙, §8.1/§12.2와 동일). Preview/인쇄 시점에 `readingPassages`에서 조인해 렌더링한다.
+**지문(Passage)이 시험지 안에서 어떻게 표현되는가**: `passageId`만 저장하고 본문은 복제하지 않는다(readingQuestions의 "복제 저장 금지" 원칙, §12.2와 동일). Preview/인쇄 시점에 `readingPassages`에서 조인해 렌더링한다.
 
 **재현성(사용자 결정 §추가요구사항6)**: `choiceDisplayOrder`/`order`가 examPaper 자체에 값으로 저장되므로(seed 아님, 결과값 자체), 셔플 알고리즘이 나중에 바뀌어도 과거 FINALIZED 시험지의 렌더링은 영향받지 않는다. 원본 문제가 이후 `usageCount>0` 상태에서 수정되면 copy-on-write(§11.8/§12.8)에 의해 **새 id로 fork**되고 원본 id의 내용은 그대로 보존되므로, examPaper가 참조하는 `questionId`는 fork 여부와 무관하게 항상 FINALIZE 당시의 정확한 버전을 가리킨다 — 시험지 쪽에서 별도 버전 필드를 저장할 필요가 없다.
 

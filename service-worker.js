@@ -60,7 +60,6 @@ const PRECACHE_URLS = [
   "index.html",
   "wordtest.html",
   "passage-transform.html",
-  "reading-library.html",
   "manifest.json",
   "icons/icon-192.png",
   "icons/icon-512.png",

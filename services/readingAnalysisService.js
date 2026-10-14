@@ -1,9 +1,7 @@
 // Reading Analysis (Teacher OS reconstruction, Phase C — 2026-08-26 설계 승인).
 //
-// NOT to be confused with services/readingService.js — that file is the read-only aggregator over
-// the STUDENT-facing reading-library.html collections (readingLibrary/readingVocab/readingJournal/
-// readingActivity). This file owns a completely separate, TEACHER-facing collection
-// (readingAnalyses) that reading-library.html and readingService.js never touch and never will.
+// This file owns a TEACHER-facing collection (readingAnalyses), completely separate from the
+// 2026-10 리딩 라이브러리 제거 이후의 services/readingService.js(빈 껍데기).
 //
 // Also separate from the legacy Reading Question Bank (readingPassages/readingQuestions,
 // services/questionBankService.js §Reading Question Bank) — that pair is frozen/legacy per the

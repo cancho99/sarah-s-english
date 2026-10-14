@@ -52,8 +52,8 @@ window.SarahServices = window.SarahServices || {};
   }
 
   // Generic write primitives — added for Phase 5 (Question Bank), which is the first services/
-  // consumer that owns a standalone collection of its own (one doc per item, like materialsLibrary/
-  // readingLibrary) rather than only reading/joining collections index.html or another file already
+  // consumer that owns a standalone collection of its own (one doc per item, like materialsLibrary)
+  // rather than only reading/joining collections index.html or another file already
   // owns. Kept generic (collectionName as a parameter) so any future collection with the same
   // one-doc-per-item shape can reuse these instead of every service reimplementing addDoc/setDoc/
   // deleteDoc calls against window.__* directly.
@@ -68,23 +68,5 @@ window.SarahServices = window.SarahServices || {};
     await window.__deleteDoc(window.__doc(db(), collectionName, id));
   }
 
-  // 섀도잉 녹음(2026-09-03) — reading-library.html이 Storage에 올린
-  // shadowingRecordings/{studentId}/{storyId}/latest.webm을 교사 화면(ReadingHistoryEntry)이
-  // 재생하기 위해서만 쓰는 읽기 전용 헬퍼. 녹음이 없는 게 정상 상태(대부분의 지문 기록에는 아직
-  // 녹음이 없다)라, "object-not-found"는 에러가 아니라 그냥 null로 돌려준다 — 호출부가 매번
-  // try/catch를 반복하지 않도록 여기서 흡수한다. window.__storage가 없으면(Storage init 자체가
-  // fail-soft로 실패한 환경) 마찬가지로 조용히 null.
-  async function getShadowingRecordingUrl(studentIdVal, storyId) {
-    if (!window.__storage || !studentIdVal || !storyId) return null;
-    try {
-      const path = `shadowingRecordings/${studentIdVal}/${storyId}/latest.webm`;
-      return await window.__getDownloadURL(window.__storageRef(window.__storage, path));
-    } catch (e) {
-      if (e && e.code === "storage/object-not-found") return null;
-      console.warn("섀도잉 녹음 URL 조회 실패", e);
-      return null;
-    }
-  }
-
-  window.SarahServices.firebaseClient = { getDoc, getAllDocs, getDocsWhere, docSizeBytes, addDocTo, setDocAt, deleteDocAt, getShadowingRecordingUrl };
+  window.SarahServices.firebaseClient = { getDoc, getAllDocs, getDocsWhere, docSizeBytes, addDocTo, setDocAt, deleteDocAt };
 })();
