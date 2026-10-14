@@ -2184,9 +2184,10 @@ exports.sendTestNotification = onRequest(
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
-    // 교사 ID 토큰(role === "teacher")이 있어야만 동작한다 — 아무나 임의 FCM 토큰으로 푸시를 보내지 못하게.
+    // 로그인한 사용자(교사/학생/학부모)의 유효한 ID 토큰이 있어야만 동작한다 — 로그인 없이 임의 FCM
+    // 토큰으로 푸시를 보내지 못하게.
     try {
-      await verifyTeacher(req);
+      await verifyAnyIdToken(req);
     } catch (e) {
       res.status(e.status || 401).json({ error: e.message });
       return;
@@ -2300,29 +2301,24 @@ exports.studentLogin = onRequest(
 // SUBMITTED된 attempt"에 대해서만 정답을 내준다 — 응시 도중에는 어떤 경로로도 정답이 클라이언트에
 // 닿지 않는다(기존 8-D 구현의 알려진 한계 — 전체 문제은행 raw 문서가 로드 시점에 이미 브라우저에
 // 와 있던 것 — 를 실제로 해소한다).
-// verifyStudentOrParent와 같은 패턴 — Authorization: Bearer <ID 토큰>을 verifyIdToken으로 검증하고
-// teacherLogin이 심은 role === "teacher" 클레임이 있을 때만 통과시킨다.
-async function verifyTeacher(req) {
+// Authorization: Bearer <ID 토큰>이 이 프로젝트의 유효한 Firebase ID 토큰이면 통과시킨다(role은 보지
+// 않는다 — 교사/학생/학부모 모두 teacherLogin/studentLogin이 발급한 Custom Token으로 로그인한다).
+// 토큰이 없거나 유효하지 않으면 401.
+async function verifyAnyIdToken(req) {
   const m = /^Bearer (.+)$/.exec(req.headers.authorization || "");
   if (!m) {
     const err = new Error("인증 토큰이 없습니다.");
     err.status = 401;
     throw err;
   }
-  let decoded;
   try {
-    decoded = await admin.auth().verifyIdToken(m[1]);
+    const decoded = await admin.auth().verifyIdToken(m[1]);
+    return { uid: decoded.uid, role: decoded.role };
   } catch (e) {
     const err = new Error("인증 토큰이 유효하지 않습니다.");
     err.status = 401;
     throw err;
   }
-  if (decoded.role !== "teacher") {
-    const err = new Error("선생님 권한이 필요합니다.");
-    err.status = 403;
-    throw err;
-  }
-  return { uid: decoded.uid };
 }
 
 async function verifyStudentOrParent(req) {

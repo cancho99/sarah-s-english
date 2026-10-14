@@ -21,7 +21,7 @@
 | `index.html` | 9,618줄 (~674KB) | React 18 UMD + `htm` (JSX 없음, 빌드 없음) | 메인 앱 — 교사/학생/학부모 포털 |
 | `wordtest.html` | 930줄 | 순수 JS/DOM | 단어시험지 생성/관리 |
 | `passage-transform.html` | 703줄 | 순수 JS/DOM | AI 지문 변형/문제 생성 + 아카이브 |
-| `functions/index.js` | 935줄 | Firebase Functions v2 (Node 20) | AI 프록시 6모드 + FCM 알림 2종 + 스케줄 알림 2종 |
+| `functions/index.js` | 935줄 | Firebase Functions v2 (Node 22) | AI 프록시 6모드 + FCM 알림 2종 + 스케줄 알림 2종 |
 
 3개 HTML 모두 **동일한 `firebaseConfig`를 각자 인라인으로 복붙**하고 있다(`index.html`, `wordtest.html`, `passage-transform.html`) — 프로젝트 설정이 바뀌면 3곳을 손으로 고쳐야 한다.
 
@@ -301,7 +301,7 @@ materialsLibrary / sharedMaterialsLibrary / materialDownloadLog ── index.htm
 
 `firebase-messaging-sw.js`는 모든 발송이 data-only(FCM `notification` 필드 미사용)인 이유(포그라운드/백그라운드 표시 로직 통일)에 맞춰 `onBackgroundMessage`에서 `showNotification`을 직접 호출한다. `notificationclick` 핸들러는 없음(클릭 시 커스텀 동작 없음).
 
-`functions/package.json`: Node 20, 의존성은 `firebase-admin`/`firebase-functions`뿐 — **`@anthropic-ai/sdk` 없음**(raw fetch 사용).
+`functions/package.json`: Node 22, 의존성은 `firebase-admin`/`firebase-functions`뿐 — **`@anthropic-ai/sdk` 없음**(raw fetch 사용).
 
 ---
 

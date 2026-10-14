@@ -969,9 +969,10 @@ async function notifyStudent(token, kind, detail) {
 
 // Sends a test push straight to the token just issued, so enabling notifications gives
 // immediate feedback instead of only working the next time a real event happens to fire.
-// sendTestNotification Cloud Function은 이제 교사 ID Token(role === "teacher")이 있어야만 동작한다.
-// 로그인 직후에는 syncTeacherFirebaseAuth(Custom Token 로그인)가 아직 끝나기 전일 수 있어서,
-// currentUser가 아직 없을 때만 그 완료 신호(__teacherAuthReadyPromise)를 최대 5초 기다린다.
+// sendTestNotification Cloud Function은 로그인한 사용자(교사/학생/학부모)의 유효한 ID Token이 있어야만
+// 동작한다. 교사는 로그인 직후 syncTeacherFirebaseAuth(Custom Token 로그인)가 아직 끝나기 전일 수 있어서,
+// currentUser가 아직 없을 때만 그 완료 신호(__teacherAuthReadyPromise)를 최대 5초 기다린다(학생/학부모는
+// syncStudentFirebaseAuth가 로그인 시점·세션 복원 시점에 이미 붙여두므로 보통 바로 통과한다).
 async function sendTestNotification(token) {
   if (!(window.__auth && window.__auth.currentUser)) {
     await Promise.race([
@@ -988,7 +989,7 @@ async function sendTestNotification(token) {
     headers: { "content-type": "application/json", authorization: "Bearer " + idToken },
     body: JSON.stringify({ token }),
   });
-  if (res.status === 403) throw new Error("테스트 알림은 선생님 계정에서만 보낼 수 있어요.");
+  if (res.status === 401) throw new Error("로그인 세션이 만료됐어요. 다시 로그인해 주세요.");
   if (!res.ok) throw new Error("테스트 알림을 보내지 못했어요.");
 }
 // 리포트 로고 이미지 (학원 로고, base64 인라인 — 인쇄 창은 about:blank라 상대경로 이미지가 안 뜨므로 data URI 사용)
