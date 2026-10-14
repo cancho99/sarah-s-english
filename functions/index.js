@@ -9,6 +9,12 @@
  *   firebase functions:secrets:set ANTHROPIC_API_KEY
  */
 
+// ── 운영 상한 (비용/남용 방어) ──
+// aiWorker 하루 호출 상한(KST 기준 날짜별, 초과하면 429). 바꾸려면 이 숫자 하나만 고치면 된다.
+const AI_DAILY_CALL_LIMIT = 300;
+// aiWorker / notifyTeacher / notifyStudent / sendTestNotification 동시 인스턴스 상한.
+const MAX_INSTANCES = 3;
+
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
@@ -1062,12 +1068,109 @@ function sanitizeTransformResult(parsed) {
   return { ...parsed, changes: clean };
 }
 
+// ── aiWorker 입력 길이 상한 ──
+// 정상 사용 최대치를 코드/프롬프트에서 확인한 값의 약 2배로 잡았다.
+// - 지문(passage/passageText): 이 저장소에 기록된 실사용 최대 지문이 4,405자(약 20문장, readingAnalyze의
+//   64000 토큰 배정 근거)이고 지문 분석 모드의 문장당 토큰 배정(1200)도 64000에서 clamp되므로 약
+//   53문장(≈8,000자)이 구조적 상한이다 → 9,000자.
+// - rough(월간 리포트 메모): buildReportPrompt가 실제로 쓰는 content/good/improve/comment/nextMonth만
+//   센다(notes는 프롬프트에 안 들어가므로 길이 검사에서 제외) → JSON 12,000자.
+// - 오답노트 문항(sourceQuestion/items/exampleQuestions): 문항 1개는 보기·지문 포함 수천 자, 한 번에
+//   보내는 목록은 수십 개 수준 → 각각 12,000 / 60,000 / 60,000자 (+ 개수 상한).
+// - 이미지 타일(examkey, extractBlankInferenceQuestions)·PDF(nelt, examkey 폴백): 클라이언트가 페이지를
+//   열 단위로 잘라 PNG로 보내므로 개수와 총 base64 길이로 제한 → 60장 / 총 30M자, PDF 14M자(≈10MB).
+// 문자열은 .length, 객체/배열은 JSON.stringify 길이로 잰다. 모르는 필드는 건드리지 않는다.
+const AI_INPUT_LIMITS = {
+  passage: 9000,
+  passageText: 9000,
+  rough: 12000,
+  sourceQuestion: 12000,
+  items: 60000,
+  exampleQuestions: 60000,
+  taxonomy: 20000,
+  analysis: 200000, // readingAnalysisGenerate가 실제로 쓰는 건 일부 필드뿐이지만 저장된 분석 객체 전체가 온다
+  types: 10000,
+  questionTypes: 5000,
+  studentName: 100,
+  month: 20,
+  level: 200,
+  grade: 50,
+  category: 300,
+  mainCategoryLabel: 300,
+  subCategoryLabel: 300,
+  questionTypeLabel: 300,
+  difficultyLabel: 300,
+  difficulty: 300,
+  pdfBase64: 14000000,
+};
+const AI_MAX_LIST_ITEMS = { items: 200, exampleQuestions: 100, types: 40, questionTypes: 40, taxonomy: 300 };
+const AI_MAX_IMAGES = 60;
+const AI_MAX_IMAGES_TOTAL_CHARS = 30000000;
+
+function measureInput(v) {
+  if (v === undefined || v === null) return 0;
+  if (typeof v === "string") return v.length;
+  try { return JSON.stringify(v).length; } catch { return Infinity; }
+}
+
+// 통과하면 null, 거절 사유가 있으면 사용자에게 보여줄 한국어 메시지를 돌려준다.
+function checkAiInputSize(body) {
+  for (const [field, max] of Object.entries(AI_INPUT_LIMITS)) {
+    let v = body[field];
+    if (field === "rough" && v && typeof v === "object") {
+      const { notes, ...usedByPrompt } = v; // notes는 프롬프트에 쓰이지 않는다
+      v = usedByPrompt;
+    }
+    if (measureInput(v) > max) {
+      const isPassage = field === "passage" || field === "passageText";
+      return isPassage
+        ? `지문이 너무 깁니다. ${max.toLocaleString("en-US")}자 이하로 줄여 주세요.`
+        : `입력이 너무 깁니다. (${field}: 최대 ${max.toLocaleString("en-US")}자)`;
+    }
+  }
+  for (const [field, max] of Object.entries(AI_MAX_LIST_ITEMS)) {
+    if (Array.isArray(body[field]) && body[field].length > max) {
+      return `입력 항목이 너무 많습니다. (${field}: 최대 ${max}개)`;
+    }
+  }
+  if (body.images !== undefined && body.images !== null) {
+    if (!Array.isArray(body.images)) return "images 형식이 올바르지 않습니다.";
+    if (body.images.length > AI_MAX_IMAGES) return `이미지가 너무 많습니다. (최대 ${AI_MAX_IMAGES}장)`;
+    let total = 0;
+    for (const img of body.images) total += typeof img === "string" ? img.length : Infinity;
+    if (total > AI_MAX_IMAGES_TOTAL_CHARS) return "이미지 용량이 너무 큽니다.";
+  }
+  return null;
+}
+
+// ── aiWorker 하루 호출 횟수 (aiUsage/{YYYY-MM-DD}, KST 기준) ──
+// Admin SDK 트랜잭션으로만 읽고 쓴다. firestore.rules에 이 컬렉션을 일부러 등록하지 않았으므로
+// 클라이언트는 읽지도 쓰지도 못한다(규칙에 없는 경로는 기본 거부). "호출"은 입력 검증을 통과해
+// 실제로 AI 처리로 넘어가는 aiWorker 요청 1건을 뜻한다(한 요청 안의 내부 재시도는 1회로 센다).
+async function consumeAiDailyQuota() {
+  const dateKey = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
+  const ref = db.collection("aiUsage").doc(dateKey);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const used = snap.exists ? Number(snap.data().count) || 0 : 0;
+    if (used >= AI_DAILY_CALL_LIMIT) return { allowed: false, used };
+    tx.set(ref, { count: used + 1, date: dateKey, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return { allowed: true, used: used + 1 };
+  });
+}
+// 다음 KST 자정까지 남은 초 — 429의 Retry-After용.
+function secondsUntilKstMidnight() {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
+  const next = new Date(now); next.setHours(24, 0, 0, 0);
+  return Math.max(60, Math.ceil((next - now) / 1000));
+}
+
 exports.aiWorker = onRequest(
   // readingAnalyze는 검증 실패 시 최대 2회(초기+재생성 1회) AI를 순차 호출하는데, 긴 지문에서
   // max_tokens를 64000까지 올린 뒤로 두 호출 합산 시간이 기존 300초를 넘겨 Cloud Run이 응답 전에
   // 연결을 끊어(클라이언트엔 JSON 에러도 없이 "Failed to fetch"만 보임) 실제로 재현된 문제라
   // 540초로 올린다. Gen2(Cloud Run 기반)는 최대 3600초까지 허용.
-  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 540 },
+  { secrets: [ANTHROPIC_API_KEY], region: "us-central1", cors: false, timeoutSeconds: 540, maxInstances: MAX_INSTANCES },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
@@ -1078,42 +1181,6 @@ exports.aiWorker = onRequest(
     }
 
     const apiKey = ANTHROPIC_API_KEY.value();
-
-    if (req.method === "GET") {
-      if (req.query.diag === "1") {
-        if (!apiKey) {
-          res.status(200).json({ diag: "no-key" });
-          return;
-        }
-        const testType = req.query.type || "";
-        const testMode = req.query.mode || "question";
-        const testPassage = "The quick brown fox jumps over the lazy dog. It was a sunny afternoon in the small village.";
-        const sys = testMode === "transform" ? TRANSFORM_SYSTEM_PROMPT : SYSTEM_PROMPT;
-        const prompt = testMode === "transform"
-          ? buildTransformPrompt({ passage: testPassage, level: "중3~고1 수준" })
-          : buildPrompt({ passage: testPassage, includeAnalysis: !testType, questionTypes: testType ? [testType] : [], level: "중3~고1 수준", countPerType: 1 });
-        let diagRes;
-        try {
-          diagRes = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-api-key": apiKey,
-              "anthropic-version": "2023-06-01",
-            },
-            body: JSON.stringify({ model: MODEL, max_tokens: 500, system: sys, messages: [{ role: "user", content: prompt }] }),
-          });
-        } catch (e) {
-          res.status(200).json({ diag: "fetch-threw", detail: String(e) });
-          return;
-        }
-        const bodyText = await diagRes.text();
-        res.status(200).json({ diag: "ok", status: diagRes.status, ok: diagRes.ok, testMode, testType, keyPrefix: apiKey.slice(0, 12), body: bodyText.slice(0, 800) });
-        return;
-      }
-      res.status(400).json({ error: "잘못된 요청입니다." });
-      return;
-    }
 
     if (req.method !== "POST") {
       res.status(405).json({ error: "POST 요청만 허용됩니다." });
@@ -1149,8 +1216,35 @@ exports.aiWorker = onRequest(
     // exam-studio-prototype.html 전용(2026-09-03) — 위 어떤 모드와도 무관, 독립 프로토타입.
     const isGenerateMultiType = mode === "generateMultiTypeQuestions";
 
+    // 입력 길이 상한 — 모든 모드 공통(필드 이름 기준). 클라이언트가 보낸 max_tokens는 어떤 모드에서도
+    // 읽지 않는다(아래 각 모드의 max_tokens는 전부 서버 상수이거나 지문 문장 수에 비례한 값을
+    // Math.min(64000, …)으로 clamp한 것이다).
+    const sizeError = checkAiInputSize(body);
+    if (sizeError) {
+      res.status(400).json({ error: sizeError });
+      return;
+    }
+
     if (!apiKey) {
       res.status(500).json({ error: "서버에 API 키가 설정되지 않았습니다. (Firebase Secret 확인)" });
+      return;
+    }
+
+    // 하루 호출 상한 — 입력 검증을 통과한 요청만 센다. 사용량을 확인하지 못하면(Firestore 오류) 비용
+    // 방어가 목적이므로 통과시키지 않고 503으로 막는다.
+    try {
+      const quota = await consumeAiDailyQuota();
+      if (!quota.allowed) {
+        res.set("Retry-After", String(secondsUntilKstMidnight()));
+        res.status(429).json({
+          error: `오늘 AI 사용 한도(하루 ${AI_DAILY_CALL_LIMIT}회)를 모두 사용했어요. 내일(한국 시간 자정 이후) 다시 시도해 주세요.`,
+          code: "ai-daily-limit",
+        });
+        return;
+      }
+    } catch (e) {
+      console.error("aiWorker quota check failed:", e && e.code, e && e.message);
+      res.status(503).json({ error: "AI 사용량을 확인하지 못했어요. 잠시 후 다시 시도해 주세요." });
       return;
     }
 
@@ -1974,7 +2068,7 @@ exports.aiWorker = onRequest(
 // 이 앱은 학생/선생님이 같은 문서에 쓰기 때문에 "누가" 썼는지 문서 diff만으로는 구분할 수
 // 없다 — 그래서 이벤트가 실제로 일어난 그 순간 클라이언트가 명시적으로 호출하는 방식을 쓴다.)
 exports.notifyTeacher = onRequest(
-  { region: "us-central1", cors: false },
+  { region: "us-central1", cors: false, maxInstances: MAX_INSTANCES },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
@@ -2047,7 +2141,7 @@ exports.notifyTeacher = onRequest(
 // 않고, 이미 로스터를 들고 있는 교사 클라이언트가 그 학생의 studentFcmToken을 그대로 실어
 // 보낸다 — sendTestNotification과 같은 패턴.
 exports.notifyStudent = onRequest(
-  { region: "us-central1", cors: false },
+  { region: "us-central1", cors: false, maxInstances: MAX_INSTANCES },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
@@ -2084,12 +2178,19 @@ exports.notifyStudent = onRequest(
 // 설정이 실제로 되는지 스스로 확인할 방법이 따로 필요해서 만든 범용 엔드포인트 —
 // Firestore에 저장된 토큰을 조회하지 않고, 요청에 실린 토큰으로 즉시 보낸다.
 exports.sendTestNotification = onRequest(
-  { region: "us-central1", cors: false },
+  { region: "us-central1", cors: false, maxInstances: MAX_INSTANCES },
   async (req, res) => {
     const headers = corsHeaders(req.headers.origin);
     Object.entries(headers).forEach(([k, v]) => res.set(k, v));
     if (req.method === "OPTIONS") { res.status(204).send(""); return; }
     if (req.method !== "POST") { res.status(405).json({ error: "POST 요청만 허용됩니다." }); return; }
+    // 교사 ID 토큰(role === "teacher")이 있어야만 동작한다 — 아무나 임의 FCM 토큰으로 푸시를 보내지 못하게.
+    try {
+      await verifyTeacher(req);
+    } catch (e) {
+      res.status(e.status || 401).json({ error: e.message });
+      return;
+    }
     const { token } = req.body || {};
     if (!token) { res.status(400).json({ error: "token이 필요합니다." }); return; }
     try {
@@ -2199,6 +2300,31 @@ exports.studentLogin = onRequest(
 // SUBMITTED된 attempt"에 대해서만 정답을 내준다 — 응시 도중에는 어떤 경로로도 정답이 클라이언트에
 // 닿지 않는다(기존 8-D 구현의 알려진 한계 — 전체 문제은행 raw 문서가 로드 시점에 이미 브라우저에
 // 와 있던 것 — 를 실제로 해소한다).
+// verifyStudentOrParent와 같은 패턴 — Authorization: Bearer <ID 토큰>을 verifyIdToken으로 검증하고
+// teacherLogin이 심은 role === "teacher" 클레임이 있을 때만 통과시킨다.
+async function verifyTeacher(req) {
+  const m = /^Bearer (.+)$/.exec(req.headers.authorization || "");
+  if (!m) {
+    const err = new Error("인증 토큰이 없습니다.");
+    err.status = 401;
+    throw err;
+  }
+  let decoded;
+  try {
+    decoded = await admin.auth().verifyIdToken(m[1]);
+  } catch (e) {
+    const err = new Error("인증 토큰이 유효하지 않습니다.");
+    err.status = 401;
+    throw err;
+  }
+  if (decoded.role !== "teacher") {
+    const err = new Error("선생님 권한이 필요합니다.");
+    err.status = 403;
+    throw err;
+  }
+  return { uid: decoded.uid };
+}
+
 async function verifyStudentOrParent(req) {
   const authHeader = req.headers.authorization || "";
   const m = /^Bearer (.+)$/.exec(authHeader);
