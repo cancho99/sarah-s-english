@@ -355,7 +355,7 @@ Phase 3에서 학부모 월말리포트 화면에 같은 의미의 지표(숙제
 1. **같은 화면·같은 대상(특히 학부모)에게 같은 개념의 숫자를 두 세트 보여주지 않는다.** 교사는 "편집 탭"과 "분석 탭"이 서로 다른 탭이라 두 숫자를 동시에 보지 않지만(둘 다 보존, 문제 없음), 학부모 화면은 스크롤 한 화면 안에 둘 다 있었기 때문에 문제였다.
 2. **학부모 화면은 Live Analytics만 보여준다.** `report.attendance` 같은 스냅샷 필드는 학부모 화면 렌더링에서 제외한다 — 단, **Firestore에서 그 필드 자체를 지우지는 않는다.** 교사용 편집 화면/인쇄 출력은 계속 그 값을 읽고 쓴다.
 3. Live 계산이 불가능(원본 데이터 없음)하면 임의의 값을 만들지 않고 "데이터 부족"이라고 표시한다.
-4. 새 지표를 추가할 때마다 "이거 스냅샷으로 이미 존재하는 개념 아닌가?"를 먼저 확인한다 — Source of Truth 표(homeworkService/vocabularyService/examService/readingService/reportService)에 없는 새 숫자를 만들기 전에 먼저 여기부터 확인.
+4. 새 지표를 추가할 때마다 "이거 스냅샷으로 이미 존재하는 개념 아닌가?"를 먼저 확인한다 — Source of Truth 표(homeworkService/vocabularyService/examService/reportService)에 없는 새 숫자를 만들기 전에 먼저 여기부터 확인.
 
 ---
 

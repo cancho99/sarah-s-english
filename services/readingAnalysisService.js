@@ -1,7 +1,7 @@
 // Reading Analysis (Teacher OS reconstruction, Phase C — 2026-08-26 설계 승인).
 //
 // This file owns a TEACHER-facing collection (readingAnalyses), completely separate from the
-// 2026-10 리딩 라이브러리 제거 이후의 services/readingService.js(빈 껍데기).
+// 2026-10 리딩 라이브러리 제거로 삭제된 컬렉션들.
 //
 // Also separate from the legacy Reading Question Bank (readingPassages/readingQuestions,
 // services/questionBankService.js §Reading Question Bank) — that pair is frozen/legacy per the

@@ -77,7 +77,6 @@ const PRECACHE_URLS = [
   "services/questionBankService.js",
   "services/questionGenerationService.js",
   "services/readingAnalysisService.js",
-  "services/readingService.js",
   "services/reportService.js",
   "services/revenueService.js",
   "services/roadmapService.js",
