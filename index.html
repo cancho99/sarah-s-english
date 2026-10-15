@@ -9869,6 +9869,85 @@ function gbShuffle(arr) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+// ── 문법 문제뱅크: 여러 학년 섞어서 뽑기(순수 함수 — 화면/Firestore와 무관, node로 단독 테스트 가능) ──
+// 선택 상태의 키는 "학년|대분류|소주제"다(대분류 이름이 학년마다 겹치므로 학년을 키에 포함).
+function gbSelKey(grade, cat, sub) { return grade + "|" + cat + "|" + sub; }
+// 선택된 소주제가 하나라도 있는 학년 목록(트리 순서).
+function gbSelectedGrades(tree, selected) {
+  return Object.keys(tree).filter((g) => tree[g].some((c) => c.subs.some((s) => selected[gbSelKey(g, c.cat, s)])));
+}
+// 선택된 모든 학년의 소주제를 합쳐 문항 풀을 만든다. GB_BANK 기본 문항 + Firestore 문항(myQuestions)을
+// 둘 다 포함하고, myQuestions는 학년·대분류·소주제가 정확히 일치하는 것만 가져온다. 순서는 학년 → 카테고리
+// → 소주제 순(셔플 없음). 반환: { grades, byGrade: {g: {mc, sa}}, mcPool, saPool }.
+function gbBuildPools(tree, bank, myQuestions, selected) {
+  const mineIdx = new Map();
+  (myQuestions || []).forEach((m) => {
+    const k = gbSelKey(m.grade, m.cat, m.sub);
+    if (!mineIdx.has(k)) mineIdx.set(k, []);
+    mineIdx.get(k).push(m);
+  });
+  const grades = gbSelectedGrades(tree, selected);
+  const byGrade = {}, mcPool = [], saPool = [];
+  grades.forEach((g) => {
+    const mc = [], sa = [];
+    tree[g].forEach((c) => c.subs.forEach((sub) => {
+      if (!selected[gbSelKey(g, c.cat, sub)]) return;
+      const q = bank[g][c.cat][sub];
+      mc.push(...q.mc); sa.push(...q.sa);
+      (mineIdx.get(gbSelKey(g, c.cat, sub)) || []).forEach((m) => { (m.type === "mc" ? mc : sa).push(m); });
+    }));
+    byGrade[g] = { mc, sa };
+    mcPool.push(...mc); saPool.push(...sa);
+  });
+  return { grades, byGrade, mcPool, saPool };
+}
+// total을 n등분 — 나머지는 앞에서부터 1개씩.
+function gbSplitCounts(total, n) {
+  const base = Math.floor(total / n), rem = total % n;
+  return Array.from({ length: n }, (_, i) => base + (i < rem ? 1 : 0));
+}
+// 문항 뽑기. 학년이 1개이거나 mixMode가 "random"이면 기존 동작 그대로(합쳐진 풀에서 객관식 → 주관식 순으로
+// 무작위). "equal"이고 학년이 2개 이상이면 객관식/주관식을 각각 학년 수로 균등 분배해 학년별 풀에서 뽑되,
+// 풀이 모자란 학년은 있는 만큼만 뽑고 다른 학년에서 채우지 않는다. 그 뒤 객관식끼리·주관식끼리 섞어서
+// 학년이 순서대로 뭉치지 않게 한다(객관식 → 주관식 배치는 기존 문제지와 동일하게 유지).
+function gbPickMix(pools, mcCount, saCount, mixMode, shuffle) {
+  const sh = shuffle || gbShuffle;
+  if (pools.grades.length < 2 || mixMode !== "equal") {
+    return [...sh(pools.mcPool).slice(0, Math.min(mcCount, pools.mcPool.length)), ...sh(pools.saPool).slice(0, Math.min(saCount, pools.saPool.length))];
+  }
+  const mcShare = gbSplitCounts(mcCount, pools.grades.length);
+  const saShare = gbSplitCounts(saCount, pools.grades.length);
+  const mc = [], sa = [];
+  pools.grades.forEach((g, i) => {
+    mc.push(...sh(pools.byGrade[g].mc).slice(0, mcShare[i]));
+    sa.push(...sh(pools.byGrade[g].sa).slice(0, saShare[i]));
+  });
+  return [...sh(mc), ...sh(sa)];
+}
+// 화면의 "예상 학년 비율"용. equal이면 학년별 정확한 개수, random이면 풀 크기에 비례한 기대값.
+function gbExpectedMix(pools, mcCount, saCount, mixMode) {
+  const n = pools.grades.length;
+  const mcN = Math.min(mcCount, pools.mcPool.length), saN = Math.min(saCount, pools.saPool.length);
+  if (n >= 2 && mixMode === "equal") {
+    const mcShare = gbSplitCounts(mcCount, n), saShare = gbSplitCounts(saCount, n);
+    const rows = pools.grades.map((g, i) => {
+      const mc = Math.min(mcShare[i], pools.byGrade[g].mc.length), sa = Math.min(saShare[i], pools.byGrade[g].sa.length);
+      return { grade: g, mc, sa, total: mc + sa };
+    });
+    return { exact: true, rows, total: rows.reduce((a, r) => a + r.total, 0), requested: mcCount + saCount };
+  }
+  const rows = pools.grades.map((g) => {
+    const mc = pools.mcPool.length ? mcN * pools.byGrade[g].mc.length / pools.mcPool.length : 0;
+    const sa = pools.saPool.length ? saN * pools.byGrade[g].sa.length / pools.saPool.length : 0;
+    return { grade: g, mc, sa, total: mc + sa };
+  });
+  return { exact: false, rows, total: mcN + saN, requested: mcCount + saCount };
+}
+// 제목 기본값용 — 한 학년이면 "중1", 둘 이상이면 "중1·중2 혼합".
+function gbGradeLabel(grades) {
+  if (!grades || grades.length === 0) return "";
+  return grades.length === 1 ? grades[0] : grades.join("·") + " 혼합";
+}
 // ①~⑤ 보기 마커 분리 정규식·기호 목록 — gbParseBulkText(붙여넣기 일괄 등록 파싱)와
 // GrammarBankPrototype의 "보기로 분리"(서술형으로 잘못 등록된 객관식 문항 복구) 양쪽이 공유한다.
 const GB_OPT_SPLIT_RE = /[①②③④⑤][^①②③④⑤]*/g;
@@ -10413,9 +10492,11 @@ function renderQuestionAnswerArea({ type, mode, opts, selectedOpt, correctOpt, o
 function GrammarBankPrototype({ roster, updateData }) {
   const [grade, setGrade] = useState(null);
   const [expanded, setExpanded] = useState({});
-  const [selected, setSelected] = useState({}); // "cat|sub" -> true
+  const [selected, setSelected] = useState({}); // "grade|cat|sub" -> true (학년마다 대분류 이름이 겹쳐서 학년을 키에 포함)
   const [mcCount, setMcCount] = useState(5);
   const [saCount, setSaCount] = useState(5);
+  // 학년 배분: "random"(합쳐진 풀에서 무작위, 기본) | "equal"(학년별 같은 개수). 학년이 2개 이상 선택됐을 때만 의미가 있다.
+  const [mixMode, setMixMode] = useState("random");
   const [cols, setCols] = useState(1);
   // 2026-09-04 — 인쇄 대제목/소제목을 사용자가 직접 입력할 수 있게. 빈 값이면 buildGrammarPrintHtml이
   // 현재 grade/문항수 기준 기본값으로 채운다(placeholder로 그 기본값을 미리 보여준다) — 입력값이
@@ -10477,29 +10558,41 @@ function GrammarBankPrototype({ roster, updateData }) {
     return () => { cancelled = true; };
   }, []);
 
+  // 2026-10 — 여러 학년의 소주제를 섞어 뽑을 수 있도록, 학년을 바꿔도 이미 고른 소주제(selected)는
+  // 초기화하지 않는다. grade는 "지금 화면에 보이는 학년"일 뿐이다. 아직 아무것도 고르지 않은 상태에서
+  // 처음 학년을 누르면 예전처럼 그 학년을 전체선택으로 시작하고, 이미 다른 학년에 선택이 있으면 새 학년은
+  // 아무것도 선택하지 않은 채 시작한다.
   function pickGrade(g) {
     setGrade(g);
-    const exp = {}; const sel = {};
-    GB_GRAMMAR_TREE[g].forEach((c, i) => { exp[c.cat] = i === 0; c.subs.forEach((s) => { sel[c.cat + "|" + s] = true; }); });
-    setExpanded(exp); setSelected(sel); setPreviewMode(null); setPreviewItems([]);
+    const exp = {};
+    GB_GRAMMAR_TREE[g].forEach((c, i) => { exp[c.cat] = i === 0; });
+    setExpanded(exp);
+    setSelected((s) => {
+      if (Object.values(s).some(Boolean)) return s;
+      const sel = {};
+      GB_GRAMMAR_TREE[g].forEach((c) => c.subs.forEach((sub) => { sel[gbSelKey(g, c.cat, sub)] = true; }));
+      return sel;
+    });
     setFormCat(GB_GRAMMAR_TREE[g][0].cat); setFormSub(GB_GRAMMAR_TREE[g][0].subs[0]);
     setBulkCat(GB_GRAMMAR_TREE[g][0].cat); setBulkSub(GB_GRAMMAR_TREE[g][0].subs[0]);
     setBulkText(""); setBulkPreview([]);
-    setSelectedIds({});
   }
   function toggleCat(cat) { setExpanded((e) => ({ ...e, [cat]: !e[cat] })); }
-  function toggleSub(cat, sub) { setSelected((s) => ({ ...s, [cat + "|" + sub]: !s[cat + "|" + sub] })); }
-  function toggleCatAll(cat, subs, checked) {
-    setSelected((s) => { const next = { ...s }; subs.forEach((sub) => { next[cat + "|" + sub] = checked; }); return next; });
+  function toggleSub(g, cat, sub) { const k = gbSelKey(g, cat, sub); setSelected((s) => ({ ...s, [k]: !s[k] })); }
+  function toggleCatAll(g, cat, subs, checked) {
+    setSelected((s) => { const next = { ...s }; subs.forEach((sub) => { next[gbSelKey(g, cat, sub)] = checked; }); return next; });
   }
+  // 전체선택/전체해제는 지금 보고 있는 학년에만 적용된다(다른 학년의 선택은 그대로).
   function selectAll(checked) {
     if (!grade) return;
-    const sel = {};
-    GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((s) => { sel[c.cat + "|" + s] = checked; }));
-    setSelected(sel);
+    setSelected((s) => {
+      const next = { ...s };
+      GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((sub) => { next[gbSelKey(grade, c.cat, sub)] = checked; }));
+      return next;
+    });
   }
-  function myQuestionsFor(cat, sub) {
-    return myQuestions.filter((m) => m.grade === grade && m.cat === cat && m.sub === sub);
+  function myQuestionsFor(g, cat, sub) {
+    return myQuestions.filter((m) => m.grade === g && m.cat === cat && m.sub === sub);
   }
   // 사이드바 학년 배지용 — 현재 선택된 학년과 무관하게 임의의 학년 g의 총 등록 문항 수를
   // 센다(GB_BANK 하드코딩/AI 더미 문항 + Firestore에서 불러온 myQuestions 합산).
@@ -10512,20 +10605,19 @@ function GrammarBankPrototype({ roster, updateData }) {
     }));
     return total;
   }
-  function getPool() {
-    const mcPool = [], saPool = [];
-    if (!grade) return { mcPool, saPool };
-    GB_GRAMMAR_TREE[grade].forEach((c) => c.subs.forEach((sub) => {
-      if (selected[c.cat + "|" + sub]) {
-        const q = GB_BANK[grade][c.cat][sub];
-        mcPool.push(...q.mc); saPool.push(...q.sa);
-        myQuestionsFor(c.cat, sub).forEach((m) => { (m.type === "mc" ? mcPool : saPool).push(m); });
-      }
-    }));
-    return { mcPool, saPool };
-  }
-  const { mcPool, saPool } = getPool();
+  // 선택된 모든 학년의 소주제를 합친 문항 풀(gbBuildPools 참고).
+  function getPool() { return gbBuildPools(GB_GRAMMAR_TREE, GB_BANK, myQuestions, selected); }
+  const pools = getPool();
+  const { mcPool, saPool } = pools;
   const pickedCount = Object.values(selected).filter(Boolean).length;
+  function pickedCountForGrade(g) {
+    let n = 0;
+    GB_GRAMMAR_TREE[g].forEach((c) => c.subs.forEach((sub) => { if (selected[gbSelKey(g, c.cat, sub)]) n++; }));
+    return n;
+  }
+  // 인쇄/저장 제목의 기본값에 쓰는 학년 표기 — 한 학년이면 "중1", 둘 이상이면 "중1·중2 혼합".
+  const gradeLabel = gbGradeLabel(pools.grades) || grade || "";
+  const expectedMix = pools.grades.length >= 2 ? gbExpectedMix(pools, mcCount, saCount, mixMode) : null;
   // 2026-09-08 — "빈칸 점검" 배너용. myQuestions(전체 학년, Firestore에 등록된 것)에서 의심스러운
   // 문항만 걸러낸다. 현재 선택된 grade와 무관하게 전체를 대상으로 한다.
   const suspiciousQuestions = myQuestions.filter(isSuspiciousGbQuestion);
@@ -10781,7 +10873,7 @@ function GrammarBankPrototype({ roster, updateData }) {
   // 전용 창을 열고 그 창에만 깨끗한 문제지 HTML을 넣은 뒤 esOpenPrintWindow로 인쇄)으로 바꿨다.
   function buildGrammarPrintHtml(items, showAnswers, titleText, subtitleText) {
     const effectiveTitle = (titleText || "").trim() || "문법 문제뱅크";
-    const effectiveSubtitle = (subtitleText || "").trim() || `${grade} · ${items.length}문항`;
+    const effectiveSubtitle = (subtitleText || "").trim() || `${gradeLabel} · ${items.length}문항`;
     const qBlocks = items.map((item, idx) => {
       // 화면과 같은 보정·서식 파이프라인을 인쇄에도 그대로 적용 — "①②③④ 두 사이클" opts
       // 보정(sanitizeGbMcOptsForDisplay)과 지시문/본문 줄바꿈·박스·라벨 표시(renderQuestionStemHtml)
@@ -10855,21 +10947,19 @@ function GrammarBankPrototype({ roster, updateData }) {
     const studentName = (roster.find((r) => r.id === selectedStudentId) || {}).name || "";
     await updateData(selectedStudentId, (d) => ({
       ...d,
-      examTests: [{ id: uid(), title: printTitle.trim() || `문법 문제뱅크 (${grade})`, date: today(), questions }, ...(d.examTests || [])],
+      examTests: [{ id: uid(), title: printTitle.trim() || `문법 문제뱅크 (${gradeLabel})`, date: today(), questions }, ...(d.examTests || [])],
     }));
     alert(`${questions.length}문항을 ${studentName}에게 배정했어요 — "추가시험(퀴즈)" 탭에서 확인할 수 있어요.`);
   }
 
   function runPreview(mode) {
-    const mcN = Math.min(mcCount, mcPool.length);
-    const saN = Math.min(saCount, saPool.length);
-    setPreviewItems([...gbShuffle(mcPool).slice(0, mcN), ...gbShuffle(saPool).slice(0, saN)]);
+    setPreviewItems(gbPickMix(pools, mcCount, saCount, mixMode));
     setPreviewMode(mode);
     setSelectedIds({});
   }
   // "전체 목록 보기" — 위 미리보기(문제보기/정답보기)는 총 문항수 설정에 맞춰 무작위로 뽑은
   // 일부만 보여주는데, 실제로 등록된 문항을 전부 훑어보고 싶다는 요청(2026-09-03)으로 추가했다.
-  // 셔플 없이 카테고리 순서 그대로, 선택된 소주제의 객관식+주관식 전 문항을 보여준다.
+  // 셔플 없이 학년 순서 → 카테고리 순서 그대로, 선택된 소주제의 객관식+주관식 전 문항을 보여준다.
   function showAllQuestions() {
     setPreviewItems([...mcPool, ...saPool]);
     setPreviewMode("qa");
@@ -10885,7 +10975,8 @@ function GrammarBankPrototype({ roster, updateData }) {
           ${Object.keys(GB_GRAMMAR_TREE).map((g) => html`
             <div key=${g} className=${"es-sidebar-item" + (grade === g ? " active" : "")} onClick=${() => pickGrade(g)}>
               <span className="lb">${g}</span>
-              <span className="es-sidebar-badge">${totalQuestionsForGrade(g)}</span>
+              <span title="이 학년에서 고른 소주제 수" style=${{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "1px 8px", background: pickedCountForGrade(g) > 0 ? C.gold : "#ECE9E1", color: pickedCountForGrade(g) > 0 ? "#fff" : "#A9A496" }}>${pickedCountForGrade(g)}</span>
+              <span className="es-sidebar-badge" title="이 학년의 전체 문항수" style=${{ fontSize: 9.5, padding: "1px 6px", opacity: 0.8 }}>${totalQuestionsForGrade(g)}</span>
             </div>
           `)}
         </div>
@@ -10937,15 +11028,39 @@ function GrammarBankPrototype({ roster, updateData }) {
           ${!grade ? html`
             <div style=${{ textAlign: "center", color: "#9a9488", fontSize: 13, padding: "80px 0" }}>왼쪽에서 학년을 선택하세요.</div>
           ` : html`
-            <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>선택된 소주제 ${pickedCount}개</div>
+            <${Card} style=${{ marginBottom: 14, padding: "12px 16px" }}>
+              <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: pickedCount > 0 ? 8 : 0, gap: 8 }}>
+                <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>선택한 범위</div>
+                <div style=${{ fontSize: 11.5, color: C.slate }}>${pickedCount > 0 ? `${pools.grades.length}개 학년 · 소주제 ${pickedCount}개` : ""}</div>
+              </div>
+              ${pickedCount === 0 ? html`
+                <div style=${{ fontSize: 12, color: "#9a9488", paddingTop: 6 }}>아직 고른 소주제가 없어요. 아래에서 학년별로 소주제를 골라 보세요 — 여러 학년을 섞어서 뽑을 수 있어요.</div>
+              ` : html`
+                <div style=${{ maxHeight: 132, overflowY: "auto" }}>
+                  ${pools.grades.map((g) => html`
+                    <div key=${g} style=${{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                      <span onClick=${() => pickGrade(g)} title="이 학년 보기" style=${{ flexShrink: 0, minWidth: 34, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#fff", background: C.navy, borderRadius: 4, padding: "3px 6px", cursor: "pointer" }}>${g}</span>
+                      <div style=${{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1, minWidth: 0 }}>
+                        ${GB_GRAMMAR_TREE[g].map((c) => c.subs.filter((sub) => selected[gbSelKey(g, c.cat, sub)]).map((sub) => html`
+                          <span key=${c.cat + "|" + sub} style=${{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: C.navy, background: "#FBF6EA", border: `1px solid ${C.gold}`, borderRadius: 20, padding: "2px 4px 2px 9px" }}>
+                            ${c.cat} · ${sub}
+                            <span onClick=${() => toggleSub(g, c.cat, sub)} title="선택 해제" style=${{ cursor: "pointer", color: C.slate, fontSize: 12, lineHeight: 1, padding: "0 4px" }}>✕</span>
+                          </span>
+                        `))}
+                      </div>
+                    </div>
+                  `)}
+                </div>
+              `}
+            <//>
             <div style=${{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, alignItems: "start" }}>
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 6 }}>
-            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>CATEGORY</div>
+            <div style=${{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: .5 }}>CATEGORY<span style=${{ color: C.navy, marginLeft: 6 }}>· ${grade}</span></div>
             <div style=${{ display: "flex", gap: 4 }}>
-              <span onClick=${() => selectAll(true)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
-              <span onClick=${() => selectAll(false)} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체해제</span>
+              <span onClick=${() => selectAll(true)} title=${grade + "에만 적용"} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체선택</span>
+              <span onClick=${() => selectAll(false)} title=${grade + "에만 적용"} style=${{ fontSize: 11, color: C.slate, cursor: "pointer", border: `1px solid ${C.line}`, borderRadius: 20, padding: "3px 10px" }}>전체해제</span>
             </div>
           </div>
           <div style=${{ maxHeight: 560, overflowY: "auto" }}>
@@ -10953,17 +11068,17 @@ function GrammarBankPrototype({ roster, updateData }) {
               <div key=${c.cat} style=${{ borderBottom: `1px solid #EDEAE2` }}>
                 <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "9px 4px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: C.navy }} onClick=${() => toggleCat(c.cat)}>
                   <span style=${{ fontSize: 10, color: C.slate, width: 10, display: "inline-block", transform: expanded[c.cat] ? "rotate(90deg)" : "none" }}>▶</span>
-                  <input type="checkbox" checked=${c.subs.every((s) => selected[c.cat + "|" + s])} onClick=${(e) => e.stopPropagation()} onChange=${(e) => toggleCatAll(c.cat, c.subs, e.target.checked)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+                  <input type="checkbox" checked=${c.subs.every((s) => selected[gbSelKey(grade, c.cat, s)])} onClick=${(e) => e.stopPropagation()} onChange=${(e) => toggleCatAll(grade, c.cat, c.subs, e.target.checked)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
                   <span>${c.cat}</span>
                 </div>
                 ${expanded[c.cat] && html`
                   <div style=${{ padding: "0 0 8px 20px" }}>
                     ${c.subs.map((sub) => {
-                      const key = c.cat + "|" + sub; const checked = !!selected[key];
-                      const total = GB_BANK[grade][c.cat][sub].mc.length + GB_BANK[grade][c.cat][sub].sa.length + myQuestionsFor(c.cat, sub).length;
+                      const checked = !!selected[gbSelKey(grade, c.cat, sub)];
+                      const total = GB_BANK[grade][c.cat][sub].mc.length + GB_BANK[grade][c.cat][sub].sa.length + myQuestionsFor(grade, c.cat, sub).length;
                       return html`
                         <label key=${sub} style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: `1px solid ${checked ? C.gold : C.line}`, background: checked ? "#FBF6EA" : "#fff", borderRadius: 4, cursor: "pointer", fontSize: 11.5, marginBottom: 6 }}>
-                          <input type="checkbox" checked=${checked} onChange=${() => toggleSub(c.cat, sub)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
+                          <input type="checkbox" checked=${checked} onChange=${() => toggleSub(grade, c.cat, sub)} style=${{ width: 14, height: 14, appearance: "auto", flexShrink: 0 }} />
                           <span style=${{ flex: 1 }}>${sub}</span>
                           <span style=${{ fontSize: 10.5, color: "#9a9488", flexShrink: 0, whiteSpace: "nowrap" }}>${total}문항</span>
                         </label>
@@ -11039,6 +11154,30 @@ function GrammarBankPrototype({ roster, updateData }) {
                   <span style=${{ fontSize: 10.5, color: parseInt(saCount) > saPool.length ? C.danger : C.slate, whiteSpace: "nowrap" }}>(가능: ${saPool.length})</span>
                 </div>
               </div>
+              ${expectedMix && html`
+                <div style=${{ padding: "8px 0", borderBottom: "1px solid #EDEAE2" }}>
+                  <div style=${{ fontSize: 12, color: C.slate, fontWeight: 600, marginBottom: 6 }}>학년 배분</div>
+                  <div style=${{ display: "flex", gap: 6 }}>
+                    <${Button} variant=${mixMode === "random" ? "primary" : "ghost"} style=${{ flex: 1, justifyContent: "center", whiteSpace: "nowrap", padding: "4px 6px", fontSize: 11.5 }} onClick=${() => setMixMode("random")}>전체에서 무작위<//>
+                    <${Button} variant=${mixMode === "equal" ? "primary" : "ghost"} style=${{ flex: 1, justifyContent: "center", whiteSpace: "nowrap", padding: "4px 6px", fontSize: 11.5 }} onClick=${() => setMixMode("equal")}>학년별 같은 비율<//>
+                  </div>
+                  <div style=${{ fontSize: 10.5, color: C.slate, marginTop: 5, lineHeight: 1.5 }}>
+                    ${mixMode === "equal" ? "객관식·주관식을 각각 학년 수로 똑같이 나눠 뽑아요. 한 학년의 문항이 모자라면 있는 만큼만 나와요." : "고른 학년의 문항을 한데 모아 무작위로 뽑아요. 문항이 많은 학년이 더 많이 나올 수 있어요."}
+                  </div>
+                  <div style=${{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "#ECE9E1", marginTop: 8 }}>
+                    ${expectedMix.total > 0 && expectedMix.rows.map((r, i) => html`<div key=${r.grade} title=${r.grade} style=${{ width: (r.total / expectedMix.total * 100) + "%", background: ["#1C2B4A", "#B8935A", "#6C7A96", "#D8C49A"][i % 4] }} />`)}
+                  </div>
+                  <div style=${{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 10.5, color: C.slate, marginTop: 5 }}>
+                    ${expectedMix.rows.map((r, i) => html`
+                      <span key=${r.grade} style=${{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <span style=${{ width: 8, height: 8, borderRadius: 2, background: ["#1C2B4A", "#B8935A", "#6C7A96", "#D8C49A"][i % 4] }} />
+                        ${r.grade} ${expectedMix.exact ? `${r.total}문항` : (expectedMix.total > 0 ? `약 ${Math.round(r.total / expectedMix.total * 100)}%` : "-")}
+                      </span>
+                    `)}
+                  </div>
+                  ${expectedMix.exact && expectedMix.total < expectedMix.requested && html`<div style=${{ fontSize: 10.5, color: C.danger, marginTop: 4 }}>학년별 풀이 모자라 ${expectedMix.requested}문항 중 ${expectedMix.total}문항만 뽑혀요.</div>`}
+                </div>
+              `}
               <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
                 <span style=${{ fontSize: 12, color: C.slate, fontWeight: 600 }}>단 나누기</span>
                 <div style=${{ display: "flex", gap: 6 }}>
@@ -11051,7 +11190,7 @@ function GrammarBankPrototype({ roster, updateData }) {
                   <input value=${printTitle} onChange=${(e) => setPrintTitle(e.target.value)} placeholder="문법 문제뱅크" style=${{ ...inputStyle, fontSize: 12.5 }} />
                 <//>
                 <${Field} label="인쇄 소제목">
-                  <input value=${printSubtitle} onChange=${(e) => setPrintSubtitle(e.target.value)} placeholder=${`${grade} · ${previewItems.length}문항`} style=${{ ...inputStyle, fontSize: 12.5 }} />
+                  <input value=${printSubtitle} onChange=${(e) => setPrintSubtitle(e.target.value)} placeholder=${`${gradeLabel} · ${previewItems.length}문항`} style=${{ ...inputStyle, fontSize: 12.5 }} />
                 <//>
               </div>
             <//>
