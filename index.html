@@ -412,6 +412,31 @@ if ("serviceWorker" in navigator) {
   .ap-drawer-x:hover { background: #F3F1EB; color: #14161A; }
   .ap-drawer-body { padding: 16px 20px 40px; overflow-y: auto; flex: 1; }
   @media (prefers-reduced-motion: reduce) { .ap-drawer, .ap-scrim { transition: none; } }
+  /* 학생/학부모 앱(2026-10 UI 리디자인) — 휴대폰 우선. 하단 탭 바는 폭이 넓어도 가운데 640px로 제한한다. */
+  .app-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .app-brand { font-family: 'Newsreader', Georgia, serif; font-size: 19px; color: #1C2B4A; }
+  .app-brand i { font-style: italic; color: #B8935A; }
+  .app-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(20,22,26,0.05); }
+  .app-card.navy { background: #1C2B4A; border-color: #1C2B4A; color: #fff; }
+  .app-h3 { font-size: 13px; font-weight: 700; color: #5B6270; letter-spacing: .02em; }
+  .app-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .app-metric { background: #F3F1EB; border-radius: 10px; padding: 10px 12px; }
+  .app-metric .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .app-metric .l { font-size: 12px; color: #5B6270; }
+  .app-todo { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid #DCD8CF; }
+  .app-todo:first-of-type { border-top: none; }
+  .app-todo .dot { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid #DCD8CF; flex: none; }
+  .app-todo.od .dot { border-color: #A6473A; }
+  .app-btn { border: none; border-radius: 10px; min-height: 36px; padding: 6px 16px; font-size: 13.5px; font-weight: 500; background: #1C2B4A; color: #fff; cursor: pointer; white-space: nowrap; }
+  .app-btn.gold { background: #B8935A; color: #14161A; }
+  .app-btn.block { width: 100%; min-height: 48px; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .app-btn.ghost { background: #fff; color: #14161A; border: 1px solid #DCD8CF; }
+  .app-tabbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: min(100%, 640px); z-index: 50; display: grid; grid-template-columns: repeat(5, 1fr); background: #fff; border-top: 1px solid #DCD8CF; padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 10px rgba(20,22,26,0.06); }
+  .app-tabbar button { border: none; background: none; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: #5B6270; padding: 4px 0; min-height: 48px; cursor: pointer; }
+  .app-tabbar button.on { color: #14161A; font-weight: 700; }
+  .app-tabbar button.on svg { color: #B8935A; }
+  .app-list > * + * { border-top: 1px solid #DCD8CF; }
+  .app-li { display: flex; align-items: center; gap: 12px; padding: 14px 0; width: 100%; border: none; background: none; text-align: left; font-size: 15px; cursor: pointer; color: #14161A; }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -1648,11 +1673,11 @@ function HomeworkProgressCard({ data, big }) {
   const { total, done, pct } = homeworkStats(data);
   return html`
     <${Card} style=${{ marginBottom: 0 }}>
-      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>이번 달 숙제 진행율</div>
-      ${total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 숙제가 없어요.</div>` : html`
+      <div className="app-h3" style=${{ marginBottom: 6 }}>Homework this month</div>
+      ${total === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>No homework yet.</div>` : html`
         <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style=${{ ...serif, fontSize: big ? 34 : 22, color: C.navy, fontWeight: 700 }}>${pct}%</div>
-          <div style=${{ fontSize: 12, color: C.slate }}>${done} / ${total} 완료</div>
+          <div style=${{ fontSize: 12, color: C.slate }}>${done} / ${total} done</div>
         </div>
         <div style=${{ height: 8, background: C.line, borderRadius: 4, marginTop: 8, overflow: "hidden" }}>
           <div style=${{ height: "100%", width: pct + "%", background: C.gold }} />
@@ -2358,6 +2383,14 @@ const ICON_PATHS = {
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  bell: '<path d="M6 17V11a6 6 0 0112 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',
+  timer: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 3h5"/>',
+  wallet: '<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2"/>',
+  map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+  book: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6"/>',
+  folder: '<path d="M3.5 6.5A1.5 1.5 0 015 5h4l2 2.5h8A1.5 1.5 0 0120.5 9v9A1.5 1.5 0 0119 19.5H5A1.5 1.5 0 013.5 18z"/>',
+  doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14.5 3v5H19M9 13h7M9 17h5"/>',
 };
 function Icon({ name, size = 18, style }) {
   return html`<svg viewBox="0 0 24 24" width=${size} height=${size} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style=${{ flex: "none", ...style }} dangerouslySetInnerHTML=${{ __html: ICON_PATHS[name] || "" }} />`;
@@ -2723,7 +2756,7 @@ function App() {
   const isWide = screen === "home" || isModal;
   return html`
     <div style=${{ minHeight: "100vh", background: C.ivory }}>
-      ${(screen !== "home" && !isModal) && html`<${TopBar} tagline=${screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />`}
+      ${(screen !== "home" && !isModal && screen !== "studentDash" && screen !== "parentDash") && html`<${TopBar} tagline=${screen === "studentDash" ? "Student Portal" : screen === "parentDash" ? "Parent Portal" : "learning, tracked with care"} />`}
       <div style=${{ maxWidth: isWide ? 1080 : 480, margin: "0 auto", padding: (screen === "home" || isModal) ? "0 0 60px" : "18px 16px 60px" }}>
         ${(screen === "home" || isModal) && html`<${HomePage} setScreen=${setScreen} announcement=${announcement} />`}
         ${screen === "studentDash" && html`<${StudentDash} student=${roster.find((r) => r.id === session.student.id) || session.student}
@@ -2842,14 +2875,14 @@ function NotifyButton({ onEnable }) {
 
   if (status === "on") return html`
     <span>
-      <span style=${{ fontSize: 11.5, color: C.navy }}>🔔 알림 켜짐</span>
-      <button onClick=${retest} style=${{ background: "none", border: "none", color: C.gold, fontSize: 10.5, marginLeft: 8, cursor: "pointer", textDecoration: "underline" }}>테스트 알림 다시 보내기</button>
+      <span style=${{ fontSize: 12.5, color: C.navy, display: "inline-flex", alignItems: "center", gap: 5 }}><${Icon} name="bell" size=${15} />Notifications on</span>
+      <button onClick=${retest} style=${{ background: "none", border: "none", color: C.gold, fontSize: 10.5, marginLeft: 8, cursor: "pointer", textDecoration: "underline" }}>Send test</button>
       ${testMsg && html`<div style=${{ fontSize: 10.5, color: C.slate, marginTop: 4, maxWidth: 220 }}>${testMsg}</div>`}
     </span>
   `;
   return html`
     <span>
-      <button onClick=${handle} disabled=${busy} style=${{ background: "none", border: `1px solid ${C.gold}`, color: C.gold, fontSize: 11.5, padding: "4px 10px", borderRadius: 3, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>${busy ? "설정 중..." : "🔔 알림 받기"}</button>
+      <button onClick=${handle} disabled=${busy} style=${{ background: "#fff", border: `1px solid ${C.line}`, color: C.ink, fontSize: 12.5, padding: "6px 12px", borderRadius: 8, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", gap: 6 }}><${Icon} name="bell" size=${15} />${busy ? "Setting up..." : "Enable notifications"}</button>
       ${err && html`<div style=${{ fontSize: 10.5, color: C.danger, marginTop: 4, maxWidth: 200 }}>${err}</div>`}
     </span>
   `;
@@ -5395,22 +5428,71 @@ const STUDENT_STATUS_EXPLAIN = {
   needsAttention: "숙제와 단어 학습에 조금 더 신경 써 주세요.",
   atRisk: "숙제와 단어 학습을 다시 점검해 볼 때예요.",
 };
-function LearningStatusCard({ student, data }) {
-  const snap = computeStudentSnapshot(student, data, today());
-  const meta = STUDENT_STATUS_META[snap.status];
+// 학생/학부모 앱 공통 하단 탭 바와 상단 바(2026-10 UI 리디자인) — 아이콘 3x3 격자 홈 대신, 가장 자주 쓰는 4개 + More.
+function AppTabBar({ items, active, onChange }) {
   return html`
-    <${Card} style=${{ marginBottom: 18 }}>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700 }}>학습 상태</div>
-        <span style=${{ fontSize: 11.5, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: meta.bg, color: meta.color }}>${meta.icon} ${meta.label}</span>
+    <nav className="app-tabbar" aria-label="Main menu">
+      ${items.map((it) => html`
+        <button key=${it.key} className=${active === it.key ? "on" : ""} aria-current=${active === it.key ? "page" : undefined} onClick=${() => onChange(it.key)}>
+          <${Icon} name=${it.icon} size=${22} /><span>${it.label}</span>
+        </button>
+      `)}
+    </nav>
+  `;
+}
+function AppTopBar({ name, role, right }) {
+  return html`
+    <div className="app-topbar">
+      <div className="app-brand">Sarah's <i>English</i></div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>${right}</div>
+    </div>
+    <div style=${{ margin: "6px 0 14px" }}>
+      <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, lineHeight: 1.25 }}>${name}</div>
+      <div style=${{ fontSize: 13, color: C.slate }}>${role}</div>
+    </div>
+  `;
+}
+const STUDENT_TABS = [
+  { key: "home", label: "Home", icon: "today" },
+  { key: "homework", label: "Homework", icon: "edit" },
+  { key: "vocab", label: "Vocabulary", icon: "bank" },
+  { key: "studyTimer", label: "Study", icon: "timer" },
+  { key: "more", label: "More", icon: "more" },
+];
+const STUDENT_MORE_ITEMS = [
+  { key: "flashcards", label: "My wordbook", icon: "book" },
+  { key: "materials", label: "Materials", icon: "folder" },
+  { key: "mock", label: "Mock exam", icon: "doc" },
+  { key: "examTests", label: "Extra tests", icon: "exam" },
+  { key: "schedule", label: "Schedule", icon: "classes" },
+  { key: "exams", label: "Exams", icon: "exam" },
+];
+const STUDENT_STATUS_COPY = {
+  onTrack: { pill: "On track", tone: "ok", text: "You're doing great with homework and vocabulary." },
+  needsAttention: { pill: "Keep going", tone: "warn", text: "Homework and vocabulary could use a little more attention this week." },
+  atRisk: { pill: "Let's catch up", tone: "warn", text: "This week is a good time to catch up on homework and vocabulary. Start with anything overdue." },
+};
+function LearningStatusCard({ student, data, audience }) {
+  const snap = computeStudentSnapshot(student, data, today());
+  const isStudent = audience === "student";
+  const copy = STUDENT_STATUS_COPY[snap.status];
+  const tone = isStudent ? copy.tone : STUDENT_STATUS_TONE[snap.status];
+  const pillText = isStudent ? copy.pill : STUDENT_STATUS_LABEL[snap.status];
+  const explain = isStudent ? copy.text : STUDENT_STATUS_EXPLAIN[snap.status];
+  const metric = (label, v) => html`<div className="app-metric"><div className="v">${v != null ? v + "%" : "—"}</div><div className="l">${label}</div></div>`;
+  return html`
+    <div className="app-card" style=${{ marginBottom: 12 }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div className="app-h3">${isStudent ? "This week" : "Your child"}</div>
+        <span className=${"ap-pill " + tone}>${pillText}</span>
       </div>
-      <div style=${{ fontSize: 13, color: C.ink, marginBottom: 10 }}>${STUDENT_STATUS_EXPLAIN[snap.status]}</div>
-      <div style=${{ display: "flex", gap: 16, fontSize: 12, color: C.slate, flexWrap: "wrap" }}>
-        <div>숙제 제출률 <b style=${{ color: C.navy }}>${snap.homework.pct != null ? snap.homework.pct + "%" : "-"}</b></div>
-        <div>단어 평균 점수 <b style=${{ color: C.navy }}>${snap.vocab.mainPct != null ? snap.vocab.mainPct + "%" : "-"}</b></div>
-        <div>종합 평균 <b style=${{ color: C.navy }}>${snap.combinedPct != null ? snap.combinedPct + "%" : "-"}</b></div>
+      <div style=${{ fontSize: 13.5, color: C.ink, marginBottom: 12, lineHeight: 1.55 }}>${explain}</div>
+      <div className="app-metrics">
+        ${metric("Homework", snap.homework.pct)}
+        ${metric(isStudent ? "Vocab average" : "Vocab avg", snap.vocab.mainPct)}
+        ${metric("Overall", snap.combinedPct)}
       </div>
-    <//>
+    </div>
   `;
 }
 // 학생 목록 필터(검색/학년/상태/정렬) — 컴포넌트 밖 모듈 변수에 둔다(2026-10 UI 리디자인). 학생 상세로
@@ -22272,92 +22354,108 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
   }
 
   const header = html`
-    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생</div>
-      <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
-        <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, studentFcmToken: token }))} />
-        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
-      </div>
-    </div>
+    <${AppTopBar} name=${student.name} role="Student" right=${html`
+      <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, studentFcmToken: token }))} />
+    `} />
   `;
+  // 하단 탭 바 — 홈/숙제/단어/공부 시간 + More(나머지). More 안의 화면에서는 "← More"로 돌아간다.
+  const MAIN_TAB_KEYS = ["homework", "vocab", "studyTimer"];
+  const activeTabKey = tab === null ? "home" : MAIN_TAB_KEYS.includes(tab) ? tab : "more";
+  const tabBar = html`<${AppTabBar} items=${STUDENT_TABS} active=${activeTabKey} onChange=${(k) => setTab(k === "home" ? null : k)} />`;
+  const withTabs = (content) => html`<div style=${{ paddingBottom: 92 }}>${content}</div>${tabBar}`;
 
   if (tab === null) {
-    return html`
+  const todoRows = [
+    ...overdueHw.map((h) => ({ key: "oh" + h.id, label: h.content, sub: "Overdue · " + fmtDateDay(h.dueDate), od: true, btn: "Submit", go: () => setTab("homework") })),
+    ...overdueMock.map((t) => ({ key: "om" + t.id, label: t.title, sub: "Mock exam · overdue " + fmtDateDay(t.date), od: true, btn: "Answer", go: () => startMockTest(t, null) })),
+    ...overdueVocab.map((t) => ({ key: "ov" + t.id, label: t.title, sub: "Vocabulary test · overdue " + fmtDateDay(t.retestDate), od: true, btn: "Start", go: () => startVocabTest(t) })),
+    ...todayHw.map((h) => ({ key: "h" + h.id, label: h.content, sub: "Due today", btn: "Submit", go: () => setTab("homework") })),
+    ...todayMock.map((t) => ({ key: "m" + t.id, label: t.title, sub: "Mock exam · due today", btn: "Answer", go: () => startMockTest(t, null) })),
+    ...todayVocab.map((t) => ({ key: "v" + t.id, label: t.title, sub: "Vocabulary test · due today", btn: "Start", go: () => startVocabTest(t) })),
+  ];
+    return withTabs(html`
       <div>
         ${header}
-        <${LearningStatusCard} student=${student} data=${data} />
+        ${nextClass ? html`
+          <button className="app-card navy" onClick=${() => setTab("schedule")} style=${{ width: "100%", textAlign: "left", marginBottom: 12, cursor: "pointer", font: "inherit" }}>
+            <div style=${{ fontSize: 12.5, opacity: 0.75 }}>Next class</div>
+            <div style=${{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>${nextClass.startsWith("등록된") ? "No class scheduled" : nextClass}</div>
+          </button>
+        ` : null}
+        <${LearningStatusCard} student=${student} data=${data} audience="student" />
         ${showStudyReminder && html`
           <${Modal} onClose=${() => setStudyReminderDismissed(true)}>
             <div style=${{ textAlign: "center" }}>
-              <div style=${{ fontSize: 30, marginBottom: 8 }}>⏱</div>
-              <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 8 }}>오늘 공부 시간을 기록해 주세요</div>
-              <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 18 }}>아직 오늘 기록된 공부 시간이 없어요. "지금 기록하기"를 누르면 타이머 화면으로 바로 이동해요.</div>
+              <div style=${{ ...serif, fontSize: 17, color: C.navy, marginBottom: 8 }}>Log your study time today</div>
+              <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 18 }}>No study time logged yet today. Tap "Log now" to open the timer.</div>
               <div style=${{ display: "flex", gap: 8, justifyContent: "center" }}>
-                <${Button} variant="gold" onClick=${() => { setStudyReminderDismissed(true); setTab("studyTimer"); }}>지금 기록하기<//>
-                <${Button} variant="ghost" onClick=${() => setStudyReminderDismissed(true)}>나중에<//>
+                <${Button} variant="gold" onClick=${() => { setStudyReminderDismissed(true); setTab("studyTimer"); }}>Log now<//>
+                <${Button} variant="ghost" onClick=${() => setStudyReminderDismissed(true)}>Later<//>
               </div>
             </div>
           <//>
         `}
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 10 }}>
-          <${Card} style=${{ marginBottom: 0 }}>
-            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>오늘 해야 할 일</div>
-            ${(todayHw.length === 0 && todayMock.length === 0 && todayVocab.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : html`
-              ${todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
-              ${todayMock.map((t) => html`<div key=${"m" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>📄 오늘 마감 · ${t.title} 답안 제출</div>`)}
-              ${todayVocab.map((t) => html`<div key=${"v" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.gold, fontWeight: 700 }}>🔤 오늘 마감 · ${t.title} 단어 시험</div>`)}
-            `}
-          <//>
-          <${Card} style=${{ marginBottom: 0, ...((overdueHw.length + overdueMock.length + overdueVocab.length) > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
-            <div style=${{ fontSize: 11, color: (overdueHw.length + overdueMock.length + overdueVocab.length) > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>밀린 숙제 / 시험</div>
-            ${(overdueHw.length === 0 && overdueMock.length === 0 && overdueVocab.length === 0) ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 게 없어요!</div>` : html`
-              ${overdueHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger }}>${fmtDateDay(h.dueDate)} · ${h.content}</div>`)}
-              ${overdueMock.map((t) => html`<div key=${"m" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger, fontWeight: 700 }}>📄 ${fmtDateDay(t.date)} 마감 · ${t.title} 답안 제출</div>`)}
-              ${overdueVocab.map((t) => html`<div key=${"v" + t.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger, fontWeight: 700 }}>🔤 ${fmtDateDay(t.retestDate)} 마감 · ${t.title} 단어 시험</div>`)}
-            `}
-          <//>
-        </div>
 
-        <div style=${{ marginBottom: 18 }}><${HomeworkProgressCard} data=${data} big=${true} /></div>
-
-        <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-          <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>다음 수업</div>
-          <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
-        </div>
-
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
-          ${STUDENT_HOME_ACTIONS.map((a) => html`
-            <button key=${a.key} onClick=${() => setTab(a.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <div style=${{ width: 44, height: 44, borderRadius: "50%", background: a.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>${a.icon}</div>
-              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${a.label}</div>
-            </button>
+        <div className="app-card" style=${{ marginBottom: 12 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+            <div className="app-h3">To do</div>
+            <span style=${{ fontSize: 12.5, color: C.slate }}>${todoRows.length === 0 ? "All clear" : todoRows.length + " open"}</span>
+          </div>
+          ${todoRows.length === 0 ? html`<div style=${{ fontSize: 13.5, color: C.slate, padding: "10px 0" }}>Nothing due. Nice work.</div>` : todoRows.map((r) => html`
+            <div key=${r.key} className=${"app-todo" + (r.od ? " od" : "")}>
+              <span className="dot"></span>
+              <div style=${{ flex: 1, minWidth: 0 }}>
+                <div style=${{ fontWeight: 500, overflowWrap: "anywhere" }}>${r.label}</div>
+                <div style=${{ fontSize: 12.5, color: r.od ? C.danger : C.slate }}>${r.sub}</div>
+              </div>
+              <button className="app-btn" onClick=${r.go}>${r.btn}</button>
+            </div>
           `)}
         </div>
+        <div style=${{ marginBottom: 12 }}><${HomeworkProgressCard} data=${data} big=${false} /></div>
+        <button className="app-btn gold block" onClick=${() => setTab("studyTimer")}><${Icon} name="timer" size=${20} />Start study timer</button>
+        ${todayTotalMin > 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, textAlign: "center", marginTop: 8 }}>${todayTotalMin} min studied today</div>` : null}
       </div>
-    `;
+    `);
   }
 
-  return html`
+  if (tab === "more") {
+    return withTabs(html`
+      <div>
+        ${header}
+        <div className="app-card"><div className="app-list">
+          ${STUDENT_MORE_ITEMS.map((it) => html`
+            <button key=${it.key} className="app-li" onClick=${() => setTab(it.key)}>
+              <span style=${{ color: C.gold, display: "flex" }}><${Icon} name=${it.icon} /></span><span style=${{ flex: 1 }}>${it.label}</span><span style=${{ color: C.slate, display: "flex" }}><${Icon} name="right" size=${16} /></span>
+            </button>
+          `)}
+          <button className="app-li" onClick=${onLogout} style=${{ color: C.danger }}><span style=${{ display: "flex" }}><${Icon} name="logout" /></span><span style=${{ flex: 1 }}>Log out</span></button>
+        </div></div>
+      </div>
+    `);
+  }
+
+  return withTabs(html`
     <div>
       ${header}
-      <${BackBtn} onClick=${() => setTab(null)} />
+      ${MAIN_TAB_KEYS.includes(tab) ? null : html`<${BackBtn} onClick=${() => setTab("more")} />`}
 
       ${tab === "studyTimer" && html`
         <${Card}>
-          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⏱ 공부 시간 기록</div>
+          <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>Study timer</div>
           <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", margin: "4px 0" }}>${fmtElapsed(elapsedSec)}</div>
           <div style=${{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
             ${!timerRunning
-              ? html`<${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "이어서 시작" : "시작"}<//>`
-              : html`<${Button} variant="ghost" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${pauseTimer}>일시정지<//>`}
+              ? html`<${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "Resume" : "Start"}<//>`
+              : html`<${Button} variant="ghost" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${pauseTimer}>Pause<//>`}
           </div>
           ${elapsedSec > 0 && html`
-            <input style=${{ ...inputStyle, marginBottom: 6, fontSize: 12.5 }} placeholder="과목 (예: 문법, 독해)" value=${studySubject} onChange=${(e) => setStudySubject(e.target.value)} />
-            <textarea style=${{ ...inputStyle, marginBottom: 6, minHeight: 50, fontSize: 12.5 }} placeholder="공부한 내용" value=${studyContent} onChange=${(e) => setStudyContent(e.target.value)} />
-            <div style=${{ display: "flex", justifyContent: "center" }}><${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${saveTimerEntry}>기록 저장<//></div>
+            <input style=${{ ...inputStyle, marginBottom: 6, fontSize: 12.5 }} placeholder="Subject (e.g. grammar, reading)" value=${studySubject} onChange=${(e) => setStudySubject(e.target.value)} />
+            <textarea style=${{ ...inputStyle, marginBottom: 6, minHeight: 50, fontSize: 12.5 }} placeholder="What you studied" value=${studyContent} onChange=${(e) => setStudyContent(e.target.value)} />
+            <div style=${{ display: "flex", justifyContent: "center" }}><${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${saveTimerEntry}>Save session<//></div>
           `}
-          ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>오늘 총 ${todayTotalMin}분 기록됨 (${todayEntries.length}건)</div>`}
-          <div style=${{ fontSize: 11, color: C.navy, fontWeight: 700, marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>이번 달 누적 ${fmtMinutes(monthTotalMin)}</div>
+          ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>Today: ${todayTotalMin} min logged (${todayEntries.length} sessions)</div>`}
+          <div style=${{ fontSize: 11, color: C.navy, fontWeight: 700, marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>This month: ${fmtMinutes(monthTotalMin)}</div>
         <//>
         ${todayEntries.length > 0 && html`
           <div style=${{ marginTop: 12 }}>
@@ -22366,20 +22464,20 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         `}
       `}
 
-      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="아직 등록된 숙제가 없어요." />` :
+      ${tab === "homework" && ((data.homework || []).length === 0 ? html`<${Empty} text="No homework yet." />` :
         groupByDate(data.homework || [], "dueDate").map((grp) => html`
           <div key=${grp.date}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>기한 ${fmtDateDay(grp.date)}</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>Due ${fmtDateDay(grp.date)}</div>
             ${grp.items.map((h) => html`<${HomeworkStudentCard} key=${h.id} h=${h} studentId=${student.id} studentName=${student.name} updateData=${updateData} />`)}
           </div>
         `))}
 
-      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="등록된 단어 시험이 없어요." />` : groupByDate(data.vocabTests, "retestDate").map((grp) => {
+      ${tab === "vocab" && (data.vocabTests.length === 0 ? html`<${Empty} text="No vocabulary tests yet." />` : groupByDate(data.vocabTests, "retestDate").map((grp) => {
         const gIsOverdue = grp.date && grp.date < todayStr, gIsToday = grp.date === todayStr;
         return html`
         <div key=${grp.date || "_none"}>
           <div style=${{ fontSize: 12.5, fontWeight: 700, color: gIsOverdue ? C.danger : gIsToday ? C.gold : C.navy, margin: "14px 0 6px", borderBottom: `1px solid ${gIsOverdue ? C.danger : gIsToday ? C.gold : C.line}`, paddingBottom: 4 }}>
-            ${grp.date ? `단어 시험 ${fmtDateDay(grp.date)}${grp.date < todayStr ? " · 마감 지남" : grp.date === todayStr ? " · 오늘 마감" : ""}` : "예정일 미정"}
+            ${grp.date ? `Vocabulary test ${fmtDateDay(grp.date)}${grp.date < todayStr ? " · Overdue" : grp.date === todayStr ? " · Due today" : ""}` : "No date set"}
           </div>
           ${grp.items.map((t) => {
         const myResults = data.vocabResults.filter((r) => r.testId === t.id);
@@ -22403,16 +22501,16 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
                 <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 2 }}>단어 ${t.words.length}개</div>
                 ${latest && html`
                   <div style=${{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-                    <span style=${{ fontSize: 12 }}>최근 결과: ${latest.score} / ${latest.total} (${latestPct}%)</span>
+                    <span style=${{ fontSize: 12 }}>Latest: ${latest.score} / ${latest.total} (${latestPct}%)</span>
                     <span style=${{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: needsRetest ? "#F7E9E6" : "#E9F1EA", color: needsRetest ? C.danger : "#3D6B4F" }}>${needsRetest ? `재시험 필요 (${threshold}% 미만)` : "합격"}</span>
                   </div>
                 `}
               </div>
               ${t.expired
-                ? html`<div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>⏳ 기간만료</div>`
+                ? html`<div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>Expired</div>`
                 : myResults.length
                   ? null
-                  : html`<${Button} variant="gold" onClick=${() => startVocabTest(t)}>응시하기<//>`}
+                  : html`<${Button} variant="gold" onClick=${() => startVocabTest(t)}>Take test<//>`}
             </div>
           <//>
         `;
@@ -22420,7 +22518,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `;}))}
 
-      ${tab === "mock" && ((data.mockExams || []).length === 0 ? html`<${Empty} text="등록된 모의고사가 없어요." />` : groupByDate(data.mockExams || [], "date").map((grp) => {
+      ${tab === "mock" && ((data.mockExams || []).length === 0 ? html`<${Empty} text="No mock exams yet." />` : groupByDate(data.mockExams || [], "date").map((grp) => {
         const gIsOverdue = grp.date < todayStr, gIsToday = grp.date === todayStr;
         return html`
         <div key=${grp.date}>
@@ -22445,7 +22543,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
               </div>
               <div style=${{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}>
                 ${t.expired ? html`
-                  <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>⏳ 기간만료</div>
+                  <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700, whiteSpace: "nowrap" }}>Expired</div>
                 ` : html`
                   ${myResults.length > 0 && myResults[0].answers && html`
                     <${Button} variant="ghost" style=${{ fontSize: 11.5, padding: "8px 12px" }} onClick=${() => startMockTest(t, myResults[0].id)}>답 수정<//>
@@ -22460,7 +22558,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         </div>
       `;}))}
 
-      ${tab === "examTests" && ((data.examTests || []).length === 0 ? html`<${Empty} text="등록된 추가시험이 없어요." />` : (data.examTests || []).map((t) => {
+      ${tab === "examTests" && ((data.examTests || []).length === 0 ? html`<${Empty} text="No extra tests yet." />` : (data.examTests || []).map((t) => {
         const myResults = (data.examResults || []).filter((r) => r.testId === t.id);
         return html`
           <${Card} key=${t.id}>
@@ -22488,7 +22586,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
       ${tab === "exams" && html`<${StudentExamListSection} student=${student} />`}
       ${tab === "flashcards" && html`<${FlashcardHome} student=${student} data=${data} updateData=${updateData} />`}
     </div>
-  `;
+  `);
 }
 
 const WEEKDAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
@@ -24863,7 +24961,7 @@ function DateView({ data, role }) {
         ${homework.map((h) => html`
           <${Card} key=${h.id}>
             <div style=${{ fontSize: 13.5, whiteSpace: "pre-wrap" }}>${h.content}</div>
-            <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.gold : h.expired ? C.danger : C.slate }}>${h.done ? "✓ 완료함" : h.expired ? "⏳ 기간만료" : "미완료"}</div>
+            <div style=${{ fontSize: 12, marginTop: 6, color: h.done ? C.gold : h.expired ? C.danger : C.slate }}>${h.done ? "✓ 완료함" : h.expired ? "Expired" : "미완료"}</div>
           <//>
         `)}
       `}
