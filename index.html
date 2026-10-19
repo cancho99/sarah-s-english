@@ -464,12 +464,20 @@ if ("serviceWorker" in navigator) {
   .tdy-chev { margin-left: auto; color: #5B6270; display: flex; transform: rotate(-90deg); }
   .tdy-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid #EDEAE2; min-width: 0; }
   .tdy-head + .tdy-row { border-top: none; }
+  .tdy-att { display: inline-flex; gap: 4px; flex: none; }
+  .tdy-attb { padding: 4px 10px; border-radius: 5px; border: 1px solid #DDD8CC; background: #fff; color: #5B6270; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+  .tdy-attb.present.on { background: #3D6B4F; border-color: #3D6B4F; color: #fff; }
+  .tdy-attb.absent.on { background: #A4443A; border-color: #A4443A; color: #fff; }
   .tdy-row > .ap-pill { min-width: 78px; justify-content: center; }
   .tdy-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 4px 0 12px; }
   .tdy-stat { background: #F3F1EB; border-radius: 10px; padding: 10px 12px; }
   .tdy-stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
   .tdy-stat .l { font-size: 12px; color: #5B6270; }
   @media (max-width: 760px) { .tdy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1025px) {
+    .tdy { max-width: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; align-items: start; }
+    .tdy > :first-child { grid-column: 1 / -1; }
+  }
   .tdy-click { cursor: pointer; }
   .tdy-click:hover { background: #F8F5EE; }
   .tdy-chev2 { color: #5B6270; display: flex; }
@@ -484,6 +492,115 @@ if ("serviceWorker" in navigator) {
   .tdy-link:hover { text-decoration: underline; }
   .tdy-empty { color: #5B6270; font-size: 13.5px; padding: 6px 0 12px; }
   @media (max-width: 760px) { .tdy-row { gap: 10px; } .tdy-time { width: 40px; } }
+  /* ===== 데스크톱 전용 밀도(2026-10 UI 리디자인 2라운드) — 선생님은 대부분 컴퓨터로 쓰므로 카드/타일/아이콘/여백을 줄이고 정보 밀도를 높인다.
+     모바일(≤760px)과 태블릿은 기존 값 그대로. 컴포넌트가 CSS 변수(--card-pad 등)를 읽어서 한 곳에서 조절된다. ===== */
+  @media (min-width: 1025px) {
+    :root { --card-pad: 12px; --card-gap: 10px; --card-r: 8px; --btn-pad: 6px 12px; --btn-fs: 13px; --in-pad: 6px 10px; --in-fs: 13px; }
+    body { font-size: 13px; }
+    .ap-side-desktop { width: 196px; padding: 14px 10px; }
+    .ap-side-brand { padding: 0 6px 16px; }
+    .ap-side-logo { width: 28px; height: 28px; border-radius: 7px; }
+    .ap-side-wordmark { font-size: 17px; }
+    .ap-side-item { padding: 6px 9px; gap: 9px; font-size: 13px; margin-bottom: 1px; }
+    .ap-side-logout { padding: 6px 9px; font-size: 13px; gap: 9px; }
+    .ap-side-item svg, .ap-side-logout svg { width: 16px; height: 16px; }
+    .ap-main-header { padding: 8px 20px; }
+    .ap-main-body { padding: 14px 20px 36px; }
+    .ap-qr-btn { padding: 5px 11px; font-size: 12.5px; }
+    .ap-kpis { gap: 8px; margin-bottom: 12px; }
+    .ap-kpi { padding: 9px 12px; border-radius: 8px; }
+    .ap-kpi .v { font-size: 20px; }
+    .ap-kpi .l { font-size: 12px; margin-top: 0; }
+    .ap-th { height: 30px; font-size: 11px; }
+    .ap-tr { min-height: 44px; gap: 14px; }
+    .ap-av { width: 26px; height: 26px; font-size: 12px; }
+    .ap-av-lg { width: 36px; height: 36px; font-size: 15px; }
+    .ap-bar i { height: 5px; }
+    .ap-seg button { padding: 3px 10px; font-size: 12.5px; }
+    .ap-dh-name { font-size: 17px; }
+    .ap-pager button { width: 28px; height: 28px; }
+    .ap-subtabs { margin-bottom: 10px; padding: 2px; }
+    .ap-subtabs button { padding: 5px 11px; font-size: 12.5px; }
+    .ap-cal-cell { min-height: 56px; padding: 3px; }
+    .ap-cal-title { font-size: 13px; }
+    .ap-accordion-head { padding: 9px 12px; }
+    .ap-accordion-body { padding: 12px; }
+    .ap-row { padding: 7px 11px; margin-bottom: 4px; }
+    .ap-fbar-field select, .ap-fbar-search input { padding: 6px 9px; }
+    .ap-tc-row { padding-top: 4px; padding-bottom: 4px; }
+    .tdy-card { padding: 4px 14px 6px; border-radius: 8px; }
+    .tdy-row { padding: 8px 0; }
+    .tdy-head { padding: 9px 0 5px; }
+    .tdy-btn { padding: 4px 11px; min-height: 28px; font-size: 12.5px; }
+    .tdy-stat { padding: 8px 10px; }
+    .tdy-stat .v { font-size: 18px; }
+  }
+  /* 학생 상세 2단 배치(데스크톱) */
+  .sd-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .sd-top .ap-pager { margin-left: 0; }
+  .sd-grid { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .sd-rail { position: sticky; top: 58px; display: flex; flex-direction: column; gap: 8px; }
+  .sd-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; padding: 10px 12px; }
+  .sd-id { display: flex; align-items: center; gap: 10px; }
+  .sd-h { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: #5B6270; margin-bottom: 8px; font-weight: 500; }
+  .sd-metric + .sd-metric { margin-top: 8px; }
+  .sd-metric-top { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 3px; }
+  .sd-metric-top b { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sd-code { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 2px 0; }
+  .sd-code span { color: #5B6270; width: 50px; }
+  .sd-code code { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .sd-code button { border: 1px solid #DCD8CF; background: #fff; border-radius: 5px; font-size: 11.5px; padding: 1px 8px; cursor: pointer; color: #5B6270; }
+  .sd-actions { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+  .sd-act { display: flex; align-items: center; gap: 8px; border: none; background: none; padding: 7px 8px; border-radius: 6px; font-size: 13px; cursor: pointer; text-align: left; color: #14161A; }
+  .sd-act:hover { background: #F3F1EB; }
+  .sd-act svg { color: #B8935A; }
+  .sd-main { min-width: 0; }
+  .hw-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; align-items: start; margin-top: 12px; }
+  .hw-summary > div { margin: 0; }
+  @media (min-width: 1025px) { .ap-cal-shell { gap: 14px; } .ap-cal-main { flex: 3 1 0; } .ap-cal-side { flex: 2 1 0; } }
+  .rp-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px; background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; }
+  .rp-bar label { font-size: 12px; color: #5B6270; letter-spacing: .04em; text-transform: uppercase; }
+  .st-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); gap: 12px; align-items: start; }
+  /* 가로로 길게 퍼지지 않게 — 내용 폭 상한 + 표/타일 고정 크기(2026-10 UI 2라운드 보정) */
+  @media (min-width: 1025px) {
+    .ap-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ap-kpis .ap-kpi { flex: 0 0 auto; min-width: 116px; padding: 7px 14px; }
+    .ap-kpi .l { white-space: nowrap; }
+    .ap-bar span { width: 42px; white-space: nowrap; }
+    .ap-table { max-width: none; }
+    .ap-th, .ap-tr { grid-template-columns: minmax(150px, 1fr) 128px 128px 118px 54px 16px; gap: 12px; }
+    .sd-grid { grid-template-columns: 224px minmax(0, 1fr); }
+    .st-two, .hw-summary { max-width: 900px; }
+  }
+  /* 학생 화면 목록+상세 나란히(데스크톱) */
+  .vr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: start; }
+  .biz-grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+  @media (min-width: 1100px) { .biz-grid { grid-template-columns: minmax(0, 1fr) 400px; } .biz-grid .biz-side { position: sticky; top: 12px; } }
+  .att-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+  @media (min-width: 1100px) { .att-grid { grid-template-columns: minmax(0, 1fr) 400px; } .att-side { position: sticky; top: 12px; } }
+  .ms-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .ms-list { position: sticky; top: 58px; max-height: calc(100vh - 74px); overflow-y: auto; }
+  .ms-detail { min-width: 0; }
+  .ap-table.cmp { max-width: none; }
+  .ap-th.cmp, .ap-tr.cmp { grid-template-columns: minmax(0, 1fr) 104px; gap: 8px; }
+  .ap-tr.cmp { min-height: 40px; }
+  .ap-tr.sel { background: #F3EEE2; box-shadow: inset 3px 0 0 #B8935A; }
+  .ms-list .ap-sc-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: none; }
+  .ms-list .ap-search { grid-column: 1 / -1; max-width: none; }
+  .ms-list .ap-seg { grid-column: 1 / -1; flex-wrap: wrap; }
+  .ms-list .ap-sc-filters > button { grid-column: 1 / -1; justify-content: center; }
+  .rp-grid { grid-template-columns: 236px minmax(0, 1fr); }
+  .rp-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 12px; border-bottom: 1px solid #DCD8CF; background: #F3F1EB; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: #5B6270; }
+  .rp-list-head span { text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .rp-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 8px 12px; border-top: 1px solid #EDEAE2; text-align: left; cursor: pointer; font: inherit; }
+  .rp-list-head + .rp-item { border-top: none; }
+  .rp-item:hover { background: #F8F5EE; }
+  .rp-item.sel { background: #F3EEE2; box-shadow: inset 3px 0 0 #B8935A; }
+  .rp-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .rp-name b { font-weight: 500; font-size: 13px; }
+  .rp-name small { font-size: 11.5px; color: #5B6270; }
+  .rp-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #A6473A; color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  @media (min-width: 1280px) { .drg { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: start; } .drg > * { min-width: 0; } }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -1169,8 +1286,8 @@ const C = {
 const serif = { fontFamily: "'Noto Sans KR', -apple-system, sans-serif", fontWeight: 700 };
 const BRAND_FONT = "'Newsreader', Georgia, serif";
 const inputStyle = {
-  width: "100%", padding: "9px 12px", borderRadius: 6, border: `1px solid ${C.line}`,
-  fontSize: 14, boxSizing: "border-box", color: C.ink, background: C.white,
+  width: "100%", padding: "var(--in-pad, 9px 12px)", borderRadius: 6, border: `1px solid ${C.line}`,
+  fontSize: "var(--in-fs, 14px)", boxSizing: "border-box", color: C.ink, background: C.white,
 };
 
 // ---------- Utilities ----------
@@ -2284,10 +2401,10 @@ function SectionLabel({ n, label }) {
   `;
 }
 function Card({ children, style, onClick }) {
-  return html`<div onClick=${onClick} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 16, marginBottom: 12, boxShadow: "0 1px 2px rgba(20,22,26,0.05)", cursor: onClick ? "pointer" : "default", ...style }}>${children}</div>`;
+  return html`<div onClick=${onClick} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: "var(--card-r, 8px)", padding: "var(--card-pad, 16px)", marginBottom: "var(--card-gap, 12px)", boxShadow: "0 1px 2px rgba(20,22,26,0.05)", cursor: onClick ? "pointer" : "default", ...style }}>${children}</div>`;
 }
 function Button({ children, onClick, variant = "primary", style, disabled }) {
-  const base = { fontSize: 13.5, fontWeight: 500, padding: "9px 16px", borderRadius: 6, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
+  const base = { fontSize: "var(--btn-fs, 13.5px)", fontWeight: 500, padding: "var(--btn-pad, 9px 16px)", borderRadius: 6, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
   const variants = {
     primary: { background: C.navy, color: C.white },
     gold: { background: C.gold, color: C.white },
@@ -2400,6 +2517,16 @@ function useIsMobile() {
   }, []);
   return isMobile;
 }
+const DESKTOP_BREAKPOINT = 1025;
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= DESKTOP_BREAKPOINT);
+  useEffect(() => {
+    function onResize() { setIsDesktop(window.innerWidth >= DESKTOP_BREAKPOINT); }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return isDesktop;
+}
 function IconGrid({ items }) {
   return html`
     <div className="ap-icon-grid">
@@ -2418,6 +2545,8 @@ const ICON_PATHS = {
   today: '<path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h14V9.5"/>',
   students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.2 14.6c2 .7 3.3 2.5 3.3 5.4"/>',
   classes: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  business: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.3c-.5-.8-1.5-1.3-2.8-1.3-1.6 0-2.7.8-2.7 2s1 1.7 2.7 2c1.8.3 2.8.9 2.8 2.1s-1.2 2-2.8 2c-1.3 0-2.4-.5-3-1.4M12 6.5V8m0 8v1.5"/>',
+  inbox: '<path d="M3.5 13l2.4-7.2A2 2 0 017.8 4.5h8.4a2 2 0 011.9 1.3L20.5 13"/><path d="M3.5 13v5a1.5 1.5 0 001.5 1.5h14a1.5 1.5 0 001.5-1.5v-5h-5l-1 2h-5l-1-2z"/>',
   bank: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 006.5 18H20v3H6.5"/>',
   exam: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
   reports: '<path d="M5 20v-9M12 20V4M19 20v-6"/>',
@@ -4082,17 +4211,8 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   const maxTrend = Math.max(1, ...trendTotals);
 
   return html`
-    <div>
-      <${Card}>
-        <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-        <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
-        <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
-        ${rows.length > 0 && html`
-          <div style=${{ fontSize: 12, color: unpaidRows.length > 0 ? C.danger : "#3D6B4F", textAlign: "center", marginTop: 6, fontWeight: 700 }}>
-            ${unpaidRows.length > 0 ? `미입금 ${unpaidRows.length}명 · ${unpaidTotal.toLocaleString()}원` : "전원 입금 완료"}
-          </div>
-        `}
-      <//>
+    <div className="biz-grid">
+      <div>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
         ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 정보 > (학생 선택)에서 입력해 주세요." />` : isMobile ? html`
@@ -4109,7 +4229,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           </div>
         ` : html`
           <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 340 }}>
               <thead>
                 <tr style=${{ background: C.ivory }}>
                   <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
@@ -4130,6 +4250,18 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           </div>
         `}
       <//>
+      </div>
+      <div className="biz-side">
+      <${Card}>
+        <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
+        <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
+        ${rows.length > 0 && html`
+          <div style=${{ fontSize: 12, color: unpaidRows.length > 0 ? C.danger : "#3D6B4F", textAlign: "center", marginTop: 6, fontWeight: 700 }}>
+            ${unpaidRows.length > 0 ? `미입금 ${unpaidRows.length}명 · ${unpaidTotal.toLocaleString()}원` : "전원 입금 완료"}
+          </div>
+        `}
+      <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>최근 6개월 매출 추이</div>
         <div style=${{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
@@ -4141,6 +4273,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           `)}
         </div>
       <//>
+      </div>
     </div>
   `;
 }
@@ -4199,6 +4332,12 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   const [recentStudentId, setRecentStudentId] = useState(selectedStudentId || null);
   useEffect(() => { if (selectedStudentId) setRecentStudentId(selectedStudentId); }, [selectedStudentId]);
   const [quickOpen, setQuickOpen] = useState(false);
+  // 다른 화면(학생 상세의 왼쪽 패널 등)에서 prop 없이 빠른 기록을 열 수 있게 하는 이벤트.
+  useEffect(() => {
+    const open = () => setQuickOpen(true);
+    window.addEventListener("sarah:quick-record", open);
+    return () => window.removeEventListener("sarah:quick-record", open);
+  }, []);
   // 단축키: Q 빠른 기록, Esc 닫기, / 학생 검색. 입력창에 타이핑 중일 때는 Q와 /를 가로채지 않는다.
   useEffect(() => {
     function onKey(e) {
@@ -4282,6 +4421,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 독립 워크플로를 두는 패턴)를 그대로 따른다.
     { key: "readingAnalysis", label: "Exam Studio", icon: "🧪", iconName: "exam" },
     { key: "reports", label: "Reports", icon: "📊", iconName: "reports" },
+    { key: "business", label: "Business", icon: "💰", iconName: "business" },
+    { key: "bookings", label: "Inquiries", icon: "📥", iconName: "inbox", badge: (levelTestBookings || []).filter((b) => b.status !== "완료").length || null },
     { key: "settingsHub", label: "Settings", icon: "⚙️", iconName: "settings" },
   ];
 
@@ -4365,7 +4506,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 전부 갖고 있다(정의부 참고) — 예전엔 문법·독해·시험지 3개만 있었고, 단어 시험지(WordbankSection)
     // /정답표(ExamKeyLibrarySection)/배정·결과(ExamAssignmentManager, 예전 examHub)는 각자 다른
     // 최상위 메뉴였다. 셋 다 무수정, 탭 하나로 편입됐을 뿐이라 새 prop만 추가로 넘긴다.
-    body = html`<${QuestionBankSection} roster=${roster} examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} updateData=${updateData} onLogout=${onLogout} />`;
+    body = html`<${QuestionBankSection} roster=${roster} examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} updateData=${updateData} onLogout=${onLogout} sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "examAssignments") {
     body = html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`;
   } else if (section === "reports") {
@@ -4401,7 +4542,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "bookings") {
     body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
-      onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
+      onLogout=${onLogout} />`;
+  } else if (section === "business") {
+    body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
   } else if (section === "mainpage") {
     // Teacher OS STEP 4 — "Main Page"는 더 이상 navItems에 없다(사이드바에서 제거). 이 분기와
     // TeacherOverview 자체는 지우지 않고 남겨둔다 — 계획서 §6에서 이 화면의 기능 중 Today/
@@ -4449,9 +4592,10 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       { key: "reports", label: "Reports", iconName: "reports" },
     ];
     const MOBILE_MORE_DESC = {
-      classes: ["Classes", "수업 일정·출결·반 관리"], questionBank: ["Question Bank", "문법·독해·단어 문제, 시험지, 배정·결과"],
+      classes: ["Classes", "시간표·출결·숙제/단어 현황"], questionBank: ["Question Bank", "문법·단어 문제, 정답표, 배정·공유 자료"],
       readingAnalysis: ["Exam Studio", "지문 분석·시험지 만들기"],
-      settingsHub: ["Settings", "프로필·수업료·공지·자료실·데이터 정리"],
+      bookings: ["Inquiries", "레벨테스트·상담 문의"], business: ["Business", "수업료·매출 현황"],
+      settingsHub: ["Settings", "프로필·공지·데이터 정리"],
     };
     const bottomKeys = new Set(MOBILE_BOTTOM.map((t) => t.key));
     const moreItems = navItems.filter((n) => !bottomKeys.has(n.key));
@@ -4530,14 +4674,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
 // bulkClearOldPhotos()를 그대로 재사용.
 const SETTINGS_SUBTABS = [
   { key: "profile", icon: "👤", label: "Profile" },
-  { key: "business", icon: "💰", label: "Business" },
   { key: "announcements", icon: "📢", label: "Announcements" },
-  // Teacher OS STEP 4의 사이드바 재편(학생 관리 호버 플라이아웃 제거)이 그 플라이아웃을 통해서만
-  // 들어가던 StudentsSection의 "자료실 → 공유 자료실" 진입점을 사실상 도달 불가능하게 만들었다
-  // (StudentsSection/MaterialsLibrarySection shared=true 자체는 무수정, 컬렉션도 그대로 —
-  // 진입 경로만 없어졌던 것). 출결 관리는 같은 문제를 겪었다가 Classes 탭으로 이미 옮겨졌으므로,
-  // 같은 이유(전체 학생 공용, 특정 학생 소속이 아님)로 이번엔 Settings에 옮긴다.
-  { key: "materials", icon: "📁", label: "Shared Materials" },
+  // 2026-10 IA 개편 — Business는 최상위 Business 메뉴로, Shared Materials는 Question Bank의 Materials 탭으로 옮겼다.
   { key: "data", icon: "🗄", label: "Data" },
   // 2026-09-03 — 레거시 Reading Question Bank(ReadingQuestionBankView) 진입점 제거. 컴포넌트
   // 정의와 Firestore 데이터(readingPassages/readingQuestions)는 그대로 남아있지만, 더 이상
@@ -4549,9 +4687,7 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
     <div>
       <${Tabs} tabs=${SETTINGS_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "profile" && html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`}
-      ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
-      ${tab === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
       ${tab === "data" && html`
         <div>
           <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
@@ -4658,7 +4794,8 @@ function TeacherSettingsSection({ teacherAuth, saveTeacherAuthGlobal }) {
   }
 
   return html`
-    <${Card} style=${{ maxWidth: 360, marginBottom: 16 }}>
+    <div className="st-two">
+    <${Card} style=${{ marginBottom: 0 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>비밀번호 변경</div>
       <${Field} label="현재 비밀번호"><input style=${inputStyle} type="password" value=${current} onChange=${(e) => { setCurrent(e.target.value); setErr(""); setSaved(false); }} /><//>
       <${Field} label="새 비밀번호"><input style=${inputStyle} type="password" value=${next} onChange=${(e) => { setNext(e.target.value); setErr(""); setSaved(false); }} /><//>
@@ -4668,6 +4805,7 @@ function TeacherSettingsSection({ teacherAuth, saveTeacherAuthGlobal }) {
       <${Button} variant="gold" disabled=${busy} onClick=${submit}>변경<//>
     <//>
     <${DataBackupCard} />
+    </div>
   `;
 }
 
@@ -4696,7 +4834,7 @@ function DataBackupCard() {
   }
 
   return html`
-    <${Card} style=${{ maxWidth: 480 }}>
+    <${Card} style=${{ marginBottom: 0 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>데이터 백업</div>
       <div style=${{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.5 }}>
         전체 학생 명단과 학생별 데이터(숙제·단어시험·모의고사/시험·리포트·로드맵·스케줄 등)를
@@ -5374,6 +5512,26 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
       backToList();
     }
   }
+  const splitDesktop = useIsDesktop();
+  if (splitDesktop) {
+    // 데스크톱: 왼쪽 학생 목록 + 오른쪽 상세를 한 화면에 나란히(목록을 벗어나지 않고 학생을 바꿔 가며 본다).
+    return html`
+      <div className="ms-grid">
+        <div className="ms-list">
+          <${StudentCommandCenter} compact=${true} selectedId=${selectedStudentId} roster=${roster} dataCache=${dataCache} ensureData=${ensureData} setSelectedStudentId=${setSelectedStudentId}
+            showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
+            addErr=${addErr} addStudent=${addStudent} />
+        </div>
+        <div className="ms-detail">
+          ${selected ? html`<${StudentDetailSection} key=${selected.id} student=${selected} roster=${roster} saveRosterList=${saveRosterList} inSplit=${true}
+            updateStudentRosterEntry=${updateStudentRosterEntry} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
+            sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
+            onBack=${backToList} onDelete=${handleDelete} deepTarget=${deepTarget} onConsumeDeepTarget=${onConsumeDeepTarget} onTabChange=${onTabChange}
+            ensureData=${ensureData} onStepStudent=${onStepStudent} />` : html`<${Empty} text="왼쪽 목록에서 학생을 선택하세요." />`}
+        </div>
+      </div>
+    `;
+  }
   if (selected) {
     return html`<${StudentDetailSection} key=${selected.id} student=${selected} roster=${roster} saveRosterList=${saveRosterList}
       updateStudentRosterEntry=${updateStudentRosterEntry} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
@@ -5579,7 +5737,7 @@ function studentFilterSummary(f) {
   if ((f.search || "").trim()) parts.push(`"${f.search.trim()}"`);
   return parts.join(" · ");
 }
-function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStudentId, compact, selectedId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
   const [loaded, setLoaded] = useState(false);
   // 필터는 모듈 변수(studentListFilter)에 같이 기록해서, 학생 상세에 다녀와도 그대로 남는다.
   const [filter, setFilterState] = useState(() => ({ ...studentListFilter }));
@@ -5631,13 +5789,13 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
   const kpi = (label, n, color) => html`<div key=${label} className="ap-kpi"><div className="v" style=${{ color }}>${n}</div><div className="l">${label}</div></div>`;
   return html`
     <div>
-      <div className="ap-kpis">
+      ${compact ? null : html`<div className="ap-kpis">
         ${kpi("Students", summary.total, C.navy)}
         ${kpi("Classes today", summary.todayClasses, C.navy)}
         ${kpi("Homework attention", summary.hwNeedsCare, summary.hwNeedsCare > 0 ? C.danger : C.navy)}
         ${kpi("Vocabulary attention", summary.vocabNeedsCare, summary.vocabNeedsCare > 0 ? C.danger : C.navy)}
-        ${kpi("Needs attention overall", summary.overallNeedsCare, summary.overallNeedsCare > 0 ? C.danger : C.navy)}
-      </div>
+        ${kpi("Needs attention", summary.overallNeedsCare, summary.overallNeedsCare > 0 ? C.danger : C.navy)}
+      </div>`}
 
       <div className="ap-sc-filters">
         <div className="ap-search">
@@ -5666,9 +5824,9 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
         <${Empty} text="조건에 맞는 학생이 없어요." />
         <div style=${{ textAlign: "center", marginTop: 10 }}><${Button} variant="ghost" onClick=${() => setFilter({ search: "", grade: "all", status: "all" })}>Clear filters<//></div>
       ` : html`
-        <div className="ap-table">
-          <div className="ap-th"><span>Student</span><span>Homework</span><span>Vocabulary</span><span>Status</span><span>Today</span><span></span></div>
-          ${filtered.map((snap) => html`<${StudentRow} key=${snap.student.id} snap=${snap} onClick=${() => setSelectedStudentId(snap.student.id)} />`)}
+        <div className=${"ap-table" + (compact ? " cmp" : "")}>
+          ${compact ? html`<div className="ap-th cmp"><span>Student</span><span>Status</span></div>` : html`<div className="ap-th"><span>Student</span><span>Homework</span><span>Vocabulary</span><span>Status</span><span>Today</span><span></span></div>`}
+          ${filtered.map((snap) => html`<${StudentRow} key=${snap.student.id} snap=${snap} compact=${compact} selected=${snap.student.id === selectedId} onClick=${() => setSelectedStudentId(snap.student.id)} />`)}
         </div>
         <div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>${filtered.length} of ${roster.length} students${studentFilterSummary(filter) ? " · Filter: " + studentFilterSummary(filter) + " (kept when you open a student)" : ""}</div>
       `}
@@ -5694,8 +5852,19 @@ function AddStudentForm({ showAdd, setShowAdd, name, setName, sc, setSc, pc, set
 // 20명 안팎을 스크롤 한두 번에 훑을 수 있게 한다. 같은 계산(computeStudentSnapshot) 결과를 그대로 쓴다.
 const STUDENT_STATUS_LABEL = { onTrack: "On track", needsAttention: "Needs attention", atRisk: "At risk" };
 const STUDENT_STATUS_TONE = { onTrack: "ok", needsAttention: "warn", atRisk: "bad" };
-function StudentRow({ snap, onClick }) {
+function StudentRow({ snap, onClick, compact, selected }) {
   const { student, homework, vocab, status, todayClass } = snap;
+  if (compact) {
+    return html`
+      <div className=${"ap-tr cmp" + (selected ? " sel" : "")} tabIndex="0" onClick=${onClick} onKeyDown=${(e) => { if (e.key === "Enter") onClick(); }}>
+        <div className="ap-nm">
+          <span className="ap-av">${student.name.charAt(0)}</span>
+          <div><b>${student.name}</b><small>${[student.grade, student.school].filter(Boolean).join(" · ") || "—"}</small></div>
+        </div>
+        <div><span className=${"ap-pill " + STUDENT_STATUS_TONE[status]}>${STUDENT_STATUS_LABEL[status]}</span></div>
+      </div>
+    `;
+  }
   const axis = (pct, axisStatus) => pct == null
     ? html`<span className="ap-dash">—</span>`
     : html`<div className=${"ap-bar " + (STUDENT_STATUS_TONE[axisStatus] || "ok")}><i><s style=${{ width: pct + "%" }}></s></i><span>${pct}%</span></div>`;
@@ -5787,7 +5956,7 @@ function StatusExplainLine({ homework, vocab, combinedPct, status }) {
 // 때문에(StudentInfoSection 참고) 학생이 바뀌면 이 컴포넌트가 통째로 새로 마운트되고, 아래 tab
 // state는 항상 "overview"로 초기화된다 — "학생을 선택하면 첫 화면은 반드시 Overview" 요구사항을
 // 별도 분기 없이 React의 기본 동작만으로 만족시킨다.
-function StudentDetailSection({ student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete, deepTarget, onConsumeDeepTarget, onTabChange, ensureData, onStepStudent }) {
+function StudentDetailSection({ inSplit, student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete, deepTarget, onConsumeDeepTarget, onTabChange, ensureData, onStepStudent }) {
   // Teacher OS STEP 10 — "학생을 선택하면 항상 Overview부터"가 기본 규칙이지만, Growth Report의
   // "View Vocabulary"처럼 명시적으로 Learning→Reading→Vocabulary까지 딥링크해야 하는 단 한
   // 경로에서만 예외를 둔다. deepTarget이 이 학생을 가리킬 때만 tab을 오버라이드하고, 그 외
@@ -5868,13 +6037,47 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
   const headSnap = computeStudentSnapshot(student, data, today());
   const filterNote = filteredForStep ? studentFilterSummary(studentListFilter) : "";
 
+  const isDesktop = useIsDesktop();
+  const pagerEl = onStepStudent && stepIdx >= 0 ? html`
+    <div className="ap-pager">
+      <button aria-label="Previous student" title="Previous ( [ )" disabled=${!prevId} onClick=${() => onStepStudent(prevId)}><${Icon} name="left" size=${16} /></button>
+      <span className="pos">${stepIdx + 1} / ${stepIds.length}</span>
+      <button aria-label="Next student" title="Next ( ] )" disabled=${!nextId} onClick=${() => onStepStudent(nextId)}><${Icon} name="right" size=${16} /></button>
+    </div>
+  ` : null;
+  const backEl = html`<button className="ap-back" onClick=${onBack}><${Icon} name="left" size=${16} />Students list${filterNote ? " · Filter: " + filterNote : ""}</button>`;
+  const deleteEl = html`<button onClick=${onDelete} className="ap-dh-del">학생 삭제</button>`;
+  const tabsAndBody = html`
+    <div>
+      <${Tabs} tabs=${visibleDetailTabs} active=${tab} onChange=${setTab} />
+      ${tab === "overview" && html`<${StudentOverviewTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
+        saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry}
+        teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJump=${setTab} compact=${isDesktop} />`}
+      ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} deepTarget=${myDeepTarget} />`}
+      ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
+        analysis=${analysis} analysisLoading=${analysisLoading} deepTarget=${myDeepTarget} />`}
+      ${tab === "roadmap" && html`<${RoadmapEditor} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} rawUpdateData=${updateData} />`}
+      ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} onSelectStudent=${() => setTab("overview")} />`}
+    </div>
+  `;
+
+  // 데스크톱: 왼쪽 고정 패널(프로필·이번 달 지표·다음 수업·연락 코드·바로가기) + 오른쪽 탭 내용 2단 배치(2026-10 UI 리디자인 2라운드).
+  if (isDesktop) {
+    return html`
+      <div>
+        <div className="sd-top">${inSplit ? null : backEl}<span style=${{ flex: 1 }}></span>${pagerEl}${deleteEl}</div>
+        <div className="sd-grid">
+          <${StudentRail} student=${student} data=${data} snap=${headSnap} onJump=${setTab} />
+          <div className="sd-main">${tabsAndBody}</div>
+        </div>
+      </div>
+    `;
+  }
+
   return html`
     <div>
       <div className="ap-dh">
-        <div className="ap-dh-top">
-          <button className="ap-back" onClick=${onBack}><${Icon} name="left" size=${16} />Students list${filterNote ? " · Filter: " + filterNote : ""}</button>
-          <button onClick=${onDelete} className="ap-dh-del">학생 삭제</button>
-        </div>
+        <div className="ap-dh-top">${backEl}${deleteEl}</div>
         <div className="ap-dh-main">
           <span className="ap-av ap-av-lg">${student.name.charAt(0)}</span>
           <div className="ap-dh-id">
@@ -5882,24 +6085,10 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
             <div className="ap-sub">${[student.grade, student.school].filter(Boolean).join(" · ") || "학년/학교 미등록"}</div>
             <span className=${"ap-pill " + STUDENT_STATUS_TONE[headSnap.status]} style=${{ marginTop: 6 }}>${STUDENT_STATUS_LABEL[headSnap.status]}</span>
           </div>
-          ${onStepStudent && stepIdx >= 0 && html`
-            <div className="ap-pager">
-              <button aria-label="Previous student" title="Previous ( [ )" disabled=${!prevId} onClick=${() => onStepStudent(prevId)}><${Icon} name="left" size=${16} /></button>
-              <span className="pos">${stepIdx + 1} / ${stepIds.length}</span>
-              <button aria-label="Next student" title="Next ( ] )" disabled=${!nextId} onClick=${() => onStepStudent(nextId)}><${Icon} name="right" size=${16} /></button>
-            </div>
-          `}
+          ${pagerEl}
         </div>
       </div>
-      <${Tabs} tabs=${visibleDetailTabs} active=${tab} onChange=${setTab} />
-      ${tab === "overview" && html`<${StudentOverviewTab} student=${student} data=${data} updateData=${boundUpdateData} roster=${roster}
-        saveRosterList=${saveRosterList} updateStudentRosterEntry=${updateStudentRosterEntry}
-        teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} onJump=${setTab} />`}
-      ${tab === "study" && html`<${StudentStudyTab} student=${student} data=${data} updateData=${boundUpdateData} deepTarget=${myDeepTarget} />`}
-      ${tab === "assessment" && html`<${StudentAssessmentTab} student=${student} data=${data} updateData=${boundUpdateData} examKeyLibrary=${examKeyLibrary}
-        analysis=${analysis} analysisLoading=${analysisLoading} deepTarget=${myDeepTarget} />`}
-      ${tab === "roadmap" && html`<${RoadmapEditor} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} rawUpdateData=${updateData} />`}
-      ${tab === "reports" && html`<${StudentReportsTab} key=${student.id} student=${student} data=${data} updateData=${boundUpdateData} onSelectStudent=${() => setTab("overview")} />`}
+      ${tabsAndBody}
     </div>
   `;
 }
@@ -5938,6 +6127,54 @@ function StudentNextClassSummary({ student }) {
   `;
 }
 
+// 학생 상세 왼쪽 패널(데스크톱) — 이름·상태, 이번 달 숙제/단어 지표, 다음 수업, 로그인 코드, 바로가기를 한 열에 모은다.
+// 새 계산은 없고 computeStudentSnapshot 결과와 기존 StudentNextClassSummary를 그대로 쓴다.
+function StudentRail({ student, data, snap, onJump }) {
+  const [copied, setCopied] = useState("");
+  function copy(label, text) {
+    const done = () => { setCopied(label); setTimeout(() => setCopied(""), 1200); };
+    try { navigator.clipboard.writeText(text).then(done, done); } catch (e) { done(); }
+  }
+  const tone = (st) => STUDENT_STATUS_TONE[st] || "ok";
+  const metric = (label, pct, st) => html`
+    <div className="sd-metric">
+      <div className="sd-metric-top"><span>${label}</span><b>${pct != null ? pct + "%" : "—"}</b></div>
+      <div className=${"ap-bar " + tone(st)}><i><s style=${{ width: (pct || 0) + "%" }}></s></i></div>
+    </div>
+  `;
+  return html`
+    <aside className="sd-rail">
+      <div className="sd-card">
+        <div className="sd-id">
+          <span className="ap-av ap-av-lg">${student.name.charAt(0)}</span>
+          <div style=${{ minWidth: 0 }}>
+            <div className="ap-dh-name">${student.name}</div>
+            <div className="ap-sub">${[student.grade, student.school].filter(Boolean).join(" · ") || "학년/학교 미등록"}</div>
+          </div>
+        </div>
+        <span className=${"ap-pill " + tone(snap.status)} style=${{ marginTop: 8 }}>${STUDENT_STATUS_LABEL[snap.status]}</span>
+      </div>
+      <div className="sd-card">
+        <div className="sd-h">This month</div>
+        ${metric("Homework", snap.homework.pct, snap.homework.status)}
+        ${metric("Vocabulary", snap.vocab.mainPct, snap.vocab.status)}
+        ${metric("Overall", snap.combinedPct, snap.status)}
+      </div>
+      <${StudentNextClassSummary} student=${student} compactRail=${true} />
+      <div className="sd-card">
+        <div className="sd-h">Login codes</div>
+        <div className="sd-code"><span>Student</span><code>${student.studentCode || "—"}</code>${student.studentCode ? html`<button onClick=${() => copy("s", student.studentCode)}>${copied === "s" ? "Copied" : "Copy"}</button>` : null}</div>
+        <div className="sd-code"><span>Parent</span><code>${student.parentCode || "—"}</code>${student.parentCode ? html`<button onClick=${() => copy("p", student.parentCode)}>${copied === "p" ? "Copied" : "Copy"}</button>` : null}</div>
+      </div>
+      <div className="sd-card sd-actions">
+        <button className="sd-act" onClick=${() => window.dispatchEvent(new CustomEvent("sarah:quick-record"))}><${Icon} name="edit" size=${15} />Quick Record</button>
+        <button className="sd-act" onClick=${() => onJump("reports")}><${Icon} name="reports" size=${15} />Write report</button>
+        <button className="sd-act" onClick=${() => onJump("study")}><${Icon} name="book" size=${15} />Homework</button>
+      </div>
+    </aside>
+  `;
+}
+
 // Teacher OS STEP 6 — 사용자가 명시한 11개 우선순위 순서를 그대로 따른다: 학생 기본정보 →
 // 🔴 Teacher Tasks → 🕐 다음 수업 → 📚 숙제 진행 → 🔤 단어 현황 → 📊 최근 시험/성적 →
 // 📖 Reading 진행 → 최근 상담/주의사항. (2026-08-27 UI 정돈 요청으로 갱신: 콘텐츠 양이 적은
@@ -5957,11 +6194,12 @@ function StudentNextClassSummary({ student }) {
 // 스케줄 전체 편집/수업료/로드맵/학습 시간/저장 공간은 기본 접힌 "고급 관리" 영역 그대로 유지
 // (STEP5에서 이미 그렇게 정리됨) — ParentStudyTimeTab(공부시간)도 사용자의 11개 목록엔 없어서
 // 이번에 그 영역으로 옮겼다(기능 삭제 아님, 접어둔 곳으로 이동).
-function StudentOverviewTab({ student, data, updateData, roster, saveRosterList, updateStudentRosterEntry, teacherTodos, saveTeacherTodos, onJump }) {
+function StudentOverviewTab({ student, data, updateData, roster, saveRosterList, updateStudentRosterEntry, teacherTodos, saveTeacherTodos, onJump, compact }) {
   const svc = window.SarahServices;
   const todayStr = today();
   const todayClass = todaysClassesForRoster([student], todayStr)[0] || null;
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
   const [advTab, setAdvTab] = useState("schedule");
 
   const recentNotes = [...(data.notes || [])].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 3);
@@ -5977,6 +6215,21 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
     await saveTeacherTodos((teacherTodos || []).map((t) => (t.id === id ? { ...t, done: true, completedAt: Date.now() } : t)));
   }
 
+  const alertsCard = html`
+      <${Card} style=${compact ? { marginBottom: 0 } : undefined}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>Student Alerts</div>
+          <button onClick=${() => onJump("reports")} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>메모 전체 보기 →</button>
+        </div>
+        ${recentNotes.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 상담/메모가 없어요.</div>` : recentNotes.map((n, i) => html`
+          <div key=${n.id} style=${{ padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
+            <div style=${{ fontSize: 10.5, color: C.slate }}>${fmtDateTime(n.createdAt)}</div>
+            <div style=${{ fontSize: 12.5, color: C.ink, marginTop: 2, whiteSpace: "pre-wrap" }}>${n.content}</div>
+          </div>
+        `)}
+      <//>
+  `;
+
   return html`
     <div>
       <div style=${{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
@@ -5987,10 +6240,10 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
         ${todayClass && html`<${Button} variant="gold" style=${{ padding: "5px 12px", fontSize: 11.5 }} onClick=${() => onJump("reports")}>오늘 수업 기록하기 → Daily Report<//>`}
       </div>
 
-      <${StudentInfoEditor} student=${student} saveRosterList=${saveRosterList} roster=${roster} />
-      <${StudentFlashcardBooksEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />
+      ${compact ? null : html`<${StudentInfoEditor} student=${student} saveRosterList=${saveRosterList} roster=${roster} />`}
+      ${compact ? null : html`<${StudentFlashcardBooksEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />`}
 
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 12, alignItems: "start" }}>
+      <div style=${{ display: "grid", gridTemplateColumns: compact ? "repeat(auto-fit, minmax(300px, 1fr))" : "repeat(auto-fit, minmax(220px, 1fr))", gap: compact ? 10 : 12, marginBottom: 12, alignItems: "start" }}>
         <${Card} style=${{ marginBottom: 0 }}>
           <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 8, fontSize: 13.5 }}>Teacher Tasks</div>
           ${needsAttention === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>지금 처리할 것이 없어요.</div>` : html`
@@ -6005,13 +6258,13 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
           `}
         <//>
 
-        <${StudentNextClassSummary} student=${student} />
+        ${compact ? null : html`<${StudentNextClassSummary} student=${student} />`}
 
         <${StudentRoadmapProgressCard} data=${data} onJump=${onJump} />
 
-        <${HomeworkProgressCard} data=${data} />
+        ${compact ? null : html`<${HomeworkProgressCard} data=${data} />`}
 
-        <${VocabPassRateCard} data=${data} />
+        ${compact ? null : html`<${VocabPassRateCard} data=${data} />`}
 
         ${data.examSummary && html`
           <${Card} style=${{ marginBottom: 0 }}>
@@ -6026,24 +6279,24 @@ function StudentOverviewTab({ student, data, updateData, roster, saveRosterList,
           <//>
         `}
 
+        ${compact ? alertsCard : null}
       </div>
 
-      <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Reports 탭의 데일리 리포트에서 날짜별로 볼 수 있어요.</div>
+      ${compact ? null : html`<div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0" }}>자세한 수업 로그는 Reports 탭의 데일리 리포트에서 날짜별로 볼 수 있어요.</div>`}
 
-      <${Card}>
-        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13.5 }}>Student Alerts</div>
-          <button onClick=${() => onJump("reports")} style=${{ background: "none", border: "none", color: C.gold, fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>메모 전체 보기 →</button>
+      ${compact ? null : alertsCard}
+
+      ${compact ? html`
+        <div style=${{ marginTop: 6 }}>
+          <button onClick=${() => setShowInfo(!showInfo)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 12px", fontSize: 12, color: C.slate, cursor: "pointer" }}>${showInfo ? "▾" : "▸"} Student info and flashcard books</button>
+          ${showInfo ? html`<div style=${{ marginTop: 10 }}>
+            <${StudentInfoEditor} student=${student} saveRosterList=${saveRosterList} roster=${roster} />
+            <${StudentFlashcardBooksEditor} student=${student} updateStudentRosterEntry=${updateStudentRosterEntry} />
+          </div>` : null}
         </div>
-        ${recentNotes.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>등록된 상담/메모가 없어요.</div>` : recentNotes.map((n, i) => html`
-          <div key=${n.id} style=${{ padding: "6px 0", borderTop: i > 0 ? `1px dotted ${C.line}` : "none" }}>
-            <div style=${{ fontSize: 10.5, color: C.slate }}>${fmtDateTime(n.createdAt)}</div>
-            <div style=${{ fontSize: 12.5, color: C.ink, marginTop: 2, whiteSpace: "pre-wrap" }}>${n.content}</div>
-          </div>
-        `)}
-      <//>
+      ` : null}
 
-      <div style=${{ marginTop: 18 }}>
+      <div style=${{ marginTop: compact ? 10 : 18 }}>
         <button onClick=${() => setShowAdvanced(!showAdvanced)} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 14px", fontSize: 12, color: C.slate, cursor: "pointer" }}>
           ${showAdvanced ? "▾" : "▸"} 전체 스케줄 편집 · 수업료 · 학습 시간 · 저장 공간
         </button>
@@ -15141,7 +15394,7 @@ function MobileAssignExamTab({ roster, onLogout }) {
 // (ExamKeyLibrarySection, 예전 "examkeys" 메뉴). "Assignments & Results"(ExamAssignmentManager)는
 // STEP4에서 여기 있었지만, STEP5에서 사용자 지시로 Classes → Assessments로 옮겼다 — "Question
 // Bank는 문제·시험지를 만드는 공간, Classes는 실제 학생 수업/평가를 운영하는 공간"이라는 구분.
-function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary, updateData, onLogout }) {
+function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary, updateData, onLogout, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   // 2026-09-03 — 문법/리딩 문제뱅크 전면 교체: Question Review·Exam Builder 탭(둘 다 옛
   // questionBankService.js 데이터 기반)을 제거했다. Grammar 탭은 새 GrammarBankPrototype(더미
   // 데이터, 위에서 정의)으로 교체 — 실제 데이터 연결 전까지는 화면만 제공한다. Vocabulary/Answer
@@ -15150,7 +15403,7 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   // 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
   // 모바일에서는 위 4개 탭 대신 "📝 시험지 생성"(ExamBuilderView 재사용) / "📤 시험지 배정"
   // (MobileAssignExamTab, 위에서 정의) 2개 탭만 보여준다 — 데스크탑 로직/탭 목록은 무수정.
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse"];
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse", "assignments", "materials"];
   const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
   const isMobile = useIsMobile();
   const MOBILE_BANKS = ["examCreate", "examAssign"];
@@ -15174,11 +15427,15 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "browse", icon: "📚", label: "전체 문항" },
+        { key: "assignments", icon: "📋", label: "Assignments" },
+        { key: "materials", icon: "📁", label: "Shared Materials" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankPrototype} roster=${roster} updateData=${updateData} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
       ${bank === "browse" && html`<${GrammarBankBrowseView} />`}
+      ${bank === "assignments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
+      ${bank === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
     </div>
   `;
 }
@@ -15345,10 +15602,10 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, roster, ensureD
 
   return html`
     <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+      ${onBack && html`<div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <${BackBtn} onClick=${onBack} />
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
-      </div>
+      </div>`}
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style=${{ ...serif, fontSize: 19, color: C.navy }}>레벨테스트 · 상담 예약 현황</div>
         <div style=${{ display: "flex", gap: 6 }}>
@@ -15767,12 +16024,22 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const isMobile = useIsMobile();
   // Today 단순 보기(2026-10 UI 리디자인) — 기본은 "지금 해야 할 일" 한 목록 + 오늘 수업 + 할 일만 보여주고, 기존의
   // 상세 카드들(숙제 현황, 단어시험 결과, 최근 시험 등)은 "Show all details"로 펼친다. 정보는 하나도 빼지 않았다.
+  const todayDesktop = useIsDesktop();
   const [showAll, setShowAll] = useState(false);
   const openTodoCount = (teacherTodos || []).filter((t) => !t.done).length;
   const [todoOpen, setTodoOpen] = useState(openTodoCount > 0);
   const todayStr = today();
   const todayClasses = todaysClassesForRoster(roster, todayStr);
   const todayStudentIds = todayClasses.map((c) => c.student.id);
+  async function markTodayAttendance(studentId, status) {
+    await updateData(studentId, (d) => {
+      const attendance = { ...(d.attendance || {}) };
+      const cur = attendance[todayStr];
+      if (cur && cur.status === status) delete attendance[todayStr];
+      else attendance[todayStr] = { status, makeupDone: cur?.makeupDone || false };
+      return { ...d, attendance };
+    });
+  }
   const _td = new Date(todayStr + "T00:00:00");
   const todayHeading = `${_td.getMonth() + 1}월 ${_td.getDate()}일 (${WEEKDAY_NAMES[_td.getDay()]})`;
 
@@ -16044,7 +16311,58 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // return문(아래)의 해당 카드들은 무수정으로 그대로 남아있다. "공지사항 등록" 버튼은
   // TeacherCenterHome/TeacherCenterSection 어디에도 없어서(Settings 화면의
   // SettingsAnnouncementsPanel과는 별개) 숨길 대상이 없었다.
-  if (!showAll) {
+  // "Show all details"(2026-10 UI 리디자인 2차) — 위의 단순 보기와 겹치던 카드(할 일, 오늘 수업, 리포트 미작성, 밀린 항목,
+  // 로드맵, 상담, 수업 준비)는 모두 뺐고, 단순 보기에 없는 "오늘 숙제 현황 / 오늘 응시 결과 / 최근 시험" 세 가지만 남겼다.
+  const hwStat = (label, n, tone) => html`<div className="tdy-stat"><div className="v" style=${{ color: tone && n > 0 ? C.danger : C.ink }}>${n}</div><div className="l">${label}</div></div>`;
+  // 시험 결과 줄을 누르면 그 시험이 있는 페이지로 간다 — 단어시험은 학생 상세 Learning → Vocabulary, 그 외 시험은
+  // Assessment(Timeline)로 열린다(기존 딥링크 채널 deepTarget 재사용, 없으면 학생 상세로 대체).
+  const openResult = (r) => {
+    if (r.kind === "vocab" && onSelectStudentStudy) onSelectStudentStudy(r.studentId, "vocab");
+    else if (r.kind !== "vocab" && onSelectStudentAssessment) {
+      // 시험 종류별로 그 시험이 있는 Assessment 서브탭으로 연다. 모의고사/추가시험은 결과 id로 해당 시험을 미리 선택한다.
+      const sub = r.kind === "mock" ? "mock" : r.kind === "exam" ? "examTests" : r.kind === "regular" ? "regularExam" : "timeline";
+      onSelectStudentAssessment(r.studentId, sub, r.id);
+    } else onSelectStudent(r.studentId);
+  };
+  const resultRow = (r, i, withDate) => {
+    const pct = r.total ? Math.round((r.score / r.total) * 100) : null;
+    const pass = r.kind === "vocab" && pct != null ? pct >= svc.vocabularyService.passThreshold(r.title) : null;
+    return html`
+      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => openResult(r)} onKeyDown=${(e) => { if (e.key === "Enter") openResult(r); }}>
+        <div className="tdy-main"><b>${r.studentName}</b><span>${r.title}${withDate && r.date ? " · " + fmtDate(r.date) : ""}</span></div>
+        <span style=${{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>${r.score}/${r.total}${pct != null ? ` (${pct}%)` : ""}</span>
+        ${pass != null ? html`<span className=${"ap-pill " + (pass ? "ok" : "bad")}>${pass ? "Pass" : "Fail"}</span>` : null}
+        <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
+      </div>
+    `;
+  };
+  const hwCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Homework due today</h3><button className="tdy-link" onClick=${onOpenBoard} style=${{ marginLeft: "auto", padding: 0 }}>Open board →</button></div>
+        ${hwCounts.total === 0 ? html`<div className="tdy-empty">No homework is due or assigned today.</div>` : html`
+          <div className="tdy-stats">
+            ${hwStat("Total", hwCounts.total)}
+            ${hwStat("Submitted", hwCounts.submitted)}
+            ${hwStat("Not submitted", hwCounts.notSubmitted, true)}
+            ${hwStat("Late", hwCounts.late, true)}
+          </div>
+        `}
+      </div>
+  `;
+  const resultsCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Results today</h3><span className="tdy-count">${testsToday.length}</span></div>
+        ${testsToday.length === 0 ? html`<div className="tdy-empty">No test results yet today.</div>` : testsToday.map((r, i) => resultRow(r, i, false))}
+      </div>
+  `;
+  const recentCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Recent exams</h3></div>
+        ${recentTestsTop.length === 0 ? html`<div className="tdy-empty">No exams taken yet.</div>` : recentTestsTop.slice(0, 5).map((r, i) => resultRow(r, i, true))}
+      </div>
+  `;
+
+  if (!showAll || todayDesktop) {
     // "지금 필요한 일" — 종류별로 한 줄씩만 보여준다(2026-10 UI 리디자인 2차). 항목을 하나하나 나열하면 20줄이 넘어가
     // 오히려 못 찾기 때문에, 종류 + 건수 + 가장 급한 한 건으로 줄이고 버튼 하나로 바로 처리하게 했다.
     const nameList = (arr) => (arr.length > 3 ? arr.slice(0, 3).join(", ") + ` +${arr.length - 3}` : arr.join(", "));
@@ -16087,6 +16405,13 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => onSelectStudent(c.student.id)} onKeyDown=${(e) => { if (e.key === "Enter") onSelectStudent(c.student.id); }}>
                 <span className="tdy-time">${c.time}</span>
                 <div className="tdy-main"><b>${c.student.name}${c.kind === "보강" ? " (make-up)" : ""}</b>${prepText ? html`<span>${prepText}</span>` : null}</div>
+                <span className="tdy-att" onClick=${(e) => e.stopPropagation()}>
+                  ${["present", "absent"].map((st) => {
+                    const cur = ((dataCache[c.student.id] || {}).attendance || {})[todayStr]?.status;
+                    return html`<button key=${st} className=${"tdy-attb " + st + (cur === st ? " on" : "")} title=${st === "present" ? "Mark present" : "Mark absent"}
+                      onClick=${() => markTodayAttendance(c.student.id, st)}>${st === "present" ? "Present" : "Absent"}</button>`;
+                  })}
+                </span>
                 <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
               </div>
             `;
@@ -16101,64 +16426,20 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           ${todoOpen ? html`<${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} compact=${true} />` : null}
         </div>
 
-        <button className="tdy-link" onClick=${() => setShowAll(true)} style=${{ alignSelf: "flex-start", color: "#5B6270", fontWeight: 400 }}>Show all details</button>
+        ${todayDesktop ? html`${hwCard}${resultsCard}${recentCard}` : html`<button className="tdy-link" onClick=${() => setShowAll(true)} style=${{ alignSelf: "flex-start", color: "#5B6270", fontWeight: 400 }}>Show all details</button>`}
       </div>
     `;
   }
 
-  // "Show all details"(2026-10 UI 리디자인 2차) — 위의 단순 보기와 겹치던 카드(할 일, 오늘 수업, 리포트 미작성, 밀린 항목,
-  // 로드맵, 상담, 수업 준비)는 모두 뺐고, 단순 보기에 없는 "오늘 숙제 현황 / 오늘 응시 결과 / 최근 시험" 세 가지만 남겼다.
-  const hwStat = (label, n, tone) => html`<div className="tdy-stat"><div className="v" style=${{ color: tone && n > 0 ? C.danger : C.ink }}>${n}</div><div className="l">${label}</div></div>`;
-  // 시험 결과 줄을 누르면 그 시험이 있는 페이지로 간다 — 단어시험은 학생 상세 Learning → Vocabulary, 그 외 시험은
-  // Assessment(Timeline)로 열린다(기존 딥링크 채널 deepTarget 재사용, 없으면 학생 상세로 대체).
-  const openResult = (r) => {
-    if (r.kind === "vocab" && onSelectStudentStudy) onSelectStudentStudy(r.studentId, "vocab");
-    else if (r.kind !== "vocab" && onSelectStudentAssessment) {
-      // 시험 종류별로 그 시험이 있는 Assessment 서브탭으로 연다. 모의고사/추가시험은 결과 id로 해당 시험을 미리 선택한다.
-      const sub = r.kind === "mock" ? "mock" : r.kind === "exam" ? "examTests" : r.kind === "regular" ? "regularExam" : "timeline";
-      onSelectStudentAssessment(r.studentId, sub, r.id);
-    } else onSelectStudent(r.studentId);
-  };
-  const resultRow = (r, i, withDate) => {
-    const pct = r.total ? Math.round((r.score / r.total) * 100) : null;
-    const pass = r.kind === "vocab" && pct != null ? pct >= svc.vocabularyService.passThreshold(r.title) : null;
-    return html`
-      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => openResult(r)} onKeyDown=${(e) => { if (e.key === "Enter") openResult(r); }}>
-        <div className="tdy-main"><b>${r.studentName}</b><span>${r.title}${withDate && r.date ? " · " + fmtDate(r.date) : ""}</span></div>
-        <span style=${{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>${r.score}/${r.total}${pct != null ? ` (${pct}%)` : ""}</span>
-        ${pass != null ? html`<span className=${"ap-pill " + (pass ? "ok" : "bad")}>${pass ? "Pass" : "Fail"}</span>` : null}
-        <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
-      </div>
-    `;
-  };
   return html`
     <div className="tdy">
       <div>
         <button className="tdy-link" onClick=${() => setShowAll(false)} style=${{ padding: 0, marginBottom: 6 }}>← Back to Today</button>
         <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink }}>Details</div>
       </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Homework due today</h3><button className="tdy-link" onClick=${onOpenBoard} style=${{ marginLeft: "auto", padding: 0 }}>Open board →</button></div>
-        ${hwCounts.total === 0 ? html`<div className="tdy-empty">No homework is due or assigned today.</div>` : html`
-          <div className="tdy-stats">
-            ${hwStat("Total", hwCounts.total)}
-            ${hwStat("Submitted", hwCounts.submitted)}
-            ${hwStat("Not submitted", hwCounts.notSubmitted, true)}
-            ${hwStat("Late", hwCounts.late, true)}
-          </div>
-        `}
-      </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Results today</h3><span className="tdy-count">${testsToday.length}</span></div>
-        ${testsToday.length === 0 ? html`<div className="tdy-empty">No test results yet today.</div>` : testsToday.map((r, i) => resultRow(r, i, false))}
-      </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Recent exams</h3></div>
-        ${recentTestsTop.length === 0 ? html`<div className="tdy-empty">No exams taken yet.</div>` : recentTestsTop.slice(0, 5).map((r, i) => resultRow(r, i, true))}
-      </div>
+      ${hwCard}
+      ${resultsCard}
+      ${recentCard}
     </div>
   `;
 }
@@ -16181,12 +16462,7 @@ const CLASSES_SUBTABS = [
   // 2026-09-15 신규 — 단어 암기(플래시카드 세션/연습시험) 학습량 현황. Homework Review와 같은
   // 레벨(로스터 전체를 훑어보는 교사용 모니터링 화면)이라 바로 옆에 둔다.
   { key: "vocabReview", icon: "🎴", label: "Vocab Review" },
-  // Teacher OS STEP 13 — 라벨을 "Assessments"에서 "Exam Assignments"로 바꿨다(key/컴포넌트는
-  // 무수정). Students → Assessment(학생 성적/약점 분석)와 이름이 거의 같아서 혼동 소지가 있다는
-  // 걸 실사용 동선 점검 중 발견 — 여긴 실제로는 배정한 시험의 진행 상태 큐(ExamAssignmentManager)
-  // 라 그 실체에 더 가까운 이름으로만 바꿨다.
-  { key: "assessments", icon: "📋", label: "Exam Assignments" },
-  { key: "levelTest", icon: "🏫", label: "Level Test & Inquiries" },
+  // 2026-10 IA 개편 — Exam Assignments는 Question Bank의 Assignments 탭으로, Level Test & Inquiries는 최상위 Inquiries 메뉴로 옮겼다.
 ];
 function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateData, levelTestBookings, saveBookingsList, onSelectStudent, onLogout }) {
   const [tab, setTab] = useState("schedule");
@@ -16195,12 +16471,8 @@ function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateD
       <${Tabs} tabs=${CLASSES_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "schedule" && html`<${MasterScheduleView} roster=${roster} saveRosterList=${saveRosterList} />`}
       ${tab === "attendance" && html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`}
-      ${tab === "homeworkReview" && html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onBack=${() => setTab("schedule")} onSelectStudent=${onSelectStudent} />`}
+      ${tab === "homeworkReview" && html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${tab === "vocabReview" && html`<${VocabReviewSection} roster=${roster} dataCache=${dataCache} />`}
-      ${tab === "assessments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
-      ${tab === "levelTest" && html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
-        roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
-        onBack=${() => setTab("schedule")} onLogout=${onLogout} />`}
     </div>
   `;
 }
@@ -16254,11 +16526,11 @@ function VocabReviewSection({ roster, dataCache }) {
         `)}
       </div>
 
-      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : shown.map((r) => {
+      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : html`<div className="vr-grid">${shown.map((r) => {
         const isOpen = expandedId === r.id;
         const history = isOpen ? svc.computeVocabDailyHistory((dataCache && dataCache[r.id]) || null) : [];
         return html`
-        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 9, cursor: "pointer" }}
+        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 0, cursor: "pointer" }}
           onClick=${() => setExpandedId(isOpen ? null : r.id)}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style=${{ fontSize: 13.5, fontWeight: 700, color: VU.ink }}>${r.name}</div>
@@ -16293,7 +16565,7 @@ function VocabReviewSection({ roster, dataCache }) {
             </div>
           `}
         </div>
-      `})}
+      `})}</div>`}
     </div>
   `;
 }
@@ -16382,10 +16654,10 @@ function TeacherCenterHomeworkBoard({ roster, dataCache, updateData, onBack, onS
 
   return html`
     <div>
-      <${BackBtn} onClick=${onBack} />
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, margin: "8px 0 10px" }}>숙제 현황</div>
-
-      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+      ${onBack && html`<${BackBtn} onClick=${onBack} />`}
+      <div style=${{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", margin: "0 0 10px" }}>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>숙제 현황</div>
+      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         ${HW_QUICK_FILTERS.map((f) => html`
           <button key=${f.key} onClick=${() => setQuickFilter(f.key)} style=${{
             padding: "6px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -16394,6 +16666,7 @@ function TeacherCenterHomeworkBoard({ roster, dataCache, updateData, onBack, onS
             color: quickFilter === f.key ? C.gold : C.slate,
           }}>${f.label}</button>
         `)}
+      </div>
       </div>
 
       <${FilterBar}>
@@ -16523,6 +16796,7 @@ function MasterScheduleView({ roster, saveRosterList }) {
   const [scheduleField, setScheduleField] = useState("masterSchedule");
   const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showAbout, setShowAbout] = useState(false); // 긴 안내 문구는 기본 접어 둔다
   const [dragOverKey, setDragOverKey] = useState(null); // "day|time" of the cell currently under the drag
   const [draggingKey, setDraggingKey] = useState(null); // "studentId|idx" of the chip being dragged
   const [adding, setAdding] = useState(null); // { studentId, day, time, endTime } while the add-slot form is open
@@ -16678,15 +16952,18 @@ function MasterScheduleView({ roster, saveRosterList }) {
 
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>내 수업 스케줄</div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>여기서 짜는 시간표는 한눈에 보기용 계획판이에요 — 학생별 "학생 정보 → 수업 스케줄"에서 등록한 실제(수업료·달력에 반영되는) 스케줄과는 별개로 관리되고, 서로 자동으로 안 바뀌어요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요).</div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <b style=${{ fontSize: 15 }}>내 수업 스케줄</b>
+        <button className="tdy-link" style=${{ padding: 0, color: C.slate, fontWeight: 400 }} onClick=${() => setShowAbout(!showAbout)}>${showAbout ? "Hide notes" : "About this schedule"}</button>
+      </div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10, display: showAbout ? "block" : "none" }}>여기서 짜는 시간표는 한눈에 보기용 계획판이에요 — 학생별 "학생 정보 → 수업 스케줄"에서 등록한 실제(수업료·달력에 반영되는) 스케줄과는 별개로 관리되고, 서로 자동으로 안 바뀌어요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요).</div>
 
       <div style=${{ display: "flex", gap: 6, marginBottom: 12 }}>
         ${SCHEDULE_TABS.map((t) => html`
           <button key=${t.key} onClick=${() => setScheduleField(t.key)} style=${{
-            padding: "8px 16px", borderRadius: 20, border: `1px solid ${scheduleField === t.key ? C.navy : C.line}`,
+            padding: "5px 12px", borderRadius: 20, border: `1px solid ${scheduleField === t.key ? C.navy : C.line}`,
             background: scheduleField === t.key ? C.navy : "#fff", color: scheduleField === t.key ? "#fff" : C.ink,
-            fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+            fontWeight: 500, fontSize: 12.5, cursor: "pointer",
           }}>${t.label}</button>
         `)}
       </div>
@@ -16877,44 +17154,11 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
 
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>출결 관리</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>출결 관리</div>
 
-      <${Card} style=${{ marginBottom: 20 }}>
-        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>이 달 출결·보강 현황</div>
-          <div style=${{ width: 140 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-        </div>
-        ${!loaded ? html`<${Empty} text="불러오는 중..." />` : roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
-          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 500 }}>
-              <thead>
-                <tr style=${{ background: C.ivory }}>
-                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>총 수업일</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>출석</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>결석</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강완료</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강필요</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${monthRows.map((r) => html`
-                  <tr key=${r.student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
-                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.totalDays}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.present}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.absentCount}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.makeupDone}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center", color: r.makeupNeeded > 0 ? C.danger : C.ink, fontWeight: r.makeupNeeded > 0 ? 700 : 400 }}>${r.makeupNeeded}</td>
-                  </tr>
-                `)}
-              </tbody>
-            </table>
-          </div>
-        `}
-      <//>
-
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. 결석으로 표시하면 보강 여부도 따로 체크할 수 있어요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
+      <div className="att-grid">
+        <div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>출석/결석 버튼을 다시 누르면 취소돼요. 결석이면 보강 여부를 따로 체크해요.</div>
       <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <div style=${{ width: 190 }}><${DateField} value=${date} onChange=${setDate} /></div>
         <button onClick=${() => setDate(today())} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "9px 14px", fontSize: 12.5, color: C.navy, cursor: "pointer" }}>오늘</button>
@@ -16970,11 +17214,13 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
         </div>
       `}
 
+        </div>
+        <div className="att-side">
       ${loaded && outstandingMakeups.length > 0 && html`
-        <div style=${{ marginTop: 20, paddingTop: 16, borderTop: `2px solid ${C.line}` }}>
+        <div style=${{ marginBottom: 14 }}>
           <div style=${{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠ 아직 보강 안 한 결석 (${outstandingMakeups.length}건)</div>
           <div style=${{ overflowX: "auto", border: `1px solid #E9C7C0`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 340 }}>
               <thead>
                 <tr style=${{ background: "#F7E9E6" }}>
                   <th style=${{ padding: "7px 10px", textAlign: "left", color: C.danger, fontSize: 11 }}>학생</th>
@@ -16995,6 +17241,43 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
           </div>
         </div>
       `}
+      <${Card} style=${{ marginBottom: 0 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>이 달 출결·보강 현황</div>
+          <div style=${{ width: 140 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        </div>
+        ${!loaded ? html`<${Empty} text="불러오는 중..." />` : roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
+          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 360 }}>
+              <thead>
+                <tr style=${{ background: C.ivory }}>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>총 수업일</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>출석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>결석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강완료</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강필요</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${monthRows.map((r) => html`
+                  <tr key=${r.student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.totalDays}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.present}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.absentCount}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.makeupDone}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center", color: r.makeupNeeded > 0 ? C.danger : C.ink, fontWeight: r.makeupNeeded > 0 ? 700 : 400 }}>${r.makeupNeeded}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        `}
+      <//>
+
+        </div>
+      </div>
     </div>
   `;
 }
@@ -17795,6 +18078,9 @@ function RegularExamEditor({ data, updateData }) {
 // 안 넘겨도) 화면의 기본 동작(첫 번째 학생, "daily" 탭, 오늘 날짜/이번 달)은 그대로다 — 순수
 // additive.
 function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent, defaultStudentId, onStudentChange }) {
+  const rpDesktop = useIsDesktop();
+  // 왼쪽 목록의 미작성 표시를 위해 로스터 전체 데이터를 미리 불러둔다(이미 캐시된 학생은 다시 읽지 않는다).
+  useEffect(() => { roster.forEach((r) => ensureData(r.id)); /* eslint-disable-next-line */ }, [roster.length]);
   const [kind, setKind] = useState("daily");
   // 학생 선택 공유(2026-10 UI 리디자인) — 학생 상세/빠른 기록에서 보던 학생(defaultStudentId)으로 시작하고, 여기서
   // 학생을 바꾸면 onStudentChange로 TeacherDash에 알려 다른 화면도 같은 학생으로 열리게 한다.
@@ -17828,6 +18114,48 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
   // 유효한 딥링크로 취급한다.
   const myTarget = initialTarget && initialTarget.studentId === studentId ? initialTarget : null;
 
+  const reportBody = html`
+      ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
+        <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
+        ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null}
+          initialDate=${myTarget && myTarget.date} initialDateNonce=${myTarget && myTarget.nonce} />`}
+        ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)}
+          initialMonth=${myTarget && myTarget.month} initialMonthNonce=${myTarget && myTarget.nonce} />`}
+        ${kind === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
+      `}
+  `;
+
+  if (rpDesktop) {
+    // 데스크톱: 왼쪽 학생 목록(미작성 리포트 표시) + 오른쪽 작성 화면(2026-10 UI 리디자인 2라운드).
+    const todayStr0 = today();
+    const missDaily = {}, missMonthly = {};
+    missingDailyReportsForRoster(roster, dataCache, todayStr0, 14).forEach((m) => { missDaily[m.student.id] = (missDaily[m.student.id] || 0) + 1; });
+    missingMonthlyReportsForRoster(roster, dataCache, todayStr0).forEach((m) => { missMonthly[m.student.id] = (missMonthly[m.student.id] || 0) + 1; });
+    const sorted = roster.slice().sort((a, b) => ((missDaily[b.id] || 0) + (missMonthly[b.id] || 0)) - ((missDaily[a.id] || 0) + (missMonthly[a.id] || 0)));
+    return html`
+      <div className="ms-grid rp-grid">
+        <div className="ms-list">
+          <div className="sd-card" style=${{ padding: 0, overflow: "hidden" }}>
+            <div className="rp-list-head">Students <span>Reports to write first</span></div>
+            ${sorted.map((r) => {
+              const n = (missDaily[r.id] || 0) + (missMonthly[r.id] || 0);
+              return html`
+                <button key=${r.id} className=${"rp-item" + (r.id === studentId ? " sel" : "")} onClick=${() => setStudentId(r.id)}>
+                  <span className="ap-av">${r.name.charAt(0)}</span>
+                  <span className="rp-name"><b>${r.name}</b><small>${r.grade || "—"}</small></span>
+                  ${n > 0 ? html`<span className="rp-badge" title="Reports to write">${n}</span>` : null}
+                </button>
+              `;
+            })}
+          </div>
+        </div>
+        <div className="ms-detail">
+          ${student && onSelectStudent ? html`<div style=${{ marginBottom: 6 }}><button className="tdy-link" style=${{ padding: 0 }} onClick=${() => onSelectStudent(student.id)}>Open ${student.name} →</button></div>` : null}
+          ${reportBody}
+        </div>
+      </div>
+    `;
+  }
   return html`
     <div>
       <${Card} style=${{ marginBottom: 14 }}>
@@ -17838,14 +18166,7 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
         <//>
         ${student && onSelectStudent && html`<div style=${{ marginTop: 8 }}><a onClick=${() => onSelectStudent(student.id)} style=${{ color: C.gold, cursor: "pointer", fontSize: 12.5, textDecoration: "underline" }}>${student.name} 학생 Overview로 이동 →</a></div>`}
       <//>
-      ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
-        <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
-        ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null}
-          initialDate=${myTarget && myTarget.date} initialDateNonce=${myTarget && myTarget.nonce} />`}
-        ${kind === "monthly" && html`<${MonthlyReportView} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)}
-          initialMonth=${myTarget && myTarget.month} initialMonthNonce=${myTarget && myTarget.nonce} />`}
-        ${kind === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
-      `}
+      ${reportBody}
     </div>
   `;
 }
@@ -18081,7 +18402,7 @@ function DailyReportWorkspace({ student, data, date, updateData, examAttemptResu
       </div>
 
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>수업 평가</div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
         ${svc.reportService.DAILY_RATING_KEYS.map(({ key, label }) => html`
           <div key=${key} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.ivory, padding: "6px 10px", borderRadius: 4 }}>
             <span style=${{ fontSize: 12 }}>${label}</span>
@@ -18249,7 +18570,7 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent, init
   const previewSinceDate = priorDailyDates.length ? priorDailyDates[priorDailyDates.length - 1] : null;
 
   return html`
-    <div>
+    <div className="drg">
       <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData}
         examAttemptResults=${examAttemptResults} onSelectStudent=${onSelectStudent} />
       <${Card}>
@@ -19320,42 +19641,6 @@ function HomeworkEditor({ student, data, updateData }) {
 
   return html`
     <div>
-      <${Accordion} title="확인해야할 숙제" icon="📌" open=${showConfirmSummary} onToggle=${() => setShowConfirmSummary((v) => !v)}>
-        <div style=${{ maxWidth: 220, marginBottom: sinceLastClass.length > 0 ? 10 : 0 }}>
-          <${Field} label="저번 수업 날짜"><${DateField} value=${lastClassPick} onChange=${setLastClassPick} placeholder="날짜 선택" /><//>
-        </div>
-        ${!lastClassPick
-          ? html`<div style=${{ fontSize: 12, color: C.slate }}>저번 수업 날짜를 고르면 그 이후 내준 숙제가 여기 떠요.</div>`
-          : sinceLastClass.length === 0
-          ? html`<div style=${{ fontSize: 12, color: C.slate }}>고른 날짜 이후로 내준 숙제가 없어요.</div>`
-          : sinceLastClass.map((h) => html`
-            <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
-              <div style=${{ flex: 1 }}>
-                <div style=${{ fontSize: 10.5, color: C.slate }}>내준 날 ${fmtDate(h.assignedDate)} · 기한 ${fmtDate(h.dueDate)}</div>
-                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
-              </div>
-              <div style=${{ marginLeft: 10, textAlign: "right" }}>
-                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
-              </div>
-            </div>
-          `)}
-      <//>
-      ${dueToday.length > 0 && html`
-        <${Accordion} title="오늘(${fmtDate(todayStr)}) 마감 숙제" icon="📌" open=${showTodaySummary} onToggle=${() => setShowTodaySummary((v) => !v)}>
-          ${dueToday.map((h) => html`
-            <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
-              <div style=${{ flex: 1 }}>
-                <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(h.dueDate)}</div>
-                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
-              </div>
-              <div style=${{ marginLeft: 10, textAlign: "right" }}>
-                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
-              </div>
-            </div>
-          `)}
-        <//>
-      `}
-
       ${html`
         <div className="ap-cal-shell">
           <div className="ap-cal-main">
@@ -19424,6 +19709,44 @@ function HomeworkEditor({ student, data, updateData }) {
           </div>
         </div>
       `}
+      <div className="hw-summary">
+      <${Accordion} title="확인해야할 숙제" icon="📌" open=${showConfirmSummary} onToggle=${() => setShowConfirmSummary((v) => !v)}>
+        <div style=${{ maxWidth: 220, marginBottom: sinceLastClass.length > 0 ? 10 : 0 }}>
+          <${Field} label="저번 수업 날짜"><${DateField} value=${lastClassPick} onChange=${setLastClassPick} placeholder="날짜 선택" /><//>
+        </div>
+        ${!lastClassPick
+          ? html`<div style=${{ fontSize: 12, color: C.slate }}>저번 수업 날짜를 고르면 그 이후 내준 숙제가 여기 떠요.</div>`
+          : sinceLastClass.length === 0
+          ? html`<div style=${{ fontSize: 12, color: C.slate }}>고른 날짜 이후로 내준 숙제가 없어요.</div>`
+          : sinceLastClass.map((h) => html`
+            <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
+              <div style=${{ flex: 1 }}>
+                <div style=${{ fontSize: 10.5, color: C.slate }}>내준 날 ${fmtDate(h.assignedDate)} · 기한 ${fmtDate(h.dueDate)}</div>
+                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
+              </div>
+              <div style=${{ marginLeft: 10, textAlign: "right" }}>
+                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+              </div>
+            </div>
+          `)}
+      <//>
+      ${dueToday.length > 0 && html`
+        <${Accordion} title="오늘(${fmtDate(todayStr)}) 마감 숙제" icon="📌" open=${showTodaySummary} onToggle=${() => setShowTodaySummary((v) => !v)}>
+          ${dueToday.map((h) => html`
+            <div key=${h.id} style=${{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "6px 0", borderBottom: `1px dotted ${C.line}` }}>
+              <div style=${{ flex: 1 }}>
+                <div style=${{ fontSize: 10.5, color: C.slate }}>기한 ${fmtDate(h.dueDate)}</div>
+                <div style=${{ fontSize: 13, whiteSpace: "pre-wrap" }}>${h.content}</div>
+              </div>
+              <div style=${{ marginLeft: 10, textAlign: "right" }}>
+                <div onClick=${() => toggleDone(h.id)} style=${{ cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: h.done ? C.gold : C.danger }}>${h.done ? "✓ 완료" : "✗ 미완료"}</div>
+              </div>
+            </div>
+          `)}
+        <//>
+      `}
+
+      </div>
       ${lightbox && html`<${PhotoLightbox} src=${lightbox} onClose=${() => setLightbox(null)} />`}
     </div>
   `;
