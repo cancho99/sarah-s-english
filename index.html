@@ -1621,12 +1621,84 @@ const emptyData = () => ({ logs: [], scores: [], feedback: [], homework: [], voc
 // 이 앱의 다른 데이터(roster 등)도 이미 세션당 한 번만 불러오는 것과 같은 수준의 신선도이므로
 // 새로운 트레이드오프를 들여오는 게 아니다.
 let _wordbankBooksCache = null;
-// 워드뱅크 범위에서 단어를 뽑을 때 "원래 몇 개였고 왜 줄었는지"를 같이 돌려준다 — 뜻(ko)이 비었거나
+// ── 단어 시험 Day 선택(2026-10): "4-7"처럼 연속 범위뿐 아니라 "4, 6, 7", "1-3, 6, 9-10"처럼 떨어진 Day도 고른다.
+// 아래 세 함수는 화면/Firestore와 무관한 순수 함수라, PC 시험 만들기 두 곳과 모바일 "단어시험 올리기"가 모두
+// 같은 함수를 쓰고 node로 단독 테스트할 수 있다.
+// Day 텍스트 → { days, dropped, error }. days는 중복 제거 + 오름차순. 교재 범위(1~totalDays) 밖의 Day는 days에서 빼고
+// dropped에 알려준다(나머지 Day는 그대로 쓸 수 있다). 인식 불가 글자/거꾸로 된 범위/빈 입력/쓸 수 있는 Day가 하나도
+// 없는 경우는 error(문자열)이고, 그땐 시험을 만들 수 없다. error가 없으면 null.
+// 인식하는 글자: 숫자, 쉼표(전각 쉼표 "，" 포함), 하이픈/물결("-", "~"), 공백.
+function parseDaySelection(text, totalDays) {
+  const raw = String(text == null ? "" : text).replace(/，/g, ",").trim();
+  if (!raw) return { days: [], dropped: [], error: "Day를 입력해 주세요." };
+  const bad = raw.match(/[^0-9,\-~\s]/g);
+  if (bad) return { days: [], dropped: [], error: `인식할 수 없는 글자가 있어요: ${[...new Set(bad)].join(" ")} — 숫자, 쉼표(,), 하이픈(-)만 쓸 수 있어요.` };
+  const max = Number(totalDays) > 0 ? Number(totalDays) : Infinity;
+  // "4 - 7" → "4-7" 로 붙인 뒤, 쉼표나 공백으로 토큰을 나눈다("4 6 7"도 Day 4, 6, 7로 읽는다).
+  const tokens = raw.replace(/\s*([-~])\s*/g, "$1").split(/[,\s]+/).filter(Boolean);
+  if (tokens.length === 0) return { days: [], dropped: [], error: "Day를 입력해 주세요." };
+  const set = new Set(); const dropped = [];
+  for (const tok of tokens) {
+    const m = /^(\d+)(?:[-~](\d+))?$/.exec(tok);
+    if (!m) return { days: [], dropped: [], error: `"${tok}"은(는) Day로 읽을 수 없어요. 예: 4-7 또는 4, 6, 7` };
+    const lo = Number(m[1]), hi = m[2] === undefined ? lo : Number(m[2]);
+    if (lo > hi) return { days: [], dropped: [], error: `범위가 거꾸로예요: ${tok} (작은 Day부터 쓰세요)` };
+    const from = Math.max(1, lo), to = Math.min(max, hi);
+    for (let d = from; d <= to; d++) set.add(d);
+    if (lo < 1) dropped.push("0"); // 숫자만 받으므로 1 미만은 0뿐이다
+    if (hi > max && max !== Infinity) { const a = Math.max(lo, max + 1); dropped.push(a === hi ? String(hi) : `${a}-${hi}`); }
+  }
+  const days = [...set].sort((x, y) => x - y);
+  if (days.length === 0) {
+    return { days, dropped, error: `쓸 수 있는 Day가 없어요 — ${dropped.join(", ")}은(는) 범위(1~${max === Infinity ? "?" : max})를 벗어났어요.` };
+  }
+  return { days, dropped, error: null };
+}
+// Day 목록 → 제목용 문자열. 연속 구간은 "4-7"로 압축하고 떨어진 건 쉼표로 잇는다: [4,5,6,7]→"4-7", [4,6,7]→"4, 6-7".
+function formatDayList(days) {
+  const sorted = [...new Set((days || []).map(Number).filter((d) => Number.isInteger(d) && d > 0))].sort((a, b) => a - b);
+  const parts = [];
+  for (let i = 0; i < sorted.length;) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+    parts.push(j > i ? `${sorted[i]}-${sorted[j]}` : String(sorted[i]));
+    i = j + 1;
+  }
+  return parts.join(", ");
+}
+// 시험 source({bookId, days?, from?, to?, count?}) → 다시 뽑을 Day 목록. 새 시험은 days를 쓰고, days가 없는 예전
+// 시험(source = {bookId, from, to})은 from~to 연속 범위로 복원한다.
+function sourceDays(src) {
+  if (!src) return [];
+  if (Array.isArray(src.days) && src.days.length > 0) return [...new Set(src.days.map(Number).filter((d) => Number.isInteger(d) && d > 0))].sort((a, b) => a - b);
+  const from = Number(src.from), to = Number(src.to);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1) return [];
+  const out = []; for (let d = from; d <= to; d++) out.push(d);
+  return out;
+}
+// 새 시험의 source — days와 함께 예전 코드/예전 시험과의 호환용 from/to(최소·최대)도 남긴다.
+function buildBankSource(bookId, days, count) {
+  const sorted = [...days].sort((a, b) => a - b);
+  return { bookId, days: sorted, from: sorted[0], to: sorted[sorted.length - 1], ...(count ? { count } : {}) };
+}
+// 교재의 총 Day 수 — totalDays가 없으면 days에 실제 있는 가장 큰 Day로 대신한다.
+function bankTotalDays(book) {
+  if (!book) return 1;
+  if (Number(book.totalDays) > 0) return Number(book.totalDays);
+  const nums = Object.keys(book.days || {}).map((k) => Number(String(k).replace(/^day/, ""))).filter((n) => Number.isInteger(n) && n > 0);
+  return nums.length ? Math.max(...nums) : 1;
+}
+// 교재를 고르거나 바꿀 때 Day 입력칸의 기본값 — 지금처럼 전체 범위(1-totalDays).
+function defaultDayText(book) {
+  const total = bankTotalDays(book);
+  return total > 1 ? `1-${total}` : "1";
+}
+// 워드뱅크에서 선택한 Day들의 단어를 순서대로 뽑을 때 "원래 몇 개였고 왜 줄었는지"를 같이 돌려준다 — 뜻(ko)이 비었거나
 // 영어(en)가 비어서 못 쓰는 항목이 조용히 빠지면서 "53개인데
-// 27개만 떠요" 같은 혼란이 생기던 걸 눈으로 확인할 수 있게 한다.
-function pickBankWords(book, from, to) {
+// 27개만 떠요" 같은 혼란이 생기던 걸 눈으로 확인할 수 있게 한다. days는 Day 번호 배열(예: [4, 6, 7]).
+function pickBankWords(book, days) {
   let raw = [];
-  for (let d = from; d <= to; d++) raw = raw.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: (w.en || "").trim(), meaning: (w.ko || "").trim() })));
+  (Array.isArray(days) ? days : []).forEach((d) => { raw = raw.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: (w.en || "").trim(), meaning: (w.ko || "").trim() }))); });
   const noMeaning = raw.filter((w) => w.word && !w.meaning).length;
   const noWord = raw.filter((w) => !w.word).length;
   // 중복 제거는 하지 않는다 — 단어장에 저장된 줄(뜻이 있는 것)은 전부 출제한다(영어+뜻이 똑같은 줄이
@@ -1636,6 +1708,23 @@ function pickBankWords(book, from, to) {
   if (noMeaning) parts.push(`뜻이 비어 있는 단어 ${noMeaning}개`);
   if (noWord) parts.push(`영어가 비어 있는 항목 ${noWord}개`);
   return { words, rawCount: raw.length, note: parts.length ? `(저장된 ${raw.length}개 중 ${parts.join(", ")} 제외)` : "" };
+}
+// Day 입력 한 칸 + 바로 아래 "인식된 Day" 미리보기/빨간 오류. PC 시험 만들기 두 곳과 모바일 "단어시험 올리기"가 공유한다.
+function DaySelectionField({ text, onChange, totalDays }) {
+  const parsed = parseDaySelection(text, totalDays);
+  const shown = parsed.days.length > 10 ? formatDayList(parsed.days) : parsed.days.join(", ");
+  return html`
+    <${Field} label="Day">
+      <input style=${inputStyle} type="text" inputMode="text" autoComplete="off" spellCheck=${false} value=${text} onChange=${(e) => onChange(e.target.value)} placeholder="예: 4-7" />
+      <div style=${{ fontSize: 11, color: "#9a9488", marginTop: 4 }}>예: 4-7 또는 4, 6, 7 또는 1-3, 6, 9-10</div>
+      ${parsed.error
+        ? html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 3, fontWeight: 600 }}>${parsed.error}</div>`
+        : html`
+          <div style=${{ fontSize: 12, color: C.navy, marginTop: 3, fontWeight: 600 }}>인식된 Day: ${shown} (${parsed.days.length}개 Day)</div>
+          ${parsed.dropped.length > 0 && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 2 }}>범위(1~${totalDays})를 벗어난 Day ${parsed.dropped.join(", ")}은(는) 제외했어요.</div>`}
+        `}
+    <//>
+  `;
 }
 // "영영풀이" 단어장(wordtest.html의 "영영풀이 분리"로 만들어짐, kind:"definition") — 영어 뜻풀이를 보여주고
 // 학생이 영단어를 직접 쓰는 시험(뜻 → 영단어만, m2w)으로만 출제한다.
@@ -15444,8 +15533,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const [quickVocabStudentId, setQuickVocabStudentId] = useState(roster[0]?.id || "");
   const [quickVocabBooks, setQuickVocabBooks] = useState(null);
   const [quickVocabBookId, setQuickVocabBookId] = useState("");
-  const [quickVocabDayFrom, setQuickVocabDayFrom] = useState(1);
-  const [quickVocabDayTo, setQuickVocabDayTo] = useState(1);
+  const [quickVocabDayText, setQuickVocabDayText] = useState("1"); // "4-7" 또는 "4, 6, 7" 같은 Day 입력
   const [quickVocabRetestDate, setQuickVocabRetestDate] = useState("");
   const [quickVocabRetestTime, setQuickVocabRetestTime] = useState("15:00");
   const [quickVocabMode, setQuickVocabMode] = useState("mix"); // 출제 방식: mix(혼합) | w2m(영단어→뜻) | m2w(뜻→영단어)
@@ -15462,7 +15550,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         const books = Array.isArray(rec.books) ? rec.books : [];
         if (cancelled) return;
         setQuickVocabBooks(books);
-        if (books[0]) { setQuickVocabBookId(books[0].id); setQuickVocabDayTo(books[0].totalDays || 1); setQuickVocabMode(isDefinitionBook(books[0]) ? "m2w" : "mix"); }
+        if (books[0]) { setQuickVocabBookId(books[0].id); setQuickVocabDayText(defaultDayText(books[0])); setQuickVocabMode(isDefinitionBook(books[0]) ? "m2w" : "mix"); }
         if (books.length === 0) setQuickVocabMsg("워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요.");
       } catch (e) {
         if (!cancelled) { setQuickVocabBooks([]); setQuickVocabMsg("워드뱅크를 불러오지 못했어요."); }
@@ -15479,9 +15567,10 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     const book = fresh.find((b) => b.id === quickVocabBookId);
     if (!book) { setQuickVocabMsg("교재를 선택해 주세요."); return; }
     if (!quickVocabRetestDate || !quickVocabRetestTime) { setQuickVocabMsg("재시험 예정일과 시간을 입력해 주세요."); return; }
-    const from = Math.max(1, Number(quickVocabDayFrom) || 1);
-    const to = Math.max(from, Math.min(book.totalDays || from, Number(quickVocabDayTo) || from));
-    const pickedInfo = pickBankWords(book, from, to);
+    const dayParse = parseDaySelection(quickVocabDayText, bankTotalDays(book));
+    if (dayParse.error) { setQuickVocabMsg("Day를 확인해 주세요. " + dayParse.error); return; }
+    const days = dayParse.days;
+    const pickedInfo = pickBankWords(book, days);
     let picked = pickedInfo.words;
     if (picked.length === 0) { setQuickVocabMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     // 출제 단어 수 — 비우면 범위 전체, 넣으면 그 개수만 무작위로 뽑는다(PC/모바일 시험 만들기와 같은 검증·추출 함수).
@@ -15494,16 +15583,16 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
       const n = Number(quickVocabCount);
       if (n < picked.length) { picked = vts.sampleWords(picked, n); countForSource = n; }
     }
-    const title = `${book.name} Day ${from}-${to}`;
-    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: quickVocabMode, retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: { bookId: book.id, from, to, ...(countForSource ? { count: countForSource } : {}) } });
+    const title = `${book.name} Day ${formatDayList(days)}`;
+    const result = buildVocabTestEntry({ title, wordsRaw: picked, mode: quickVocabMode, retestDate: quickVocabRetestDate, retestTime: quickVocabRetestTime, source: buildBankSource(book.id, days, countForSource) });
     if (!result.ok) { setQuickVocabMsg("단어 시험을 만들지 못했어요. 단어가 2개 이상 모였는지 확인해 주세요."); return; }
     setQuickVocabSaving(true);
     try {
       await updateData(quickVocabStudentId, (d) => ({ ...d, vocabTests: [result.entry, ...(d.vocabTests || [])] }));
       const student = roster.find((s) => s.id === quickVocabStudentId);
       if (student && student.studentFcmToken) notifyStudent(student.studentFcmToken, "vocab_test_assigned", title);
-      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험(${picked.length}개)을 만들었어요. ${pickedInfo.note}`);
-      setQuickVocabDayFrom(1); setQuickVocabDayTo(book.totalDays || 1); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00"); setQuickVocabCount("");
+      setQuickVocabMsg(`${student ? student.name : ""} 학생에게 '${title}' 단어 시험(${picked.length}개)을 만들었어요. ${pickedInfo.note}${dayParse.dropped.length ? ` (범위를 벗어난 Day ${dayParse.dropped.join(", ")}은(는) 제외)` : ""}`);
+      setQuickVocabDayText(defaultDayText(book)); setQuickVocabRetestDate(""); setQuickVocabRetestTime("15:00"); setQuickVocabCount("");
     } catch (e) {
       setQuickVocabMsg("저장하지 못했어요: " + String(e.message || e));
     } finally {
@@ -15602,16 +15691,13 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           <//>
           <${Field} label="교재">
             ${quickVocabBooks === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : quickVocabBooks.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>${quickVocabMsg}</div>` : html`
-              <select style=${inputStyle} value=${quickVocabBookId} onChange=${(e) => { setQuickVocabBookId(e.target.value); const b = quickVocabBooks.find((x) => x.id === e.target.value); setQuickVocabDayFrom(1); setQuickVocabDayTo(b ? b.totalDays : 1); setQuickVocabMode(isDefinitionBook(b) ? "m2w" : "mix"); }}>
+              <select style=${inputStyle} value=${quickVocabBookId} onChange=${(e) => { setQuickVocabBookId(e.target.value); const b = quickVocabBooks.find((x) => x.id === e.target.value); setQuickVocabDayText(defaultDayText(b)); setQuickVocabMode(isDefinitionBook(b) ? "m2w" : "mix"); }}>
                 ${quickVocabBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
               </select>
             `}
           <//>
           ${quickVocabBooks && quickVocabBooks.length > 0 && html`
-            <div style=${{ display: "flex", gap: 8 }}>
-              <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayFrom} onChange=${(e) => setQuickVocabDayFrom(e.target.value)} /><//></div>
-              <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${quickVocabDayTo} onChange=${(e) => setQuickVocabDayTo(e.target.value)} /><//></div>
-            </div>
+            <${DaySelectionField} text=${quickVocabDayText} onChange=${(v) => { setQuickVocabDayText(v); setQuickVocabMsg(""); }} totalDays=${bankTotalDays((quickVocabBooks || []).find((b) => b.id === quickVocabBookId))} />
             <${Field} label="출제 단어 수 (비우면 범위 전체)">
               <input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${quickVocabCount} onChange=${(e) => { setQuickVocabCount(e.target.value); setQuickVocabMsg(""); }} placeholder="예: 20" />
             <//>
@@ -19299,9 +19385,9 @@ function VocabEditor({ student, data, updateData }) {
   const [inputMode, setInputMode] = useState("manual"); // "manual" | "paste" | "bank"
   const [pasteText, setPasteText] = useState(""); const [pasteMsg, setPasteMsg] = useState("");
   const [bankBooks, setBankBooks] = useState(null);
-  const [bankBookId, setBankBookId] = useState(""); const [bankFrom, setBankFrom] = useState(1); const [bankTo, setBankTo] = useState(1);
+  const [bankBookId, setBankBookId] = useState(""); const [bankDayText, setBankDayText] = useState("1"); // "4-7" 또는 "4, 6, 7" 같은 Day 입력
   const [bankCount, setBankCount] = useState("");
-  const [bankSource, setBankSource] = useState(null); // 워드뱅크에서 가져온 시험이면 {bookId,from,to,count} — 불합격 재시험 자동 생성이 같은 범위를 다시 뽑는 데 쓴다
+  const [bankSource, setBankSource] = useState(null); // 워드뱅크에서 가져온 시험이면 {bookId,days,from,to,count} — 불합격 재시험 자동 생성이 같은 Day들을 다시 뽑는 데 쓴다
   const [bankMsg, setBankMsg] = useState("");
   const [viewMonth, setViewMonth] = useState(today().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(today());
@@ -19328,7 +19414,7 @@ function VocabEditor({ student, data, updateData }) {
         const rec = snap.exists() ? snap.data() : {};
         const books = Array.isArray(rec.books) ? rec.books : [];
         setBankBooks(books);
-        if (books[0]) { setBankBookId(books[0].id); setBankTo(books[0].totalDays || 1); }
+        if (books[0]) { setBankBookId(books[0].id); setBankDayText(defaultDayText(books[0])); }
         if (books.length === 0) setBankMsg("워드뱅크에 등록된 교재가 없어요. 먼저 '단어 시험지 생성' 메뉴에서 교재와 단어를 등록해 주세요.");
       } catch (e) { setBankBooks([]); setBankMsg("워드뱅크를 불러오지 못했어요."); }
     }
@@ -19338,9 +19424,10 @@ function VocabEditor({ student, data, updateData }) {
     try { fresh = await loadWordbankBooks(true); setBankBooks(fresh); } catch (e) { /* 새로 못 읽으면 화면에 있는 목록으로 계속 */ }
     const book = fresh.find((b) => b.id === bankBookId);
     if (!book) return;
-    const from = Math.max(1, Number(bankFrom) || 1);
-    const to = Math.max(from, Math.min(book.totalDays || from, Number(bankTo) || from));
-    const pickedInfo = pickBankWords(book, from, to);
+    const dayParse = parseDaySelection(bankDayText, bankTotalDays(book));
+    if (dayParse.error) { setBankMsg("Day를 확인해 주세요. " + dayParse.error); return; }
+    const days = dayParse.days;
+    const pickedInfo = pickBankWords(book, days);
     let picked = pickedInfo.words;
     if (picked.length === 0) { setBankMsg("해당 범위에 쓸 수 있는 단어가 없어요. " + pickedInfo.note); return; }
     const deduped = picked;
@@ -19348,9 +19435,9 @@ function VocabEditor({ student, data, updateData }) {
     if (n > 0 && n < picked.length) picked = shuffle(picked).slice(0, n);
     setWords(picked);
     if (isDefinitionBook(book)) setMode("m2w");
-    setBankSource({ bookId: book.id, from, to, ...(n > 0 && n < deduped.length ? { count: n } : {}) });
-    setTitle((t) => t || `${book.name} Day ${from}-${to}`);
-    setBankMsg(`${picked.length}개 단어를 불러왔어요${pickedInfo.note ? " " + pickedInfo.note : ""}. 아래에서 확인 후 저장하세요.`);
+    setBankSource(buildBankSource(book.id, days, n > 0 && n < deduped.length ? n : null));
+    setTitle((t) => t || `${book.name} Day ${formatDayList(days)}`);
+    setBankMsg(`${picked.length}개 단어를 불러왔어요${pickedInfo.note ? " " + pickedInfo.note : ""}${dayParse.dropped.length ? ` (범위를 벗어난 Day ${dayParse.dropped.join(", ")}은(는) 제외)` : ""}. 아래에서 확인 후 저장하세요.`);
     setInputMode("manual");
   }
   function setRow(i, key, val) { setWords((w) => w.map((row, idx) => (idx === i ? { ...row, [key]: val } : row))); }
@@ -19450,16 +19537,14 @@ function VocabEditor({ student, data, updateData }) {
           ${inputMode === "bank" && html`
             ${bankBooks === null ? html`<div style=${{ fontSize: 13, color: C.slate }}>불러오는 중...</div>` : bankBooks.length === 0 ? html`<div style=${{ fontSize: 13, color: C.slate }}>${bankMsg}</div>` : html`
               <${Field} label="교재">
-                <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankFrom(1); setBankTo(b ? b.totalDays : 1); }}>
+                <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankDayText(defaultDayText(b)); }}>
                   ${bankBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
                 </select>
               <//>
-              <div style=${{ display: "flex", gap: 10 }}>
-                <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankFrom} onChange=${(e) => setBankFrom(e.target.value)} /><//></div>
-                <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankTo} onChange=${(e) => setBankTo(e.target.value)} /><//></div>
-              </div>
+              <${DaySelectionField} text=${bankDayText} onChange=${setBankDayText} totalDays=${bankTotalDays((bankBooks || []).find((b) => b.id === bankBookId))} />
               <${Field} label="문항 수 (비우면 범위 전체)"><input style=${inputStyle} type="number" inputMode="numeric" min="1" value=${bankCount} onChange=${(e) => setBankCount(e.target.value)} placeholder="예: 20" /><//>
               <${Button} variant="gold" onClick=${importFromBank} style=${{ width: "100%", justifyContent: "center", minHeight: 48 }}>이 범위로 가져오기<//>
+              ${bankMsg && html`<div style=${{ fontSize: 12.5, color: C.danger, marginTop: 8 }}>${bankMsg}</div>`}
             `}
           `}
           ${inputMode === "paste" && html`
@@ -19596,14 +19681,11 @@ function VocabEditor({ student, data, updateData }) {
             ${inputMode === "bank" && html`
               ${bankBooks === null ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div>` : bankBooks.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>${bankMsg}</div>` : html`
                 <${Field} label="교재">
-                  <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankFrom(1); setBankTo(b ? b.totalDays : 1); }}>
+                  <select style=${inputStyle} value=${bankBookId} onChange=${(e) => { setBankBookId(e.target.value); const b = bankBooks.find((x) => x.id === e.target.value); setBankDayText(defaultDayText(b)); }}>
                     ${bankBooks.map((b) => html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}
                   </select>
                 <//>
-                <div style=${{ display: "flex", gap: 8 }}>
-                  <div style=${{ flex: 1 }}><${Field} label="시작 Day"><input style=${inputStyle} type="number" min="1" value=${bankFrom} onChange=${(e) => setBankFrom(e.target.value)} /><//></div>
-                  <div style=${{ flex: 1 }}><${Field} label="끝 Day"><input style=${inputStyle} type="number" min="1" value=${bankTo} onChange=${(e) => setBankTo(e.target.value)} /><//></div>
-                </div>
+                <${DaySelectionField} text=${bankDayText} onChange=${setBankDayText} totalDays=${bankTotalDays((bankBooks || []).find((b) => b.id === bankBookId))} />
                 <${Field} label="출제 문항 수 (비워두면 범위의 전체 단어)"><input style=${inputStyle} type="number" min="1" value=${bankCount} onChange=${(e) => setBankCount(e.target.value)} placeholder="예: 20" /><//>
                 <div style=${{ display: "flex", gap: 8, marginTop: 4 }}>
                   <${Button} variant="gold" onClick=${importFromBank}>이 범위로 가져오기<//>
@@ -23914,16 +23996,25 @@ function buildVocabBreakdownRow(q, answer, timing) {
 }
 // 불합격 시 같은 교재·같은 Day 범위로 재시험을 자동 생성한다(합격할 때까지 반복). 같은 "단어"가
 // 아니라 같은 "범위"에서 워드뱅크를 다시 읽어 새로 뽑는다 — 범위 정보는 test.source
-// ({bookId,from,to,count})에 있고, 없으면(예전 시험) 제목 "<교재명> Day a-b"에서 복원한다.
+// ({bookId,days,from,to,count})에 있다(days가 있으면 그 Day들만, 없으면 예전처럼 from~to). source가 없는
+// 예전 시험은 제목 "<교재명> Day a-b" 또는 새 형식 "<교재명> Day 4, 6-7"에서 복원한다.
 // 범위를 못 찾으면 마지막 수단으로 원래 시험의 단어를 그대로 쓴다. 응시 대기 중인 같은 제목의
 // 재시험이 이미 있으면 중복 생성하지 않는다. AI 호출 없음.
 async function resolveRetestSource(test) {
   if (test.source && test.source.bookId) return test.source;
-  const m = /^(.*?)\s*Day\s*(\d+)\s*-\s*(\d+)/.exec(test.title || "");
-  if (!m) return null;
-  const books = await loadWordbankBooks();
-  const book = books.find((b) => b.name && m[1].includes(b.name)) || books.find((b) => b.name === m[1].trim());
-  return book ? { bookId: book.id, from: Number(m[2]), to: Number(m[3]) } : null;
+  return resolveRetestSourceFromTitle(test.title, await loadWordbankBooks());
+}
+// 제목 "<교재명> Day 4-7" / "<교재명> Day 4, 6-7" / "<교재명> Day 4"에서 source를 복원한다(순수 함수 — books는 워드뱅크 교재 배열).
+function resolveRetestSourceFromTitle(title, books) {
+  // Day 목록은 "4-7", "4, 6-7", "1-3, 6, 9-10"처럼 숫자·범위·쉼표만 허용한다(뒤에 붙은 "2회" 같은 글자는 안 읽는다).
+  // 숫자 하나뿐인 "Day 7"은 손으로 쓴 제목과 구분이 안 되므로(예전엔 복원 대상이 아니었다) 범위/쉼표가 있을 때만 복원한다.
+  const m = /^(.*?)\s*Day\s*(\d+(?:\s*[-~]\s*\d+)?(?:\s*,\s*\d+(?:\s*[-~]\s*\d+)?)*)/.exec(title || "");
+  if (!m || !/[-~,]/.test(m[2])) return null;
+  const book = (books || []).find((b) => b.name && m[1].includes(b.name)) || (books || []).find((b) => b.name === m[1].trim());
+  if (!book) return null;
+  const parsed = parseDaySelection(m[2], bankTotalDays(book));
+  if (parsed.error || parsed.days.length === 0) return null;
+  return buildBankSource(book.id, parsed.days, null);
 }
 async function createAutoVocabRetest(student, test, updateData) {
   const retitle = test.title.replace(/\s*\(재시험\)$/, "") + " (재시험)";
@@ -23935,7 +24026,7 @@ async function createAutoVocabRetest(student, test, updateData) {
       const book = (await loadWordbankBooks()).find((b) => b.id === src.bookId);
       if (book) {
         let picked = [];
-        for (let d = src.from; d <= src.to; d++) picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko })));
+        sourceDays(src).forEach((d) => { picked = picked.concat(((book.days || {})["day" + d] || []).map((w) => ({ word: w.en, meaning: w.ko }))); });
         picked = picked.filter((w) => (w.word || "").trim() && (w.meaning || "").trim());
         // 재시험은 항상 "내가 내준 단어 개수"만큼만 — src.count가 저장돼 있지 않은 시험(빠른 생성,
         // 출제 문항 수 입력, 예전 시험)도 있어서, 원래 시험의 단어 수(test.words.length)를 상한으로 건다.
