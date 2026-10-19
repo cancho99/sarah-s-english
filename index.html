@@ -569,6 +569,8 @@ if ("serviceWorker" in navigator) {
     .st-two, .hw-summary { max-width: 900px; }
   }
   /* 학생 화면 목록+상세 나란히(데스크톱) */
+  .att-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
+  @media (min-width: 1100px) { .att-grid { grid-template-columns: minmax(0, 1fr) 400px; } .att-side { position: sticky; top: 12px; } }
   .ms-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
   .ms-list { position: sticky; top: 58px; max-height: calc(100vh - 74px); overflow-y: auto; }
   .ms-detail { min-width: 0; }
@@ -4227,7 +4229,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           </div>
         ` : html`
           <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 340 }}>
               <thead>
                 <tr style=${{ background: C.ivory }}>
                   <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
@@ -17130,44 +17132,11 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
 
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>출결 관리</div>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 10 }}>출결 관리</div>
 
-      <${Card} style=${{ marginBottom: 20 }}>
-        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
-          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>이 달 출결·보강 현황</div>
-          <div style=${{ width: 140 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-        </div>
-        ${!loaded ? html`<${Empty} text="불러오는 중..." />` : roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
-          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 500 }}>
-              <thead>
-                <tr style=${{ background: C.ivory }}>
-                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>총 수업일</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>출석</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>결석</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강완료</th>
-                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강필요</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${monthRows.map((r) => html`
-                  <tr key=${r.student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
-                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.totalDays}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.present}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.absentCount}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.makeupDone}</td>
-                    <td style=${{ padding: "7px 10px", textAlign: "center", color: r.makeupNeeded > 0 ? C.danger : C.ink, fontWeight: r.makeupNeeded > 0 ? 700 : 400 }}>${r.makeupNeeded}</td>
-                  </tr>
-                `)}
-              </tbody>
-            </table>
-          </div>
-        `}
-      <//>
-
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 14 }}>선택한 날짜에 수업이 예정된 학생이 자동으로 나열돼요. 출석·결석 버튼을 누르면 표시되고, 다시 누르면 취소돼요. 결석으로 표시하면 보강 여부도 따로 체크할 수 있어요. (수업료는 이 기록과 무관하게 예정된 수업 횟수로 계산돼요.)</div>
+      <div className="att-grid">
+        <div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>출석/결석 버튼을 다시 누르면 취소돼요. 결석이면 보강 여부를 따로 체크해요.</div>
       <div style=${{ display: "flex", gap: 8, alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
         <div style=${{ width: 190 }}><${DateField} value=${date} onChange=${setDate} /></div>
         <button onClick=${() => setDate(today())} style=${{ background: "none", border: `1px solid ${C.line}`, borderRadius: 3, padding: "9px 14px", fontSize: 12.5, color: C.navy, cursor: "pointer" }}>오늘</button>
@@ -17223,11 +17192,13 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
         </div>
       `}
 
+        </div>
+        <div className="att-side">
       ${loaded && outstandingMakeups.length > 0 && html`
-        <div style=${{ marginTop: 20, paddingTop: 16, borderTop: `2px solid ${C.line}` }}>
+        <div style=${{ marginBottom: 14 }}>
           <div style=${{ fontSize: 13, fontWeight: 700, color: C.danger, marginBottom: 8 }}>⚠ 아직 보강 안 한 결석 (${outstandingMakeups.length}건)</div>
           <div style=${{ overflowX: "auto", border: `1px solid #E9C7C0`, borderRadius: 4 }}>
-            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 380 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 340 }}>
               <thead>
                 <tr style=${{ background: "#F7E9E6" }}>
                   <th style=${{ padding: "7px 10px", textAlign: "left", color: C.danger, fontSize: 11 }}>학생</th>
@@ -17248,6 +17219,43 @@ function AttendanceOverview({ roster, ensureData, dataCache, updateData }) {
           </div>
         </div>
       `}
+      <${Card} style=${{ marginBottom: 0 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>이 달 출결·보강 현황</div>
+          <div style=${{ width: 140 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        </div>
+        ${!loaded ? html`<${Empty} text="불러오는 중..." />` : roster.length === 0 ? html`<${Empty} text="학생을 추가해 주세요." />` : html`
+          <div style=${{ overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 4 }}>
+            <table style=${{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 360 }}>
+              <thead>
+                <tr style=${{ background: C.ivory }}>
+                  <th style=${{ padding: "7px 10px", textAlign: "left", color: C.navy, fontSize: 11 }}>학생</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>총 수업일</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>출석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>결석</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강완료</th>
+                  <th style=${{ padding: "7px 10px", textAlign: "center", color: C.navy, fontSize: 11 }}>보강필요</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${monthRows.map((r) => html`
+                  <tr key=${r.student.id} style=${{ borderTop: `1px solid ${C.line}` }}>
+                    <td style=${{ padding: "7px 10px", fontWeight: 700, color: C.navy, whiteSpace: "nowrap" }}>${r.student.name}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.totalDays}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.present}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.absentCount}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center" }}>${r.makeupDone}</td>
+                    <td style=${{ padding: "7px 10px", textAlign: "center", color: r.makeupNeeded > 0 ? C.danger : C.ink, fontWeight: r.makeupNeeded > 0 ? 700 : 400 }}>${r.makeupNeeded}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        `}
+      <//>
+
+        </div>
+      </div>
     </div>
   `;
 }
