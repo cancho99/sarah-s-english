@@ -580,6 +580,18 @@ if ("serviceWorker" in navigator) {
   .ms-list .ap-search { grid-column: 1 / -1; max-width: none; }
   .ms-list .ap-seg { grid-column: 1 / -1; flex-wrap: wrap; }
   .ms-list .ap-sc-filters > button { grid-column: 1 / -1; justify-content: center; }
+  .rp-grid { grid-template-columns: 236px minmax(0, 1fr); }
+  .rp-list-head { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 12px; border-bottom: 1px solid #DCD8CF; background: #F3F1EB; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: #5B6270; }
+  .rp-list-head span { text-transform: none; letter-spacing: 0; font-size: 11px; }
+  .rp-item { display: flex; align-items: center; gap: 10px; width: 100%; border: none; background: none; padding: 8px 12px; border-top: 1px solid #EDEAE2; text-align: left; cursor: pointer; font: inherit; }
+  .rp-list-head + .rp-item { border-top: none; }
+  .rp-item:hover { background: #F8F5EE; }
+  .rp-item.sel { background: #F3EEE2; box-shadow: inset 3px 0 0 #B8935A; }
+  .rp-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .rp-name b { font-weight: 500; font-size: 13px; }
+  .rp-name small { font-size: 11.5px; color: #5B6270; }
+  .rp-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #A6473A; color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  @media (min-width: 1280px) { .drg { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: start; } .drg > * { min-width: 0; } }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -18037,6 +18049,8 @@ function RegularExamEditor({ data, updateData }) {
 // additive.
 function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent, defaultStudentId, onStudentChange }) {
   const rpDesktop = useIsDesktop();
+  // 왼쪽 목록의 미작성 표시를 위해 로스터 전체 데이터를 미리 불러둔다(이미 캐시된 학생은 다시 읽지 않는다).
+  useEffect(() => { roster.forEach((r) => ensureData(r.id)); /* eslint-disable-next-line */ }, [roster.length]);
   const [kind, setKind] = useState("daily");
   // 학생 선택 공유(2026-10 UI 리디자인) — 학생 상세/빠른 기록에서 보던 학생(defaultStudentId)으로 시작하고, 여기서
   // 학생을 바꾸면 onStudentChange로 TeacherDash에 알려 다른 화면도 같은 학생으로 열리게 한다.
@@ -18070,26 +18084,7 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
   // 유효한 딥링크로 취급한다.
   const myTarget = initialTarget && initialTarget.studentId === studentId ? initialTarget : null;
 
-  return html`
-    <div>
-      ${rpDesktop ? html`
-        <div className="rp-bar">
-          <label htmlFor="rp-student">Student</label>
-          <select id="rp-student" style=${{ ...inputStyle, width: 220 }} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
-            ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
-          </select>
-          ${student && onSelectStudent ? html`<button className="tdy-link" style=${{ padding: 0 }} onClick=${() => onSelectStudent(student.id)}>Open ${student.name} →</button>` : null}
-        </div>
-      ` : html`
-      <${Card} style=${{ marginBottom: 14 }}>
-        <${Field} label="학생 선택">
-          <select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
-            ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
-          </select>
-        <//>
-        ${student && onSelectStudent && html`<div style=${{ marginTop: 8 }}><a onClick=${() => onSelectStudent(student.id)} style=${{ color: C.gold, cursor: "pointer", fontSize: 12.5, textDecoration: "underline" }}>${student.name} 학생 Overview로 이동 →</a></div>`}
-      <//>
-      `}
+  const reportBody = html`
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
         ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null}
@@ -18098,6 +18093,50 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
           initialMonth=${myTarget && myTarget.month} initialMonthNonce=${myTarget && myTarget.nonce} />`}
         ${kind === "dashboard" && html`<${MonthlyReportDashboard} key=${student.id} student=${student} data=${data} />`}
       `}
+  `;
+
+  if (rpDesktop) {
+    // 데스크톱: 왼쪽 학생 목록(미작성 리포트 표시) + 오른쪽 작성 화면(2026-10 UI 리디자인 2라운드).
+    const todayStr0 = today();
+    const missDaily = {}, missMonthly = {};
+    missingDailyReportsForRoster(roster, dataCache, todayStr0, 14).forEach((m) => { missDaily[m.student.id] = (missDaily[m.student.id] || 0) + 1; });
+    missingMonthlyReportsForRoster(roster, dataCache, todayStr0).forEach((m) => { missMonthly[m.student.id] = (missMonthly[m.student.id] || 0) + 1; });
+    const sorted = roster.slice().sort((a, b) => ((missDaily[b.id] || 0) + (missMonthly[b.id] || 0)) - ((missDaily[a.id] || 0) + (missMonthly[a.id] || 0)));
+    return html`
+      <div className="ms-grid rp-grid">
+        <div className="ms-list">
+          <div className="sd-card" style=${{ padding: 0, overflow: "hidden" }}>
+            <div className="rp-list-head">Students <span>Reports to write first</span></div>
+            ${sorted.map((r) => {
+              const n = (missDaily[r.id] || 0) + (missMonthly[r.id] || 0);
+              return html`
+                <button key=${r.id} className=${"rp-item" + (r.id === studentId ? " sel" : "")} onClick=${() => setStudentId(r.id)}>
+                  <span className="ap-av">${r.name.charAt(0)}</span>
+                  <span className="rp-name"><b>${r.name}</b><small>${r.grade || "—"}</small></span>
+                  ${n > 0 ? html`<span className="rp-badge" title="Reports to write">${n}</span>` : null}
+                </button>
+              `;
+            })}
+          </div>
+        </div>
+        <div className="ms-detail">
+          ${student && onSelectStudent ? html`<div style=${{ marginBottom: 6 }}><button className="tdy-link" style=${{ padding: 0 }} onClick=${() => onSelectStudent(student.id)}>Open ${student.name} →</button></div>` : null}
+          ${reportBody}
+        </div>
+      </div>
+    `;
+  }
+  return html`
+    <div>
+      <${Card} style=${{ marginBottom: 14 }}>
+        <${Field} label="학생 선택">
+          <select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
+            ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+          </select>
+        <//>
+        ${student && onSelectStudent && html`<div style=${{ marginTop: 8 }}><a onClick=${() => onSelectStudent(student.id)} style=${{ color: C.gold, cursor: "pointer", fontSize: 12.5, textDecoration: "underline" }}>${student.name} 학생 Overview로 이동 →</a></div>`}
+      <//>
+      ${reportBody}
     </div>
   `;
 }
@@ -18501,7 +18540,7 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent, init
   const previewSinceDate = priorDailyDates.length ? priorDailyDates[priorDailyDates.length - 1] : null;
 
   return html`
-    <div>
+    <div className="drg">
       <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData}
         examAttemptResults=${examAttemptResults} onSelectStudent=${onSelectStudent} />
       <${Card}>
