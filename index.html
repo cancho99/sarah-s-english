@@ -471,9 +471,8 @@ if ("serviceWorker" in navigator) {
   .tdy-stat .l { font-size: 12px; color: #5B6270; }
   @media (max-width: 760px) { .tdy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (min-width: 1025px) {
-    .tdy { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+    .tdy { max-width: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 12px; align-items: start; }
     .tdy > :first-child { grid-column: 1 / -1; }
-    .tdy > .tdy-card:nth-of-type(4), .tdy > .tdy-link { grid-column: 1 / -1; }
   }
   .tdy-click { cursor: pointer; }
   .tdy-click:hover { background: #F8F5EE; }
@@ -560,19 +559,27 @@ if ("serviceWorker" in navigator) {
   .st-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); gap: 12px; align-items: start; }
   /* 가로로 길게 퍼지지 않게 — 내용 폭 상한 + 표/타일 고정 크기(2026-10 UI 2라운드 보정) */
   @media (min-width: 1025px) {
-    .ap-main-body { max-width: 1120px; margin-left: auto; margin-right: auto; width: 100%; }
     .ap-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
     .ap-kpis .ap-kpi { flex: 0 0 auto; min-width: 116px; padding: 7px 14px; }
     .ap-kpi .l { white-space: nowrap; }
     .ap-bar span { width: 42px; white-space: nowrap; }
-    .ap-table { max-width: 880px; }
+    .ap-table { max-width: none; }
     .ap-th, .ap-tr { grid-template-columns: minmax(150px, 1fr) 128px 128px 118px 54px 16px; gap: 12px; }
-    .tdy { max-width: 980px; }
     .sd-grid { grid-template-columns: 224px minmax(0, 1fr); }
     .st-two, .hw-summary { max-width: 900px; }
-    .ap-sc-filters { max-width: 880px; }
-    .rp-bar { max-width: 880px; }
   }
+  /* 학생 화면 목록+상세 나란히(데스크톱) */
+  .ms-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .ms-list { position: sticky; top: 58px; max-height: calc(100vh - 74px); overflow-y: auto; }
+  .ms-detail { min-width: 0; }
+  .ap-table.cmp { max-width: none; }
+  .ap-th.cmp, .ap-tr.cmp { grid-template-columns: minmax(0, 1fr) 104px; gap: 8px; }
+  .ap-tr.cmp { min-height: 40px; }
+  .ap-tr.sel { background: #F3EEE2; box-shadow: inset 3px 0 0 #B8935A; }
+  .ms-list .ap-sc-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: none; }
+  .ms-list .ap-search { grid-column: 1 / -1; max-width: none; }
+  .ms-list .ap-seg { grid-column: 1 / -1; flex-wrap: wrap; }
+  .ms-list .ap-sc-filters > button { grid-column: 1 / -1; justify-content: center; }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -5481,6 +5488,26 @@ function StudentInfoSection({ roster, saveRosterList, updateStudentRosterEntry, 
       backToList();
     }
   }
+  const splitDesktop = useIsDesktop();
+  if (splitDesktop) {
+    // 데스크톱: 왼쪽 학생 목록 + 오른쪽 상세를 한 화면에 나란히(목록을 벗어나지 않고 학생을 바꿔 가며 본다).
+    return html`
+      <div className="ms-grid">
+        <div className="ms-list">
+          <${StudentCommandCenter} compact=${true} selectedId=${selectedStudentId} roster=${roster} dataCache=${dataCache} ensureData=${ensureData} setSelectedStudentId=${setSelectedStudentId}
+            showAdd=${showAdd} setShowAdd=${setShowAdd} name=${name} setName=${setName} sc=${sc} setSc=${setSc} pc=${pc} setPc=${setPc}
+            addErr=${addErr} addStudent=${addStudent} />
+        </div>
+        <div className="ms-detail">
+          ${selected ? html`<${StudentDetailSection} key=${selected.id} student=${selected} roster=${roster} saveRosterList=${saveRosterList} inSplit=${true}
+            updateStudentRosterEntry=${updateStudentRosterEntry} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
+            sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos}
+            onBack=${backToList} onDelete=${handleDelete} deepTarget=${deepTarget} onConsumeDeepTarget=${onConsumeDeepTarget} onTabChange=${onTabChange}
+            ensureData=${ensureData} onStepStudent=${onStepStudent} />` : html`<${Empty} text="왼쪽 목록에서 학생을 선택하세요." />`}
+        </div>
+      </div>
+    `;
+  }
   if (selected) {
     return html`<${StudentDetailSection} key=${selected.id} student=${selected} roster=${roster} saveRosterList=${saveRosterList}
       updateStudentRosterEntry=${updateStudentRosterEntry} updateData=${updateData} dataCache=${dataCache} examKeyLibrary=${examKeyLibrary}
@@ -5686,7 +5713,7 @@ function studentFilterSummary(f) {
   if ((f.search || "").trim()) parts.push(`"${f.search.trim()}"`);
   return parts.join(" · ");
 }
-function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStudentId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
+function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStudentId, compact, selectedId, showAdd, setShowAdd, name, setName, sc, setSc, pc, setPc, addErr, addStudent }) {
   const [loaded, setLoaded] = useState(false);
   // 필터는 모듈 변수(studentListFilter)에 같이 기록해서, 학생 상세에 다녀와도 그대로 남는다.
   const [filter, setFilterState] = useState(() => ({ ...studentListFilter }));
@@ -5738,13 +5765,13 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
   const kpi = (label, n, color) => html`<div key=${label} className="ap-kpi"><div className="v" style=${{ color }}>${n}</div><div className="l">${label}</div></div>`;
   return html`
     <div>
-      <div className="ap-kpis">
+      ${compact ? null : html`<div className="ap-kpis">
         ${kpi("Students", summary.total, C.navy)}
         ${kpi("Classes today", summary.todayClasses, C.navy)}
         ${kpi("Homework attention", summary.hwNeedsCare, summary.hwNeedsCare > 0 ? C.danger : C.navy)}
         ${kpi("Vocabulary attention", summary.vocabNeedsCare, summary.vocabNeedsCare > 0 ? C.danger : C.navy)}
         ${kpi("Needs attention", summary.overallNeedsCare, summary.overallNeedsCare > 0 ? C.danger : C.navy)}
-      </div>
+      </div>`}
 
       <div className="ap-sc-filters">
         <div className="ap-search">
@@ -5773,9 +5800,9 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
         <${Empty} text="조건에 맞는 학생이 없어요." />
         <div style=${{ textAlign: "center", marginTop: 10 }}><${Button} variant="ghost" onClick=${() => setFilter({ search: "", grade: "all", status: "all" })}>Clear filters<//></div>
       ` : html`
-        <div className="ap-table">
-          <div className="ap-th"><span>Student</span><span>Homework</span><span>Vocabulary</span><span>Status</span><span>Today</span><span></span></div>
-          ${filtered.map((snap) => html`<${StudentRow} key=${snap.student.id} snap=${snap} onClick=${() => setSelectedStudentId(snap.student.id)} />`)}
+        <div className=${"ap-table" + (compact ? " cmp" : "")}>
+          ${compact ? html`<div className="ap-th cmp"><span>Student</span><span>Status</span></div>` : html`<div className="ap-th"><span>Student</span><span>Homework</span><span>Vocabulary</span><span>Status</span><span>Today</span><span></span></div>`}
+          ${filtered.map((snap) => html`<${StudentRow} key=${snap.student.id} snap=${snap} compact=${compact} selected=${snap.student.id === selectedId} onClick=${() => setSelectedStudentId(snap.student.id)} />`)}
         </div>
         <div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>${filtered.length} of ${roster.length} students${studentFilterSummary(filter) ? " · Filter: " + studentFilterSummary(filter) + " (kept when you open a student)" : ""}</div>
       `}
@@ -5801,8 +5828,19 @@ function AddStudentForm({ showAdd, setShowAdd, name, setName, sc, setSc, pc, set
 // 20명 안팎을 스크롤 한두 번에 훑을 수 있게 한다. 같은 계산(computeStudentSnapshot) 결과를 그대로 쓴다.
 const STUDENT_STATUS_LABEL = { onTrack: "On track", needsAttention: "Needs attention", atRisk: "At risk" };
 const STUDENT_STATUS_TONE = { onTrack: "ok", needsAttention: "warn", atRisk: "bad" };
-function StudentRow({ snap, onClick }) {
+function StudentRow({ snap, onClick, compact, selected }) {
   const { student, homework, vocab, status, todayClass } = snap;
+  if (compact) {
+    return html`
+      <div className=${"ap-tr cmp" + (selected ? " sel" : "")} tabIndex="0" onClick=${onClick} onKeyDown=${(e) => { if (e.key === "Enter") onClick(); }}>
+        <div className="ap-nm">
+          <span className="ap-av">${student.name.charAt(0)}</span>
+          <div><b>${student.name}</b><small>${[student.grade, student.school].filter(Boolean).join(" · ") || "—"}</small></div>
+        </div>
+        <div><span className=${"ap-pill " + STUDENT_STATUS_TONE[status]}>${STUDENT_STATUS_LABEL[status]}</span></div>
+      </div>
+    `;
+  }
   const axis = (pct, axisStatus) => pct == null
     ? html`<span className="ap-dash">—</span>`
     : html`<div className=${"ap-bar " + (STUDENT_STATUS_TONE[axisStatus] || "ok")}><i><s style=${{ width: pct + "%" }}></s></i><span>${pct}%</span></div>`;
@@ -5894,7 +5932,7 @@ function StatusExplainLine({ homework, vocab, combinedPct, status }) {
 // 때문에(StudentInfoSection 참고) 학생이 바뀌면 이 컴포넌트가 통째로 새로 마운트되고, 아래 tab
 // state는 항상 "overview"로 초기화된다 — "학생을 선택하면 첫 화면은 반드시 Overview" 요구사항을
 // 별도 분기 없이 React의 기본 동작만으로 만족시킨다.
-function StudentDetailSection({ student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete, deepTarget, onConsumeDeepTarget, onTabChange, ensureData, onStepStudent }) {
+function StudentDetailSection({ inSplit, student, roster, saveRosterList, updateStudentRosterEntry, updateData, dataCache, examKeyLibrary, sharedDriveFolderLink, saveSharedDriveFolderLink, teacherTodos, saveTeacherTodos, onBack, onDelete, deepTarget, onConsumeDeepTarget, onTabChange, ensureData, onStepStudent }) {
   // Teacher OS STEP 10 — "학생을 선택하면 항상 Overview부터"가 기본 규칙이지만, Growth Report의
   // "View Vocabulary"처럼 명시적으로 Learning→Reading→Vocabulary까지 딥링크해야 하는 단 한
   // 경로에서만 예외를 둔다. deepTarget이 이 학생을 가리킬 때만 tab을 오버라이드하고, 그 외
@@ -6003,7 +6041,7 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
   if (isDesktop) {
     return html`
       <div>
-        <div className="sd-top">${backEl}<span style=${{ flex: 1 }}></span>${pagerEl}${deleteEl}</div>
+        <div className="sd-top">${inSplit ? null : backEl}<span style=${{ flex: 1 }}></span>${pagerEl}${deleteEl}</div>
         <div className="sd-grid">
           <${StudentRail} student=${student} data=${data} snap=${headSnap} onJump=${setTab} />
           <div className="sd-main">${tabsAndBody}</div>
@@ -15958,6 +15996,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const isMobile = useIsMobile();
   // Today 단순 보기(2026-10 UI 리디자인) — 기본은 "지금 해야 할 일" 한 목록 + 오늘 수업 + 할 일만 보여주고, 기존의
   // 상세 카드들(숙제 현황, 단어시험 결과, 최근 시험 등)은 "Show all details"로 펼친다. 정보는 하나도 빼지 않았다.
+  const todayDesktop = useIsDesktop();
   const [showAll, setShowAll] = useState(false);
   const openTodoCount = (teacherTodos || []).filter((t) => !t.done).length;
   const [todoOpen, setTodoOpen] = useState(openTodoCount > 0);
@@ -16235,7 +16274,58 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // return문(아래)의 해당 카드들은 무수정으로 그대로 남아있다. "공지사항 등록" 버튼은
   // TeacherCenterHome/TeacherCenterSection 어디에도 없어서(Settings 화면의
   // SettingsAnnouncementsPanel과는 별개) 숨길 대상이 없었다.
-  if (!showAll) {
+  // "Show all details"(2026-10 UI 리디자인 2차) — 위의 단순 보기와 겹치던 카드(할 일, 오늘 수업, 리포트 미작성, 밀린 항목,
+  // 로드맵, 상담, 수업 준비)는 모두 뺐고, 단순 보기에 없는 "오늘 숙제 현황 / 오늘 응시 결과 / 최근 시험" 세 가지만 남겼다.
+  const hwStat = (label, n, tone) => html`<div className="tdy-stat"><div className="v" style=${{ color: tone && n > 0 ? C.danger : C.ink }}>${n}</div><div className="l">${label}</div></div>`;
+  // 시험 결과 줄을 누르면 그 시험이 있는 페이지로 간다 — 단어시험은 학생 상세 Learning → Vocabulary, 그 외 시험은
+  // Assessment(Timeline)로 열린다(기존 딥링크 채널 deepTarget 재사용, 없으면 학생 상세로 대체).
+  const openResult = (r) => {
+    if (r.kind === "vocab" && onSelectStudentStudy) onSelectStudentStudy(r.studentId, "vocab");
+    else if (r.kind !== "vocab" && onSelectStudentAssessment) {
+      // 시험 종류별로 그 시험이 있는 Assessment 서브탭으로 연다. 모의고사/추가시험은 결과 id로 해당 시험을 미리 선택한다.
+      const sub = r.kind === "mock" ? "mock" : r.kind === "exam" ? "examTests" : r.kind === "regular" ? "regularExam" : "timeline";
+      onSelectStudentAssessment(r.studentId, sub, r.id);
+    } else onSelectStudent(r.studentId);
+  };
+  const resultRow = (r, i, withDate) => {
+    const pct = r.total ? Math.round((r.score / r.total) * 100) : null;
+    const pass = r.kind === "vocab" && pct != null ? pct >= svc.vocabularyService.passThreshold(r.title) : null;
+    return html`
+      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => openResult(r)} onKeyDown=${(e) => { if (e.key === "Enter") openResult(r); }}>
+        <div className="tdy-main"><b>${r.studentName}</b><span>${r.title}${withDate && r.date ? " · " + fmtDate(r.date) : ""}</span></div>
+        <span style=${{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>${r.score}/${r.total}${pct != null ? ` (${pct}%)` : ""}</span>
+        ${pass != null ? html`<span className=${"ap-pill " + (pass ? "ok" : "bad")}>${pass ? "Pass" : "Fail"}</span>` : null}
+        <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
+      </div>
+    `;
+  };
+  const hwCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Homework due today</h3><button className="tdy-link" onClick=${onOpenBoard} style=${{ marginLeft: "auto", padding: 0 }}>Open board →</button></div>
+        ${hwCounts.total === 0 ? html`<div className="tdy-empty">No homework is due or assigned today.</div>` : html`
+          <div className="tdy-stats">
+            ${hwStat("Total", hwCounts.total)}
+            ${hwStat("Submitted", hwCounts.submitted)}
+            ${hwStat("Not submitted", hwCounts.notSubmitted, true)}
+            ${hwStat("Late", hwCounts.late, true)}
+          </div>
+        `}
+      </div>
+  `;
+  const resultsCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Results today</h3><span className="tdy-count">${testsToday.length}</span></div>
+        ${testsToday.length === 0 ? html`<div className="tdy-empty">No test results yet today.</div>` : testsToday.map((r, i) => resultRow(r, i, false))}
+      </div>
+  `;
+  const recentCard = html`
+      <div className="tdy-card">
+        <div className="tdy-head"><h3>Recent exams</h3></div>
+        ${recentTestsTop.length === 0 ? html`<div className="tdy-empty">No exams taken yet.</div>` : recentTestsTop.slice(0, 5).map((r, i) => resultRow(r, i, true))}
+      </div>
+  `;
+
+  if (!showAll || todayDesktop) {
     // "지금 필요한 일" — 종류별로 한 줄씩만 보여준다(2026-10 UI 리디자인 2차). 항목을 하나하나 나열하면 20줄이 넘어가
     // 오히려 못 찾기 때문에, 종류 + 건수 + 가장 급한 한 건으로 줄이고 버튼 하나로 바로 처리하게 했다.
     const nameList = (arr) => (arr.length > 3 ? arr.slice(0, 3).join(", ") + ` +${arr.length - 3}` : arr.join(", "));
@@ -16292,64 +16382,20 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           ${todoOpen ? html`<${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} compact=${true} />` : null}
         </div>
 
-        <button className="tdy-link" onClick=${() => setShowAll(true)} style=${{ alignSelf: "flex-start", color: "#5B6270", fontWeight: 400 }}>Show all details</button>
+        ${todayDesktop ? html`${hwCard}${resultsCard}${recentCard}` : html`<button className="tdy-link" onClick=${() => setShowAll(true)} style=${{ alignSelf: "flex-start", color: "#5B6270", fontWeight: 400 }}>Show all details</button>`}
       </div>
     `;
   }
 
-  // "Show all details"(2026-10 UI 리디자인 2차) — 위의 단순 보기와 겹치던 카드(할 일, 오늘 수업, 리포트 미작성, 밀린 항목,
-  // 로드맵, 상담, 수업 준비)는 모두 뺐고, 단순 보기에 없는 "오늘 숙제 현황 / 오늘 응시 결과 / 최근 시험" 세 가지만 남겼다.
-  const hwStat = (label, n, tone) => html`<div className="tdy-stat"><div className="v" style=${{ color: tone && n > 0 ? C.danger : C.ink }}>${n}</div><div className="l">${label}</div></div>`;
-  // 시험 결과 줄을 누르면 그 시험이 있는 페이지로 간다 — 단어시험은 학생 상세 Learning → Vocabulary, 그 외 시험은
-  // Assessment(Timeline)로 열린다(기존 딥링크 채널 deepTarget 재사용, 없으면 학생 상세로 대체).
-  const openResult = (r) => {
-    if (r.kind === "vocab" && onSelectStudentStudy) onSelectStudentStudy(r.studentId, "vocab");
-    else if (r.kind !== "vocab" && onSelectStudentAssessment) {
-      // 시험 종류별로 그 시험이 있는 Assessment 서브탭으로 연다. 모의고사/추가시험은 결과 id로 해당 시험을 미리 선택한다.
-      const sub = r.kind === "mock" ? "mock" : r.kind === "exam" ? "examTests" : r.kind === "regular" ? "regularExam" : "timeline";
-      onSelectStudentAssessment(r.studentId, sub, r.id);
-    } else onSelectStudent(r.studentId);
-  };
-  const resultRow = (r, i, withDate) => {
-    const pct = r.total ? Math.round((r.score / r.total) * 100) : null;
-    const pass = r.kind === "vocab" && pct != null ? pct >= svc.vocabularyService.passThreshold(r.title) : null;
-    return html`
-      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => openResult(r)} onKeyDown=${(e) => { if (e.key === "Enter") openResult(r); }}>
-        <div className="tdy-main"><b>${r.studentName}</b><span>${r.title}${withDate && r.date ? " · " + fmtDate(r.date) : ""}</span></div>
-        <span style=${{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>${r.score}/${r.total}${pct != null ? ` (${pct}%)` : ""}</span>
-        ${pass != null ? html`<span className=${"ap-pill " + (pass ? "ok" : "bad")}>${pass ? "Pass" : "Fail"}</span>` : null}
-        <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
-      </div>
-    `;
-  };
   return html`
     <div className="tdy">
       <div>
         <button className="tdy-link" onClick=${() => setShowAll(false)} style=${{ padding: 0, marginBottom: 6 }}>← Back to Today</button>
         <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink }}>Details</div>
       </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Homework due today</h3><button className="tdy-link" onClick=${onOpenBoard} style=${{ marginLeft: "auto", padding: 0 }}>Open board →</button></div>
-        ${hwCounts.total === 0 ? html`<div className="tdy-empty">No homework is due or assigned today.</div>` : html`
-          <div className="tdy-stats">
-            ${hwStat("Total", hwCounts.total)}
-            ${hwStat("Submitted", hwCounts.submitted)}
-            ${hwStat("Not submitted", hwCounts.notSubmitted, true)}
-            ${hwStat("Late", hwCounts.late, true)}
-          </div>
-        `}
-      </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Results today</h3><span className="tdy-count">${testsToday.length}</span></div>
-        ${testsToday.length === 0 ? html`<div className="tdy-empty">No test results yet today.</div>` : testsToday.map((r, i) => resultRow(r, i, false))}
-      </div>
-
-      <div className="tdy-card">
-        <div className="tdy-head"><h3>Recent exams</h3></div>
-        ${recentTestsTop.length === 0 ? html`<div className="tdy-empty">No exams taken yet.</div>` : recentTestsTop.slice(0, 5).map((r, i) => resultRow(r, i, true))}
-      </div>
+      ${hwCard}
+      ${resultsCard}
+      ${recentCard}
     </div>
   `;
 }
