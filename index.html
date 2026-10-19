@@ -2543,6 +2543,7 @@ const ICON_PATHS = {
   today: '<path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h14V9.5"/>',
   students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.2 14.6c2 .7 3.3 2.5 3.3 5.4"/>',
   classes: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  business: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.3c-.5-.8-1.5-1.3-2.8-1.3-1.6 0-2.7.8-2.7 2s1 1.7 2.7 2c1.8.3 2.8.9 2.8 2.1s-1.2 2-2.8 2c-1.3 0-2.4-.5-3-1.4M12 6.5V8m0 8v1.5"/>',
   inbox: '<path d="M3.5 13l2.4-7.2A2 2 0 017.8 4.5h8.4a2 2 0 011.9 1.3L20.5 13"/><path d="M3.5 13v5a1.5 1.5 0 001.5 1.5h14a1.5 1.5 0 001.5-1.5v-5h-5l-1 2h-5l-1-2z"/>',
   bank: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 006.5 18H20v3H6.5"/>',
   exam: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
@@ -4414,6 +4415,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 독립 워크플로를 두는 패턴)를 그대로 따른다.
     { key: "readingAnalysis", label: "Exam Studio", icon: "🧪", iconName: "exam" },
     { key: "reports", label: "Reports", icon: "📊", iconName: "reports" },
+    { key: "business", label: "Business", icon: "💰", iconName: "business" },
     { key: "bookings", label: "Inquiries", icon: "📥", iconName: "inbox", badge: (levelTestBookings || []).filter((b) => b.status !== "완료").length || null },
     { key: "settingsHub", label: "Settings", icon: "⚙️", iconName: "settings" },
   ];
@@ -4498,7 +4500,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 전부 갖고 있다(정의부 참고) — 예전엔 문법·독해·시험지 3개만 있었고, 단어 시험지(WordbankSection)
     // /정답표(ExamKeyLibrarySection)/배정·결과(ExamAssignmentManager, 예전 examHub)는 각자 다른
     // 최상위 메뉴였다. 셋 다 무수정, 탭 하나로 편입됐을 뿐이라 새 prop만 추가로 넘긴다.
-    body = html`<${QuestionBankSection} roster=${roster} examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} updateData=${updateData} onLogout=${onLogout} />`;
+    body = html`<${QuestionBankSection} roster=${roster} examKeyLibrary=${examKeyLibrary} saveExamKeyLibrary=${saveExamKeyLibrary} updateData=${updateData} onLogout=${onLogout} sharedDriveFolderLink=${sharedDriveFolderLink} saveSharedDriveFolderLink=${saveSharedDriveFolderLink} />`;
   } else if (section === "examAssignments") {
     body = html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`;
   } else if (section === "reports") {
@@ -4535,6 +4537,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
       onLogout=${onLogout} />`;
+  } else if (section === "business") {
+    body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
   } else if (section === "mainpage") {
     // Teacher OS STEP 4 — "Main Page"는 더 이상 navItems에 없다(사이드바에서 제거). 이 분기와
     // TeacherOverview 자체는 지우지 않고 남겨둔다 — 계획서 §6에서 이 화면의 기능 중 Today/
@@ -4582,10 +4586,10 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       { key: "reports", label: "Reports", iconName: "reports" },
     ];
     const MOBILE_MORE_DESC = {
-      classes: ["Classes", "시간표·출결·숙제/단어 현황"], questionBank: ["Question Bank", "문법·독해·단어 문제, 시험지, 배정·결과"],
+      classes: ["Classes", "시간표·출결·숙제/단어 현황"], questionBank: ["Question Bank", "문법·단어 문제, 정답표, 배정·공유 자료"],
       readingAnalysis: ["Exam Studio", "지문 분석·시험지 만들기"],
-      bookings: ["Inquiries", "레벨테스트·상담 문의"],
-      settingsHub: ["Settings", "프로필·수업료·공지·자료실·데이터 정리"],
+      bookings: ["Inquiries", "레벨테스트·상담 문의"], business: ["Business", "수업료·매출 현황"],
+      settingsHub: ["Settings", "프로필·공지·데이터 정리"],
     };
     const bottomKeys = new Set(MOBILE_BOTTOM.map((t) => t.key));
     const moreItems = navItems.filter((n) => !bottomKeys.has(n.key));
@@ -4664,14 +4668,8 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
 // bulkClearOldPhotos()를 그대로 재사용.
 const SETTINGS_SUBTABS = [
   { key: "profile", icon: "👤", label: "Profile" },
-  { key: "business", icon: "💰", label: "Business" },
   { key: "announcements", icon: "📢", label: "Announcements" },
-  // Teacher OS STEP 4의 사이드바 재편(학생 관리 호버 플라이아웃 제거)이 그 플라이아웃을 통해서만
-  // 들어가던 StudentsSection의 "자료실 → 공유 자료실" 진입점을 사실상 도달 불가능하게 만들었다
-  // (StudentsSection/MaterialsLibrarySection shared=true 자체는 무수정, 컬렉션도 그대로 —
-  // 진입 경로만 없어졌던 것). 출결 관리는 같은 문제를 겪었다가 Classes 탭으로 이미 옮겨졌으므로,
-  // 같은 이유(전체 학생 공용, 특정 학생 소속이 아님)로 이번엔 Settings에 옮긴다.
-  { key: "materials", icon: "📁", label: "Shared Materials" },
+  // 2026-10 IA 개편 — Business는 최상위 Business 메뉴로, Shared Materials는 Question Bank의 Materials 탭으로 옮겼다.
   { key: "data", icon: "🗄", label: "Data" },
   // 2026-09-03 — 레거시 Reading Question Bank(ReadingQuestionBankView) 진입점 제거. 컴포넌트
   // 정의와 Firestore 데이터(readingPassages/readingQuestions)는 그대로 남아있지만, 더 이상
@@ -4683,9 +4681,7 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
     <div>
       <${Tabs} tabs=${SETTINGS_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "profile" && html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`}
-      ${tab === "business" && html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
-      ${tab === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
       ${tab === "data" && html`
         <div>
           <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
@@ -15392,7 +15388,7 @@ function MobileAssignExamTab({ roster, onLogout }) {
 // (ExamKeyLibrarySection, 예전 "examkeys" 메뉴). "Assignments & Results"(ExamAssignmentManager)는
 // STEP4에서 여기 있었지만, STEP5에서 사용자 지시로 Classes → Assessments로 옮겼다 — "Question
 // Bank는 문제·시험지를 만드는 공간, Classes는 실제 학생 수업/평가를 운영하는 공간"이라는 구분.
-function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary, updateData, onLogout }) {
+function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyLibrary, updateData, onLogout, sharedDriveFolderLink, saveSharedDriveFolderLink }) {
   // 2026-09-03 — 문법/리딩 문제뱅크 전면 교체: Question Review·Exam Builder 탭(둘 다 옛
   // questionBankService.js 데이터 기반)을 제거했다. Grammar 탭은 새 GrammarBankPrototype(더미
   // 데이터, 위에서 정의)으로 교체 — 실제 데이터 연결 전까지는 화면만 제공한다. Vocabulary/Answer
@@ -15401,7 +15397,7 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   // 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
   // 모바일에서는 위 4개 탭 대신 "📝 시험지 생성"(ExamBuilderView 재사용) / "📤 시험지 배정"
   // (MobileAssignExamTab, 위에서 정의) 2개 탭만 보여준다 — 데스크탑 로직/탭 목록은 무수정.
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse", "assignments"];
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse", "assignments", "materials"];
   const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
   const isMobile = useIsMobile();
   const MOBILE_BANKS = ["examCreate", "examAssign"];
@@ -15426,12 +15422,14 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "browse", icon: "📚", label: "전체 문항" },
         { key: "assignments", icon: "📋", label: "Assignments" },
+        { key: "materials", icon: "📁", label: "Shared Materials" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankPrototype} roster=${roster} updateData=${updateData} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
       ${bank === "browse" && html`<${GrammarBankBrowseView} />`}
       ${bank === "assignments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
+      ${bank === "materials" && html`<${MaterialsLibrarySection} shared=${true} driveFolderLink=${sharedDriveFolderLink} onSaveDriveFolderLink=${saveSharedDriveFolderLink} />`}
     </div>
   `;
 }
