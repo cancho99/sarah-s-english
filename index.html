@@ -6148,8 +6148,15 @@ const STUDENT_ASSESSMENT_SUBTABS = [
 // examAssignments+examAttempts 4계통을 하나의 목록으로 합쳐 보여주기만 하는 읽기 전용 뷰.
 // getUnifiedAssessmentTimeline()이 실제 조인/normalize를 전부 하고, 여기서는 결과를 표로
 // 그리기만 한다 — Firestore 접근은 그 함수 안에서만 일어난다.
-function AssessmentTimelineView({ student, data, updateData }) {
+function AssessmentTimelineView({ student, data, updateData, focusId }) {
   const [rows, setRows] = useState(null);
+  // Today에서 특정 시험 결과로 들어오면(focusId) 그 줄을 강조하고 화면 가운데로 스크롤한다.
+  useEffect(() => {
+    if (!focusId || !rows) return;
+    const el = document.getElementById("timeline-focus-row");
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    /* eslint-disable-next-line */
+  }, [focusId, rows]);
   const [error, setError] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -6216,8 +6223,10 @@ function AssessmentTimelineView({ student, data, updateData }) {
                 </tr>
               </thead>
               <tbody>
-                ${rows.map((r) => html`
-                  <tr key=${r.id} style=${{ borderBottom: `1px dotted ${C.line}` }}>
+                ${rows.map((r) => {
+                  const isFocus = !!focusId && (r.rawId === focusId || r.attemptId === focusId);
+                  return html`
+                  <tr key=${r.id} id=${isFocus ? "timeline-focus-row" : undefined} style=${{ borderBottom: `1px dotted ${C.line}`, background: isFocus ? "#FBF1DD" : "transparent", boxShadow: isFocus ? `inset 3px 0 0 ${C.gold}` : "none" }}>
                     <td style=${{ padding: "6px 8px", whiteSpace: "nowrap" }}>${r.date ? fmtDate(r.date) : "—"}</td>
                     <td style=${{ padding: "6px 8px", whiteSpace: "nowrap", color: kindColor[r.kind] || C.ink, fontWeight: 700 }}>${r.kindLabel}</td>
                     <td style=${{ padding: "6px 8px" }}>${r.title}</td>
@@ -6228,7 +6237,7 @@ function AssessmentTimelineView({ student, data, updateData }) {
                       <button onClick=${() => handleDelete(r)} style=${{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 13 }}>✕</button>
                     </td>
                   </tr>
-                `)}
+                `; })}
               </tbody>
             </table>
           </div>
@@ -6243,15 +6252,18 @@ function StudentAssessmentTab({ student, data, updateData, examKeyLibrary, analy
   const isMobile = useIsMobile();
   const visibleAssessmentTabs = STUDENT_ASSESSMENT_SUBTABS; // 모바일에서도 Timeline/Exams/Question Performance 포함 전부 노출(2026-10-12)
   const [sub, setSub] = useState(() => (deepTarget && deepTarget.assessSub) || (isMobile ? "mock" : "timeline"));
+  // 강조할 결과 id는 state로 붙잡아 둔다 — deepTarget은 마운트 직후 한 번 쓰고 지워지는데(StudentDetailSection), Timeline은
+  // 목록을 비동기로 불러온 뒤에야 강조하기 때문이다.
+  const [focusResultId, setFocusResultId] = useState((deepTarget && deepTarget.focusResultId) || null);
   useEffect(() => {
     if (deepTarget && deepTarget.assessSub) setSub(deepTarget.assessSub);
+    if (deepTarget) setFocusResultId(deepTarget.focusResultId || null);
     /* eslint-disable-next-line */
   }, [deepTarget && deepTarget.nonce]);
-  const focusResultId = deepTarget && deepTarget.focusResultId;
   return html`
     <div>
       <${SubTabs} tabs=${visibleAssessmentTabs} active=${sub} onChange=${setSub} />
-      ${sub === "timeline" && html`<${AssessmentTimelineView} key=${student.id} student=${student} data=${data} updateData=${updateData} />`}
+      ${sub === "timeline" && html`<${AssessmentTimelineView} key=${student.id} student=${student} data=${data} updateData=${updateData} focusId=${focusResultId} />`}
       ${sub === "regularExam" && html`<${RegularExamEditor} data=${data} updateData=${updateData} />`}
       ${sub === "mock" && html`<${MockExamEditor} student=${student} data=${data} updateData=${updateData} examKeyLibrary=${examKeyLibrary} focusResultId=${focusResultId} />`}
       ${sub === "examTests" && html`<${ExamEditor} student=${student} data=${data} updateData=${updateData} focusResultId=${focusResultId} />`}
@@ -15880,7 +15892,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     const d = new Date(a.submittedAt || a.updatedAt || Date.now());
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     recentTests.push({
-      kind: "examPaper", studentId: a.studentId, studentName: studentNameById[a.studentId] || a.studentId,
+      kind: "examPaper", id: a.id, studentId: a.studentId, studentName: studentNameById[a.studentId] || a.studentId,
       title: paperTitleById[a.examPaperId] || "시험", date: dateStr, score: a.correctCount, total: a.totalQuestions,
     });
   });
