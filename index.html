@@ -437,6 +437,23 @@ if ("serviceWorker" in navigator) {
   .app-tabbar button.on svg { color: #B8935A; }
   .app-list > * + * { border-top: 1px solid #DCD8CF; }
   .app-li { display: flex; align-items: center; gap: 12px; padding: 14px 0; width: 100%; border: none; background: none; text-align: left; font-size: 15px; cursor: pointer; color: #14161A; }
+  .app-title { font-size: 20px; font-weight: 700; color: #14161A; margin: 0 0 12px; }
+  @media (max-width: 760px) {
+    /* 모바일 전용 다듬기(2026-10) — 요약 타일은 가로 스크롤 한 줄, 학생 목록 필터는 두 줄로 압축, 학생 상세 머리는 한 줄에 이름+이전/다음. */
+    .ap-kpis { display: flex; overflow-x: auto; gap: 8px; margin: 0 -16px 14px; padding: 0 16px 2px; scrollbar-width: none; }
+    .ap-kpis::-webkit-scrollbar { display: none; }
+    .ap-kpis .ap-kpi { flex: 0 0 auto; min-width: 118px; }
+    .ap-sc-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .ap-sc-filters .ap-search { grid-column: 1 / -1; max-width: none; }
+    .ap-sc-filters .ap-seg { grid-column: 1 / -1; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .ap-sc-filters .ap-seg::-webkit-scrollbar { display: none; }
+    .ap-sc-filters > button { grid-column: 1 / -1; justify-content: center; }
+    .ap-dh-main { flex-wrap: nowrap; align-items: flex-start; }
+    .ap-dh-main .ap-pager { margin-left: auto; width: auto; flex-direction: column; align-items: center; gap: 4px; }
+    .ap-dh-main .ap-pager .pos { order: -1; min-width: 0; }
+    .ap-dh-main .ap-pager { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; width: 108px; }
+    .ap-dh-main .ap-pager .pos { flex-basis: 100%; text-align: right; }
+  }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -2530,7 +2547,7 @@ function TeacherAuthExpiredNotice({ onLogout }) {
   `;
 }
 function BackBtn({ onClick }) {
-  return html`<button onClick=${onClick} style=${{ background: "none", border: "none", color: C.slate, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: 0 }}>‹ 뒤로</button>`;
+  return html`<button onClick=${onClick} style=${{ background: "none", border: "none", color: C.slate, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginBottom: 14, padding: "6px 0", minHeight: 36 }}><${Icon} name="left" size=${16} />Back</button>`;
 }
 
 // ---------- Root ----------
@@ -5459,6 +5476,7 @@ const STUDENT_TABS = [
   { key: "studyTimer", label: "Study", icon: "timer" },
   { key: "more", label: "More", icon: "more" },
 ];
+const PARENT_TAB_TITLES = { dailyReport: "Daily reports", monthlyReport: "Monthly report", homework: "Homework", tuition: "Tuition", roadmap: "Learning roadmap", studyTime: "Study time log", consult: "Request a consultation" };
 const PARENT_TABS = [
   { key: "home", label: "Home", icon: "today" },
   { key: "reports", label: "Reports", icon: "doc" },
@@ -5466,6 +5484,7 @@ const PARENT_TABS = [
   { key: "tuition", label: "Tuition", icon: "wallet" },
   { key: "more", label: "More", icon: "more" },
 ];
+const STUDENT_TAB_TITLES = { homework: "Homework", vocab: "Vocabulary", mock: "Mock exam", examTests: "Extra tests", schedule: "Schedule", materials: "Materials", exams: "Exams" };
 const STUDENT_MORE_ITEMS = [
   { key: "flashcards", label: "My wordbook", icon: "book" },
   { key: "materials", label: "Materials", icon: "folder" },
@@ -5829,8 +5848,8 @@ function StudentDetailSection({ student, roster, saveRosterList, updateStudentRo
           <div className="ap-dh-id">
             <div className="ap-dh-name">${student.name}</div>
             <div className="ap-sub">${[student.grade, student.school].filter(Boolean).join(" · ") || "학년/학교 미등록"}</div>
+            <span className=${"ap-pill " + STUDENT_STATUS_TONE[headSnap.status]} style=${{ marginTop: 6 }}>${STUDENT_STATUS_LABEL[headSnap.status]}</span>
           </div>
-          <span className=${"ap-pill " + STUDENT_STATUS_TONE[headSnap.status]}>${STUDENT_STATUS_LABEL[headSnap.status]}</span>
           ${onStepStudent && stepIdx >= 0 && html`
             <div className="ap-pager">
               <button aria-label="Previous student" title="Previous ( [ )" disabled=${!prevId} onClick=${() => onStepStudent(prevId)}><${Icon} name="left" size=${16} /></button>
@@ -22446,20 +22465,21 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
     <div>
       ${header}
       ${MAIN_TAB_KEYS.includes(tab) ? null : html`<${BackBtn} onClick=${() => setTab("more")} />`}
+      ${STUDENT_TAB_TITLES[tab] ? html`<div className="app-title">${STUDENT_TAB_TITLES[tab]}</div>` : null}
 
       ${tab === "studyTimer" && html`
         <${Card}>
           <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>Study timer</div>
-          <div style=${{ ...serif, fontSize: 20, color: C.navy, textAlign: "center", margin: "4px 0" }}>${fmtElapsed(elapsedSec)}</div>
+          <div style=${{ fontSize: 48, fontWeight: 700, color: C.navy, textAlign: "center", margin: "10px 0 14px", fontVariantNumeric: "tabular-nums", letterSpacing: ".02em" }}>${fmtElapsed(elapsedSec)}</div>
           <div style=${{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 8 }}>
             ${!timerRunning
-              ? html`<${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${startTimer}>${elapsedSec > 0 ? "Resume" : "Start"}<//>`
-              : html`<${Button} variant="ghost" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${pauseTimer}>Pause<//>`}
+              ? html`<${Button} variant="gold" style=${{ padding: "11px 30px", fontSize: 15, borderRadius: 10 }} onClick=${startTimer}>${elapsedSec > 0 ? "Resume" : "Start"}<//>`
+              : html`<${Button} variant="ghost" style=${{ padding: "11px 30px", fontSize: 15, borderRadius: 10 }} onClick=${pauseTimer}>Pause<//>`}
           </div>
           ${elapsedSec > 0 && html`
             <input style=${{ ...inputStyle, marginBottom: 6, fontSize: 12.5 }} placeholder="Subject (e.g. grammar, reading)" value=${studySubject} onChange=${(e) => setStudySubject(e.target.value)} />
             <textarea style=${{ ...inputStyle, marginBottom: 6, minHeight: 50, fontSize: 12.5 }} placeholder="What you studied" value=${studyContent} onChange=${(e) => setStudyContent(e.target.value)} />
-            <div style=${{ display: "flex", justifyContent: "center" }}><${Button} variant="gold" style=${{ padding: "7px 22px", fontSize: 12 }} onClick=${saveTimerEntry}>Save session<//></div>
+            <div style=${{ display: "flex", justifyContent: "center" }}><${Button} variant="gold" style=${{ padding: "11px 30px", fontSize: 15, borderRadius: 10 }} onClick=${saveTimerEntry}>Save session<//></div>
           `}
           ${todayTotalMin > 0 && html`<div style=${{ fontSize: 11, color: C.slate, marginTop: 8 }}>Today: ${todayTotalMin} min logged (${todayEntries.length} sessions)</div>`}
           <div style=${{ fontSize: 11, color: C.navy, fontWeight: 700, marginTop: 4, paddingTop: 8, borderTop: `1px dashed ${C.line}` }}>This month: ${fmtMinutes(monthTotalMin)}</div>
@@ -25529,6 +25549,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
     <div>
       ${header}
       ${PARENT_MAIN[tab] ? null : html`<${BackBtn} onClick=${() => setTab("more")} />`}
+      ${PARENT_TAB_TITLES[tab] ? html`<div className="app-title">${PARENT_TAB_TITLES[tab]}</div>` : null}
 
       ${tab === "studyTime" && html`<${ParentStudyTimeTab} studyLog=${data.studyLog || []} />`}
 
