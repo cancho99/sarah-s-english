@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Newsreader:ital,wght@0,600;1,600&display=swap" rel="stylesheet" />
 <title>Sarah's English</title>
 <!-- PWA(2026-09-16) — 매니페스트/아이콘은 상대경로로 연결한다. 이 사이트가 GitHub Pages의
      서브패스(cancho99.github.io/sarah-s-english/)에서 서빙되므로, 절대경로("/manifest.json"
@@ -36,7 +36,7 @@ if ("serviceWorker" in navigator) {
 </script>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; background: #FAF7F1; font-family: 'Jua', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
+  body { margin: 0; background: #FAF7F1; font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; color: #14161A; word-break: keep-all; overflow-wrap: break-word; }
   input, textarea, select, button { font-family: inherit; }
   input, select, textarea { width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
   ::placeholder { color: #9a9488; }
@@ -81,7 +81,7 @@ if ("serviceWorker" in navigator) {
   /* Shared UI-polish primitives (2026-08-27 layout pass) — a compact list-row + filter-bar +
      accordion pattern reused across Overview/Homework/Question Bank/Reading/Vocabulary/Roadmap
      so those screens stop hand-rolling their own row/filter markup differently each time. */
-  .ap-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border: 1px solid #DCD8CF; border-radius: 4px; margin-bottom: 6px; cursor: pointer; background: #fff; }
+  .ap-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; border: 1px solid #DCD8CF; border-radius: 6px; margin-bottom: 6px; cursor: pointer; background: #fff; }
   .ap-row:hover { border-color: #B8935A; }
   .ap-row.active { border-color: #B8935A; background: #FBF6EA; }
   .ap-row-main { min-width: 0; flex: 1; }
@@ -114,9 +114,9 @@ if ("serviceWorker" in navigator) {
     .ap-qb-shell { flex-direction: column; }
     .ap-qb-tree-col { width: 100%; max-height: 260px; }
   }
-  .ap-subtabs { display: flex; overflow-x: auto; gap: 2px; margin-bottom: 14px; background: #F3F1EB; border-radius: 6px; padding: 3px; }
-  .ap-subtabs button { flex: 0 0 auto; padding: 7px 12px; font-size: 12.5px; font-weight: 600; background: none; border: none; border-radius: 4px; color: #5B6270; cursor: pointer; white-space: nowrap; }
-  .ap-subtabs button.active { background: #fff; color: #1C2B4A; box-shadow: 0 1px 2px rgba(20,22,26,0.12); }
+  .ap-subtabs { display: flex; overflow-x: auto; gap: 2px; margin-bottom: 14px; background: #F3F1EB; border-radius: 8px; padding: 3px; }
+  .ap-subtabs button { flex: 0 0 auto; padding: 7px 12px; font-size: 12.5px; font-weight: 500; background: none; border: none; border-radius: 4px; color: #5B6270; cursor: pointer; white-space: nowrap; }
+  .ap-subtabs button.active { background: #fff; color: #1C2B4A; font-weight: 700; box-shadow: 0 1px 2px rgba(20,22,26,0.12); }
   .ap-accordion-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid #DCD8CF; border-radius: 4px; cursor: pointer; background: #fff; margin-bottom: 8px; }
   .ap-accordion-head.open { border-color: #B8935A; border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0; }
   .ap-accordion-body { border: 1px solid #B8935A; border-top: none; border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; padding: 16px; margin-bottom: 8px; }
@@ -331,7 +331,7 @@ if ("serviceWorker" in navigator) {
      text than an icon tile), so it needs its own min width rather than reusing that class. */
   .ap-sc-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .ap-sc-stat { background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; padding: 14px 16px; }
-  .ap-sc-stat .n { font-family: 'Jua', -apple-system, sans-serif; font-size: 26px; color: #1C2B4A; line-height: 1.2; }
+  .ap-sc-stat .n { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 26px; color: #1C2B4A; line-height: 1.2; }
   .ap-sc-stat .l { font-size: 11.5px; color: #5B6270; margin-top: 4px; font-weight: 600; }
   .ap-sc-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .ap-sc-filters input[type="text"] { flex: 1 1 180px; min-width: 140px; }
@@ -1001,9 +1001,12 @@ const C = {
   ink: "#14161A", navy: "#1C2B4A", gold: "#B8935A", ivory: "#FAF7F1",
   slate: "#5B6270", line: "#DCD8CF", white: "#FFFFFF", danger: "#A6473A",
 };
-const serif = { fontFamily: "'Jua', -apple-system, sans-serif" };
+// 제목용 글꼴 — 예전 Jua(둥근 디스플레이체)를 Noto Sans KR 굵기 700으로 교체(2026-10 UI 리디자인).
+// 본문과 같은 가족이라 크기·자간만 맞추면 되고, 영문 워드마크만 BRAND_FONT(Newsreader)를 쓴다.
+const serif = { fontFamily: "'Noto Sans KR', -apple-system, sans-serif", fontWeight: 700 };
+const BRAND_FONT = "'Newsreader', Georgia, serif";
 const inputStyle = {
-  width: "100%", padding: "10px 12px", borderRadius: 3, border: `1px solid ${C.line}`,
+  width: "100%", padding: "9px 12px", borderRadius: 6, border: `1px solid ${C.line}`,
   fontSize: 14, boxSizing: "border-box", color: C.ink, background: C.white,
 };
 
@@ -2118,10 +2121,10 @@ function SectionLabel({ n, label }) {
   `;
 }
 function Card({ children, style, onClick }) {
-  return html`<div onClick=${onClick} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 4, padding: 16, marginBottom: 12, cursor: onClick ? "pointer" : "default", ...style }}>${children}</div>`;
+  return html`<div onClick=${onClick} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: 16, marginBottom: 12, boxShadow: "0 1px 2px rgba(20,22,26,0.05)", cursor: onClick ? "pointer" : "default", ...style }}>${children}</div>`;
 }
 function Button({ children, onClick, variant = "primary", style, disabled }) {
-  const base = { fontSize: 13.5, fontWeight: 600, padding: "10px 18px", borderRadius: 3, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
+  const base = { fontSize: 13.5, fontWeight: 500, padding: "9px 16px", borderRadius: 6, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6 };
   const variants = {
     primary: { background: C.navy, color: C.white },
     gold: { background: C.gold, color: C.white },
@@ -2138,7 +2141,7 @@ function Tabs({ tabs, active, onChange }) {
     <div style=${{ display: "flex", overflowX: "auto", gap: 4, borderBottom: `1px solid ${C.line}`, marginBottom: 16 }}>
       ${tabs.map((t) => html`
         <button key=${t.key} onClick=${() => onChange(t.key)} style=${{
-          flex: "0 0 auto", padding: "9px 12px", fontSize: 12.5, fontWeight: 600, background: "none", border: "none",
+          flex: "0 0 auto", padding: "10px 14px", fontSize: 13, fontWeight: active === t.key ? 700 : 500, background: "none", border: "none",
           borderBottom: active === t.key ? `2px solid ${C.gold}` : "2px solid transparent",
           color: active === t.key ? C.navy : C.slate, cursor: "pointer", whiteSpace: "nowrap",
         }}>${t.icon} ${t.label}</button>
