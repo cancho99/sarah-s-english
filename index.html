@@ -465,6 +465,9 @@ if ("serviceWorker" in navigator) {
   .tdy-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid #EDEAE2; min-width: 0; }
   .tdy-head + .tdy-row { border-top: none; }
   .tdy-row > .ap-pill { min-width: 78px; justify-content: center; }
+  .tdy-click { cursor: pointer; }
+  .tdy-click:hover { background: #F8F5EE; }
+  .tdy-chev2 { color: #5B6270; display: flex; }
   .tdy-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .tdy-main b { font-weight: 500; }
   .tdy-main span { font-size: 12.5px; color: #5B6270; overflow-wrap: anywhere; }
@@ -16018,59 +16021,49 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // TeacherCenterHome/TeacherCenterSection 어디에도 없어서(Settings 화면의
   // SettingsAnnouncementsPanel과는 별개) 숨길 대상이 없었다.
   if (!showAll) {
-    // "지금 필요한 일" — 흩어져 있던 신호(밀린 숙제·시험, 리포트, 상담, 로드맵)를 한 목록으로 모은다.
-    const byStudent = {};
-    const bump = (st, key) => { const o = byStudent[st.id] || (byStudent[st.id] = { student: st, hw: 0, vocab: 0, mock: 0 }); o[key] += 1; };
-    overdueHomework.forEach((x) => bump(x.student, "hw"));
-    overdueVocab.forEach((x) => bump(x.student, "vocab"));
-    overdueMock.forEach((x) => bump(x.student, "mock"));
+    // "지금 필요한 일" — 종류별로 한 줄씩만 보여준다(2026-10 UI 리디자인 2차). 항목을 하나하나 나열하면 20줄이 넘어가
+    // 오히려 못 찾기 때문에, 종류 + 건수 + 가장 급한 한 건으로 줄이고 버튼 하나로 바로 처리하게 했다.
+    const nameList = (arr) => (arr.length > 3 ? arr.slice(0, 3).join(", ") + ` +${arr.length - 3}` : arr.join(", "));
+    const odStudents = {};
+    [...overdueHomework, ...overdueVocab, ...overdueMock].forEach((x) => { odStudents[x.student.id] = x.student; });
+    const odList = Object.values(odStudents);
+    const oldestDaily = missingDailyReports.slice().sort((x, y) => y.daysAgo - x.daysAgo)[0];
+    const oldestMonthly = missingMonthlyReports[0];
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
     const needs = [];
-    Object.values(byStudent).forEach((o) => {
-      const parts = [];
-      if (o.hw) parts.push(`${o.hw} homework`);
-      if (o.vocab) parts.push(`${o.vocab} vocab test${o.vocab > 1 ? "s" : ""}`);
-      if (o.mock) parts.push(`${o.mock} mock exam${o.mock > 1 ? "s" : ""}`);
-      needs.push({ key: "od" + o.student.id, tag: "Overdue", tone: "bad", name: o.student.name, text: parts.join(", ") + " overdue", btn: "Open", go: () => onSelectStudent(o.student.id) });
-    });
-    missingDailyReports.forEach((m) => needs.push({ key: "dr" + m.student.id + m.date, tag: "Report", tone: "warn", name: m.student.name, text: `Daily report · ${fmtDate(m.date)} (${m.daysAgo}d ago)`, btn: "Write", go: () => onWriteDailyReport(m.student.id, m.date) }));
-    missingMonthlyReports.forEach((m) => needs.push({ key: "mr" + m.student.id + m.month, tag: "Report", tone: "warn", name: m.student.name, text: `Monthly report · ${m.monthLabel}`, btn: "Write", go: () => onWriteMonthlyReport(m.student.id, m.month) }));
-    pendingConsults.forEach((c, i) => needs.push({ key: "co" + i, tag: "Consult", tone: "warn", name: c.student.name, text: "Consultation request", btn: "Open", go: () => onSelectStudent(c.student.id) }));
-    roadmapAlerts.forEach((r) => needs.push({ key: "rm" + r.student.id, tag: "Roadmap", tone: "warn", name: r.student.name, text: `Roadmap phase ${r.overdueDays}d late`, btn: "Open", go: () => onSelectStudent(r.student.id) }));
-    const SHOW = 6;
-    const shown = needs.slice(0, SHOW);
-    const hiddenCount = needs.length - shown.length;
-    const reportStatusOf = (id) => { const row = dailyReportRows.find((r) => r.student.id === id); return row ? row.status : null; };
+    if (odList.length) needs.push({ key: "od", tag: "Overdue", tone: "bad", title: `${plural(odList.length, "student has", "students have")} overdue work`, sub: nameList(odList.map((x) => x.name)), btn: "Review", go: () => (odList.length === 1 ? onSelectStudent(odList[0].id) : onOpenBoard()) });
+    if (oldestDaily) needs.push({ key: "dr", tag: "Report", tone: "warn", title: `${plural(missingDailyReports.length, "daily report", "daily reports")} to write`, sub: `Oldest: ${oldestDaily.student.name} · ${oldestDaily.daysAgo}d ago`, btn: "Write", go: () => onWriteDailyReport(oldestDaily.student.id, oldestDaily.date) });
+    if (oldestMonthly) needs.push({ key: "mr", tag: "Report", tone: "warn", title: `${plural(missingMonthlyReports.length, "monthly report", "monthly reports")} due`, sub: nameList(missingMonthlyReports.map((m) => m.student.name)), btn: "Write", go: () => onWriteMonthlyReport(oldestMonthly.student.id, oldestMonthly.month) });
+    if (pendingConsults.length) needs.push({ key: "co", tag: "Consult", tone: "warn", title: plural(pendingConsults.length, "consultation request", "consultation requests"), sub: nameList(pendingConsults.map((c) => c.student.name)), btn: "Open", go: () => onSelectStudent(pendingConsults[0].student.id) });
+    if (roadmapAlerts.length) needs.push({ key: "rm", tag: "Roadmap", tone: "warn", title: `${plural(roadmapAlerts.length, "roadmap phase is", "roadmap phases are")} late`, sub: nameList(roadmapAlerts.map((r) => r.student.name)), btn: "Open", go: () => onSelectStudent(roadmapAlerts[0].student.id) });
     return html`
       <div className="tdy">
         <div>
           <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
-          <div style=${{ fontSize: 13, color: C.slate }}>${todayClasses.length} ${todayClasses.length === 1 ? "class" : "classes"} today · ${needs.length} ${needs.length === 1 ? "thing needs" : "things need"} you</div>
+          <div style=${{ fontSize: 13, color: C.slate }}>${plural(todayClasses.length, "class", "classes")} today</div>
         </div>
 
         <div className="tdy-card">
-          <div className="tdy-head"><h3>Needs you</h3><span className="tdy-count">${needs.length}</span></div>
-          ${needs.length === 0 ? html`<div className="tdy-empty">All caught up. Nothing is overdue.</div>` : shown.map((n) => html`
+          <div className="tdy-head"><h3>To do now</h3></div>
+          ${needs.length === 0 ? html`<div className="tdy-empty">All caught up. Nothing is overdue.</div>` : needs.map((n) => html`
             <div key=${n.key} className="tdy-row">
               <span className=${"ap-pill " + n.tone} style=${{ flex: "none" }}>${n.tag}</span>
-              <div className="tdy-main"><b>${n.name}</b><span>${n.text}</span></div>
+              <div className="tdy-main"><b>${n.title}</b><span>${n.sub}</span></div>
               <button className="tdy-btn" onClick=${n.go}>${n.btn}</button>
             </div>
           `)}
-          ${hiddenCount > 0 ? html`<button className="tdy-link" onClick=${() => setShowAll(true)}>+${hiddenCount} more in details</button>` : null}
         </div>
 
         <div className="tdy-card">
-          <div className="tdy-head"><h3>Today's classes</h3><span className="tdy-count">${todayClasses.length}</span></div>
+          <div className="tdy-head"><h3>Today's classes</h3></div>
           ${todayClasses.length === 0 ? html`<div className="tdy-empty">No classes today.</div>` : todayClasses.map((c, i) => {
             const prep = prepByStudent[c.student.id] || { auto: [], linked: [] };
             const prepText = [...prep.auto.map((p) => p.label), ...prep.linked.map((t) => t.content)].join(" · ");
-            const rs = reportStatusOf(c.student.id);
             return html`
-              <div key=${i} className="tdy-row">
+              <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => onSelectStudent(c.student.id)} onKeyDown=${(e) => { if (e.key === "Enter") onSelectStudent(c.student.id); }}>
                 <span className="tdy-time">${c.time}</span>
                 <div className="tdy-main"><b>${c.student.name}${c.kind === "보강" ? " (make-up)" : ""}</b>${prepText ? html`<span>${prepText}</span>` : null}</div>
-                ${rs && rs !== "COMPLETED" && rs !== "REVIEWED" ? html`<span className="tdy-mini">Report not written</span>` : null}
-                <button className="tdy-btn" onClick=${() => onSelectStudent(c.student.id)}>Open</button>
+                <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
               </div>
             `;
           })}
@@ -16084,7 +16077,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           ${todoOpen ? html`<${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} compact=${true} />` : null}
         </div>
 
-        <button className="tdy-link" onClick=${() => setShowAll(true)}>Show all details</button>
+        <button className="tdy-link" onClick=${() => setShowAll(true)} style=${{ alignSelf: "flex-start", color: "#5B6270", fontWeight: 400 }}>Show all details</button>
       </div>
     `;
   }
