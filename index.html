@@ -558,6 +558,21 @@ if ("serviceWorker" in navigator) {
   .rp-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px; background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; }
   .rp-bar label { font-size: 12px; color: #5B6270; letter-spacing: .04em; text-transform: uppercase; }
   .st-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); gap: 12px; align-items: start; }
+  /* 가로로 길게 퍼지지 않게 — 내용 폭 상한 + 표/타일 고정 크기(2026-10 UI 2라운드 보정) */
+  @media (min-width: 1025px) {
+    .ap-main-body { max-width: 1120px; margin-left: auto; margin-right: auto; width: 100%; }
+    .ap-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ap-kpis .ap-kpi { flex: 0 0 auto; min-width: 116px; padding: 7px 14px; }
+    .ap-kpi .l { white-space: nowrap; }
+    .ap-bar span { width: 42px; white-space: nowrap; }
+    .ap-table { max-width: 880px; }
+    .ap-th, .ap-tr { grid-template-columns: minmax(150px, 1fr) 128px 128px 118px 54px 16px; gap: 12px; }
+    .tdy { max-width: 980px; }
+    .sd-grid { grid-template-columns: 224px minmax(0, 1fr); }
+    .st-two, .hw-summary { max-width: 900px; }
+    .ap-sc-filters { max-width: 880px; }
+    .rp-bar { max-width: 880px; }
+  }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -5728,7 +5743,7 @@ function StudentCommandCenter({ roster, dataCache, ensureData, setSelectedStuden
         ${kpi("Classes today", summary.todayClasses, C.navy)}
         ${kpi("Homework attention", summary.hwNeedsCare, summary.hwNeedsCare > 0 ? C.danger : C.navy)}
         ${kpi("Vocabulary attention", summary.vocabNeedsCare, summary.vocabNeedsCare > 0 ? C.danger : C.navy)}
-        ${kpi("Needs attention overall", summary.overallNeedsCare, summary.overallNeedsCare > 0 ? C.danger : C.navy)}
+        ${kpi("Needs attention", summary.overallNeedsCare, summary.overallNeedsCare > 0 ? C.danger : C.navy)}
       </div>
 
       <div className="ap-sc-filters">
