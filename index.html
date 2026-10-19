@@ -454,6 +454,28 @@ if ("serviceWorker" in navigator) {
     .ap-dh-main .ap-pager { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; width: 108px; }
     .ap-dh-main .ap-pager .pos { flex-basis: 100%; text-align: right; }
   }
+  /* Today 단순 보기(2026-10 UI 리디자인) */
+  .tdy { display: flex; flex-direction: column; gap: 16px; max-width: 760px; }
+  .tdy-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 12px; padding: 6px 16px 8px; box-shadow: 0 1px 2px rgba(20,22,26,0.05); }
+  .tdy-head { display: flex; align-items: center; gap: 10px; padding: 12px 0 8px; }
+  .tdy-head h3 { margin: 0; font-size: 14px; font-weight: 700; color: #14161A; }
+  .tdy-count { font-size: 12.5px; color: #5B6270; }
+  .tdy-toggle { width: 100%; border: none; background: none; cursor: pointer; text-align: left; font: inherit; }
+  .tdy-chev { margin-left: auto; color: #5B6270; display: flex; transform: rotate(-90deg); }
+  .tdy-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid #EDEAE2; min-width: 0; }
+  .tdy-head + .tdy-row { border-top: none; }
+  .tdy-row > .ap-pill { min-width: 78px; justify-content: center; }
+  .tdy-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .tdy-main b { font-weight: 500; }
+  .tdy-main span { font-size: 12.5px; color: #5B6270; overflow-wrap: anywhere; }
+  .tdy-time { font-size: 13px; color: #5B6270; width: 44px; flex: none; font-variant-numeric: tabular-nums; }
+  .tdy-mini { font-size: 11.5px; color: #8A6413; background: #FBF1DD; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+  .tdy-btn { border: 1px solid #DCD8CF; background: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; min-height: 34px; }
+  .tdy-btn:hover { background: #F3F1EB; }
+  .tdy-link { border: none; background: none; color: #7A5E2B; font-size: 13.5px; font-weight: 500; cursor: pointer; padding: 8px 0; text-align: left; }
+  .tdy-link:hover { text-decoration: underline; }
+  .tdy-empty { color: #5B6270; font-size: 13.5px; padding: 6px 0 12px; }
+  @media (max-width: 760px) { .tdy-row { gap: 10px; } .tdy-time { width: 40px; } }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -15591,7 +15613,8 @@ const TEACHER_TODO_PRIORITIES = [
 // 저장하므로(teacherTodos는 메타 문서 하나에 전체 교사 할 일이 다 들어있음), 화면에 보여줄
 // pending/done만 scoped로 거르고 add/toggle/remove는 반드시 원본 todos 배열 기준으로 해야
 // 다른 학생 항목이 저장 시 사라지지 않는다 — 아래 scoped는 "표시용"에만 쓴다.
-function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId, title }) {
+function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId, title, compact }) {
+  const [showOpts, setShowOpts] = useState(false); // compact(Today)에서 종류·학생·우선순위·날짜 선택을 접어 둔다
   const [content, setContent] = useState("");
   const [studentId, setStudentId] = useState("");
   const [type, setType] = useState("other");
@@ -15658,28 +15681,30 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
     `;
   };
 
-  return html`
-    <${Card}>
-      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${title || "To-do"}</div>
+  const inner = html`
+      ${compact ? null : html`<div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${title || "To-do"}</div>`}
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 6, marginBottom: 8 }}>
         <input style=${{ ...smallInput, gridColumn: "1 / -1" }} placeholder=${lockedStudentId ? "할 일 입력 (예: 오답 영상 찍기)" : "할 일 입력 (예: 민지 프린트 준비)"} value=${content}
           onChange=${(e) => setContent(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addTodo()} />
-        <select style=${smallInput} value=${type} onChange=${(e) => setType(e.target.value)}>
+        ${(!compact || showOpts) && html`<select style=${smallInput} value=${type} onChange=${(e) => setType(e.target.value)}>
           ${TEACHER_TODO_TYPES.map((t) => html`<option key=${t.key} value=${t.key}>${t.icon} ${t.label}</option>`)}
-        </select>
-        ${!lockedStudentId && html`
+        </select>`}
+        ${(!compact || showOpts) && !lockedStudentId && html`
           <select style=${smallInput} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
             <option value="">학생 연결 안함</option>
             ${(roster || []).map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
           </select>
         `}
-        <select style=${smallInput} value=${priority} onChange=${(e) => setPriority(e.target.value)}>
+        ${(!compact || showOpts) && html`<select style=${smallInput} value=${priority} onChange=${(e) => setPriority(e.target.value)}>
           <option value="">우선순위 없음</option>
           ${TEACHER_TODO_PRIORITIES.map((p) => html`<option key=${p.key} value=${p.key}>${p.label}</option>`)}
-        </select>
-        <input type="date" style=${smallInput} value=${dueDate} onChange=${(e) => setDueDate(e.target.value)} />
+        </select>`}
+        ${(!compact || showOpts) && html`<input type="date" style=${smallInput} value=${dueDate} onChange=${(e) => setDueDate(e.target.value)} />`}
       </div>
-      <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${addTodo}>추가<//>
+      <div style=${{ display: "flex", alignItems: "center", gap: 12 }}>
+        <${Button} variant="gold" style=${{ padding: "6px 14px", fontSize: 12 }} onClick=${addTodo}>${compact ? "Add" : "추가"}<//>
+        ${compact ? html`<button className="tdy-link" style=${{ padding: 0 }} onClick=${() => setShowOpts(!showOpts)}>${showOpts ? "Hide options" : "Options"}</button>` : null}
+      </div>
 
       <div style=${{ marginTop: 10 }}>
         ${pending.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate, padding: "6px 0" }}>남은 할 일이 없어요.</div>` : pending.map(row)}
@@ -15692,8 +15717,8 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
           ${showDone && done.map(row)}
         </div>
       `}
-    <//>
   `;
+  return compact ? html`<div>${inner}</div>` : html`<${Card}>${inner}<//>`;
 }
 
 // Phase 2 STEP 2 — "🏠 오늘" 화면을 통계 페이지가 아니라 Teacher Command Center로 재설계한다.
@@ -15713,6 +15738,11 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
 function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, onWriteMonthlyReport, examAttempts, examPapers, teacherTodos, saveTeacherTodos }) {
   const svc = window.SarahServices;
   const isMobile = useIsMobile();
+  // Today 단순 보기(2026-10 UI 리디자인) — 기본은 "지금 해야 할 일" 한 목록 + 오늘 수업 + 할 일만 보여주고, 기존의
+  // 상세 카드들(숙제 현황, 단어시험 결과, 최근 시험 등)은 "Show all details"로 펼친다. 정보는 하나도 빼지 않았다.
+  const [showAll, setShowAll] = useState(false);
+  const openTodoCount = (teacherTodos || []).filter((t) => !t.done).length;
+  const [todoOpen, setTodoOpen] = useState(openTodoCount > 0);
   const todayStr = today();
   const todayClasses = todaysClassesForRoster(roster, todayStr);
   const todayStudentIds = todayClasses.map((c) => c.student.id);
@@ -15987,11 +16017,84 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // return문(아래)의 해당 카드들은 무수정으로 그대로 남아있다. "공지사항 등록" 버튼은
   // TeacherCenterHome/TeacherCenterSection 어디에도 없어서(Settings 화면의
   // SettingsAnnouncementsPanel과는 별개) 숨길 대상이 없었다.
+  if (!showAll) {
+    // "지금 필요한 일" — 흩어져 있던 신호(밀린 숙제·시험, 리포트, 상담, 로드맵)를 한 목록으로 모은다.
+    const byStudent = {};
+    const bump = (st, key) => { const o = byStudent[st.id] || (byStudent[st.id] = { student: st, hw: 0, vocab: 0, mock: 0 }); o[key] += 1; };
+    overdueHomework.forEach((x) => bump(x.student, "hw"));
+    overdueVocab.forEach((x) => bump(x.student, "vocab"));
+    overdueMock.forEach((x) => bump(x.student, "mock"));
+    const needs = [];
+    Object.values(byStudent).forEach((o) => {
+      const parts = [];
+      if (o.hw) parts.push(`${o.hw} homework`);
+      if (o.vocab) parts.push(`${o.vocab} vocab test${o.vocab > 1 ? "s" : ""}`);
+      if (o.mock) parts.push(`${o.mock} mock exam${o.mock > 1 ? "s" : ""}`);
+      needs.push({ key: "od" + o.student.id, tag: "Overdue", tone: "bad", name: o.student.name, text: parts.join(", ") + " overdue", btn: "Open", go: () => onSelectStudent(o.student.id) });
+    });
+    missingDailyReports.forEach((m) => needs.push({ key: "dr" + m.student.id + m.date, tag: "Report", tone: "warn", name: m.student.name, text: `Daily report · ${fmtDate(m.date)} (${m.daysAgo}d ago)`, btn: "Write", go: () => onWriteDailyReport(m.student.id, m.date) }));
+    missingMonthlyReports.forEach((m) => needs.push({ key: "mr" + m.student.id + m.month, tag: "Report", tone: "warn", name: m.student.name, text: `Monthly report · ${m.monthLabel}`, btn: "Write", go: () => onWriteMonthlyReport(m.student.id, m.month) }));
+    pendingConsults.forEach((c, i) => needs.push({ key: "co" + i, tag: "Consult", tone: "warn", name: c.student.name, text: "Consultation request", btn: "Open", go: () => onSelectStudent(c.student.id) }));
+    roadmapAlerts.forEach((r) => needs.push({ key: "rm" + r.student.id, tag: "Roadmap", tone: "warn", name: r.student.name, text: `Roadmap phase ${r.overdueDays}d late`, btn: "Open", go: () => onSelectStudent(r.student.id) }));
+    const SHOW = 6;
+    const shown = needs.slice(0, SHOW);
+    const hiddenCount = needs.length - shown.length;
+    const reportStatusOf = (id) => { const row = dailyReportRows.find((r) => r.student.id === id); return row ? row.status : null; };
+    return html`
+      <div className="tdy">
+        <div>
+          <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
+          <div style=${{ fontSize: 13, color: C.slate }}>${todayClasses.length} ${todayClasses.length === 1 ? "class" : "classes"} today · ${needs.length} ${needs.length === 1 ? "thing needs" : "things need"} you</div>
+        </div>
+
+        <div className="tdy-card">
+          <div className="tdy-head"><h3>Needs you</h3><span className="tdy-count">${needs.length}</span></div>
+          ${needs.length === 0 ? html`<div className="tdy-empty">All caught up. Nothing is overdue.</div>` : shown.map((n) => html`
+            <div key=${n.key} className="tdy-row">
+              <span className=${"ap-pill " + n.tone} style=${{ flex: "none" }}>${n.tag}</span>
+              <div className="tdy-main"><b>${n.name}</b><span>${n.text}</span></div>
+              <button className="tdy-btn" onClick=${n.go}>${n.btn}</button>
+            </div>
+          `)}
+          ${hiddenCount > 0 ? html`<button className="tdy-link" onClick=${() => setShowAll(true)}>+${hiddenCount} more in details</button>` : null}
+        </div>
+
+        <div className="tdy-card">
+          <div className="tdy-head"><h3>Today's classes</h3><span className="tdy-count">${todayClasses.length}</span></div>
+          ${todayClasses.length === 0 ? html`<div className="tdy-empty">No classes today.</div>` : todayClasses.map((c, i) => {
+            const prep = prepByStudent[c.student.id] || { auto: [], linked: [] };
+            const prepText = [...prep.auto.map((p) => p.label), ...prep.linked.map((t) => t.content)].join(" · ");
+            const rs = reportStatusOf(c.student.id);
+            return html`
+              <div key=${i} className="tdy-row">
+                <span className="tdy-time">${c.time}</span>
+                <div className="tdy-main"><b>${c.student.name}${c.kind === "보강" ? " (make-up)" : ""}</b>${prepText ? html`<span>${prepText}</span>` : null}</div>
+                ${rs && rs !== "COMPLETED" && rs !== "REVIEWED" ? html`<span className="tdy-mini">Report not written</span>` : null}
+                <button className="tdy-btn" onClick=${() => onSelectStudent(c.student.id)}>Open</button>
+              </div>
+            `;
+          })}
+        </div>
+
+        <div className="tdy-card">
+          <button className="tdy-head tdy-toggle" onClick=${() => setTodoOpen(!todoOpen)} aria-expanded=${todoOpen}>
+            <h3>To-do</h3><span className="tdy-count">${openTodoCount === 0 ? "none open" : openTodoCount + " open"}</span>
+            <span className="tdy-chev"><${Icon} name=${todoOpen ? "right" : "left"} size=${16} /></span>
+          </button>
+          ${todoOpen ? html`<${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} compact=${true} />` : null}
+        </div>
+
+        <button className="tdy-link" onClick=${() => setShowAll(true)}>Show all details</button>
+      </div>
+    `;
+  }
+
   if (isMobile) {
     return html`
       <div>
         <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
         <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>${todayClasses.length} classes today · ${missingDailyReports.length} daily reports to write</div>
+        <button className="tdy-link" onClick=${() => setShowAll(false)} style=${{ marginBottom: 14 }}>← Simple view</button>
 
         <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} />
 
@@ -16103,6 +16206,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
     <div>
       <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
       <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>${todayClasses.length} classes today · ${missingDailyReports.length} daily reports to write</div>
+        <button className="tdy-link" onClick=${() => setShowAll(false)} style=${{ marginBottom: 14 }}>← Simple view</button>
 
       <div className="ap-kpis">
         ${kpiTile("Classes today", todayClasses.length, C.navy)}
