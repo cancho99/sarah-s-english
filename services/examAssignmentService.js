@@ -23,7 +23,7 @@ window.SarahServices = window.SarahServices || {};
     return ti === fi + 1;
   }
 
-  // input: { examPaperId, studentId, title, dueAt, resultsVisibleToStudent? }
+  // input: { examPaperId, studentId, title, dueAt, resultsVisibleToStudent?, timeLimitMinutes? }
   // Guard: refuse a second *open* (ASSIGNED/IN_PROGRESS) assignment of the same paper to the same
   // student — two simultaneously-live assignments referencing the same paper would make "which one
   // is the real one" ambiguous once an attempt exists. Once the earlier one reaches
@@ -42,6 +42,8 @@ window.SarahServices = window.SarahServices || {};
       title: input.title || "",
       assignedAt: now,
       dueAt: input.dueAt || null,
+      // 응시 제한 시간(분). null이면 제한 없음. Firestore에 undefined를 쓰지 않도록 항상 숫자 또는 null.
+      timeLimitMinutes: Number.isFinite(input.timeLimitMinutes) && input.timeLimitMinutes > 0 ? Math.round(input.timeLimitMinutes) : null,
       status: "ASSIGNED",
       attemptId: null,
       // 결과 공개 여부 — examPaperService/FINALIZE는 그대로 두고 배정 단위로만 관리 (Phase 8-A 승인 결정).

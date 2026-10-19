@@ -674,7 +674,8 @@ window.SarahServices = window.SarahServices || {};
   const PASSAGE_CONTENT_FIELDS = ["title", "passageText", "grade", "difficulty", "passageType", "examType"];
 
   // input: { title, passageText, grade, difficulty, passageType, examType, topic, keywords, tags, source }
-  async function createPassage(input) {
+  // opts.published — Exam Studio가 시험지를 정식 시험으로 보낼 때처럼, 교사가 이미 확인한 지문을 곧장 PUBLISHED로 만든다(importPublishedQuestion과 같은 이유).
+  async function createPassage(input, opts) {
     const now = Date.now();
     const passageText = input.passageText || "";
     const wordCount = countWords(passageText);
@@ -691,7 +692,7 @@ window.SarahServices = window.SarahServices || {};
       estimatedReadingTime: estimateReadingTimeMin(wordCount, input.grade),
       source: { type: (input.source && input.source.type) || "TEACHER_CREATED", note: (input.source && input.source.note) || "" },
       tags: Array.isArray(input.tags) ? input.tags : [],
-      status: "DRAFT",
+      status: opts && opts.published ? "PUBLISHED" : "DRAFT",
       review: blankReview("reading"),
       fingerprint: computeFingerprint(passageText),
       usageCount: 0,
@@ -744,6 +745,11 @@ window.SarahServices = window.SarahServices || {};
     READING_EXAM_TYPES, PASSAGE_TYPES, READING_QUESTION_TYPES, TARGET_SKILLS,
     listReadingPassages: () => listQuestions(READING_PASSAGE_COLLECTION),
     createReadingPassage: (input) => createPassage(input),
+    importReadingPassage: (input) => createPassage(input, { published: true }),
+    importReadingQuestion: (input, passageId) => importPublishedQuestion(READING_QUESTION_COLLECTION, input, {
+      extraFields: { passageId, examType: input.examType || "", targetSkill: input.targetSkill || "", evidenceLocation: input.evidenceLocation || "" },
+      reviewSchema: "reading",
+    }),
     updateReadingPassage: (doc, patch) => updatePassage(doc, patch),
     setReadingPassageStatus: (doc, nextStatus, reviewPatch) => setStatus(READING_PASSAGE_COLLECTION, doc, nextStatus, reviewPatch),
     canDeleteReadingPassage: canDeletePassage,
