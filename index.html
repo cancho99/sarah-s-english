@@ -464,6 +464,10 @@ if ("serviceWorker" in navigator) {
   .tdy-chev { margin-left: auto; color: #5B6270; display: flex; transform: rotate(-90deg); }
   .tdy-row { display: flex; align-items: center; gap: 12px; padding: 11px 0; border-top: 1px solid #EDEAE2; min-width: 0; }
   .tdy-head + .tdy-row { border-top: none; }
+  .tdy-att { display: inline-flex; gap: 4px; flex: none; }
+  .tdy-attb { padding: 4px 10px; border-radius: 5px; border: 1px solid #DDD8CC; background: #fff; color: #5B6270; font-size: 11.5px; font-weight: 600; cursor: pointer; }
+  .tdy-attb.present.on { background: #3D6B4F; border-color: #3D6B4F; color: #fff; }
+  .tdy-attb.absent.on { background: #A4443A; border-color: #A4443A; color: #fff; }
   .tdy-row > .ap-pill { min-width: 78px; justify-content: center; }
   .tdy-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 4px 0 12px; }
   .tdy-stat { background: #F3F1EB; border-radius: 10px; padding: 10px 12px; }
@@ -2539,6 +2543,7 @@ const ICON_PATHS = {
   today: '<path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h14V9.5"/>',
   students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.2 14.6c2 .7 3.3 2.5 3.3 5.4"/>',
   classes: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  inbox: '<path d="M3.5 13l2.4-7.2A2 2 0 017.8 4.5h8.4a2 2 0 011.9 1.3L20.5 13"/><path d="M3.5 13v5a1.5 1.5 0 001.5 1.5h14a1.5 1.5 0 001.5-1.5v-5h-5l-1 2h-5l-1-2z"/>',
   bank: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 006.5 18H20v3H6.5"/>',
   exam: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
   reports: '<path d="M5 20v-9M12 20V4M19 20v-6"/>',
@@ -4409,6 +4414,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 독립 워크플로를 두는 패턴)를 그대로 따른다.
     { key: "readingAnalysis", label: "Exam Studio", icon: "🧪", iconName: "exam" },
     { key: "reports", label: "Reports", icon: "📊", iconName: "reports" },
+    { key: "bookings", label: "Inquiries", icon: "📥", iconName: "inbox", badge: (levelTestBookings || []).filter((b) => b.status !== "완료").length || null },
     { key: "settingsHub", label: "Settings", icon: "⚙️", iconName: "settings" },
   ];
 
@@ -4528,7 +4534,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "bookings") {
     body = html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
       roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
-      onBack=${() => setSection("mainpage")} onLogout=${onLogout} />`;
+      onLogout=${onLogout} />`;
   } else if (section === "mainpage") {
     // Teacher OS STEP 4 — "Main Page"는 더 이상 navItems에 없다(사이드바에서 제거). 이 분기와
     // TeacherOverview 자체는 지우지 않고 남겨둔다 — 계획서 §6에서 이 화면의 기능 중 Today/
@@ -4576,8 +4582,9 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       { key: "reports", label: "Reports", iconName: "reports" },
     ];
     const MOBILE_MORE_DESC = {
-      classes: ["Classes", "수업 일정·출결·반 관리"], questionBank: ["Question Bank", "문법·독해·단어 문제, 시험지, 배정·결과"],
+      classes: ["Classes", "시간표·출결·숙제/단어 현황"], questionBank: ["Question Bank", "문법·독해·단어 문제, 시험지, 배정·결과"],
       readingAnalysis: ["Exam Studio", "지문 분석·시험지 만들기"],
+      bookings: ["Inquiries", "레벨테스트·상담 문의"],
       settingsHub: ["Settings", "프로필·수업료·공지·자료실·데이터 정리"],
     };
     const bottomKeys = new Set(MOBILE_BOTTOM.map((t) => t.key));
@@ -15394,7 +15401,7 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   // 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
   // 모바일에서는 위 4개 탭 대신 "📝 시험지 생성"(ExamBuilderView 재사용) / "📤 시험지 배정"
   // (MobileAssignExamTab, 위에서 정의) 2개 탭만 보여준다 — 데스크탑 로직/탭 목록은 무수정.
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse"];
+  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse", "assignments"];
   const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
   const isMobile = useIsMobile();
   const MOBILE_BANKS = ["examCreate", "examAssign"];
@@ -15418,11 +15425,13 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "browse", icon: "📚", label: "전체 문항" },
+        { key: "assignments", icon: "📋", label: "Assignments" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
       ${bank === "grammar" && html`<${GrammarBankPrototype} roster=${roster} updateData=${updateData} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
       ${bank === "browse" && html`<${GrammarBankBrowseView} />`}
+      ${bank === "assignments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
     </div>
   `;
 }
@@ -15589,10 +15598,10 @@ function LevelTestBookingsOverview({ bookings, saveBookingsList, roster, ensureD
 
   return html`
     <div>
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+      ${onBack && html`<div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <${BackBtn} onClick=${onBack} />
         <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
-      </div>
+      </div>`}
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div style=${{ ...serif, fontSize: 19, color: C.navy }}>레벨테스트 · 상담 예약 현황</div>
         <div style=${{ display: "flex", gap: 6 }}>
@@ -16018,6 +16027,15 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const todayStr = today();
   const todayClasses = todaysClassesForRoster(roster, todayStr);
   const todayStudentIds = todayClasses.map((c) => c.student.id);
+  async function markTodayAttendance(studentId, status) {
+    await updateData(studentId, (d) => {
+      const attendance = { ...(d.attendance || {}) };
+      const cur = attendance[todayStr];
+      if (cur && cur.status === status) delete attendance[todayStr];
+      else attendance[todayStr] = { status, makeupDone: cur?.makeupDone || false };
+      return { ...d, attendance };
+    });
+  }
   const _td = new Date(todayStr + "T00:00:00");
   const todayHeading = `${_td.getMonth() + 1}월 ${_td.getDate()}일 (${WEEKDAY_NAMES[_td.getDay()]})`;
 
@@ -16383,6 +16401,13 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
               <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => onSelectStudent(c.student.id)} onKeyDown=${(e) => { if (e.key === "Enter") onSelectStudent(c.student.id); }}>
                 <span className="tdy-time">${c.time}</span>
                 <div className="tdy-main"><b>${c.student.name}${c.kind === "보강" ? " (make-up)" : ""}</b>${prepText ? html`<span>${prepText}</span>` : null}</div>
+                <span className="tdy-att" onClick=${(e) => e.stopPropagation()}>
+                  ${["present", "absent"].map((st) => {
+                    const cur = ((dataCache[c.student.id] || {}).attendance || {})[todayStr]?.status;
+                    return html`<button key=${st} className=${"tdy-attb " + st + (cur === st ? " on" : "")} title=${st === "present" ? "Mark present" : "Mark absent"}
+                      onClick=${() => markTodayAttendance(c.student.id, st)}>${st === "present" ? "Present" : "Absent"}</button>`;
+                  })}
+                </span>
                 <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
               </div>
             `;
@@ -16433,12 +16458,7 @@ const CLASSES_SUBTABS = [
   // 2026-09-15 신규 — 단어 암기(플래시카드 세션/연습시험) 학습량 현황. Homework Review와 같은
   // 레벨(로스터 전체를 훑어보는 교사용 모니터링 화면)이라 바로 옆에 둔다.
   { key: "vocabReview", icon: "🎴", label: "Vocab Review" },
-  // Teacher OS STEP 13 — 라벨을 "Assessments"에서 "Exam Assignments"로 바꿨다(key/컴포넌트는
-  // 무수정). Students → Assessment(학생 성적/약점 분석)와 이름이 거의 같아서 혼동 소지가 있다는
-  // 걸 실사용 동선 점검 중 발견 — 여긴 실제로는 배정한 시험의 진행 상태 큐(ExamAssignmentManager)
-  // 라 그 실체에 더 가까운 이름으로만 바꿨다.
-  { key: "assessments", icon: "📋", label: "Exam Assignments" },
-  { key: "levelTest", icon: "🏫", label: "Level Test & Inquiries" },
+  // 2026-10 IA 개편 — Exam Assignments는 Question Bank의 Assignments 탭으로, Level Test & Inquiries는 최상위 Inquiries 메뉴로 옮겼다.
 ];
 function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateData, levelTestBookings, saveBookingsList, onSelectStudent, onLogout }) {
   const [tab, setTab] = useState("schedule");
@@ -16449,10 +16469,6 @@ function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateD
       ${tab === "attendance" && html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`}
       ${tab === "homeworkReview" && html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${tab === "vocabReview" && html`<${VocabReviewSection} roster=${roster} dataCache=${dataCache} />`}
-      ${tab === "assessments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
-      ${tab === "levelTest" && html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
-        roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData}
-        onBack=${() => setTab("schedule")} onLogout=${onLogout} />`}
     </div>
   `;
 }
