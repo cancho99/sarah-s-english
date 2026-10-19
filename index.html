@@ -324,6 +324,14 @@ if ("serviceWorker" in navigator) {
      하나만 담아 masonry 밖에서 독립적으로 자기 콘텐츠만큼만 높이를 차지한다. flex는 각 자식의
      실제 콘텐츠 높이를 그대로 존중하므로(grid처럼 행을 공유해 서로 밀어내는 부작용이 없음)
      "네모칸을 억지로 맞추는" 문제 자체가 구조적으로 발생하지 않는다. */
+  .ap-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .ap-kpi { background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(20,22,26,0.05); }
+  .ap-kpi .v { font-size: 26px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .ap-kpi .l { font-size: 12.5px; color: #5B6270; margin-top: 2px; }
+  .ap-kpi.clickable { cursor: pointer; }
+  .ap-kpi.clickable:hover { border-color: #B8935A; }
+  @media (max-width: 900px) { .ap-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 760px) { .ap-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .ap-tc-shell { display: flex; gap: 14px; align-items: flex-start; }
   .ap-tc-main { flex: 1; min-width: 0; column-width: 360px; column-gap: 14px; }
   .ap-tc-main > * { break-inside: avoid; margin: 0 0 14px; }
@@ -3793,7 +3801,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
                 `}
               `}
               ${overdueCheckCount > 0 && html`
-                <div style=${{ fontSize: 11, color: C.danger, fontWeight: 700, marginTop: todayCheckCount > 0 ? 16 : 0 }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
+                <div style=${{ fontSize: 11, color: C.danger, fontWeight: 700, marginTop: todayCheckCount > 0 ? 16 : 0 }}>Overdue (${overdueCheckCount})</div>
                 ${overdueHomework.length > 0 && html`
                   <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 6 }}>숙제</div>
                   ${overdueHomework.map(({ student, hw }, i) => html`
@@ -3863,7 +3871,7 @@ function TeacherOverview({ roster, ensureData, dataCache, updateData, levelTestB
       `}
 
       ${roadmapAlerts.length > 0 && html`
-        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginTop: 20, marginBottom: 8 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
+        <div style=${{ fontSize: 12, fontWeight: 700, color: C.danger, marginTop: 20, marginBottom: 8 }}>Roadmap delays (${roadmapAlerts.length})</div>
         <${Card} style=${{ borderLeft: `3px solid ${C.danger}` }}>
           <div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
           ${roadmapAlerts.map((x) => html`
@@ -15331,7 +15339,7 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
 
   return html`
     <${Card}>
-      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${title || "🔴 내 할 일"}</div>
+      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>${title || "To-do"}</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 6, marginBottom: 8 }}>
         <input style=${{ ...smallInput, gridColumn: "1 / -1" }} placeholder=${lockedStudentId ? "할 일 입력 (예: 오답 영상 찍기)" : "할 일 입력 (예: 민지 프린트 준비)"} value=${content}
           onChange=${(e) => setContent(e.target.value)} onKeyDown=${(e) => e.key === "Enter" && addTodo()} />
@@ -15387,6 +15395,8 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   const todayStr = today();
   const todayClasses = todaysClassesForRoster(roster, todayStr);
   const todayStudentIds = todayClasses.map((c) => c.student.id);
+  const _td = new Date(todayStr + "T00:00:00");
+  const todayHeading = `${_td.getMonth() + 1}월 ${_td.getDate()}일 (${WEEKDAY_NAMES[_td.getDay()]})`;
 
   // ---- 📋 데일리 리포트 미작성 — "🕐 오늘 수업" 바로 아래에 붙는다. 오늘 이전(어제부터
   // lookbackDays일 전까지) 실제로 수업이 있었던 날짜 중 아직 미작성(DRAFT)인 것만 모은다. ----
@@ -15557,6 +15567,14 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   });
   const studentsNeedingPrep = todayClasses.filter(({ student }) => prepByStudent[student.id].auto.length || prepByStudent[student.id].linked.length);
 
+  // 화면 맨 위 요약 줄(2026-10 UI 리디자인) — 숫자가 크고, onClick이 있으면 눌러서 바로 해당 목록으로 간다.
+  const kpiTile = (label, n, color, onClick) => html`
+    <div key=${label} className=${"ap-kpi" + (onClick ? " clickable" : "")} onClick=${onClick} role=${onClick ? "button" : undefined} tabIndex=${onClick ? 0 : undefined}
+      onKeyDown=${onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}>
+      <div className="v" style=${{ color }}>${n}</div>
+      <div className="l">${label}</div>
+    </div>
+  `;
   const statTile = (label, n, color) => html`
     <div key=${label} style=${{ padding: "6px 10px", borderRadius: 6, background: C.ivory, minWidth: 62 }}>
       <div style=${{ fontSize: 10.5, color: C.slate }}>${label}</div>
@@ -15651,14 +15669,14 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   if (isMobile) {
     return html`
       <div>
-        <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>🎯 Teacher Command Center</div>
-        <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>오늘(${fmtDate(todayStr)}) 내가 지금 무엇을 해야 하는지부터 보여드려요.</div>
+        <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
+        <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>${todayClasses.length} classes today · ${missingDailyReports.length} daily reports to write</div>
 
         <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} />
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📝 숙제 미제출</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>Homework not submitted</div>
             <span style=${{ fontSize: 11, fontWeight: 700, color: mobileHwChecklist.length > 0 ? "#fff" : C.gold, background: mobileHwChecklist.length > 0 ? C.danger : C.ivory, borderRadius: 10, padding: "2px 10px" }}>미제출 ${mobileHwChecklist.length}건</span>
           </div>
           <div style=${{ marginBottom: 6 }}>
@@ -15680,7 +15698,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📅 최근 7일 숙제 현황</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>Homework, last 7 days</div>
             <span style=${{ fontSize: 11, color: C.slate }}>${fmtDate(weekStartStr)} ~ ${fmtDate(todayStr)}</span>
           </div>
           ${hwWeek.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>최근 7일 안에 마감이거나 배정된 숙제가 없어요.</div>` : html`
@@ -15705,7 +15723,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         <//>
 
         <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🔤 최근 7일 단어시험 결과</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Vocabulary tests, last 7 days</div>
           ${vocabWeek.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>최근 7일 안에 응시한 단어시험이 없어요.</div>` : html`
             <div>
               ${vocabWeek.map((r, i) => {
@@ -15723,7 +15741,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         <//>
 
         <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>✏️ 단어시험 올리기</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Upload vocabulary test</div>
           <${Field} label="학생">
             <select style=${inputStyle} value=${quickVocabStudentId} onChange=${(e) => setQuickVocabStudentId(e.target.value)}>
               ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
@@ -15762,15 +15780,15 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>🎯 Teacher Command Center</div>
-      <div style=${{ fontSize: 12.5, color: C.slate, marginBottom: 16 }}>오늘(${fmtDate(todayStr)}) 내가 지금 무엇을 해야 하는지부터 보여드려요.</div>
+      <div style=${{ fontSize: 22, fontWeight: 700, color: C.ink, marginBottom: 2 }}>${todayHeading}</div>
+      <div style=${{ fontSize: 13, color: C.slate, marginBottom: 16 }}>${todayClasses.length} classes today · ${missingDailyReports.length} daily reports to write</div>
 
-      <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        ${statTile("오늘 수업", todayClasses.length, C.navy)}
-        ${statTile("미제출 숙제", hwCounts.notSubmitted, hwCounts.notSubmitted > 0 ? C.danger : C.navy)}
-        ${statTile("기한 지난", overdueCheckCount, overdueCheckCount > 0 ? C.danger : C.navy)}
-        ${statTile("상담 요청", pendingConsults.length, pendingConsults.length > 0 ? C.danger : C.navy)}
-        ${statTile("로드맵 지연", roadmapAlerts.length, roadmapAlerts.length > 0 ? C.danger : C.navy)}
+      <div className="ap-kpis">
+        ${kpiTile("Classes today", todayClasses.length, C.navy)}
+        ${kpiTile("Homework not submitted", hwCounts.notSubmitted, hwCounts.notSubmitted > 0 ? C.danger : C.navy, onOpenBoard)}
+        ${kpiTile("Overdue", overdueCheckCount, overdueCheckCount > 0 ? C.danger : C.navy)}
+        ${kpiTile("Consult requests", pendingConsults.length, pendingConsults.length > 0 ? C.danger : C.navy)}
+        ${kpiTile("Roadmap delays", roadmapAlerts.length, roadmapAlerts.length > 0 ? C.danger : C.navy)}
       </div>
 
       <div className="ap-tc-shell">
@@ -15778,7 +15796,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         <${TeacherTodoPanel} todos=${teacherTodos} saveTodos=${saveTeacherTodos} roster=${roster} todayStr=${todayStr} />
 
         <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>🕐 오늘 수업 (${todayClasses.length}건)</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Classes today (${todayClasses.length})</div>
           ${todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 예정된 수업이 없어요.</div>` : todayClasses.map((c, i) => {
             const prep = prepByStudent[c.student.id];
             return html`
@@ -15799,7 +15817,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
           <div style=${{ marginTop: 12, paddingTop: 12, borderTop: `1px dashed ${C.line}` }}>
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: missingDailyReports.length > 0 ? 8 : 0 }}>
-              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📋 데일리 리포트 미작성</div>
+              <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>Daily reports to write</div>
               ${missingDailyReports.length > 0 && html`
                 <span style=${{ fontSize: 11, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "2px 8px" }}>${missingDailyReports.length}건</span>
               `}
@@ -15822,7 +15840,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
           ${missingMonthlyReports.length > 0 && html`
             <div className="ap-tc-alert" style=${{ marginTop: 12 }}>
               <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger }}>📊 월말 리포트 미작성</div>
+                <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.danger }}>Monthly reports due</div>
                 <span style=${{ fontSize: 11, fontWeight: 700, color: "#fff", background: C.danger, borderRadius: 10, padding: "2px 8px" }}>${missingMonthlyReports.length}건</span>
               </div>
               ${missingMonthlyReports.map((m, i) => html`
@@ -15842,7 +15860,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
         <${Card}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>📝 오늘 확인할 것</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy }}>To review today</div>
             <button onClick=${onOpenBoard} style=${{ background: "none", border: "none", color: C.gold, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>숙제 전체보기 →</button>
           </div>
 
@@ -15886,7 +15904,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
           ${overdueCheckCount > 0 && html`
             <div className="ap-tc-alert">
-              <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>⏰ 기한 지난 미완료 (${overdueCheckCount}건)</div>
+              <div style=${{ fontSize: 11, fontWeight: 700, color: C.danger }}>Overdue (${overdueCheckCount})</div>
               ${overdueHomework.length > 0 && html`
                 <div style=${{ fontSize: 10.5, color: C.danger, fontWeight: 700, marginTop: 8 }}>숙제</div>
                 ${overdueHomework.map(({ student, hw }, i) => html`
@@ -15920,7 +15938,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
         ${roadmapAlerts.length > 0 && html`
           <${Card}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>🗺 로드맵 지연 학생 (${roadmapAlerts.length}명)</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Roadmap delays (${roadmapAlerts.length})</div>
             <div style=${{ fontSize: 11, color: C.slate, marginBottom: 8 }}>현재 단계의 목표 종료일이 지났는데 아직 "진단시험 완료 · 다음 단계로" 처리를 안 한 학생이에요.</div>
             ${roadmapAlerts.map((x, i) => html`
               <div key=${x.student.id} className="ap-tc-row" onClick=${() => onSelectStudent(x.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer", display: "flex", justifyContent: "space-between" }}>
@@ -15933,7 +15951,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
         ${pendingConsults.length > 0 && html`
           <${Card}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>💬 학부모 상담 요청 (${pendingConsults.length}건)</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Parent consultation requests (${pendingConsults.length})</div>
             ${pendingConsults.slice(0, 6).map((c, i) => html`
               <div key=${c.r.id} className="ap-tc-row" onClick=${() => onSelectStudent(c.student.id)} style=${{ fontSize: 12.5, padding: "5px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
                 <b>${c.student.name}</b> · ${c.r.method} — 1지망 ${c.r.choices[0].date} ${c.r.choices[0].time}
@@ -15943,7 +15961,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         `}
 
         <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📚 수업 준비</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Class prep</div>
           ${todayClasses.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 수업이 없어요.</div>` : studentsNeedingPrep.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 수업 학생 전원 준비할 것이 없어요.</div>` : studentsNeedingPrep.map(({ student }, i) => {
             const prep = prepByStudent[student.id];
             return html`
@@ -15962,7 +15980,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
         <//>
 
         <${Card}>
-          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>📋 오늘 수업 기록 · Daily Report</div>
+          <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>Today's class record · Daily Report</div>
           <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 10 }}>
             숙제/단어시험/시험/Reading 활동은 자동으로 연결돼요 — 수업 내용과 평가만 채우면 학부모 메시지 초안까지 자동으로 만들어져요.
           </div>
@@ -15981,7 +15999,7 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
 
       <div className="ap-tc-side">
           <${Card}>
-            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>📈 최근 시험 (전체)</div>
+            <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 10 }}>Recent exams</div>
             ${recentTestsTop.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>최근 응시한 시험이 없어요.</div>` : recentTestsTop.map((r, i) => html`
               <div key=${i} className="ap-tc-row" onClick=${() => (onSelectStudentAssessment || onSelectStudent)(r.studentId)}
                 style=${{ display: "flex", justifyContent: "space-between", padding: "6px 16px", borderTop: i > 0 ? `1px dotted ${C.line}` : "none", cursor: "pointer" }}>
