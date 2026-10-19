@@ -1711,7 +1711,7 @@ function StudyTimeStatCard({ studyLog }) {
   const totalMin = (studyLog || []).reduce((sum, s) => sum + (s.minutes || 0), 0);
   return html`
     <${Card} style=${{ marginBottom: 0 }}>
-      <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 6 }}>⏱ 누적 공부 시간</div>
+      <div className="app-h3" style=${{ marginBottom: 6 }}>Total study time</div>
       <div style=${{ ...serif, fontSize: 22, color: C.navy, fontWeight: 700 }}>${fmtMinutes(totalMin)}</div>
     <//>
   `;
@@ -5457,6 +5457,13 @@ const STUDENT_TABS = [
   { key: "homework", label: "Homework", icon: "edit" },
   { key: "vocab", label: "Vocabulary", icon: "bank" },
   { key: "studyTimer", label: "Study", icon: "timer" },
+  { key: "more", label: "More", icon: "more" },
+];
+const PARENT_TABS = [
+  { key: "home", label: "Home", icon: "today" },
+  { key: "reports", label: "Reports", icon: "doc" },
+  { key: "homework", label: "Homework", icon: "edit" },
+  { key: "tuition", label: "Tuition", icon: "wallet" },
   { key: "more", label: "More", icon: "more" },
 ];
 const STUDENT_MORE_ITEMS = [
@@ -25455,56 +25462,73 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
   const nextClass = nextClassText(student, todayStr);
 
   const header = html`
-    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>${student.name} 학생 학부모님</div>
-      <div style=${{ display: "flex", alignItems: "center", gap: 14 }}>
-        <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, parentFcmToken: token }))} />
-        <button onClick=${onLogout} style=${{ background: "none", border: "none", color: C.slate, fontSize: 12.5, cursor: "pointer" }}>로그아웃</button>
-      </div>
-    </div>
+    <${AppTopBar} name=${student.name + " 학생 학부모님"} role="Parent" right=${html`
+      <${NotifyButton} onEnable=${(token) => updateStudentRosterEntry(student.id, (r) => ({ ...r, parentFcmToken: token }))} />
+    `} />
   `;
+  // 하단 탭 — Home/Reports/Homework/Tuition + More(월말 리포트·로드맵·공부 시간·상담 신청·로그아웃).
+  const PARENT_MAIN = { dailyReport: "reports", homework: "homework", tuition: "tuition" };
+  const activeTabKey = tab === null ? "home" : (PARENT_MAIN[tab] || "more");
+  const PARENT_TAB_TO_KEY = { home: null, reports: "dailyReport", homework: "homework", tuition: "tuition", more: "more" };
+  const tabBar = html`<${AppTabBar} items=${PARENT_TABS} active=${activeTabKey} onChange=${(k) => setTab(PARENT_TAB_TO_KEY[k])} />`;
+  const withTabs = (content) => html`<div style=${{ paddingBottom: 92 }}>${content}</div>${tabBar}`;
+  const latestDaily = publishedDaily[0] || null;
+  const latestSummary = latestDaily ? (data.logs || []).filter((l) => l.date === latestDaily[0]).map((l) => l.content).join(" ") : "";
 
   if (tab === null) {
-    return html`
+    return withTabs(html`
       <div>
         ${header}
         <${LearningStatusCard} student=${student} data=${data} />
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
-          <${Card} style=${{ marginBottom: 0 }}>
-            <div style=${{ fontSize: 11, color: C.gold, fontWeight: 700, marginBottom: 4 }}>오늘 해야 할 일</div>
-            ${todayHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>오늘 할 일이 없어요!</div>` : todayHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0" }}>${h.content}</div>`)}
-          <//>
-          <${Card} style=${{ marginBottom: 0, ...(overdueHw.length > 0 ? { borderLeft: `3px solid ${C.danger}` } : {}) }}>
-            <div style=${{ fontSize: 11, color: overdueHw.length > 0 ? C.danger : C.gold, fontWeight: 700, marginBottom: 4 }}>밀린 숙제</div>
-            ${overdueHw.length === 0 ? html`<div style=${{ fontSize: 12.5, color: C.slate }}>밀린 숙제가 없어요!</div>` : overdueHw.map((h) => html`<div key=${h.id} style=${{ fontSize: 12.5, padding: "3px 0", color: C.danger }}>${fmtDateDay(h.dueDate)} · ${h.content}</div>`)}
-          <//>
+        <button className="app-card" onClick=${() => setTab("dailyReport")} style=${{ width: "100%", textAlign: "left", marginBottom: 12, cursor: "pointer", font: "inherit", color: "inherit" }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div className="app-h3">Latest daily report</div>
+            ${latestDaily && html`<span style=${{ fontSize: 12.5, color: C.slate }}>${fmtDateDay(latestDaily[0])}</span>`}
+          </div>
+          ${latestDaily ? html`
+            <div style=${{ margin: "8px 0 10px", fontSize: 14, lineHeight: 1.55, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${latestSummary || "리포트가 게시됐어요. 눌러서 확인해 주세요."}</div>
+            <span style=${{ fontSize: 13.5, fontWeight: 500, color: "#7A5E2B" }}>Read report →</span>
+          ` : html`<div style=${{ margin: "8px 0 2px", fontSize: 13.5, color: C.slate }}>아직 게시된 리포트가 없어요.</div>`}
+        </button>
+        <div className="app-card navy" style=${{ marginBottom: 12 }}>
+          <div style=${{ fontSize: 12.5, opacity: 0.75 }}>Next class</div>
+          <div style=${{ fontSize: 22, fontWeight: 700, marginTop: 2 }}>${nextClass.startsWith("등록된") ? "No class scheduled" : nextClass}</div>
         </div>
-
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 18 }}>
+        <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 12 }}>
           <${HomeworkProgressCard} data=${data} />
           <${StudyTimeStatCard} studyLog=${data.studyLog || []} />
-          <div style=${{ background: C.navy, borderRadius: 8, padding: "16px 20px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
-            <div style=${{ fontSize: 12, color: C.gold, fontWeight: 700 }}>다음 수업</div>
-            <div style=${{ ...serif, fontSize: 20, color: "#fff", fontWeight: 700 }}>${nextClass}</div>
-          </div>
         </div>
-
-        <div style=${{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 18 }}>
-          ${PARENT_HOME_ACTIONS.map((a) => html`
-            <button key=${a.key} onClick=${() => setTab(a.key)} style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <div style=${{ width: 44, height: 44, borderRadius: "50%", background: a.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>${a.icon}</div>
-              <div style=${{ fontSize: 11.5, fontWeight: 700, color: C.ink, textAlign: "center", lineHeight: 1.3 }}>${a.label}</div>
-            </button>
-          `)}
-        </div>
+        <button className="app-btn ghost block" onClick=${() => setTab("consult")}><${Icon} name="chat" size=${20} />Request a consultation</button>
       </div>
-    `;
+    `);
   }
 
-  return html`
+  if (tab === "more") {
+    const PARENT_MORE = [
+      { key: "monthlyReport", label: "Monthly report", icon: "doc" },
+      { key: "roadmap", label: "Learning roadmap", icon: "map" },
+      { key: "studyTime", label: "Study time log", icon: "timer" },
+      { key: "consult", label: "Request a consultation", icon: "chat" },
+    ];
+    return withTabs(html`
+      <div>
+        ${header}
+        <div className="app-card"><div className="app-list">
+          ${PARENT_MORE.map((it) => html`
+            <button key=${it.key} className="app-li" onClick=${() => setTab(it.key)}>
+              <span style=${{ color: C.gold, display: "flex" }}><${Icon} name=${it.icon} /></span><span style=${{ flex: 1 }}>${it.label}</span><span style=${{ color: C.slate, display: "flex" }}><${Icon} name="right" size=${16} /></span>
+            </button>
+          `)}
+          <button className="app-li" onClick=${onLogout} style=${{ color: C.danger }}><span style=${{ display: "flex" }}><${Icon} name="logout" /></span><span style=${{ flex: 1 }}>Log out</span></button>
+        </div></div>
+      </div>
+    `);
+  }
+
+  return withTabs(html`
     <div>
       ${header}
-      <${BackBtn} onClick=${() => setTab(null)} />
+      ${PARENT_MAIN[tab] ? null : html`<${BackBtn} onClick=${() => setTab("more")} />`}
 
       ${tab === "studyTime" && html`<${ParentStudyTimeTab} studyLog=${data.studyLog || []} />`}
 
@@ -25566,7 +25590,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
 
       ${tab === "roadmap" && html`<${ParentRoadmapSection} student=${student} data=${data} />`}
     </div>
-  `;
+  `);
 }
 
 function ParentStudyTimeTab({ studyLog }) {
