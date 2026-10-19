@@ -9511,6 +9511,68 @@ function esEntryToExamTestQuestions(entries) {
   });
   return out;
 }
+// Exam Studio 시험지 → 정식 시험(examPapers, FINALIZED). 서버(getExamQuestionsForAttempt)가 읽는 readingPassages/
+// readingQuestions에 문제를 PUBLISHED로 복사하고, 지문 단위 섹션으로 묶어 시험지를 만든 뒤 확정한다. Exam Studio 쪽
+// 원본(examStudioExamPapers)은 그대로 두고 publishedExamPaperId/publishedAt만 덧붙인다 — 시험지가 그 뒤로 바뀌지
+// 않았으면(updatedAt <= publishedAt) 같은 정식 시험지를 다시 쓰고, 바뀌었으면 새로 만든다(이미 배정된 시험은 그대로 유지).
+// 시험지 내용(제목+문항)이 같은지는 해시(publishedSig)로 비교한다 — updatedAt은 이 기록 자체로도 바뀌어서 쓸 수 없다.
+// 같은 지문을 쓰는 단일 문항은 한 섹션으로 모인다(첫 등장 순서 기준).
+function esPaperSig(paper) {
+  const str = JSON.stringify({ t: paper.title || "", e: paper.entries || [] });
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+  return h.toString(36) + ":" + str.length;
+}
+async function esPublishPaperAsExam(paper, ES) {
+  const EP = window.SarahServices.examPaperService;
+  const QB = window.SarahServices.questionBankService;
+  const sig = esPaperSig(paper);
+  if (paper.publishedExamPaperId && paper.publishedSig === sig) {
+    const existing = (await EP.listExamPapers()).find((x) => x.id === paper.publishedExamPaperId);
+    if (existing && existing.status === "FINALIZED") return existing;
+  }
+  const bad = (paper.entries || []).filter((e) => esEntryIssues(e).length > 0);
+  if (bad.length > 0) throw new Error("아직 완성되지 않은 문항이 있어요 — 지문/선택지/정답을 먼저 확인해 주세요.");
+  const grade = paper.grade || "";
+  const examType = paper.examType || "";
+  const sectionsByPassage = new Map(); // 지문 텍스트 → { passageId, label, questionDocs[] }
+  const allDocs = [];
+  async function addQuestion(passageText, q, label) {
+    const key = passageText.trim();
+    let sec = sectionsByPassage.get(key);
+    if (!sec) {
+      const passage = await QB.importReadingPassage({ title: label, passageText: key, grade, examType, source: { type: "TEACHER_CREATED", note: "Exam Studio" } });
+      sec = { passageId: passage.id, label, questionDocs: [] };
+      sectionsByPassage.set(key, sec);
+    }
+    const stem = [q.contextNote, q.questionText].filter((x) => x && String(x).trim()).join("\n\n");
+    const doc = await QB.importReadingQuestion({
+      grade, examType, questionText: stem || "다음 물음에 답하시오.",
+      choices: (q.choices || []).map((c) => String(c || "").replace(/^[①②③④⑤]\s*/, "").trim()),
+      answer: Number.isInteger(q.answer) ? q.answer : 0,
+      explanation: q.explanation || "",
+      source: { type: "TEACHER_CREATED", note: "Exam Studio" },
+    }, sec.passageId);
+    sec.questionDocs.push(doc);
+    allDocs.push(doc);
+  }
+  let n = 0;
+  for (const e of paper.entries || []) {
+    n += 1;
+    if (e.kind === "group") {
+      for (const q of e.questions || []) await addQuestion(e.sharedPassage || "", q, `지문 ${n}`);
+    } else {
+      await addQuestion(e.displayPassage || "", e, `지문 ${n}`);
+    }
+  }
+  const sections = [...sectionsByPassage.values()].map((sec) => EP.manualSection("reading", sec.label, sec.questionDocs, sec.passageId).section);
+  const created = await EP.createExamPaper({ title: paper.title || "Exam Studio 시험지", grade, examType, sections });
+  const questionsById = {};
+  allDocs.forEach((d) => { questionsById[d.id] = d; });
+  const finalized = await EP.finalizeExamPaper(created, questionsById);
+  await ES.updateExamPaper(paper.localId, { publishedExamPaperId: finalized.id, publishedSig: sig });
+  return finalized;
+}
 function esEscapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -9666,7 +9728,7 @@ function EsAddFromSavedPicker({ savedItemsInScope, onAdd }) {
     <//>
   `;
 }
-function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate, onBack, onReorder, onRemoveEntry, onDeletePaper }) {
+function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate, onBack, onReorder, onRemoveEntry, onDeletePaper, onAssign, assignBusy, assignMsg }) {
   const [focusedId, setFocusedId] = useState(paper.entries[0] ? paper.entries[0].localId : null);
   const numbered = esComputeNumberedEntries(paper.entries);
   const focused = numbered.find((e) => e.localId === focusedId) || numbered[0] || null;
@@ -9704,7 +9766,9 @@ function ESExamPaperBuilder({ paper, savedItemsInScope, onAddFromSaved, onUpdate
       <div style=${{ display: "flex", gap: 10, marginTop: 14 }}>
         <${Button} variant="primary" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildQuestionPaperHtml(paper))}>🖨 문제지 인쇄/저장<//>
         <${Button} variant="ghost" disabled=${paper.entries.length === 0} onClick=${() => esOpenPrintWindow(esBuildAnswerSheetHtml(paper))}>🖨 정답 및 해설지 인쇄/저장<//>
+        ${onAssign && html`<${Button} variant="gold" disabled=${paper.entries.length === 0 || assignBusy} onClick=${onAssign}>${assignBusy ? "시험 준비 중..." : "👩‍🎓 학생에게 배정"}<//>`}
       </div>
+      ${assignMsg && html`<div style=${{ fontSize: 12.5, color: assignMsg.startsWith("!") ? C.danger : C.navy, marginTop: 10 }}>${assignMsg.replace(/^!/, "")}</div>`}
     </div>
   `;
 }
@@ -9727,7 +9791,7 @@ function EsExamPaperList({ papers, onOpen, onCreate, onDelete }) {
     </div>
   `;
 }
-function EsExamPaperLeaf({ scope, examPapers, savedItems, openPaperId, setOpenPaperId, onCreateBlank, onUpdate, onDeletePaper, onReorder, onRemoveEntry, onAddFromSaved }) {
+function EsExamPaperLeaf({ scope, examPapers, savedItems, openPaperId, setOpenPaperId, onCreateBlank, onUpdate, onDeletePaper, onReorder, onRemoveEntry, onAddFromSaved, onAssign, assignBusy, assignMsg }) {
   const scopedPapers = examPapers.filter((p) => p.grade === scope.grade && p.publisher === scope.publisher && p.examType === scope.examType);
   const openPaper = openPaperId ? scopedPapers.find((p) => p.localId === openPaperId) : null;
   if (openPaper) {
@@ -9735,7 +9799,8 @@ function EsExamPaperLeaf({ scope, examPapers, savedItems, openPaperId, setOpenPa
     return html`<${ESExamPaperBuilder} paper=${openPaper} savedItemsInScope=${savedItemsInScope}
       onAddFromSaved=${(entries) => onAddFromSaved(openPaper.localId, entries)} onUpdate=${(patch) => onUpdate(openPaper.localId, patch)}
       onBack=${() => setOpenPaperId(null)} onReorder=${(from, to) => onReorder(openPaper.localId, from, to)}
-      onRemoveEntry=${(id) => onRemoveEntry(openPaper.localId, id)} onDeletePaper=${() => onDeletePaper(openPaper.localId)} />`;
+      onRemoveEntry=${(id) => onRemoveEntry(openPaper.localId, id)} onDeletePaper=${() => onDeletePaper(openPaper.localId)}
+      onAssign=${onAssign ? () => onAssign(openPaper) : null} assignBusy=${assignBusy} assignMsg=${assignMsg} />`;
   }
   return html`<${EsExamPaperList} papers=${scopedPapers} onOpen=${setOpenPaperId} onCreate=${() => onCreateBlank(scope)} onDelete=${onDeletePaper} />`;
 }
@@ -9790,6 +9855,22 @@ function ExamStudioSection({ roster, updateData }) {
   const [mobileAssignBusy, setMobileAssignBusy] = useState(false);
   const [mobileAssignMsg, setMobileAssignMsg] = useState("");
   const [mobileAddingFolder, setMobileAddingFolder] = useState(false);
+  // 데스크톱 "학생에게 배정" — 시험지를 정식 시험으로 복사·확정한 뒤(esPublishPaperAsExam) 같은 배정 창(AssignExamModal)을 연다.
+  const [studioAssignBusy, setStudioAssignBusy] = useState(false);
+  const [studioAssignMsg, setStudioAssignMsg] = useState("");
+  const [studioAssignPaper, setStudioAssignPaper] = useState(null);
+  async function startAssignStudioPaper(paper) {
+    setStudioAssignBusy(true); setStudioAssignMsg("");
+    try {
+      const finalized = await esPublishPaperAsExam(paper, ES);
+      setExamPapers((prev) => prev.map((x) => (x.localId === paper.localId ? { ...x, publishedExamPaperId: finalized.id, publishedSig: esPaperSig(paper) } : x)));
+      setStudioAssignPaper(finalized);
+    } catch (e) {
+      setStudioAssignMsg("!" + String(e.message || e));
+    } finally {
+      setStudioAssignBusy(false);
+    }
+  }
 
   const items = questions.filter((q) => q.stage === "review");
   const savedItems = questions.filter((q) => q.stage === "saved");
@@ -10490,7 +10571,8 @@ function ExamStudioSection({ roster, updateData }) {
               renderLeaf=${(scope) => html`<${EsExamPaperLeaf} scope=${scope} examPapers=${examPapers} savedItems=${savedItems}
                 openPaperId=${openPaperId} setOpenPaperId=${setOpenPaperId}
                 onCreateBlank=${createBlankExamPaper} onUpdate=${updateExamPaper} onDeletePaper=${deleteExamPaper}
-                onReorder=${reorderPaperEntries} onRemoveEntry=${removeEntryFromPaper} onAddFromSaved=${addSavedEntriesToPaper} />`} />
+                onReorder=${reorderPaperEntries} onRemoveEntry=${removeEntryFromPaper} onAddFromSaved=${addSavedEntriesToPaper}
+                onAssign=${startAssignStudioPaper} assignBusy=${studioAssignBusy} assignMsg=${studioAssignMsg} />`} />
           `}
           ${page === "analyses" && html`
             <${EsFolderNav} sectionIcon="📖" sectionLabel="지문 분석함" folders=${passageFolders} onAddFolder=${addFolder} onDeleteFolder=${deleteFolder} onRenameFolder=${renameFolder}
@@ -10499,6 +10581,9 @@ function ExamStudioSection({ roster, updateData }) {
           `}
         </div>
       </div>
+      ${studioAssignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${studioAssignPaper} roster=${roster || []}
+        onClose=${() => setStudioAssignPaper(null)}
+        onAssigned=${(docs) => { setStudioAssignPaper(null); setStudioAssignMsg(`${(docs || []).length || 1}명에게 배정했어요. Question Bank > Results에서 진행 상황을 볼 수 있어요.`); }} />`}
     </div>
   `;
 }
