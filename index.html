@@ -574,6 +574,8 @@ if ("serviceWorker" in navigator) {
   }
   /* 학생 화면 목록+상세 나란히(데스크톱) */
   .vr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: start; }
+  .biz-grid { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+  @media (min-width: 1100px) { .biz-grid { grid-template-columns: minmax(0, 1fr) 400px; } .biz-grid .biz-side { position: sticky; top: 12px; } }
   .att-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
   @media (min-width: 1100px) { .att-grid { grid-template-columns: minmax(0, 1fr) 400px; } .att-side { position: sticky; top: 12px; } }
   .ms-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -4209,17 +4211,8 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
   const maxTrend = Math.max(1, ...trendTotals);
 
   return html`
-    <div>
-      <${Card}>
-        <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
-        <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
-        <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
-        ${rows.length > 0 && html`
-          <div style=${{ fontSize: 12, color: unpaidRows.length > 0 ? C.danger : "#3D6B4F", textAlign: "center", marginTop: 6, fontWeight: 700 }}>
-            ${unpaidRows.length > 0 ? `미입금 ${unpaidRows.length}명 · ${unpaidTotal.toLocaleString()}원` : "전원 입금 완료"}
-          </div>
-        `}
-      <//>
+    <div className="biz-grid">
+      <div>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>학생별 수업료 · 입금 현황</div>
         ${rows.length === 0 ? html`<${Empty} text="이 달 저장된 수업료 기록이 없어요. 학생 정보 > (학생 선택)에서 입력해 주세요." />` : isMobile ? html`
@@ -4257,6 +4250,18 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           </div>
         `}
       <//>
+      </div>
+      <div className="biz-side">
+      <${Card}>
+        <div style=${{ marginBottom: 10 }}><${MonthField} value=${month} onChange=${setMonth} /></div>
+        <div style=${{ ...serif, fontSize: 26, color: C.navy, textAlign: "center", margin: "8px 0 4px" }}>${total.toLocaleString()}원</div>
+        <div style=${{ fontSize: 12, color: C.slate, textAlign: "center" }}>${month} 총 매출 (저장된 수업료 기록 기준, ${rows.length}명)</div>
+        ${rows.length > 0 && html`
+          <div style=${{ fontSize: 12, color: unpaidRows.length > 0 ? C.danger : "#3D6B4F", textAlign: "center", marginTop: 6, fontWeight: 700 }}>
+            ${unpaidRows.length > 0 ? `미입금 ${unpaidRows.length}명 · ${unpaidTotal.toLocaleString()}원` : "전원 입금 완료"}
+          </div>
+        `}
+      <//>
       <${Card}>
         <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 10 }}>최근 6개월 매출 추이</div>
         <div style=${{ display: "flex", alignItems: "flex-end", gap: 8, height: 100 }}>
@@ -4268,6 +4273,7 @@ function RevenueOverviewSection({ roster, ensureData, dataCache }) {
           `)}
         </div>
       <//>
+      </div>
     </div>
   `;
 }
