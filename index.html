@@ -8588,6 +8588,12 @@ const ES_TYPE_META = [
   { key: "longVocab", icon: "📗", label: "장문 독해-어휘", category: "cat_long", defaultQuestionText: "다음 글의 밑줄 친 (a)~(e) 중에서 문맥상 낱말의 쓰임이 적절하지 않은 것은?" },
   { key: "compoundParagraph", icon: "🧩", label: "복합 문단", category: "cat_long", defaultQuestionText: "다음 글을 읽고, 물음에 답하시오." },
 ];
+// 자주 쓰는 유형 묶음 — 한 번 눌러 체크와 개수를 채운다(이후 개별 조정 가능). 키는 ES_TYPE_META.key.
+const ES_TYPE_PRESETS = [
+  { label: "수능 기본 세트", desc: "주제·요지·빈칸·어법·순서·삽입·내용일치 각 1문항", counts: { theme: 1, gist: 1, blankPhrase: 1, grammarUnderline: 1, paragraphOrder: 1, sentenceInsertion: 1, contentMatch: 1 } },
+  { label: "내신 기본 세트", desc: "어법 2·어휘·빈칸·내용일치·요약 각 1문항", counts: { grammarUnderline: 2, vocabAppropriate: 1, blankWord: 1, contentMatch: 1, summary: 1 } },
+  { label: "독해 이해 세트", desc: "주제·제목·요지·목적·내용일치 각 1문항", counts: { theme: 1, title: 1, gist: 1, purpose: 1, contentMatch: 1 } },
+];
 const ES_GROUP_TYPE_KEYS = ["longTitle", "longVocab", "compoundParagraph"];
 const ES_CIRC = ["①", "②", "③", "④", "⑤"];
 const ES_DIFFICULTY_OPTIONS = ["상급", "중급", "하급"];
@@ -9178,7 +9184,7 @@ function EsPassageAndTypesPanel({
   includeAnalysis, setIncludeAnalysis,
   genBusy, genStatus, onGenerate, onAnalysisOnly, onTransform,
   folders, setupGrade, setSetupGrade, setupPublisher, setSetupPublisher, setupExamType, setSetupExamType,
-  onAddFolder, onSaveToLibrary,
+  onAddFolder, onSaveToLibrary, onApplyPreset,
 }) {
   const [addingPublisher, setAddingPublisher] = useState(false);
   const [newPublisherName, setNewPublisherName] = useState("");
@@ -9254,6 +9260,13 @@ function EsPassageAndTypesPanel({
         </div>
 
         <div>
+          ${onApplyPreset && html`
+            <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <span style=${{ fontSize: 11.5, color: C.slate, fontWeight: 700 }}>세트로 한 번에 선택</span>
+              ${ES_TYPE_PRESETS.map((pr) => html`<button key=${pr.label} type="button" title=${pr.desc} onClick=${() => onApplyPreset(pr.counts)}
+                style=${{ padding: "5px 11px", fontSize: 12, fontWeight: 700, borderRadius: 20, cursor: "pointer", border: `1px solid ${C.line}`, background: "#fff", color: C.navy }}>${pr.label}</button>`)}
+              <button type="button" onClick=${() => onApplyPreset({})} style=${{ padding: "5px 9px", fontSize: 11.5, borderRadius: 20, cursor: "pointer", border: "none", background: "none", color: C.slate, textDecoration: "underline" }}>모두 해제</button>
+            </div>`}
           <div style=${{ fontSize: 12, color: C.slate, marginBottom: 5, fontWeight: 600 }}>생성할 유형 (여러 개 선택 가능, 총 25유형) — 체크박스 옆 숫자는 그 유형의 생성 개수</div>
           ${ES_TYPE_CATEGORIES.map((cat) => html`
             <div key=${cat.key}>
@@ -9859,6 +9872,36 @@ function ExamStudioSection({ roster, updateData }) {
   const [studioAssignBusy, setStudioAssignBusy] = useState(false);
   const [studioAssignMsg, setStudioAssignMsg] = useState("");
   const [studioAssignPaper, setStudioAssignPaper] = useState(null);
+  const [workPaperId, setWorkPaperId] = useState(null); // 작업대에서 지금 담고 있는 시험지(시험지 바구니)
+  function applyTypePreset(counts) {
+    setSelectedTypes(new Set(Object.keys(counts)));
+    setTypeCounts({ ...counts });
+  }
+  async function addSelectedToWorkPaper() {
+    const picked = items.filter((x) => selectedIds.has(x.localId));
+    if (picked.length === 0) return;
+    const ids = picked.map((x) => x.localId);
+    try {
+      const cloned = picked.map(esCloneEntryForPaper);
+      let target = workPaperId ? examPapers.find((x) => x.localId === workPaperId) : null;
+      if (!target) {
+        const first = picked[0];
+        const tag = { grade: first.grade || setupGrade || "", publisher: first.publisher || setupPublisher || "", examType: first.examType || setupExamType || "" };
+        target = await ES.createExamPaper(tag, cloned);
+        target = { ...target, title: `${tag.grade} ${tag.examType} ${new Date().getMonth() + 1}/${new Date().getDate()}`.trim() };
+        await ES.updateExamPaper(target.localId, { title: target.title });
+        setExamPapers((prev) => [...prev, target]);
+        setWorkPaperId(target.localId);
+      } else {
+        const nextEntries = [...target.entries, ...cloned];
+        setExamPapers((prev) => prev.map((x) => (x.localId === target.localId ? { ...x, entries: nextEntries, updatedAt: new Date().toISOString() } : x)));
+        await ES.updateExamPaper(target.localId, { entries: nextEntries });
+      }
+      setQuestions((prev) => prev.map((x) => (selectedIds.has(x.localId) ? { ...x, stage: "saved" } : x)));
+      setSelectedIds(new Set());
+      await ES.setQuestionsStage(ids, "saved");
+    } catch (e) { setGenStatus("시험지에 담지 못했어요: " + String(e.message || e)); }
+  }
   async function startAssignStudioPaper(paper) {
     setStudioAssignBusy(true); setStudioAssignMsg("");
     try {
@@ -10082,8 +10125,8 @@ function ExamStudioSection({ roster, updateData }) {
       const saved = await ES.createQuestions(normalized, tag);
       setQuestions((prev) => [...prev, ...saved]);
       setReviewPath(tag);
-      setGenStatus(`${saved.length}개 항목을 생성했어요.${newAnalysis ? " 지문 분석도 함께 만들었어요." : ""} '생성 결과'에서 검토 후 저장하세요.`);
-      setPage("review");
+      setGenStatus(`${saved.length}개 항목을 생성했어요.${newAnalysis ? " 지문 분석도 함께 만들었어요." : ""} ${isMobile ? "'생성 결과'에서 검토 후 저장하세요." : "아래에서 확인하고 시험지에 담으세요."}`);
+      if (isMobile) setPage("review");
       return true;
     } catch (err) {
       setGenStatus("생성에 실패했어요: " + String(err.message || err).slice(0, 300));
@@ -10520,7 +10563,36 @@ function ExamStudioSection({ roster, updateData }) {
               setupGrade=${setupGrade} setSetupGrade=${setSetupGrade}
               setupPublisher=${setupPublisher} setSetupPublisher=${setSetupPublisher}
               setupExamType=${setupExamType} setSetupExamType=${setSetupExamType}
-              onAddFolder=${addFolder} onSaveToLibrary=${saveCurrentToLibrary} />
+              onAddFolder=${addFolder} onSaveToLibrary=${saveCurrentToLibrary} onApplyPreset=${applyTypePreset} />
+            ${(() => {
+              const scope = { grade: setupGrade, publisher: setupPublisher, examType: setupExamType };
+              const here = items.filter((it) => it.grade === scope.grade && it.publisher === scope.publisher && it.examType === scope.examType);
+              if (here.length === 0) return null;
+              return html`
+                <${Card} style=${{ marginBottom: 20 }}>
+                  <div style=${{ fontWeight: 700, color: C.navy, fontSize: 14.5, marginBottom: 4 }}>② 만들어진 문제 (${here.length})</div>
+                  <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>그 자리에서 고치고, 쓸 문제만 체크해서 시험지에 담으세요. 담은 문제는 저장함으로 옮겨져요.</div>
+                  <${EsTaggedItemsLeaf} scope=${scope} items=${items}
+                    selectedIds=${selectedIds} toggleCheck=${toggleCheck} toggleCheckAll=${toggleCheckAll}
+                    searchQuery=${searchQuery} setSearchQuery=${setSearchQuery} typeFilter=${typeFilter} setTypeFilter=${setTypeFilter}
+                    onBulkPrimary=${addSelectedToWorkPaper} primaryLabel="🧺 선택 항목을 시험지에 담기"
+                    onBulkReview=${bulkMarkReviewed} onBulkDelete=${bulkDelete}
+                    onUpdate=${updateQuestionItem} onDelete=${deleteQuestionItem} emptyText="" />
+                <//>`;
+            })()}
+            ${(() => {
+              const wp = workPaperId ? examPapers.find((x) => x.localId === workPaperId) : null;
+              if (!wp) return null;
+              return html`
+                <div style=${{ position: "sticky", bottom: 8, zIndex: 5, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: C.navy, color: "#fff", borderRadius: 10, padding: "10px 14px", boxShadow: "0 6px 20px rgba(28,43,74,0.25)", marginBottom: 20 }}>
+                  <span style=${{ fontSize: 13, fontWeight: 700 }}>🧺 ${wp.title || "시험지"} · ${esCountPaperQuestions(wp)}문항</span>
+                  <span style=${{ flex: 1 }}></span>
+                  ${studioAssignMsg && html`<span style=${{ fontSize: 12, color: studioAssignMsg.startsWith("!") ? "#F2B8AE" : "#CFE3D4" }}>${studioAssignMsg.replace(/^!/, "")}</span>`}
+                  <${Button} variant="ghost" style=${{ padding: "6px 12px", fontSize: 12.5, background: "#fff" }} onClick=${() => { setPaperPath({ grade: wp.grade, publisher: wp.publisher, examType: wp.examType }); setOpenPaperId(wp.localId); setPage("examPapers"); }}>시험지 열기·편집<//>
+                  <${Button} variant="gold" style=${{ padding: "6px 12px", fontSize: 12.5 }} disabled=${studioAssignBusy || esCountPaperQuestions(wp) === 0} onClick=${() => startAssignStudioPaper(wp)}>${studioAssignBusy ? "준비 중..." : "👩‍🎓 학생에게 배정"}<//>
+                  <button type="button" onClick=${() => setWorkPaperId(null)} style=${{ background: "none", border: "none", color: "#C9D1E3", fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>새 시험지로 시작</button>
+                </div>`;
+            })()}
             <${EsTransformResultSection} result=${transformResult} onUseAsNewPassage=${useTransformedAsPassage} onSaveToLibrary=${saveTransformedToLibrary} />
           `}
           ${page === "library" && html`
