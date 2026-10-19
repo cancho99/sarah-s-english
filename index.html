@@ -470,6 +470,11 @@ if ("serviceWorker" in navigator) {
   .tdy-stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
   .tdy-stat .l { font-size: 12px; color: #5B6270; }
   @media (max-width: 760px) { .tdy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (min-width: 1025px) {
+    .tdy { max-width: 1180px; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+    .tdy > :first-child { grid-column: 1 / -1; }
+    .tdy > .tdy-card:nth-of-type(4), .tdy > .tdy-link { grid-column: 1 / -1; }
+  }
   .tdy-click { cursor: pointer; }
   .tdy-click:hover { background: #F8F5EE; }
   .tdy-chev2 { color: #5B6270; display: flex; }
@@ -550,6 +555,9 @@ if ("serviceWorker" in navigator) {
   .hw-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; align-items: start; margin-top: 12px; }
   .hw-summary > div { margin: 0; }
   @media (min-width: 1025px) { .ap-cal-shell { gap: 14px; } .ap-cal-main { flex: 3 1 0; } .ap-cal-side { flex: 2 1 0; } }
+  .rp-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px; background: #fff; border: 1px solid #DCD8CF; border-radius: 8px; }
+  .rp-bar label { font-size: 12px; color: #5B6270; letter-spacing: .04em; text-transform: uppercase; }
+  .st-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 420px)); gap: 12px; align-items: start; }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -4740,7 +4748,8 @@ function TeacherSettingsSection({ teacherAuth, saveTeacherAuthGlobal }) {
   }
 
   return html`
-    <${Card} style=${{ maxWidth: 360, marginBottom: 16 }}>
+    <div className="st-two">
+    <${Card} style=${{ marginBottom: 0 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 12 }}>비밀번호 변경</div>
       <${Field} label="현재 비밀번호"><input style=${inputStyle} type="password" value=${current} onChange=${(e) => { setCurrent(e.target.value); setErr(""); setSaved(false); }} /><//>
       <${Field} label="새 비밀번호"><input style=${inputStyle} type="password" value=${next} onChange=${(e) => { setNext(e.target.value); setErr(""); setSaved(false); }} /><//>
@@ -4750,6 +4759,7 @@ function TeacherSettingsSection({ teacherAuth, saveTeacherAuthGlobal }) {
       <${Button} variant="gold" disabled=${busy} onClick=${submit}>변경<//>
     <//>
     <${DataBackupCard} />
+    </div>
   `;
 }
 
@@ -4778,7 +4788,7 @@ function DataBackupCard() {
   }
 
   return html`
-    <${Card} style=${{ maxWidth: 480 }}>
+    <${Card} style=${{ marginBottom: 0 }}>
       <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>데이터 백업</div>
       <div style=${{ fontSize: 12, color: C.sub, marginBottom: 12, lineHeight: 1.5 }}>
         전체 학생 명단과 학생별 데이터(숙제·단어시험·모의고사/시험·리포트·로드맵·스케줄 등)를
@@ -16689,6 +16699,7 @@ function MasterScheduleView({ roster, saveRosterList }) {
   const [scheduleField, setScheduleField] = useState("masterSchedule");
   const [editing, setEditing] = useState(null); // { studentId, idx, day, time, endTime }
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showAbout, setShowAbout] = useState(false); // 긴 안내 문구는 기본 접어 둔다
   const [dragOverKey, setDragOverKey] = useState(null); // "day|time" of the cell currently under the drag
   const [draggingKey, setDraggingKey] = useState(null); // "studentId|idx" of the chip being dragged
   const [adding, setAdding] = useState(null); // { studentId, day, time, endTime } while the add-slot form is open
@@ -16844,15 +16855,18 @@ function MasterScheduleView({ roster, saveRosterList }) {
 
   return html`
     <div>
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, marginBottom: 4 }}>내 수업 스케줄</div>
-      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10 }}>여기서 짜는 시간표는 한눈에 보기용 계획판이에요 — 학생별 "학생 정보 → 수업 스케줄"에서 등록한 실제(수업료·달력에 반영되는) 스케줄과는 별개로 관리되고, 서로 자동으로 안 바뀌어요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요).</div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+        <b style=${{ fontSize: 15 }}>내 수업 스케줄</b>
+        <button className="tdy-link" style=${{ padding: 0, color: C.slate, fontWeight: 400 }} onClick=${() => setShowAbout(!showAbout)}>${showAbout ? "Hide notes" : "About this schedule"}</button>
+      </div>
+      <div style=${{ fontSize: 12, color: C.slate, marginBottom: 10, display: showAbout ? "block" : "none" }}>여기서 짜는 시간표는 한눈에 보기용 계획판이에요 — 학생별 "학생 정보 → 수업 스케줄"에서 등록한 실제(수업료·달력에 반영되는) 스케줄과는 별개로 관리되고, 서로 자동으로 안 바뀌어요. 블록을 누르면 시간을 바로 수정하거나 삭제할 수 있고, PC에서는 블록을 다른 칸으로 끌어다 놓아도 시간이 바뀌어요 (수업 길이는 그대로 유지돼요. 터치 기기에서는 드래그 대신 눌러서 수정해 주세요).</div>
 
       <div style=${{ display: "flex", gap: 6, marginBottom: 12 }}>
         ${SCHEDULE_TABS.map((t) => html`
           <button key=${t.key} onClick=${() => setScheduleField(t.key)} style=${{
-            padding: "8px 16px", borderRadius: 20, border: `1px solid ${scheduleField === t.key ? C.navy : C.line}`,
+            padding: "5px 12px", borderRadius: 20, border: `1px solid ${scheduleField === t.key ? C.navy : C.line}`,
             background: scheduleField === t.key ? C.navy : "#fff", color: scheduleField === t.key ? "#fff" : C.ink,
-            fontWeight: 700, fontSize: 12.5, cursor: "pointer",
+            fontWeight: 500, fontSize: 12.5, cursor: "pointer",
           }}>${t.label}</button>
         `)}
       </div>
@@ -17961,6 +17975,7 @@ function RegularExamEditor({ data, updateData }) {
 // 안 넘겨도) 화면의 기본 동작(첫 번째 학생, "daily" 탭, 오늘 날짜/이번 달)은 그대로다 — 순수
 // additive.
 function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent, defaultStudentId, onStudentChange }) {
+  const rpDesktop = useIsDesktop();
   const [kind, setKind] = useState("daily");
   // 학생 선택 공유(2026-10 UI 리디자인) — 학생 상세/빠른 기록에서 보던 학생(defaultStudentId)으로 시작하고, 여기서
   // 학생을 바꾸면 onStudentChange로 TeacherDash에 알려 다른 화면도 같은 학생으로 열리게 한다.
@@ -17996,6 +18011,15 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
 
   return html`
     <div>
+      ${rpDesktop ? html`
+        <div className="rp-bar">
+          <label htmlFor="rp-student">Student</label>
+          <select id="rp-student" style=${{ ...inputStyle, width: 220 }} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
+            ${roster.map((r) => html`<option key=${r.id} value=${r.id}>${r.name}</option>`)}
+          </select>
+          ${student && onSelectStudent ? html`<button className="tdy-link" style=${{ padding: 0 }} onClick=${() => onSelectStudent(student.id)}>Open ${student.name} →</button>` : null}
+        </div>
+      ` : html`
       <${Card} style=${{ marginBottom: 14 }}>
         <${Field} label="학생 선택">
           <select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>
@@ -18004,6 +18028,7 @@ function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarg
         <//>
         ${student && onSelectStudent && html`<div style=${{ marginTop: 8 }}><a onClick=${() => onSelectStudent(student.id)} style=${{ color: C.gold, cursor: "pointer", fontSize: 12.5, textDecoration: "underline" }}>${student.name} 학생 Overview로 이동 →</a></div>`}
       <//>
+      `}
       ${!student ? html`<${Empty} text="먼저 학생을 등록해 주세요." />` : loadingStudent ? html`<div style=${{ padding: 20, color: C.slate, fontSize: 13 }}>불러오는 중...</div>` : html`
         <${Tabs} tabs=${navItems} active=${kind} onChange=${setKind} />
         ${kind === "daily" && html`<${DailyReportGenerator} key=${student.id} student=${student} data=${data} updateData=${(updater) => updateData(student.id, updater)} onSelectStudent=${onSelectStudent ? () => onSelectStudent(student.id) : null}
