@@ -13326,36 +13326,40 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
     d.setDate(d.getDate() + 7);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
-  const [studentId, setStudentId] = useState((roster && roster[0] && roster[0].id) || "");
-  // 숙제 등록 폼(HomeworkEditor)의 dueDate 관례 그대로 — 항상 기본값이 채워진 상태로 시작해서
-  // 빈 값을 별도로 막을 필요가 없게 한다(§ "필수값으로 할지" 결정: 기본 +7일로 채워두고, 교사가
-  // 원하면 직접 바꾸는 방식 — 빈 값 자체를 허용하지 않음).
+  // 여러 학생에게 한 번에 배정 — 배정 문서는 학생마다 하나씩(examAssignments 구조 그대로)이라 학생별로 createAssignment를 부른다.
+  const [picked, setPicked] = useState({});
   const [dueDate, setDueDate] = useState(defaultDueDateStr());
   const [dueTime, setDueTime] = useState("23:59");
+  const [timeLimit, setTimeLimit] = useState(""); // 분. 빈 값 = 제한 없음
   const [resultsVisible, setResultsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const list = roster || [];
+  const pickedIds = list.filter((s) => picked[s.id]).map((s) => s.id);
+  const allOn = list.length > 0 && pickedIds.length === list.length;
 
   async function handleAssign() {
     if (paper.status !== "FINALIZED") { setMsg("확정(FINALIZED)된 시험지만 배정할 수 있어요."); return; }
-    if (!studentId) { setMsg("학생을 선택해 주세요."); return; }
+    if (pickedIds.length === 0) { setMsg("학생을 한 명 이상 선택해 주세요."); return; }
+    const limit = timeLimit.trim() === "" ? null : Number(timeLimit);
+    if (limit !== null && !(limit > 0)) { setMsg("제한 시간은 1분 이상의 숫자로 입력해 주세요."); return; }
     setSaving(true); setMsg("");
-    try {
-      const dueAt = new Date(`${dueDate}T${dueTime}:00`).getTime();
-      const doc = await AS.createAssignment({
-        examPaperId: paper.id,
-        studentId,
-        title: paper.title,
-        dueAt,
-        resultsVisibleToStudent: resultsVisible,
-      });
-      onAssigned(doc);
-    } catch (e) {
-      // AS.createAssignment()가 이미 "이미 배정되어 진행 중인 같은 시험지가 있어요" 형태로 던짐 — 그대로 노출.
-      setMsg(String(e.message || e));
-    } finally {
-      setSaving(false);
+    const dueAt = new Date(`${dueDate}T${dueTime}:00`).getTime();
+    const done = [];
+    const failed = [];
+    for (const studentId of pickedIds) {
+      try {
+        // 이미 같은 시험지가 진행 중인 학생은 createAssignment가 던진다 — 그 학생만 건너뛰고 나머지는 계속 배정한다.
+        done.push(await AS.createAssignment({ examPaperId: paper.id, studentId, title: paper.title, dueAt, resultsVisibleToStudent: resultsVisible, timeLimitMinutes: limit }));
+      } catch (e) {
+        const st = list.find((x) => x.id === studentId);
+        failed.push(`${st ? st.name : studentId}: ${String(e.message || e)}`);
+      }
     }
+    setSaving(false);
+    if (failed.length === 0) { onAssigned(done); return; }
+    if (done.length > 0) setPicked(Object.fromEntries(pickedIds.filter((id) => !done.some((d) => d.studentId === id)).map((id) => [id, true])));
+    setMsg(`${done.length}명 배정 완료. 실패 ${failed.length}건 — ${failed.join(" / ")}`);
   }
 
   return html`
@@ -13365,13 +13369,31 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
         <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${paper.title}</div>
         <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${paper.grade || "학년 미지정"} · 문제 ${paper.totalQuestionCount}개</div>
       <//>
-      ${(!roster || roster.length === 0)
+      ${list.length === 0
         ? html`<div style=${{ fontSize: 12.5, color: C.danger, marginBottom: 12 }}>등록된 학생이 없어요. 먼저 학생을 등록해 주세요.</div>`
-        : html`<${Field} label="학생"><select style=${inputStyle} value=${studentId} onChange=${(e) => setStudentId(e.target.value)}>${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}</select><//>`}
+        : html`
+          <${Field} label=${`학생 (${pickedIds.length}명 선택)`}>
+            <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, padding: "6px 10px", maxHeight: 180, overflowY: "auto", background: "#fff" }}>
+              <label style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: C.navy, padding: "4px 0", cursor: "pointer", borderBottom: `1px solid ${C.line}` }}>
+                <input type="checkbox" checked=${allOn} onChange=${(e) => setPicked(e.target.checked ? Object.fromEntries(list.map((s) => [s.id, true])) : {})} style=${{ width: 15, height: 15, appearance: "auto" }} />전체 선택
+              </label>
+              ${list.map((s) => html`
+                <label key=${s.id} style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.ink, padding: "5px 0", cursor: "pointer" }}>
+                  <input type="checkbox" checked=${!!picked[s.id]} onChange=${(e) => setPicked({ ...picked, [s.id]: e.target.checked })} style=${{ width: 15, height: 15, appearance: "auto" }} />${s.name}
+                </label>
+              `)}
+            </div>
+          <//>`}
       <${Field} label="응시 기한">
         <div style=${{ display: "flex", gap: 8 }}>
           <div style=${{ flex: 1 }}><${DateField} value=${dueDate} onChange=${setDueDate} /><//>
           <${TimeField} value=${dueTime} onChange=${setDueTime} />
+        </div>
+      <//>
+      <${Field} label="제한 시간 (분, 비우면 제한 없음)">
+        <div style=${{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="number" min="1" style=${{ ...inputStyle, marginBottom: 0, width: 110 }} value=${timeLimit} onChange=${(e) => setTimeLimit(e.target.value)} placeholder="예: 40" />
+          ${[20, 40, 60].map((m) => html`<button key=${m} type="button" onClick=${() => setTimeLimit(String(m))} style=${{ padding: "5px 10px", borderRadius: 6, border: `1px solid ${C.line}`, background: "#fff", fontSize: 12, color: C.slate, cursor: "pointer" }}>${m}분</button>`)}
         </div>
       <//>
       <label style=${{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.navy, margin: "6px 0 14px", cursor: "pointer" }}>
@@ -13379,7 +13401,7 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
         학생에게 시험 결과 공개 (정답/해설 포함, 기본은 비공개)
       <//>
       ${msg && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${msg}</div>`}
-      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${handleAssign} disabled=${saving || !roster || roster.length === 0}>${saving ? "배정 중..." : "배정하기"}<//>
+      <${Button} variant="gold" style=${{ width: "100%", justifyContent: "center" }} onClick=${handleAssign} disabled=${saving || list.length === 0}>${saving ? "배정 중..." : (pickedIds.length > 1 ? `${pickedIds.length}명에게 배정하기` : "배정하기")}<//>
     <//>
   `;
 }
@@ -13551,7 +13573,7 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
       ${msg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 8 }}>${msg}</div>`}
       ${showAssign && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${paper} roster=${roster || []}
         onClose=${() => setShowAssign(false)}
-        onAssigned=${() => { setShowAssign(false); setMsg("학생에게 배정했어요."); }} />`}
+        onAssigned=${(docs) => { setShowAssign(false); setMsg(`${(docs || []).length || 1}명에게 배정했어요.`); }} />`}
     </div>
   `;
 }
@@ -13808,6 +13830,8 @@ function ExamBuilderView({ roster, onLogout }) {
   const [errCode, setErrCode] = useState("");
   const [view, setView] = useState("list"); // list | wizard | school | newForm | builder | detail
   const [selectedId, setSelectedId] = useState(null);
+  const [quickAssign, setQuickAssign] = useState(null); // 목록 오른쪽 카드에서 바로 배정 — 상세 화면을 거치지 않는다
+  const [quickMsg, setQuickMsg] = useState("");
   const [newTitle, setNewTitle] = useState("");
 
   async function load() {
@@ -13967,12 +13991,19 @@ function ExamBuilderView({ roster, onLogout }) {
                   </div>
                   <div style=${{ fontSize: 15, fontWeight: 700, color: C.navy, maxWidth: 640 }}>${selected.title}</div>
                   <div style=${{ fontSize: 12, color: C.slate, marginTop: 8 }}>섹션 ${selected.sections.length}개 · 문제 ${selected.totalQuestionCount}개</div>
-                  <${Button} style=${{ marginTop: 14 }} onClick=${() => setView("detail")}>시험지 상세 보기 →<//>
+                  <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+                    ${selected.status === "FINALIZED" && html`<${Button} variant="gold" onClick=${() => { setQuickMsg(""); setQuickAssign(selected); }}>👩‍🎓 학생에게 배정<//>`}
+                    <${Button} variant="ghost" onClick=${() => setView("detail")}>상세 · 인쇄 →<//>
+                  </div>
+                  ${quickMsg && html`<div style=${{ fontSize: 12, color: C.navy, marginTop: 10 }}>${quickMsg}</div>`}
                 <//>
               `}
             </div>
           </div>
         `}
+      ${quickAssign && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${quickAssign} roster=${roster || []}
+        onClose=${() => setQuickAssign(null)}
+        onAssigned=${(docs) => { setQuickAssign(null); setQuickMsg(`${(docs || []).length || 1}명에게 배정했어요. Results 탭에서 진행 상황을 볼 수 있어요.`); }} />`}
     </div>
   `;
 }
@@ -15403,8 +15434,8 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   // 빈 화면 대신 grammar 탭으로 안전하게 떨어진다.
   // 모바일에서는 위 4개 탭 대신 "📝 시험지 생성"(ExamBuilderView 재사용) / "📤 시험지 배정"
   // (MobileAssignExamTab, 위에서 정의) 2개 탭만 보여준다 — 데스크탑 로직/탭 목록은 무수정.
-  const VALID_BANKS = ["grammar", "vocabulary", "answerKeys", "browse", "assignments", "materials"];
-  const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "grammar");
+  const VALID_BANKS = ["exams", "grammar", "vocabulary", "answerKeys", "browse", "assignments", "materials"];
+  const [bank, setBank] = useState(VALID_BANKS.includes(initialBank) ? initialBank : "exams");
   const isMobile = useIsMobile();
   const MOBILE_BANKS = ["examCreate", "examAssign"];
   const [mobileBank, setMobileBank] = useState("examCreate");
@@ -15423,13 +15454,15 @@ function QuestionBankSection({ roster, initialBank, examKeyLibrary, saveExamKeyL
   return html`
     <div>
       <${Tabs} tabs=${[
+        { key: "exams", icon: "📝", label: "Exams" },
         { key: "grammar", icon: "📐", label: "Grammar" },
         { key: "vocabulary", icon: "🔤", label: "Vocabulary" },
         { key: "answerKeys", icon: "📑", label: "Answer Keys" },
         { key: "browse", icon: "📚", label: "전체 문항" },
-        { key: "assignments", icon: "📋", label: "Assignments" },
+        { key: "assignments", icon: "📋", label: "Results" },
         { key: "materials", icon: "📁", label: "Shared Materials" },
       ]} active=${bank} onChange=${(key) => { if (VALID_BANKS.includes(key)) setBank(key); }} />
+      ${bank === "exams" && html`<${ExamBuilderView} roster=${roster} onLogout=${onLogout} />`}
       ${bank === "grammar" && html`<${GrammarBankPrototype} roster=${roster} updateData=${updateData} />`}
       ${bank === "vocabulary" && html`<${WordbankSection} />`}
       ${bank === "answerKeys" && html`<${ExamKeyLibrarySection} library=${examKeyLibrary} saveLibrary=${saveExamKeyLibrary} />`}
@@ -22059,7 +22092,7 @@ function StudentExamCard({ assignment, paper, onAction }) {
       <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
         <div style=${{ minWidth: 0, flex: 1 }}>
           <div style=${{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>${assignment.title || (paper && paper.title) || "시험"}</div>
-          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>문제 ${paper ? paper.totalQuestionCount : "-"}개</div>
+          <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>문제 ${paper ? paper.totalQuestionCount : "-"}개${assignment.timeLimitMinutes ? ` · ⏱ 제한 ${assignment.timeLimitMinutes}분` : ""}</div>
           <div style=${{ fontSize: 11, color: C.slate, marginTop: 3 }}>배정 ${fmtDateTime(assignment.assignedAt)}${assignment.dueAt ? " · 마감 " + fmtDateTime(assignment.dueAt) : ""}</div>
         </div>
         <${AssignmentStatusBadge} status=${assignment.status} />
@@ -22110,6 +22143,25 @@ function StudentExamRuntime({ assignment, onExit }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const subjectiveTimerRef = useRef(null);
+  // 제한 시간 — 배정의 timeLimitMinutes(null이면 제한 없음). 시작 시각은 attempt.startedAt(서버에 저장된 값)이라
+  // 중간에 나갔다 들어와도 남은 시간이 이어진다. 시간이 다 되면 한 번만 자동 제출한다.
+  const [limitMin, setLimitMin] = useState(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const submitRef = useRef(null);
+  const autoSubmittedRef = useRef(false);
+  const attemptLive = !!attempt && attempt.status === "IN_PROGRESS";
+  useEffect(() => {
+    if (!limitMin || !attemptLive) return undefined;
+    const t = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [limitMin, attemptLive]);
+  useEffect(() => {
+    if (!limitMin || !attemptLive || autoSubmittedRef.current) return;
+    if (attempt.startedAt + limitMin * 60000 - nowTick <= 0) {
+      autoSubmittedRef.current = true;
+      if (submitRef.current) submitRef.current();
+    }
+  }, [nowTick, limitMin, attemptLive]);
 
   async function load() {
     setLoading(true); setErr("");
@@ -22131,6 +22183,7 @@ function StudentExamRuntime({ assignment, onExit }) {
 
       const startedAttempt = await AT.startAttempt(freshAssignment, foundPaper);
 
+      setLimitMin(Number.isFinite(freshAssignment.timeLimitMinutes) && freshAssignment.timeLimitMinutes > 0 ? freshAssignment.timeLimitMinutes : null);
       setPaper(foundPaper);
       setFlatQuestions(flat);
       setSanitizedQuestionsById(sanitizedById);
@@ -22205,6 +22258,11 @@ function StudentExamRuntime({ assignment, onExit }) {
     }
   }
 
+  submitRef.current = handleSubmit;
+  const remainMs = limitMin && attemptLive ? attempt.startedAt + limitMin * 60000 - nowTick : null;
+  const remainLabel = remainMs === null ? null : (() => { const t = Math.max(0, Math.ceil(remainMs / 1000)); return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; })();
+  const unansweredNums = flatQuestions.map((q, i) => ({ q, n: i + 1 })).filter(({ q }) => { const v = answers[q.questionId]; return v === undefined || v === null || v === ""; }).map(({ n }) => n);
+
   if (submitted) {
     return html`
       <div>
@@ -22230,7 +22288,10 @@ function StudentExamRuntime({ assignment, onExit }) {
       ${readOnly && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>이미 제출된 시험이에요. 답을 바꿀 수 없어요.</div>`}
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
         <div style=${{ ...serif, fontSize: 16, color: C.navy }}>${paper.title}</div>
-        <div style=${{ fontSize: 12, color: C.slate }}>${currentIndex + 1} / ${total}</div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          ${remainLabel !== null && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainMs < 300000 ? "#F7E9E6" : "#EFEDE6", color: remainMs < 300000 ? C.danger : C.navy }}>⏱ ${remainLabel}</div>`}
+          <div style=${{ fontSize: 12, color: C.slate }}>${currentIndex + 1} / ${total}</div>
+        </div>
       </div>
 
       ${curPassage && html`
@@ -22285,7 +22346,7 @@ function StudentExamRuntime({ assignment, onExit }) {
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 10 }}>시험을 제출할까요?</div>
           <div style=${{ fontSize: 12.5, color: C.ink, marginBottom: 16, lineHeight: 1.6 }}>
             ${unansweredCount > 0
-              ? `아직 답하지 않은 문제가 ${unansweredCount}개 있습니다. 그래도 제출하시겠습니까?`
+              ? `아직 답하지 않은 문제가 ${unansweredCount}개 있습니다 (${unansweredNums.join(", ")}번). 그래도 제출하시겠습니까?`
               : "시험을 제출하면 답안을 수정할 수 없습니다. 제출하시겠습니까?"}
           </div>
           <div style=${{ display: "flex", gap: 8 }}>
