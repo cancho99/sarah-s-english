@@ -331,7 +331,7 @@ if ("serviceWorker" in navigator) {
   .ap-kpi.clickable { cursor: pointer; }
   .ap-kpi.clickable:hover { border-color: #B8935A; }
   @media (max-width: 900px) { .ap-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 760px) { .ap-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) { .ap-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .ap-kpi { padding: 10px 12px; } .ap-kpi .v { font-size: 22px; } }
   .ap-tc-shell { display: flex; gap: 14px; align-items: flex-start; }
   .ap-tc-main { flex: 1; min-width: 0; column-width: 360px; column-gap: 14px; }
   .ap-tc-main > * { break-inside: avoid; margin: 0 0 14px; }
@@ -400,6 +400,18 @@ if ("serviceWorker" in navigator) {
   .ap-pager button:disabled { opacity: .35; cursor: default; }
   .ap-pager .pos { font-size: 12.5px; color: #5B6270; min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
   @media (max-width: 760px) { .ap-pager { margin-left: 0; width: 100%; justify-content: flex-start; } }
+  .ap-qr-btn { display: inline-flex; align-items: center; gap: 7px; background: #1C2B4A; color: #fff; border: none; border-radius: 6px; padding: 7px 13px; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .ap-qr-btn:hover { filter: brightness(1.15); }
+  .ap-kbd { font-size: 11px; border: 1px solid rgba(255,255,255,0.45); border-radius: 4px; padding: 0 5px; opacity: .85; }
+  .ap-scrim { position: fixed; inset: 0; background: rgba(20,22,26,0.4); z-index: 40; opacity: 0; pointer-events: none; transition: opacity .18s; }
+  .ap-scrim.on { opacity: 1; pointer-events: auto; }
+  .ap-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 420px; max-width: 100%; background: #FAF7F1; border-left: 1px solid #DCD8CF; z-index: 41; transform: translateX(100%); transition: transform .2s, visibility 0s linear .2s; display: flex; flex-direction: column; box-shadow: -8px 0 24px rgba(20,22,26,0.12); visibility: hidden; }
+  .ap-drawer.on { transform: none; visibility: visible; transition: transform .2s; }
+  .ap-drawer-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid #DCD8CF; background: #fff; }
+  .ap-drawer-x { background: none; border: none; cursor: pointer; color: #5B6270; padding: 4px; border-radius: 6px; display: inline-flex; }
+  .ap-drawer-x:hover { background: #F3F1EB; color: #14161A; }
+  .ap-drawer-body { padding: 16px 20px 40px; overflow-y: auto; flex: 1; }
+  @media (prefers-reduced-motion: reduce) { .ap-drawer, .ap-scrim { transition: none; } }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -4087,6 +4099,30 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   const [name, setName] = useState(""); const [sc, setSc] = useState(""); const [pc, setPc] = useState("");
   const [addErr, setAddErr] = useState("");
   const selected = roster.find((r) => r.id === selectedStudentId);
+  // 학생 선택 공유 + 빠른 기록 드로어(2026-10 UI 리디자인) — recentStudentId는 "가장 최근에 보던 학생"이다. 메뉴를 옮기면
+  // selectedStudentId는 null로 초기화되지만(handleNavChange), 이 값은 남아서 Reports/빠른 기록이 같은 학생으로 열린다.
+  const [recentStudentId, setRecentStudentId] = useState(selectedStudentId || null);
+  useEffect(() => { if (selectedStudentId) setRecentStudentId(selectedStudentId); }, [selectedStudentId]);
+  const [quickOpen, setQuickOpen] = useState(false);
+  // 단축키: Q 빠른 기록, Esc 닫기, / 학생 검색. 입력창에 타이핑 중일 때는 Q와 /를 가로채지 않는다.
+  useEffect(() => {
+    function onKey(e) {
+      const t = e.target;
+      const tag = ((t && t.tagName) || "").toLowerCase();
+      const typing = tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable);
+      if (e.key === "Escape") { setQuickOpen(false); return; }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "q" || e.key === "Q") { e.preventDefault(); setQuickOpen(true); }
+      else if (e.key === "/") {
+        e.preventDefault();
+        handleNavChange("studentArea");
+        setTimeout(() => { const el = document.getElementById("student-search"); if (el) el.focus(); }, 80);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    /* eslint-disable-next-line */
+  }, []);
 
   useEffect(() => { if (selectedStudentId) ensureData(selectedStudentId); }, [selectedStudentId]);
 
@@ -4237,7 +4273,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   } else if (section === "examAssignments") {
     body = html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`;
   } else if (section === "reports") {
-    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialTarget=${reportsTarget}
+    body = html`<${ReportsSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialTarget=${reportsTarget} defaultStudentId=${recentStudentId} onStudentChange=${setRecentStudentId}
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); }} />`;
   } else if (section === "revenue") {
     body = html`<${RevenueOverviewSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} />`;
@@ -4331,7 +4367,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
           <span className="title">${activeLabel}</span>
         </div>
         <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
-          ${section === "quickRecord" ? html`<${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />` : body}
+          ${section === "quickRecord" ? html`<${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} defaultStudentId=${recentStudentId} onStudentChange=${setRecentStudentId} />` : body}
         </div>
         <nav className="m-bottombar" aria-label="Main menu">
           ${MOBILE_BOTTOM.map((t) => html`
@@ -4370,10 +4406,23 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
                 <b style=${{ fontSize: 16, color: C.ink, fontWeight: 700 }}>${selected.name}</b>
               ` : html`<b style=${{ fontSize: 16, color: C.ink, fontWeight: 700 }}>${(navItems.find((n) => n.key === activeKey) || {}).label || ""}</b>`}
             </div>
-            <${NotifyButton} onEnable=${addTeacherFcmToken} />
+            <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button className="ap-qr-btn" onClick=${() => setQuickOpen(true)}><${Icon} name="edit" size=${16} />Quick Record<span className="ap-kbd">Q</span></button>
+              <${NotifyButton} onEnable=${addTeacherFcmToken} />
+            </div>
           </div>
         `}
       >${body}<//>
+      <div className=${"ap-scrim" + (quickOpen ? " on" : "")} onClick=${() => setQuickOpen(false)}></div>
+      <aside className=${"ap-drawer" + (quickOpen ? " on" : "")} aria-label="Quick Record" aria-hidden=${!quickOpen}>
+        <div className="ap-drawer-head">
+          <div><div style=${{ fontWeight: 700, fontSize: 15 }}>Quick Record</div><div style=${{ fontSize: 12, color: C.slate }}>Student and tab stay selected after you save</div></div>
+          <button className="ap-drawer-x" onClick=${() => setQuickOpen(false)} aria-label="Close"><${Icon} name="x" size=${18} /></button>
+        </div>
+        <div className="ap-drawer-body">
+          <${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} defaultStudentId=${recentStudentId} onStudentChange=${setRecentStudentId} />
+        </div>
+      </aside>
     </div>
   `;
 }
@@ -17797,9 +17846,12 @@ function RegularExamEditor({ data, updateData }) {
 // initialDate(Month)/initialDate(Month)Nonce로 그대로 전달된다. 전부 없어도(initialTarget 자체를
 // 안 넘겨도) 화면의 기본 동작(첫 번째 학생, "daily" 탭, 오늘 날짜/이번 달)은 그대로다 — 순수
 // additive.
-function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent }) {
+function ReportsSection({ roster, ensureData, dataCache, updateData, initialTarget, onSelectStudent, defaultStudentId, onStudentChange }) {
   const [kind, setKind] = useState("daily");
-  const [studentId, setStudentId] = useState(roster[0]?.id || "");
+  // 학생 선택 공유(2026-10 UI 리디자인) — 학생 상세/빠른 기록에서 보던 학생(defaultStudentId)으로 시작하고, 여기서
+  // 학생을 바꾸면 onStudentChange로 TeacherDash에 알려 다른 화면도 같은 학생으로 열리게 한다.
+  const [studentId, setStudentId] = useState(defaultStudentId && roster.some((r) => r.id === defaultStudentId) ? defaultStudentId : (roster[0]?.id || ""));
+  useEffect(() => { if (onStudentChange && studentId) onStudentChange(studentId); /* eslint-disable-next-line */ }, [studentId]);
   const student = roster.find((r) => r.id === studentId);
   const [loadingStudent, setLoadingStudent] = useState(true);
 
@@ -21608,16 +21660,20 @@ function QuickMockPanel({ data, updateData }) {
 }
 
 const QUICK_RECORD_TABS = [
-  { key: "hw", icon: "📝", label: "숙제" },
-  { key: "vocab", icon: "🔤", label: "단어시험" },
-  { key: "mock", icon: "📄", label: "모의고사" },
+  { key: "hw", icon: "📝", label: "Homework" },
+  { key: "vocab", icon: "🔤", label: "Vocabulary" },
+  { key: "mock", icon: "📄", label: "Mock exam" },
 ];
 // 학생 선택 + 3개 서브탭(숙제/단어시험/모의고사) 셸. 서브탭 pill 스타일은 QuestionBankSection
 // 등에서 이미 쓰는 공용 SubTabs(.ap-subtabs 클래스, 배경 #F3F1EB·활성 탭 흰 배경+box-shadow)를
 // 그대로 재사용한다 — 새 스타일을 만들지 않는다.
-function QuickRecordSection({ roster, ensureData, dataCache, updateData }) {
-  const [studentId, setStudentId] = useState((roster[0] && roster[0].id) || "");
+function QuickRecordSection({ roster, ensureData, dataCache, updateData, defaultStudentId, onStudentChange }) {
+  // 학생 선택 공유 — 지금 보던 학생(defaultStudentId)으로 열고, 바뀌면 onStudentChange로 알린다. defaultStudentId가
+  // 다른 화면에서 바뀌면(드로어가 계속 마운트돼 있어도) 따라간다.
+  const [studentId, setStudentId] = useState(defaultStudentId && roster.some((r) => r.id === defaultStudentId) ? defaultStudentId : ((roster[0] && roster[0].id) || ""));
   const [tab, setTab] = useState("hw");
+  useEffect(() => { if (defaultStudentId && roster.some((r) => r.id === defaultStudentId)) setStudentId(defaultStudentId); /* eslint-disable-next-line */ }, [defaultStudentId]);
+  useEffect(() => { if (onStudentChange && studentId) onStudentChange(studentId); /* eslint-disable-next-line */ }, [studentId]);
 
   useEffect(() => {
     if (studentId) ensureData(studentId);
@@ -21632,7 +21688,7 @@ function QuickRecordSection({ roster, ensureData, dataCache, updateData }) {
 
   return html`
     <div>
-      <${Field} label="학생 선택">
+      <${Field} label="Student">
         <select style=${inputStyle} value=${student.id} onChange=${(e) => setStudentId(e.target.value)}>
           ${roster.map((s) => html`<option key=${s.id} value=${s.id}>${s.name}</option>`)}
         </select>
