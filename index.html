@@ -43,13 +43,20 @@ if ("serviceWorker" in navigator) {
 
   /* ---- responsive admin shell: dark icon sidebar on desktop, "more" dropdown on mobile ---- */
   .ap-shell { display: flex; align-items: stretch; gap: 0; width: 100%; min-height: 100vh; }
-  .ap-side-desktop { display: flex; flex-direction: column; align-items: center; width: 92px; flex-shrink: 0; background: #1C2B4A; padding: 20px 0; position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto; }
-  .ap-side-logo { width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid #B8935A; margin-bottom: 22px; flex-shrink: 0; box-sizing: border-box; }
-  .ap-side-item { width: 100%; padding: 12px 4px; font-size: 10.5px; color: #8A93A6; cursor: pointer; border-left: 2px solid transparent; text-align: center; line-height: 1.3; display: flex; flex-direction: column; align-items: center; gap: 4px; }
-  .ap-side-item .ic { font-size: 18px; }
-  .ap-side-item.active { color: #FAF7F1; font-weight: 700; border-left-color: #B8935A; background: rgba(255,255,255,0.05); }
-  .ap-side-item:hover { color: #FAF7F1; }
-  .ap-side-logout { margin-top: auto; background: none; border: none; color: #8A93A6; font-size: 10.5px; cursor: pointer; padding: 10px 4px; }
+  .ap-side-desktop { display: flex; flex-direction: column; width: 224px; flex-shrink: 0; background: #1C2B4A; padding: 18px 12px; position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto; box-sizing: border-box; }
+  .ap-side-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 22px; }
+  .ap-side-logo { width: 32px; height: 32px; border-radius: 8px; border: 1.5px solid #B8935A; flex-shrink: 0; box-sizing: border-box; }
+  .ap-side-wordmark { font-family: 'Newsreader', Georgia, serif; font-size: 19px; line-height: 1.1; color: #FAF7F1; white-space: nowrap; }
+  .ap-side-wordmark i { font-style: italic; color: #B8935A; }
+  .ap-side-sub { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #8A93A6; margin-top: 3px; }
+  .ap-side-item { display: flex; align-items: center; gap: 11px; padding: 9px 10px; margin-bottom: 2px; border-radius: 6px; font-size: 14px; color: #A9B2C6; cursor: pointer; box-shadow: inset 2px 0 0 transparent; }
+  .ap-side-item:hover { background: rgba(255,255,255,0.07); color: #FAF7F1; }
+  .ap-side-item.active { background: rgba(255,255,255,0.12); color: #FAF7F1; font-weight: 500; box-shadow: inset 2px 0 0 #B8935A; }
+  .ap-side-item .lb { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ap-side-item .bd { font-size: 11px; font-weight: 700; background: #B8935A; color: #14161A; border-radius: 10px; padding: 0 7px; }
+  .ap-side-foot { margin-top: auto; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; }
+  .ap-side-logout { display: flex; align-items: center; gap: 11px; width: 100%; background: none; border: none; color: #8A93A6; font-size: 13.5px; cursor: pointer; padding: 9px 10px; border-radius: 6px; text-align: left; }
+  .ap-side-logout:hover { background: rgba(255,255,255,0.07); color: #FAF7F1; }
   /* Desktop-only hover flyout — a sidebar item can carry a submenu (e.g. 학생 관리's per-student
      categories) that appears next to the icon on hover, letting a teacher jump straight to a
      category's screen instead of clicking in twice. */
@@ -62,7 +69,7 @@ if ("serviceWorker" in navigator) {
   .ap-side-flyout-item:hover { background: #FBF6EA; }
   .ap-side-mobile { display: none; }
   .ap-main { flex: 1; min-width: 0; width: 100%; }
-  .ap-main-header { padding: 16px 24px; border-bottom: 1px solid #DCD8CF; background: #fff; display: flex; align-items: baseline; gap: 10px; }
+  .ap-main-header { padding: 12px 24px; border-bottom: 1px solid #DCD8CF; background: #FAF7F1; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; }
   .ap-main-body { padding: 20px 24px 60px; }
   .ap-split { display: flex; align-items: flex-start; gap: 20px; }
   .ap-split-left { width: 260px; flex-shrink: 0; }
@@ -256,6 +263,7 @@ if ("serviceWorker" in navigator) {
     .m-bottombar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; display: flex; background: #fff; border-top: 1px solid #DCD8CF; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(20,22,26,0.06); }
     .m-bottombar button { flex: 1; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: none; border: none; font-size: 11px; font-weight: 700; color: #5B6270; cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .m-bottombar button .ic { font-size: 22px; line-height: 1; }
+    .m-bottombar button .ic, .m-sheet-row .ic { display: flex; align-items: center; justify-content: center; }
     .m-bottombar button.active { color: #1C2B4A; box-shadow: inset 0 3px 0 #B8935A; background: #FAF7F1; }
     .m-sheet { position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom)); z-index: 58; background: #FAF7F1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
     .m-sheet-head { position: sticky; top: 0; z-index: 1; padding: 16px 0 12px; background: #FAF7F1; font-size: 18px; font-weight: 700; color: #1C2B4A; }
@@ -2248,7 +2256,30 @@ function IconGrid({ items }) {
   `;
 }
 
-// Responsive admin shell: dark icon sidebar on desktop, horizontal dropdown on mobile (see .ap-* CSS)
+// SVG 선 아이콘(2026-10 UI 리디자인) — 이모지는 기기마다 모양이 달라 전문적으로 보이지 않아서, 사이드바/하단
+// 탭처럼 구조를 이루는 자리에는 이 세트를 쓴다. stroke가 currentColor라 부모의 color를 그대로 따른다.
+const ICON_PATHS = {
+  today: '<path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h14V9.5"/>',
+  students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.2 14.6c2 .7 3.3 2.5 3.3 5.4"/>',
+  classes: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  bank: '<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5A2.5 2.5 0 006.5 18H20v3H6.5"/>',
+  exam: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
+  reports: '<path d="M5 20v-9M12 20V4M19 20v-6"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  edit: '<path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  logout: '<path d="M9 4H5.5A1.5 1.5 0 004 5.5v13A1.5 1.5 0 005.5 20H9"/><path d="M15 8l4 4-4 4M19 12H9"/>',
+  left: '<path d="M14.5 5l-7 7 7 7"/>',
+  right: '<path d="M9.5 5l7 7-7 7"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+};
+function Icon({ name, size = 18, style }) {
+  return html`<svg viewBox="0 0 24 24" width=${size} height=${size} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style=${{ flex: "none", ...style }} dangerouslySetInnerHTML=${{ __html: ICON_PATHS[name] || "" }} />`;
+}
+
+// Responsive admin shell: dark sidebar on desktop, bottom tab bar on mobile (see .ap-* CSS)
 function SideNav({ items, active, onChange, onLogout }) {
   const [open, setOpen] = useState(false);
   // Two hover levels — 학생 관리's flyout lists categories, and each category's own flyout lists
@@ -2274,7 +2305,10 @@ function SideNav({ items, active, onChange, onLogout }) {
   return html`
     <div>
       <div className="ap-side-desktop">
-        <div className="ap-side-logo" role="img" aria-label="Sarah's English" style=${{ backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
+        <div className="ap-side-brand">
+          <div className="ap-side-logo" role="img" aria-label="Sarah's English" style=${{ backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
+          <div><div className="ap-side-wordmark">Sarah's <i>English</i></div><div className="ap-side-sub">Teacher OS</div></div>
+        </div>
         ${items.map((it) => html`
           <div key=${it.key} className="ap-side-item-wrap"
             onMouseEnter=${it.flyout ? (e) => { cancelHide(); setHover({ key: it.key, top: e.currentTarget.getBoundingClientRect().top }); } : undefined}
@@ -2282,14 +2316,14 @@ function SideNav({ items, active, onChange, onLogout }) {
             <div className=${"ap-side-item" + (active === it.key ? " active" : "")}
               style=${(it.flyout && !it.clickable) ? { cursor: "default" } : undefined}
               onClick=${(it.flyout && !it.clickable) ? undefined : () => { closeAll(); onChange(it.key); }}>
-              <span className="ic">${it.icon}</span><span>${it.label}${it.flyout ? " ▸" : ""}</span>
+              ${it.iconName ? html`<${Icon} name=${it.iconName} />` : html`<span>${it.icon}</span>`}<span className="lb">${it.label}${it.flyout ? " ▸" : ""}</span>${it.badge ? html`<span className="bd">${it.badge}</span>` : null}
             </div>
           </div>
         `)}
-        ${onLogout && html`<button className="ap-side-logout" onClick=${onLogout}>로그아웃</button>`}
+        ${onLogout && html`<div className="ap-side-foot"><button className="ap-side-logout" onClick=${onLogout}><${Icon} name="logout" />Log out</button></div>`}
       </div>
       ${hoverItem && html`
-        <div className="ap-side-flyout" style=${{ left: 92, top: hover.top }}
+        <div className="ap-side-flyout" style=${{ left: 224, top: hover.top }}
           onMouseEnter=${cancelHide} onMouseLeave=${() => scheduleHide(() => { setHover(null); setSubHover(null); })}>
           ${hoverItem.flyout.map((f) => html`
             <div key=${f.key} className="ap-side-flyout-item"
@@ -4046,21 +4080,21 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
   // 지우지 않고 새 상위 메뉴 안(ClassesSection/QuestionBankSection/SettingsSection)으로
   // 그대로 흡수한다 — CLAUDE.md "기존 기능 삭제 금지" 원칙, 아래 각 컴포넌트 정의부 주석에 이동표.
   const navItems = [
-    { key: "dashboard", label: "Today", icon: "🏠" },
+    { key: "dashboard", label: "Today", icon: "🏠", iconName: "today" },
     // "학생" 호버 플라이아웃(카테고리→전체 학생 아코디언)을 제거한다 — 클릭하면 곧장 이름 목록이
     // 뜨는 게 사용자가 명시한 최종 요구사항. flyout 자체를 없애면 StudentsSection/
     // AllStudentsCategoryView(로스터 전체 카테고리 보기)로 가는 유일한 진입점도 같이 사라지지만,
     // 그 두 컴포넌트는 지우지 않고 남겨둔다(§2 참고) — 나중에 다시 필요해지면 진입점만 복구하면 됨.
-    { key: "studentArea", label: "Students", icon: "👩‍🎓", clickable: true },
-    { key: "classes", label: "Classes", icon: "📝" },
-    { key: "questionBank", label: "Question Bank", icon: "📚" },
+    { key: "studentArea", label: "Students", icon: "👩‍🎓", iconName: "students", clickable: true },
+    { key: "classes", label: "Classes", icon: "📝", iconName: "classes" },
+    { key: "questionBank", label: "Question Bank", icon: "📚", iconName: "bank" },
     // Reading Analysis 재설계(Phase C, 2026-08-26 설계 승인 §8-2) — Question Bank 바로 다음에
     // 배치한다. Question Bank과 밀접하지만 독립적인 교사 콘텐츠 제작 워크플로라 최상위 항목을
     // 하나 더 두되, 새 사이드바 카테고리를 임의로 늘리지 않고 기존 IA 관례(Question Bank 옆에
     // 독립 워크플로를 두는 패턴)를 그대로 따른다.
-    { key: "readingAnalysis", label: "Exam Studio", icon: "🧪" },
-    { key: "reports", label: "Reports", icon: "📊" },
-    { key: "settingsHub", label: "Settings", icon: "⚙️" },
+    { key: "readingAnalysis", label: "Exam Studio", icon: "🧪", iconName: "exam" },
+    { key: "reports", label: "Reports", icon: "📊", iconName: "reports" },
+    { key: "settingsHub", label: "Settings", icon: "⚙️", iconName: "settings" },
   ];
 
   const activeKey = section;
@@ -4218,20 +4252,20 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     // 모바일 전용 셸 — 하단 4탭(홈/학생/빠른 기록/리포트) + "더보기"(나머지 전부). navItems는 안 건드리므로
     // 데스크탑 SideNav는 그대로다. "빠른 기록"(quickRecord)은 모바일에만 있는 탭이다.
     const MOBILE_BOTTOM = [
-      { key: "dashboard", label: "홈", icon: "🏠" },
-      { key: "studentArea", label: "학생", icon: "👩‍🎓" },
-      { key: "quickRecord", label: "빠른 기록", icon: "✏️" },
-      { key: "reports", label: "리포트", icon: "📊" },
+      { key: "dashboard", label: "Today", iconName: "today" },
+      { key: "studentArea", label: "Students", iconName: "students" },
+      { key: "quickRecord", label: "Record", iconName: "edit" },
+      { key: "reports", label: "Reports", iconName: "reports" },
     ];
     const MOBILE_MORE_DESC = {
-      classes: ["수업", "수업 일정·출결·반 관리"], questionBank: ["문제은행", "문법·독해·단어 문제, 시험지, 배정·결과"],
-      readingAnalysis: ["시험 스튜디오", "지문 분석·시험지 만들기"],
-      settingsHub: ["설정", "프로필·수업료·공지·자료실·데이터 정리"],
+      classes: ["Classes", "수업 일정·출결·반 관리"], questionBank: ["Question Bank", "문법·독해·단어 문제, 시험지, 배정·결과"],
+      readingAnalysis: ["Exam Studio", "지문 분석·시험지 만들기"],
+      settingsHub: ["Settings", "프로필·수업료·공지·자료실·데이터 정리"],
     };
     const bottomKeys = new Set(MOBILE_BOTTOM.map((t) => t.key));
     const moreItems = navItems.filter((n) => !bottomKeys.has(n.key));
     const inMore = !bottomKeys.has(activeKey);
-    const activeLabel = (section === "quickRecord" ? "빠른 기록" : ((navItems.find((n) => n.key === activeKey) || {}).label)) || "Sarah's English";
+    const activeLabel = (section === "quickRecord" ? "Quick Record" : ((navItems.find((n) => n.key === activeKey) || {}).label)) || "Sarah's English";
     const goTab = (key) => { setMoreOpen(false); handleNavChange(key); };
     return html`
       <div className="m-app" style=${{ minHeight: "100vh", background: C.ivory, paddingBottom: "calc(76px + env(safe-area-inset-bottom))" }}>
@@ -4241,24 +4275,24 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
         <div style=${{ padding: 16, overflowX: "hidden", maxWidth: "100vw", boxSizing: "border-box" }}>
           ${section === "quickRecord" ? html`<${QuickRecordSection} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />` : body}
         </div>
-        <nav className="m-bottombar" aria-label="메인 메뉴">
+        <nav className="m-bottombar" aria-label="Main menu">
           ${MOBILE_BOTTOM.map((t) => html`
-            <button key=${t.key} className=${!moreOpen && activeKey === t.key ? "active" : ""} onClick=${() => goTab(t.key)}><span className="ic">${t.icon}</span>${t.label}</button>
+            <button key=${t.key} className=${!moreOpen && activeKey === t.key ? "active" : ""} onClick=${() => goTab(t.key)}><span className="ic"><${Icon} name=${t.iconName} size=${22} /></span>${t.label}</button>
           `)}
-          <button className=${moreOpen || inMore ? "active" : ""} onClick=${() => setMoreOpen((v) => !v)}><span className="ic">☰</span>더보기</button>
+          <button className=${moreOpen || inMore ? "active" : ""} onClick=${() => setMoreOpen((v) => !v)}><span className="ic"><${Icon} name="more" size=${22} /></span>More</button>
         </nav>
         ${moreOpen && html`
-          <div className="m-sheet" role="dialog" aria-label="더보기">
-            <div className="m-sheet-head">더보기</div>
+          <div className="m-sheet" role="dialog" aria-label="More">
+            <div className="m-sheet-head">More</div>
             ${moreItems.map((n) => html`
               <button key=${n.key} className=${"m-sheet-row" + (activeKey === n.key ? " active" : "")} onClick=${() => goTab(n.key)}>
-                <span className="ic">${n.icon}</span>
+                <span className="ic"><${Icon} name=${n.iconName} size=${24} /></span>
                 <span>${(MOBILE_MORE_DESC[n.key] || [n.label])[0]}${MOBILE_MORE_DESC[n.key] && html`<span className="sub">${MOBILE_MORE_DESC[n.key][1]}</span>`}</span>
               </button>
             `)}
             <div style=${{ margin: "14px 0 10px" }}><${NotifyButton} onEnable=${addTeacherFcmToken} /></div>
-            <button className="m-sheet-row" onClick=${onLogout} style=${{ color: C.danger }}><span className="ic">🚪</span><span>로그아웃</span></button>
-            <button className="m-sheet-close" onClick=${() => setMoreOpen(false)}>닫기</button>
+            <button className="m-sheet-row" onClick=${onLogout} style=${{ color: C.danger }}><span className="ic"><${Icon} name="logout" size=${24} /></span><span>Log out</span></button>
+            <button className="m-sheet-close" onClick=${() => setMoreOpen(false)}>Close</button>
           </div>
         `}
       </div>
@@ -4270,10 +4304,13 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
       <${Shell}
         side=${html`<${SideNav} items=${navItems} active=${activeKey} onChange=${handleNavChange} onLogout=${onLogout} />`}
         header=${html`
-          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style=${{ ...serif, fontSize: 18, color: C.navy, fontWeight: 700 }}>Sarah's English Teacher OS</div>
-              <div style=${{ fontSize: 12, color: C.slate }}>${(navItems.find((n) => n.key === activeKey) || {}).label || ""}</div>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%" }}>
+            <div style=${{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, fontSize: 13, color: C.slate }}>
+              ${section === "studentArea" && selected ? html`
+                <button onClick=${() => handleNavChange("studentArea")} style=${{ background: "none", border: "none", padding: 0, color: C.slate, cursor: "pointer", fontSize: 13 }}>Students</button>
+                <span>/</span>
+                <b style=${{ fontSize: 16, color: C.ink, fontWeight: 700 }}>${selected.name}</b>
+              ` : html`<b style=${{ fontSize: 16, color: C.ink, fontWeight: 700 }}>${(navItems.find((n) => n.key === activeKey) || {}).label || ""}</b>`}
             </div>
             <${NotifyButton} onEnable=${addTeacherFcmToken} />
           </div>
