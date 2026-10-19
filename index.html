@@ -4304,6 +4304,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     body = html`<${TeacherCenterSection} key="tc-home" roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialView="home"
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); setStudentCategory("homework"); }}
       onSelectStudentAssessment=${(id) => { setStudentDeepTarget({ studentId: id, tab: "assessment", nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
+      onSelectStudentStudy=${(id, sub) => { setStudentDeepTarget({ studentId: id, tab: "study", studySub: sub, nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
       onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
       onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }}
       teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
@@ -4423,6 +4424,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
     body = html`<${TeacherCenterSection} key="tc-home-fallback" roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} initialView="home"
       onSelectStudent=${(id) => { setSection("studentArea"); setSelectedStudentId(id); setStudentCategory("homework"); }}
       onSelectStudentAssessment=${(id) => { setStudentDeepTarget({ studentId: id, tab: "assessment", nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
+      onSelectStudentStudy=${(id, sub) => { setStudentDeepTarget({ studentId: id, tab: "study", studySub: sub, nonce: Date.now() }); setSection("studentArea"); setSelectedStudentId(id); setStudentCategory(null); }}
       onWriteDailyReport=${(id, date) => { setReportsTarget({ studentId: id, kind: "daily", date: date || today(), nonce: Date.now() }); setSection("reports"); }}
       onWriteMonthlyReport=${(id, month) => { setReportsTarget({ studentId: id, kind: "monthly", month, nonce: Date.now() }); setSection("reports"); }}
       teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
@@ -15546,7 +15548,7 @@ const HW_QUICK_FILTERS = [
 // 2026-08-27 (user request). teacherTodos / saveTeacherTodos are threaded straight through from
 // App() — same collection/writer TeacherOverview's existing 할 일 widget already uses, nothing
 // new is created.
-function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, onWriteMonthlyReport, initialView, teacherTodos, saveTeacherTodos }) {
+function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSelectStudent, onSelectStudentAssessment, onSelectStudentStudy, onWriteDailyReport, onWriteMonthlyReport, initialView, teacherTodos, saveTeacherTodos }) {
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState(initialView || "home"); // "home" | "board"
   // Teacher OS Dashboard(9-D 재사용) — examAttempts/examPapers를 합쳐 "최근 시험" 카드에 Phase 8
@@ -15589,7 +15591,7 @@ function TeacherCenterSection({ roster, ensureData, dataCache, updateData, onSel
 
   return view === "board"
     ? html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onBack=${() => setView("home")} onSelectStudent=${onSelectStudent} />`
-    : html`<${TeacherCenterHome} roster=${roster} dataCache=${dataCache} updateData=${updateData} onOpenBoard=${() => setView("board")} onSelectStudent=${onSelectStudent} onSelectStudentAssessment=${onSelectStudentAssessment} onWriteDailyReport=${onWriteDailyReport} onWriteMonthlyReport=${onWriteMonthlyReport}
+    : html`<${TeacherCenterHome} roster=${roster} dataCache=${dataCache} updateData=${updateData} onOpenBoard=${() => setView("board")} onSelectStudent=${onSelectStudent} onSelectStudentAssessment=${onSelectStudentAssessment} onSelectStudentStudy=${onSelectStudentStudy} onWriteDailyReport=${onWriteDailyReport} onWriteMonthlyReport=${onWriteMonthlyReport}
         examAttempts=${examData.attempts} examPapers=${examData.papers}
         teacherTodos=${teacherTodos} saveTeacherTodos=${saveTeacherTodos} />`;
 }
@@ -15743,7 +15745,7 @@ function TeacherTodoPanel({ todos, saveTodos, roster, todayStr, lockedStudentId,
 // 미작성자만 보였음)의 상태를 보여주고 기존 화면으로 바로 연결한다.
 // 새 Firestore 컬렉션이나 학생 문서 필드는 하나도 추가하지 않는다 — teacherTodos에 optional
 // 필드 몇 개(TEACHER_TODO_TYPES 주석 참고)를 얹은 것이 유일한 스키마 확장이다.
-function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelectStudent, onSelectStudentAssessment, onWriteDailyReport, onWriteMonthlyReport, examAttempts, examPapers, teacherTodos, saveTeacherTodos }) {
+function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelectStudent, onSelectStudentAssessment, onSelectStudentStudy, onWriteDailyReport, onWriteMonthlyReport, examAttempts, examPapers, teacherTodos, saveTeacherTodos }) {
   const svc = window.SarahServices;
   const isMobile = useIsMobile();
   // Today 단순 보기(2026-10 UI 리디자인) — 기본은 "지금 해야 할 일" 한 목록 + 오늘 수업 + 할 일만 보여주고, 기존의
@@ -16090,14 +16092,22 @@ function TeacherCenterHome({ roster, dataCache, updateData, onOpenBoard, onSelec
   // "Show all details"(2026-10 UI 리디자인 2차) — 위의 단순 보기와 겹치던 카드(할 일, 오늘 수업, 리포트 미작성, 밀린 항목,
   // 로드맵, 상담, 수업 준비)는 모두 뺐고, 단순 보기에 없는 "오늘 숙제 현황 / 오늘 응시 결과 / 최근 시험" 세 가지만 남겼다.
   const hwStat = (label, n, tone) => html`<div className="tdy-stat"><div className="v" style=${{ color: tone && n > 0 ? C.danger : C.ink }}>${n}</div><div className="l">${label}</div></div>`;
+  // 시험 결과 줄을 누르면 그 시험이 있는 페이지로 간다 — 단어시험은 학생 상세 Learning → Vocabulary, 그 외 시험은
+  // Assessment(Timeline)로 열린다(기존 딥링크 채널 deepTarget 재사용, 없으면 학생 상세로 대체).
+  const openResult = (r) => {
+    if (r.kind === "vocab" && onSelectStudentStudy) onSelectStudentStudy(r.studentId, "vocab");
+    else if (r.kind !== "vocab" && onSelectStudentAssessment) onSelectStudentAssessment(r.studentId);
+    else onSelectStudent(r.studentId);
+  };
   const resultRow = (r, i, withDate) => {
     const pct = r.total ? Math.round((r.score / r.total) * 100) : null;
     const pass = r.kind === "vocab" && pct != null ? pct >= svc.vocabularyService.passThreshold(r.title) : null;
     return html`
-      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => onSelectStudent(r.studentId)} onKeyDown=${(e) => { if (e.key === "Enter") onSelectStudent(r.studentId); }}>
+      <div key=${i} className="tdy-row tdy-click" role="button" tabIndex="0" onClick=${() => openResult(r)} onKeyDown=${(e) => { if (e.key === "Enter") openResult(r); }}>
         <div className="tdy-main"><b>${r.studentName}</b><span>${r.title}${withDate && r.date ? " · " + fmtDate(r.date) : ""}</span></div>
         <span style=${{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>${r.score}/${r.total}${pct != null ? ` (${pct}%)` : ""}</span>
         ${pass != null ? html`<span className=${"ap-pill " + (pass ? "ok" : "bad")}>${pass ? "Pass" : "Fail"}</span>` : null}
+        <span className="tdy-chev2"><${Icon} name="right" size=${16} /></span>
       </div>
     `;
   };
