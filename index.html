@@ -569,6 +569,7 @@ if ("serviceWorker" in navigator) {
     .st-two, .hw-summary { max-width: 900px; }
   }
   /* 학생 화면 목록+상세 나란히(데스크톱) */
+  .vr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; align-items: start; }
   .att-grid { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: start; }
   @media (min-width: 1100px) { .att-grid { grid-template-columns: minmax(0, 1fr) 400px; } .att-side { position: sticky; top: 12px; } }
   .ms-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
@@ -16446,7 +16447,7 @@ function ClassesSection({ roster, saveRosterList, ensureData, dataCache, updateD
       <${Tabs} tabs=${CLASSES_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "schedule" && html`<${MasterScheduleView} roster=${roster} saveRosterList=${saveRosterList} />`}
       ${tab === "attendance" && html`<${AttendanceOverview} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} />`}
-      ${tab === "homeworkReview" && html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onBack=${() => setTab("schedule")} onSelectStudent=${onSelectStudent} />`}
+      ${tab === "homeworkReview" && html`<${TeacherCenterHomeworkBoard} roster=${roster} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />`}
       ${tab === "vocabReview" && html`<${VocabReviewSection} roster=${roster} dataCache=${dataCache} />`}
       ${tab === "assessments" && html`<${ExamAssignmentManager} roster=${roster} updateData=${updateData} />`}
       ${tab === "levelTest" && html`<${LevelTestBookingsOverview} bookings=${levelTestBookings} saveBookingsList=${saveBookingsList}
@@ -16505,11 +16506,11 @@ function VocabReviewSection({ roster, dataCache }) {
         `)}
       </div>
 
-      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : shown.map((r) => {
+      ${shown.length === 0 ? html`<${Empty} text="표시할 학생이 없어요." />` : html`<div className="vr-grid">${shown.map((r) => {
         const isOpen = expandedId === r.id;
         const history = isOpen ? svc.computeVocabDailyHistory((dataCache && dataCache[r.id]) || null) : [];
         return html`
-        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 9, cursor: "pointer" }}
+        <div key=${r.id} style=${{ background: VU.surface, border: `1px solid ${VU.border}`, borderRadius: 12, padding: "13px 14px", marginBottom: 0, cursor: "pointer" }}
           onClick=${() => setExpandedId(isOpen ? null : r.id)}>
           <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style=${{ fontSize: 13.5, fontWeight: 700, color: VU.ink }}>${r.name}</div>
@@ -16544,7 +16545,7 @@ function VocabReviewSection({ roster, dataCache }) {
             </div>
           `}
         </div>
-      `})}
+      `})}</div>`}
     </div>
   `;
 }
@@ -16633,10 +16634,10 @@ function TeacherCenterHomeworkBoard({ roster, dataCache, updateData, onBack, onS
 
   return html`
     <div>
-      <${BackBtn} onClick=${onBack} />
-      <div style=${{ ...serif, fontSize: 19, color: C.navy, margin: "8px 0 10px" }}>숙제 현황</div>
-
-      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+      ${onBack && html`<${BackBtn} onClick=${onBack} />`}
+      <div style=${{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", margin: "0 0 10px" }}>
+      <div style=${{ ...serif, fontSize: 19, color: C.navy }}>숙제 현황</div>
+      <div style=${{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         ${HW_QUICK_FILTERS.map((f) => html`
           <button key=${f.key} onClick=${() => setQuickFilter(f.key)} style=${{
             padding: "6px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -16645,6 +16646,7 @@ function TeacherCenterHomeworkBoard({ roster, dataCache, updateData, onBack, onS
             color: quickFilter === f.key ? C.gold : C.slate,
           }}>${f.label}</button>
         `)}
+      </div>
       </div>
 
       <${FilterBar}>
