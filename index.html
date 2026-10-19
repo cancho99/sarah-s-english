@@ -18372,7 +18372,7 @@ function DailyReportWorkspace({ student, data, date, updateData, examAttemptResu
       </div>
 
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>수업 평가</div>
-      <div style=${{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 16 }}>
+      <div style=${{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
         ${svc.reportService.DAILY_RATING_KEYS.map(({ key, label }) => html`
           <div key=${key} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.ivory, padding: "6px 10px", borderRadius: 4 }}>
             <span style=${{ fontSize: 12 }}>${label}</span>
