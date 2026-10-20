@@ -4675,6 +4675,7 @@ function TeacherDash({ roster, saveRosterList, updateStudentRosterEntry, selecte
 const SETTINGS_SUBTABS = [
   { key: "profile", icon: "👤", label: "Profile" },
   { key: "announcements", icon: "📢", label: "Announcements" },
+  { key: "notifications", icon: "🔔", label: "알림 문구" },
   // 2026-10 IA 개편 — Business는 최상위 Business 메뉴로, Shared Materials는 Question Bank의 Materials 탭으로 옮겼다.
   { key: "data", icon: "🗄", label: "Data" },
   // 2026-09-03 — 레거시 Reading Question Bank(ReadingQuestionBankView) 진입점 제거. 컴포넌트
@@ -4688,11 +4689,162 @@ function SettingsSection({ teacherAuth, saveTeacherAuthGlobal, roster, ensureDat
       <${Tabs} tabs=${SETTINGS_SUBTABS} active=${tab} onChange=${setTab} />
       ${tab === "profile" && html`<${TeacherSettingsSection} teacherAuth=${teacherAuth} saveTeacherAuthGlobal=${saveTeacherAuthGlobal} />`}
       ${tab === "announcements" && html`<${SettingsAnnouncementsPanel} announcement=${announcement} saveAnnouncement=${saveAnnouncement} />`}
+      ${tab === "notifications" && html`<${NotificationTemplatesPanel} />`}
       ${tab === "data" && html`
         <div>
           <${SettingsDataPanel} roster=${roster} ensureData=${ensureData} dataCache=${dataCache} updateData=${updateData} onSelectStudent=${onSelectStudent} />
         </div>
       `}
+    </div>
+  `;
+}
+
+// 푸시 알림 문구 편집 — 기본 문구는 functions/notificationTemplates.js의 DEFAULTS와 같아야 한다.
+// 저장은 sarahsEnglishMeta/main.notificationTemplates[id] = { emoji, title, body } (merge 쓰기, 다른
+// 필드는 건드리지 않음). 비어 있는 항목은 서버가 기본 문구를 쓴다. 변수: {name} {detail} {count} {title} {time}
+const NOTIFICATION_CATALOG = {
+  homework_upload: { group: "선생님", label: "학생이 숙제 인증샷 업로드", vars: "name", emoji: "📸", title: "{name} 학생", body: "숙제 인증샷을 올렸어요" },
+  study_start: { group: "선생님", label: "학생이 공부 타이머 시작", vars: "name", emoji: "⏱", title: "{name} 학생", body: "공부를 시작했어요" },
+  study_resume: { group: "선생님", label: "학생이 공부 타이머 이어서 시작", vars: "name", emoji: "⏱", title: "{name} 학생", body: "공부를 이어서 시작했어요" },
+  study_pause: { group: "선생님", label: "학생이 공부 일시정지", vars: "name", emoji: "⏸", title: "{name} 학생", body: "공부를 일시정지했어요" },
+  study_log_saved: { group: "선생님", label: "학생이 공부 기록 저장", vars: "name, detail=과목·분", emoji: "📗", title: "{name} 학생", body: "공부 기록을 저장했어요" },
+  homework_done: { group: "선생님", label: "학생이 숙제 완료 표시", vars: "name, detail=숙제 내용", emoji: "✅", title: "{name} 학생", body: "숙제를 완료 표시했어요" },
+  mock_exam_submit: { group: "선생님", label: "학생이 모의고사 채점 제출", vars: "name, detail=점수", emoji: "📄", title: "{name} 학생", body: "모의고사 채점을 제출했어요" },
+  student_login: { group: "선생님", label: "학생 로그인", vars: "name", emoji: "👋", title: "{name} 학생", body: "로그인했어요" },
+  parent_login: { group: "선생님", label: "학부모 로그인", vars: "name", emoji: "👪", title: "{name} 학생 학부모님", body: "로그인했어요" },
+  consult_request: { group: "선생님", label: "학부모 상담 신청", vars: "name, detail=상담 방식", emoji: "💬", title: "{name} 학생 학부모님", body: "상담을 신청했어요" },
+  level_test_booking: { group: "선생님", label: "레벨테스트·상담 예약 문의", vars: "name, detail=예약 내용", emoji: "🗓", title: "{name} 님", body: "레벨테스트·상담 예약 문의를 남겼어요" },
+  vocab_test_start: { group: "선생님", label: "학생이 단어 시험 시작", vars: "name, detail=시험 이름", emoji: "🔤", title: "{name} 학생", body: "단어 시험을 시작했어요" },
+  vocab_test_submit: { group: "선생님", label: "학생이 단어 시험 제출", vars: "name, detail=점수", emoji: "🔤", title: "{name} 학생", body: "단어 시험을 제출했어요" },
+  mock_test_start: { group: "선생님", label: "학생이 모의고사 채점 시작", vars: "name, detail=시험 이름", emoji: "📄", title: "{name} 학생", body: "모의고사 채점을 시작했어요" },
+  exam_test_start: { group: "선생님", label: "학생이 시험 시작", vars: "name, detail=시험 이름", emoji: "📝", title: "{name} 학생", body: "시험을 시작했어요" },
+  exam_test_submit: { group: "선생님", label: "학생이 시험 제출", vars: "name, detail=점수", emoji: "📝", title: "{name} 학생", body: "시험을 제출했어요" },
+  reading_log_submit: { group: "선생님", label: "학생이 Reading Log 제출", vars: "name", emoji: "📖", title: "{name} 학생", body: "Reading Log를 제출했어요" },
+  homework_assigned: { group: "학생", label: "선생님이 새 숙제 등록", vars: "detail=숙제 내용", emoji: "📝", title: "새 숙제가 등록됐어요", body: "숙제 내용을 확인해 보세요." },
+  mock_exam_assigned: { group: "학생", label: "선생님이 새 모의고사 등록", vars: "detail=시험 이름", emoji: "📄", title: "새 모의고사가 등록됐어요", body: "모의고사가 등록됐어요." },
+  vocab_test_assigned: { group: "학생", label: "새 단어 재시험 등록", vars: "detail=시험 이름", emoji: "🔤", title: "새 단어 재시험이 등록됐어요", body: "단어 재시험이 등록됐어요." },
+  reminder_homework: { group: "자동 리마인더", label: "오늘 마감 숙제 미완료 (학생·학부모, 15~23시 매시간)", vars: "name, detail=숙제 목록", emoji: "", title: "{name} 학생", body: "오늘 숙제를 아직 안 했어요" },
+  reminder_mock: { group: "자동 리마인더", label: "모의고사 답안 미제출 (학생·학부모)", vars: "name, detail=시험 목록", emoji: "", title: "{name} 학생", body: "모의고사 답을 아직 안 올렸어요" },
+  reminder_teacher_summary: { group: "자동 리마인더", label: "선생님께 미완료 학생 요약", vars: "count, detail=학생 목록", emoji: "📌", title: "아직 안 한 게 있는 학생 {count}명", body: "{detail}" },
+  retest_now: { group: "자동 리마인더", label: "단어 재시험 시각 정각 (학생·선생님)", vars: "name, title, time", emoji: "🔤", title: "{name} 학생", body: "지금 \"{title}\" 단어 재시험 시간이에요 ({time})" },
+  retest_5min: { group: "자동 리마인더", label: "단어 재시험 5분 전 (학생·선생님)", vars: "name, title, time", emoji: "🔤", title: "{name} 학생", body: "\"{title}\" 단어 재시험이 5분 후예요 ({time})" },
+  test: { group: "기타", label: "🔔 알림 받기 테스트", vars: "(변수 없음)", emoji: "🔔", title: "테스트 알림", body: "알림이 정상적으로 도착했어요!" },
+};
+const NOTIFICATION_EMOJI_CHOICES = ["📸","⏱","⏸","📗","✅","📄","👋","👪","💬","🗓","🔤","📝","📖","📌","🔔","⏰","🎉","👏","🌟","🔥","💪","📚","✏️","📢","❗","⚠️","😊","🙌","🚀","💯","🏆","🎯"];
+
+function NotificationTemplatesPanel() {
+  const [custom, setCustom] = useState(null); // 저장된 값
+  const [draft, setDraft] = useState({}); // 편집 중인 값 { id: {emoji,title,body} }
+  const [openEmoji, setOpenEmoji] = useState(null);
+  const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await window.__getDoc(window.__doc(window.__db, META_COLLECTION, META_DOC_ID));
+        const t = (snap.exists() && snap.data().notificationTemplates) || {};
+        setCustom(t);
+        setDraft(t);
+      } catch (e) { setCustom({}); setStatus("불러오기에 실패했어요. 기본 문구가 표시돼요."); }
+    })();
+  }, []);
+
+  const cur = (id) => {
+    const d = NOTIFICATION_CATALOG[id];
+    const c = draft[id] || {};
+    return {
+      emoji: typeof c.emoji === "string" ? c.emoji : d.emoji,
+      title: typeof c.title === "string" ? c.title : d.title,
+      body: typeof c.body === "string" ? c.body : d.body,
+    };
+  };
+  function setField(id, field, value) {
+    setDraft((p) => ({ ...p, [id]: { ...cur(id), ...(p[id] || {}), [field]: value } }));
+    setStatus("");
+  }
+  function resetOne(id) {
+    setDraft((p) => { const n = { ...p }; delete n[id]; return n; });
+    setStatus("");
+  }
+  async function save() {
+    setSaving(true);
+    try {
+      // 기본값과 같은 항목은 저장하지 않는다(나중에 기본 문구가 바뀌어도 따라가도록).
+      const out = {};
+      Object.keys(draft).forEach((id) => {
+        const d = NOTIFICATION_CATALOG[id];
+        if (!d) return;
+        const v = cur(id);
+        if (v.emoji !== d.emoji || v.title !== d.title || v.body !== d.body) out[id] = v;
+      });
+      // mergeFields: 이 필드 하나만 통째로 교체(기본값으로 되돌린 항목이 남지 않게). 다른 필드는 건드리지 않는다.
+      await window.__setDoc(window.__doc(window.__db, META_COLLECTION, META_DOC_ID), { notificationTemplates: out }, { mergeFields: ["notificationTemplates"] });
+      setCustom(out);
+      setDraft(out);
+      setStatus("저장됐어요. 다음 알림부터 바로 적용돼요.");
+    } catch (e) {
+      console.error("save notificationTemplates", e);
+      setStatus("저장에 실패했어요. 잠시 후 다시 시도해 주세요.");
+    }
+    setSaving(false);
+  }
+
+  if (custom === null) return html`<${Card}><div style=${{ fontSize: 12.5, color: C.slate }}>불러오는 중...</div><//>`;
+  const groups = [];
+  Object.keys(NOTIFICATION_CATALOG).forEach((id) => {
+    const g = NOTIFICATION_CATALOG[id].group;
+    let grp = groups.find((x) => x.name === g);
+    if (!grp) { grp = { name: g, ids: [] }; groups.push(grp); }
+    grp.ids.push(id);
+  });
+
+  return html`
+    <div>
+      <${Card}>
+        <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>알림 문구 설정</div>
+        <div style=${{ fontSize: 11.5, color: C.slate, lineHeight: 1.6 }}>
+          폰으로 오는 모든 알림의 이모티콘·제목·내용을 바꿀 수 있어요. 이모티콘을 비우면 이모티콘 없이 가요.
+          제목/내용에 <b>{name}</b>(학생 이름), <b>{detail}</b>(숙제 내용·점수 등), <b>{count}</b>, <b>{title}</b>, <b>{time}</b> 을 넣으면 알림이 갈 때 실제 값으로 바뀌어요.
+          "내용"을 비워두면 기존처럼 상황에 맞는 내용이 자동으로 들어가요.
+        </div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+          <${Button} variant="gold" style=${{ padding: "8px 20px", fontSize: 13 }} onClick=${save} disabled=${saving}>${saving ? "저장 중..." : "저장"}<//>
+          ${status && html`<span style=${{ fontSize: 12, color: C.navy }}>${status}</span>`}
+        </div>
+      <//>
+      ${groups.map((g) => html`
+        <div key=${g.name} style=${{ marginTop: 14 }}>
+          <div style=${{ fontSize: 12, fontWeight: 700, color: C.slate, margin: "0 2px 6px" }}>${g.name === "선생님" ? "👩‍🏫 선생님 폰으로 오는 알림" : g.name === "학생" ? "🎒 학생 폰으로 오는 알림" : g.name}</div>
+          ${g.ids.map((id) => {
+            const d = NOTIFICATION_CATALOG[id];
+            const v = cur(id);
+            const changed = v.emoji !== d.emoji || v.title !== d.title || v.body !== d.body;
+            return html`
+              <${Card} key=${id} style=${{ marginBottom: 8 }}>
+                <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>${d.label}${changed ? html` <span style=${{ color: C.gold, fontWeight: 600 }}>· 수정됨</span>` : ""}</div>
+                <div style=${{ fontSize: 10.5, color: C.slate, margin: "2px 0 8px" }}>쓸 수 있는 변수: ${d.vars}</div>
+                <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button type="button" onClick=${() => setOpenEmoji(openEmoji === id ? null : id)} style=${{ width: 44, height: 40, fontSize: 20, border: "1px solid #d8dde6", borderRadius: 8, background: "#fff", cursor: "pointer", flexShrink: 0 }}>${v.emoji || "＋"}</button>
+                  <input style=${{ ...inputStyle, flex: 1, minWidth: 0 }} value=${v.title} onChange=${(e) => setField(id, "title", e.target.value)} placeholder="제목" />
+                </div>
+                ${openEmoji === id && html`
+                  <div style=${{ display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0", padding: 8, border: "1px solid #e6e9ef", borderRadius: 8, background: "#fafbfc" }}>
+                    ${NOTIFICATION_EMOJI_CHOICES.map((em) => html`<button key=${em} type="button" onClick=${() => { setField(id, "emoji", em); setOpenEmoji(null); }} style=${{ width: 36, height: 36, fontSize: 19, border: em === v.emoji ? "2px solid " + C.gold : "1px solid transparent", borderRadius: 8, background: "#fff", cursor: "pointer" }}>${em}</button>`)}
+                    <button type="button" onClick=${() => { setField(id, "emoji", ""); setOpenEmoji(null); }} style=${{ height: 36, padding: "0 10px", fontSize: 12, border: "1px solid #d8dde6", borderRadius: 8, background: "#fff", cursor: "pointer" }}>없음</button>
+                    <input style=${{ ...inputStyle, width: 130, height: 36, padding: "0 8px" }} placeholder="직접 입력" maxLength="4" onChange=${(e) => setField(id, "emoji", e.target.value)} />
+                  </div>
+                `}
+                <textarea style=${{ ...inputStyle, minHeight: 52, marginTop: 8 }} value=${v.body} onChange=${(e) => setField(id, "body", e.target.value)} placeholder="내용" />
+                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6, gap: 8 }}>
+                  <span style=${{ fontSize: 11, color: C.slate, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>미리보기: ${(v.emoji ? v.emoji + " " : "") + v.title.replace(/\{name\}/g, "민지")}</span>
+                  ${changed && html`<button type="button" onClick=${() => resetOne(id)} style=${{ fontSize: 11, border: "none", background: "none", color: C.slate, textDecoration: "underline", cursor: "pointer", flexShrink: 0 }}>기본값으로</button>`}
+                </div>
+              <//>
+            `;
+          })}
+        </div>
+      `)}
     </div>
   `;
 }

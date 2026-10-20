@@ -19,6 +19,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
+const { DEFAULTS: NOTI_DEFAULTS, renderNotification } = require("./notificationTemplates");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -2083,49 +2084,15 @@ exports.notifyTeacher = onRequest(
       const tokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
       if (tokens.length === 0) { res.status(200).json({ sent: 0, reason: "no-teacher-tokens" }); return; }
 
-      // title/body per event kind. `detail` (student-supplied, e.g. homework content, a score,
-      // a subject+minutes string) is optional extra context used as the body when present —
-      // every kind still has a sensible default body so older clients that don't send detail work fine.
-      const TITLES = {
-        homework_upload: `📸 ${studentName} 학생이 숙제 인증샷을 올렸어요`,
-        study_start: `⏱ ${studentName} 학생이 공부를 시작했어요`,
-        study_resume: `⏱ ${studentName} 학생이 공부를 이어서 시작했어요`,
-        study_pause: `⏸ ${studentName} 학생이 공부를 일시정지했어요`,
-        study_log_saved: `📗 ${studentName} 학생이 공부 기록을 저장했어요`,
-        homework_done: `✅ ${studentName} 학생이 숙제를 완료 표시했어요`,
-        mock_exam_submit: `📄 ${studentName} 학생이 모의고사 채점을 제출했어요`,
-        student_login: `👋 ${studentName} 학생이 로그인했어요`,
-        parent_login: `👪 ${studentName} 학생 학부모님이 로그인했어요`,
-        consult_request: `💬 ${studentName} 학생 학부모님이 상담을 신청했어요`,
-        level_test_booking: `🗓 ${studentName} 님이 레벨테스트·상담 예약 문의를 남겼어요`,
-        vocab_test_start: `🔤 ${studentName} 학생이 단어 시험을 시작했어요`,
-        vocab_test_submit: `🔤 ${studentName} 학생이 단어 시험을 제출했어요`,
-        mock_test_start: `📄 ${studentName} 학생이 모의고사 채점을 시작했어요`,
-        exam_test_start: `📝 ${studentName} 학생이 시험을 시작했어요`,
-        exam_test_submit: `📝 ${studentName} 학생이 시험을 제출했어요`,
-        reading_log_submit: `📖 ${studentName} 학생이 Reading Log를 제출했어요`,
-      };
-      const DEFAULT_BODIES = {
-        homework_upload: "인증샷을 확인해 보세요.",
-        study_start: "공부 타이머를 시작했어요.",
-        study_resume: "공부 타이머를 이어서 시작했어요.",
-        study_pause: "공부 타이머를 일시정지했어요.",
-        study_log_saved: "공부 기록을 저장했어요.",
-        homework_done: "숙제를 완료로 표시했어요.",
-        mock_exam_submit: "모의고사 결과를 저장했어요.",
-        student_login: "학생용 화면에 접속했어요.",
-        parent_login: "학부모용 화면에 접속했어요.",
-        consult_request: "상담 신청 내용을 확인해 보세요.",
-        level_test_booking: "예약 문의 내용을 확인해 보세요.",
-        vocab_test_start: "단어 시험을 시작했어요.",
-        vocab_test_submit: "단어 시험 결과를 확인해 보세요.",
-        mock_test_start: "모의고사 채점 입력을 시작했어요.",
-        exam_test_start: "시험을 시작했어요.",
-        exam_test_submit: "시험 결과를 확인해 보세요.",
-        reading_log_submit: "Reading Log 제출 내용을 확인해 보세요.",
-      };
-      const title = TITLES[kind] || "🔔 테스트 알림";
-      const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "알림이 정상적으로 도착했어요!";
+      // title/body는 notificationTemplates.js의 기본 문구 + 선생님이 설정 화면에서 바꾼 문구
+      // (meta 문서의 notificationTemplates). `detail`(학생이 보낸 숙제 내용·점수 등)은 선택적
+      // 추가 정보라, 선생님이 본문을 따로 바꾸지 않았다면 기존처럼 본문으로 쓴다.
+      const custom = metaSnap.exists ? metaSnap.data().notificationTemplates : null;
+      const id = NOTI_DEFAULTS[kind] ? kind : "test";
+      const detailStr = detail ? String(detail).slice(0, 120) : "";
+      const r = renderNotification(id, custom, { name: studentName, detail: detailStr });
+      const title = r.title;
+      const body = r.hasCustomBody ? r.body : (detailStr ? `${r.defaultBody}\n${detailStr}` : r.defaultBody);
       console.log("notifyTeacher", JSON.stringify({ studentName, kind, detail, title, body }));
 
       const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
@@ -2151,18 +2118,16 @@ exports.notifyStudent = onRequest(
     const { token, kind, detail } = req.body || {};
     if (!token || !kind) { res.status(400).json({ error: "token, kind가 필요합니다." }); return; }
 
-    const TITLES = {
-      homework_assigned: "📝 새 숙제가 등록됐어요",
-      mock_exam_assigned: "📄 새 모의고사가 등록됐어요",
-      vocab_test_assigned: "🔤 새 단어 재시험이 등록됐어요",
-    };
-    const DEFAULT_BODIES = {
-      homework_assigned: "숙제 내용을 확인해 보세요.",
-      mock_exam_assigned: "모의고사가 등록됐어요.",
-      vocab_test_assigned: "단어 재시험이 등록됐어요.",
-    };
-    const title = TITLES[kind] || "🔔 새 알림";
-    const body = (detail ? String(detail).slice(0, 120) : "") || DEFAULT_BODIES[kind] || "새 소식이 있어요.";
+    const id = NOTI_DEFAULTS[kind] ? kind : "test";
+    const detailStr = detail ? String(detail).slice(0, 120) : "";
+    let custom = null;
+    try {
+      const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+      custom = metaSnap.exists ? metaSnap.data().notificationTemplates : null;
+    } catch (e) { console.error("notifyStudent: templates load failed", e); }
+    const r = renderNotification(id, custom, { detail: detailStr });
+    const title = r.title;
+    const body = r.hasCustomBody ? r.body : (detailStr ? `${r.defaultBody}\n${detailStr}` : r.defaultBody);
 
     try {
       await admin.messaging().send({ token, data: { title, body } });
@@ -2195,7 +2160,13 @@ exports.sendTestNotification = onRequest(
     const { token } = req.body || {};
     if (!token) { res.status(400).json({ error: "token이 필요합니다." }); return; }
     try {
-      await admin.messaging().send({ token, data: { title: "🔔 테스트 알림", body: "알림이 정상적으로 도착했어요!" } });
+      let custom = null;
+      try {
+        const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
+        custom = metaSnap.exists ? metaSnap.data().notificationTemplates : null;
+      } catch (e) { console.error("sendTestNotification: templates load failed", e); }
+      const r = renderNotification("test", custom, {});
+      await admin.messaging().send({ token, data: { title: r.title, body: r.hasCustomBody ? r.body : r.defaultBody } });
       res.status(200).json({ ok: true });
     } catch (e) {
       res.status(500).json({ error: "테스트 알림 전송 중 오류가 발생했습니다.", detail: String(e) });
@@ -2536,6 +2507,7 @@ exports.homeworkReminderCheck = onSchedule(
     const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
     const teacherTokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
     const namesStillPending = [];
+    const customTpl = metaSnap.exists ? metaSnap.data().notificationTemplates : null;
 
     for (const student of roster) {
       try {
@@ -2554,13 +2526,17 @@ exports.homeworkReminderCheck = onSchedule(
         if (tokens.length === 0) continue;
 
         if (pendingHw.length > 0) {
-          const title = `${student.name} 학생, 오늘 숙제를 아직 안 했어요`;
-          const body = pendingHw.map((h) => h.content).join(", ").slice(0, 200);
+          const detailStr = pendingHw.map((h) => h.content).join(", ").slice(0, 200);
+          const r = renderNotification("reminder_homework", customTpl, { name: student.name, detail: detailStr });
+          const title = r.title;
+          const body = r.hasCustomBody ? r.body : `${r.defaultBody}\n${detailStr}`;
           await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
         }
         if (pendingMock.length > 0) {
-          const title = `${student.name} 학생, 모의고사 답을 아직 안 올렸어요`;
-          const body = pendingMock.map((t) => t.title).join(", ").slice(0, 200);
+          const detailStr = pendingMock.map((t) => t.title).join(", ").slice(0, 200);
+          const r = renderNotification("reminder_mock", customTpl, { name: student.name, detail: detailStr });
+          const title = r.title;
+          const body = r.hasCustomBody ? r.body : `${r.defaultBody}\n${detailStr}`;
           await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
         }
       } catch (e) {
@@ -2573,12 +2549,11 @@ exports.homeworkReminderCheck = onSchedule(
     // from 15:00 to 23:00 KST).
     if (namesStillPending.length > 0 && teacherTokens.length > 0) {
       try {
+        const detailStr = namesStillPending.join(", ").slice(0, 200);
+        const r = renderNotification("reminder_teacher_summary", customTpl, { count: namesStillPending.length, detail: detailStr });
         await admin.messaging().sendEachForMulticast({
           tokens: teacherTokens,
-          data: {
-            title: `📌 아직 안 한 게 있는 학생 ${namesStillPending.length}명`,
-            body: namesStillPending.join(", ").slice(0, 200),
-          },
+          data: { title: r.title, body: r.hasCustomBody ? r.body : detailStr },
         });
       } catch (e) {
         console.error("homeworkReminderCheck teacher notify failed", e);
@@ -2624,6 +2599,7 @@ exports.vocabRetestReminderCheck = onSchedule(
     const metaSnap = await db.collection("sarahsEnglishMeta").doc("main").get();
     const roster = (metaSnap.exists ? metaSnap.data().roster : []) || [];
     const teacherTokens = [...new Set((metaSnap.exists ? metaSnap.data().teacherFcmTokens : []) || [])];
+    const customTpl = metaSnap.exists ? metaSnap.data().notificationTemplates : null;
 
     for (const student of roster) {
       try {
@@ -2640,10 +2616,9 @@ exports.vocabRetestReminderCheck = onSchedule(
           const tokens = [...new Set([student.studentFcmToken, ...teacherTokens].filter(Boolean))];
           if (tokens.length === 0) continue;
 
-          const title = isExact
-            ? `🔤 ${student.name} 학생, 지금 "${t.title}" 단어 재시험 시간이에요`
-            : `🔤 ${student.name} 학생, "${t.title}" 단어 재시험이 5분 후예요`;
-          await admin.messaging().sendEachForMulticast({ tokens, data: { title, body: `${t.retestDate} ${t.retestTime}` } });
+          const timeStr = `${t.retestDate} ${t.retestTime}`;
+          const r = renderNotification(isExact ? "retest_now" : "retest_5min", customTpl, { name: student.name, title: t.title, time: timeStr });
+          await admin.messaging().sendEachForMulticast({ tokens, data: { title: r.title, body: r.hasCustomBody ? r.body : r.defaultBody } });
         }
       } catch (e) {
         console.error(`vocabRetestReminderCheck failed for student ${student.id}`, e);
