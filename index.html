@@ -14413,6 +14413,8 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
                     onPrev=${() => setStudentIdx(Math.max(0, sIdx - 1))}
                     onNext=${() => setStudentIdx(Math.min(studentDocs.length - 1, sIdx + 1))}
                     finalAction=${html`<${Button} variant="gold" disabled=${true}>시험 제출<//>`}
+                    questionFormats=${studentDocs.map((d) => (d.answerFormat === "mc" ? "mc" : "sa"))}
+                    submitAction=${html`<${Button} variant="primary" style=${{ width: "100%", justifyContent: "center" }} disabled=${true}>제출하기<//>`}
                     savingAnswer=${false} saveError="" navyHeader=${true} showUnanswered=${true} />
                 </div>`}
         <//>
@@ -22760,6 +22762,134 @@ function originalToDisplayIndex(choiceDisplayOrder, originalIdx) {
   return choiceDisplayOrder ? choiceDisplayOrder.indexOf(Number(originalIdx)) : Number(originalIdx);
 }
 
+// ── 학생 응시 화면(PC)의 문제 본문 표시용 순수 함수들(2026-10) ──────────────────────────────────────────────
+// 문제 데이터는 절대 바꾸지 않고 "표시할 때만" 나눈다. 데이터에 줄바꿈이 있으면(직접 등록·수정 폼) 그 줄을 그대로 살리고
+// (formatQuestionStem/groupQuestionStemLines 재사용), 없으면(일괄 붙여넣기 등록은 줄을 공백으로 이어붙여 저장한다 —
+// gbParseBulkText의 qTextParts.join(" ")) 서술형에 한해 아래 규칙으로 나눈다. 규칙이 "전부" 맞지 않으면 나누지 않고
+// kind:"plain"으로 돌려줘서 지금처럼 한 문단으로 보여 준다(억지로 나누지 않는다).
+//   ① 문두 "[서술형n] ~하시오/하세요."까지 = 지시문  ② "영어이름:" 앞에서 줄바꿈 + 화자 굵게(화자 2명 이상일 때만)
+//   ③ "<조건>" 이후 = 조건 상자, "(1)" "(2)" 앞에서 줄바꿈("(n)" 항목 2개 이상일 때만)
+// ②③ 중 하나도 적용되지 않거나, 감지는 됐는데 모양이 불완전(화자 1명, 항목 없는 <조건> 등)하면 통째로 plain.
+const ES_STEM_TAG_RE = /^\s*\[\s*(서술형|서답형|주관식)\s*(\d+)?\s*\]\s*/;
+const ES_STEM_COND_RE = /[<〈《]\s*조건\s*[>〉》]/;
+const ES_STEM_SPEAKER_NOT = ["Note", "Hint", "Example", "Answer", "Tip"];
+function esStemTakeTag(text) {
+  const m = String(text || "").match(ES_STEM_TAG_RE);
+  return m ? { tag: m[1] + (m[2] ? " " + m[2] : ""), rest: String(text).slice(m[0].length) } : { tag: null, rest: String(text || "") };
+}
+function esParseSubjectiveRules(full) {
+  let rest = String(full || "").replace(/\s+/g, " ").trim();
+  const t = esStemTakeTag(rest);
+  const tag = t.tag;
+  rest = t.rest.trim();
+  const im = rest.match(/(?:시오|세요)\./);
+  if (!im) return null;
+  const instruction = rest.slice(0, im.index + im[0].length).trim();
+  let body = rest.slice(im.index + im[0].length).trim();
+  if (!body) return null;
+  let cond = null;
+  const cm = body.match(ES_STEM_COND_RE);
+  if (cm) {
+    const condText = body.slice(cm.index + cm[0].length).trim();
+    body = body.slice(0, cm.index).trim();
+    const parts = condText.split(/(?=\(\d+\))/).map((x) => x.trim()).filter(Boolean);
+    const items = parts.filter((x) => /^\(\d+\)/.test(x));
+    if (items.length < 2) return null;
+    cond = { lead: parts.length > 0 && !/^\(\d+\)/.test(parts[0]) ? parts[0] : "", items };
+  }
+  const speakers = [...body.matchAll(/(^|\s)([A-Z][A-Za-z]{0,14})\s?:\s?/g)].filter((m) => !ES_STEM_SPEAKER_NOT.includes(m[2]));
+  let intro = body, turns = [];
+  if (speakers.length === 1) return null;
+  if (speakers.length >= 2) {
+    const starts = speakers.map((m) => m.index + m[1].length);
+    intro = body.slice(0, starts[0]).trim();
+    turns = speakers.map((m, i) => ({ speaker: m[2], text: body.slice(starts[i] + m[0].length - m[1].length, i + 1 < starts.length ? starts[i + 1] : body.length).trim() }));
+  }
+  if (turns.length === 0 && !cond) return null;
+  return { kind: "rules", tag, instruction, intro: turns.length > 0 ? intro : body, turns, cond };
+}
+// groupQuestionStemLines는 "(1)" 같은 라벨 줄을 만나면 <조건> 상자를 닫는다 — 학생 화면에서는 조건 항목이 상자 안에 있어야
+// 하므로 상자 바로 뒤의 라벨 줄을 상자에 합치고, 연속된 "화자:" 줄(2줄 이상)은 대화 상자로 묶는다. 표시용 변환일 뿐이다.
+function esPostNodes(nodes) {
+  const merged = [];
+  nodes.forEach((n) => {
+    const last = merged[merged.length - 1];
+    if (n.type === "labeled" && last && last.type === "box") last.lines.push(n.label + " " + n.text);
+    else merged.push(n.type === "box" ? { ...n, lines: [...n.lines] } : n);
+  });
+  const speakerOf = (n) => { const m = n.type === "text" ? n.text.match(/^([A-Z][A-Za-z]{0,14})\s?:\s?(.*)$/) : null; return m && !ES_STEM_SPEAKER_NOT.includes(m[1]) ? { speaker: m[1], text: m[2] } : null; };
+  const out = [];
+  for (let i = 0; i < merged.length; i++) {
+    if (speakerOf(merged[i])) {
+      let j = i;
+      while (j < merged.length && speakerOf(merged[j])) j++;
+      if (j - i >= 2) { out.push({ type: "dialog", turns: merged.slice(i, j).map(speakerOf) }); i = j - 1; continue; }
+    }
+    out.push(merged[i]);
+  }
+  return out;
+}
+function esParseExamStem(text, isSubjective) {
+  const full = String(text == null ? "" : text);
+  if (full.indexOf("\n") !== -1) {
+    const f = formatQuestionStem(full);
+    const t = esStemTakeTag(f.instruction);
+    return { kind: "lines", tag: t.tag, instruction: t.rest.trim(), nodes: esPostNodes(groupQuestionStemLines(f.lines)) };
+  }
+  if (isSubjective) return esParseSubjectiveRules(full) || { kind: "plain", text: full };
+  const f = formatQuestionStem(full);
+  if (f.instruction.length > 120) return { kind: "plain", text: full };
+  return { kind: "lines", tag: null, instruction: f.instruction, nodes: esPostNodes(groupQuestionStemLines(f.lines)) };
+}
+const ES_MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+// 대화문 속 빈칸 "(1)" "(2)"를 밑줄 친 칸으로 보여 준다.
+function esStemBlanks(text) {
+  return String(text || "").split(/(\(\d+\))/).map((seg, i) => (/^\(\d+\)$/.test(seg)
+    ? html`<span key=${i} style=${{ display: "inline-block", minWidth: 64, textAlign: "center", borderBottom: `1.5px solid ${C.ink}`, margin: "0 3px", fontSize: 13, color: C.slate, lineHeight: 1.3 }}>${seg}</span>`
+    : seg));
+}
+function esStemSpeakerLine(line, key) {
+  const m = String(line).match(/^([A-Z][A-Za-z]{0,14})\s?:\s?(.*)$/);
+  if (m && !ES_STEM_SPEAKER_NOT.includes(m[1])) return html`<div key=${key}><b style=${{ fontFamily: ES_MONO, color: C.navy }}>${m[1]}:</b> ${esStemBlanks(m[2])}</div>`;
+  return html`<div key=${key}>${esStemBlanks(line)}</div>`;
+}
+function EsExamStemView({ parsed, number, isSubjective }) {
+  const boxBase = { borderRadius: 8, padding: "12px 16px", marginTop: 10, fontSize: 16, lineHeight: 1.7, color: C.ink };
+  const tag = parsed.tag || (isSubjective ? "서술형" : null);
+  return html`
+    <div>
+      <div style=${{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+        <span style=${{ fontSize: 30, fontWeight: 700, color: C.navy, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>${number}</span>
+        ${tag && html`<span style=${{ fontSize: 11.5, padding: "1px 8px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>${tag}</span>`}
+      </div>
+      ${parsed.kind === "plain"
+        ? html`<div style=${{ fontSize: 15, color: C.ink, lineHeight: 1.7, whiteSpace: "pre-line" }}>${parsed.text}</div>`
+        : html`
+          <div style=${{ fontSize: 16, fontWeight: 700, color: C.ink, lineHeight: 1.6 }}>${parsed.instruction}</div>
+          ${parsed.kind === "rules" && html`
+            ${parsed.intro && html`<div style=${{ marginTop: 8, fontSize: 15, lineHeight: 1.7, color: C.ink }}>${parsed.intro}</div>`}
+            ${parsed.turns.length > 0 && html`<div style=${{ ...boxBase, background: "#F3F1EB" }}>${parsed.turns.map((t, i) => html`<div key=${i}><b style=${{ fontFamily: ES_MONO, color: C.navy }}>${t.speaker}:</b> ${esStemBlanks(t.text)}</div>`)}</div>`}
+            ${parsed.cond && html`
+              <div style=${{ ...boxBase, border: `1px solid ${C.gold}`, background: C.white }}>
+                <div style=${{ fontWeight: 700, marginBottom: 4 }}>${"<조건>"}</div>
+                ${parsed.cond.lead && html`<div>${parsed.cond.lead}</div>`}
+                ${parsed.cond.items.map((it, i) => html`<div key=${i}>${it}</div>`)}
+              </div>`}
+          `}
+          ${parsed.kind === "lines" && parsed.nodes.length > 0 && html`
+            <div style=${{ marginTop: 8, fontSize: 15, lineHeight: 1.7, color: C.ink }}>
+              ${parsed.nodes.map((n, i) => {
+                if (n.type === "box") return html`<div key=${i} style=${{ ...boxBase, border: `1px solid ${C.gold}`, background: C.white, fontSize: 15 }}>${n.lines.map((ln, j) => html`<div key=${j} style=${{ fontWeight: j === 0 ? 700 : 400 }}>${ln}</div>`)}</div>`;
+                if (n.type === "dialog") return html`<div key=${i} style=${{ ...boxBase, background: "#F3F1EB" }}>${n.turns.map((t, j) => html`<div key=${j}><b style=${{ fontFamily: ES_MONO, color: C.navy }}>${t.speaker}:</b> ${esStemBlanks(t.text)}</div>`)}</div>`;
+                if (n.type === "labeled") return html`<div key=${i} style=${{ marginLeft: 14, marginTop: 2 }}><b>${n.label}</b> ${esStemBlanks(n.text)}</div>`;
+                return esStemSpeakerLine(n.text, i);
+              })}
+            </div>`}
+        `}
+    </div>
+  `;
+}
+
 // 학생 응시 화면의 "눈에 보이는 부분"만 따로 뗀 컴포넌트(2026-10). 상태·저장·제출 로직은 전부 호출한 쪽에 있다 —
 // StudentExamRuntime은 실제 응시(답 저장, 제한 시간, 제출)를, GrammarExamTwoPane의 "학생 화면" 미리보기는
 // 같은 화면을 readOnly로 보여 주기만 한다(어디에도 저장하지 않음). 마크업은 예전 StudentExamRuntime의 것을 그대로 옮겼고,
@@ -22768,10 +22898,85 @@ function ExamRunScreen({
   title, index, total, remainLabel, remainWarn, remainPrefix = "⏱ ",
   passage, questionText, answerFormat, displayChoices, selectedDisplayIdx, answerText,
   readOnly, notice, onPickMc, onTypeText, questionIds, answers, onGoto, onPrev, onNext, finalAction,
-  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children,
+  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction,
 }) {
+  const wide = useIsDesktop();
   const isEmpty = (v) => v === undefined || v === null || v === "";
   const unansweredNums = showUnanswered ? questionIds.map((id, i) => ({ id, n: i + 1 })).filter(({ id }) => isEmpty(answers[id])).map(({ n }) => n) : [];
+  if (wide) {
+    // PC(1025px 이상): 시험지 느낌의 카드 + 오른쪽 번호판. 1024px 이하는 아래 기존 화면 그대로.
+    const isSub = answerFormat !== "mc";
+    const parsed = esParseExamStem(questionText, isSub);
+    const fmt = (i) => (questionFormats ? questionFormats[i] : null);
+    return html`
+      <div>
+        ${onBack && html`<${BackBtn} onClick=${onBack} />`}
+        ${notice && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${notice}</div>`}
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: navyHeader ? "center" : "baseline", marginBottom: 8, ...(navyHeader ? { background: C.navy, borderRadius: 6, padding: "8px 12px" } : null) }}>
+          <div style=${{ ...serif, fontSize: 16, color: navyHeader ? C.white : C.navy }}>${title}</div>
+          <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+            ${remainLabel !== null && remainLabel !== undefined && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainWarn ? "#F7E9E6" : "#EFEDE6", color: remainWarn ? C.danger : C.navy }}>${remainPrefix}${remainLabel}</div>`}
+            <div style=${{ fontSize: 12, color: navyHeader ? C.line : C.slate }}>${index + 1} / ${total}</div>
+          </div>
+        </div>
+        ${passage && html`
+          <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
+            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
+            <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
+          <//>
+        `}
+        <div style=${{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 168px", gap: 14, alignItems: "start" }}>
+          <div style=${{ minWidth: 0 }}>
+            <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: "28px 34px" }}>
+              <${EsExamStemView} parsed=${parsed} number=${index + 1} isSubjective=${isSub} />
+              ${answerFormat === "mc"
+                ? html`
+                  <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
+                    ${displayChoices.map((c, i) => html`
+                      <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)}
+                        style=${{
+                          textAlign: "left", padding: "10px 12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer",
+                          border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
+                          background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
+                          fontSize: 14, color: C.ink,
+                        }}>${i + 1}. ${c}<//>
+                    `)}
+                  </div>
+                `
+                : html`
+                  <div style=${{ marginTop: 18 }}>
+                    <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>답안</div>
+                    <textarea style=${{ ...inputStyle, minHeight: 120, fontSize: 15, lineHeight: 1.6 }} disabled=${readOnly} value=${answerText || ""} onChange=${(e) => onTypeText(e.target.value)} placeholder="답을 입력하세요" />
+                  </div>`}
+            </div>
+            ${savingAnswer && html`<div style=${{ fontSize: 11, color: C.slate, margin: "6px 0" }}>저장 중...</div>`}
+            ${saveError && html`<div style=${{ fontSize: 12, color: C.danger, margin: "6px 0" }}>${saveError}</div>`}
+            ${showUnanswered && html`<div style=${{ fontSize: 11.5, color: C.slate, margin: "8px 0 0" }}>${unansweredNums.length > 0 ? `안 푼 문제 ${unansweredNums.length}개: ${unansweredNums.join(", ")}번` : "안 푼 문제가 없어요."}</div>`}
+            <div style=${{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+              <${Button} variant="ghost" onClick=${onPrev} disabled=${index === 0}>◀ 이전<//>
+              <${Button} variant="ghost" onClick=${onNext} disabled=${index >= total - 1}>다음 ▶<//>
+            </div>
+          </div>
+          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: 12 }}>
+            <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>문항</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              ${questionIds.map((id, i) => html`
+                <button key=${id + i} type="button" onClick=${() => onGoto(i)}
+                  style=${{
+                    height: 32, borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: "pointer", color: C.ink,
+                    border: i === index ? `2px solid ${C.navy}` : `1px ${fmt(i) === "sa" ? "dashed" : "solid"} ${fmt(i) === "sa" ? C.slate : C.line}`,
+                    background: !isEmpty(answers[id]) ? "#E1EEE4" : C.white,
+                  }}>${i + 1}<//>
+              `)}
+            </div>
+            <div style=${{ fontSize: 11, color: C.slate, marginTop: 8, lineHeight: 1.5 }}>초록 = 답함 · 점선 = 서술형</div>
+            ${submitAction && html`<div style=${{ marginTop: 12 }}>${submitAction}</div>`}
+          </div>
+        </div>
+        ${children}
+      </div>
+    `;
+  }
   return html`
     <div>
       ${onBack && html`<${BackBtn} onClick=${onBack} />`}
@@ -23006,6 +23211,8 @@ function StudentExamRuntime({ assignment, onExit }) {
         onPrev=${() => setCurrentIndex((i) => Math.max(0, i - 1))}
         onNext=${() => setCurrentIndex((i) => Math.min(total - 1, i + 1))}
         finalAction=${html`<${Button} variant="gold" onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>시험 제출<//>`}
+        questionFormats=${flatQuestions.map((q) => ((sanitizedQuestionsById[q.questionId] || {}).answerFormat === "mc" ? "mc" : "sa"))}
+        submitAction=${html`<${Button} variant="primary" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>제출하기<//>`}
         savingAnswer=${savingAnswer} saveError=${saveError} onBack=${onExit}>
       ${showSubmitConfirm && html`
         <${Modal} onClose=${() => !submitting && setShowSubmitConfirm(false)}>
