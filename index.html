@@ -23050,7 +23050,7 @@ function ExamRunScreen({
   title, index, total, remainLabel, remainWarn, remainPrefix = "⏱ ",
   passage, questionText, answerFormat, displayChoices, selectedDisplayIdx, answerText,
   readOnly, notice, onPickMc, onTypeText, questionIds, answers, onGoto, onPrev, onNext, finalAction,
-  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction,
+  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction, wideFrame,
 }) {
   const wide = useIsDesktop();
   const isEmpty = (v) => v === undefined || v === null || v === "";
@@ -23060,11 +23060,17 @@ function ExamRunScreen({
     const isSub = answerFormat !== "mc";
     const parsed = esParseExamStem(questionText, isSub);
     const fmt = (i) => (questionFormats ? questionFormats[i] : null);
+    // wideFrame(실제 응시 화면에서만 켬): 바깥 컨테이너(App의 maxWidth 480)를 PC에서만 벗어나 화면 가운데에 최대 1040px로 펼친다.
+    // 창이 좁아지면 100vw - 48px까지만 줄어들어 가로 스크롤이 생기지 않는다(transform을 쓰지 않아 fixed 모달 위치도 그대로).
+    // wideFrame이 없으면(문법 2단 화면의 "학생 화면" 미리보기) 예전처럼 칸 폭에 맞춰 줄어든다.
+    const frameW = "min(1040px, calc(100vw - 48px))";
+    const frameStyle = wideFrame ? { position: "relative", left: "50%", width: frameW, marginLeft: `calc(${frameW} / -2)` } : undefined;
+    const cap = wideFrame ? { maxWidth: 1020, marginLeft: "auto", marginRight: "auto" } : null;
     return html`
-      <div>
+      <div style=${frameStyle}>
         ${onBack && html`<${BackBtn} onClick=${onBack} />`}
-        ${notice && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${notice}</div>`}
-        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: navyHeader ? "center" : "baseline", marginBottom: 8, ...(navyHeader ? { background: C.navy, borderRadius: 6, padding: "8px 12px" } : null) }}>
+        ${notice && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10, ...cap }}>${notice}</div>`}
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: navyHeader ? "center" : "baseline", marginBottom: 8, ...cap, ...(navyHeader ? { background: C.navy, borderRadius: 6, padding: "8px 12px" } : null) }}>
           <div style=${{ ...serif, fontSize: 16, color: navyHeader ? C.white : C.navy }}>${title}</div>
           <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
             ${remainLabel !== null && remainLabel !== undefined && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainWarn ? "#F7E9E6" : "#EFEDE6", color: remainWarn ? C.danger : C.navy }}>${remainPrefix}${remainLabel}</div>`}
@@ -23072,14 +23078,17 @@ function ExamRunScreen({
           </div>
         </div>
         ${passage && html`
-          <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
+          <${Card} style=${{ background: C.ivory, marginBottom: 10, ...cap }}>
             <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
             <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
           <//>
         `}
-        <div style=${{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 168px", gap: 14, alignItems: "start" }}>
-          <div style=${{ minWidth: 0 }}>
-            <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: "28px 34px" }}>
+        <div style=${wideFrame
+          ? { display: "grid", gridTemplateColumns: "minmax(0, 760px) 240px", gap: 20, justifyContent: "center", alignItems: "start" }
+          // 미리보기: 칸이 좁으면(카드가 260px 아래로 줄어들면) 번호판이 카드 아래로 내려가고, 카드 안쪽 여백도 줄인다.
+          : { display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>
+          <div style=${wideFrame ? { minWidth: 0 } : { minWidth: 0, flex: "1 1 260px" }}>
+            <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: wideFrame ? "28px 34px" : "22px 20px", overflowWrap: "anywhere" }}>
               <${EsExamStemView} parsed=${parsed} number=${index + 1} isSubjective=${isSub} />
               ${answerFormat === "mc"
                 ? html`
@@ -23109,9 +23118,9 @@ function ExamRunScreen({
               <${Button} variant="ghost" onClick=${onNext} disabled=${index >= total - 1}>다음 ▶<//>
             </div>
           </div>
-          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: 12 }}>
+          <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderRadius: 6, padding: 12, ...(wideFrame ? null : { flex: "1 1 168px", maxWidth: 240, boxSizing: "border-box" }) }}>
             <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 }}>문항</div>
-            <div style=${{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            <div style=${{ display: "grid", gridTemplateColumns: wideFrame ? "repeat(5, 1fr)" : "repeat(4, 1fr)", gap: 6 }}>
               ${questionIds.map((id, i) => html`
                 <button key=${id + i} type="button" onClick=${() => onGoto(i)}
                   style=${{
@@ -23365,7 +23374,7 @@ function StudentExamRuntime({ assignment, onExit }) {
         finalAction=${html`<${Button} variant="gold" onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>시험 제출<//>`}
         questionFormats=${flatQuestions.map((q) => ((sanitizedQuestionsById[q.questionId] || {}).answerFormat === "mc" ? "mc" : "sa"))}
         submitAction=${html`<${Button} variant="primary" style=${{ width: "100%", justifyContent: "center" }} onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>제출하기<//>`}
-        savingAnswer=${savingAnswer} saveError=${saveError} onBack=${onExit}>
+        savingAnswer=${savingAnswer} saveError=${saveError} onBack=${onExit} wideFrame=${true}>
       ${showSubmitConfirm && html`
         <${Modal} onClose=${() => !submitting && setShowSubmitConfirm(false)}>
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 10 }}>시험을 제출할까요?</div>
