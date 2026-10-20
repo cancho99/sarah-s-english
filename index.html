@@ -13987,23 +13987,6 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
 // 미리보기는 Firestore에 아무것도 쓰지 않는다 — "인쇄"/"학생에게 배정"을 눌렀을 때에만 시험지가 저장된다.
 
 const GB_DIFFICULTY_LEVELS = ["쉬움", "보통", "어려움"];
-// grammarBankQuestions 문항에는 지금 난이도 필드가 없다. 나중에 붙을 때를 대비해, 있으면 쉬움/보통/어려움으로 읽는다.
-function gbDifficultyLevelOf(item) {
-  const d = String((item && item.difficulty) || "").trim().toUpperCase();
-  if (["쉬움", "하급", "BASIC", "EASY"].includes(d)) return "쉬움";
-  if (["보통", "중급", "INTERMEDIATE", "MEDIUM"].includes(d)) return "보통";
-  if (["어려움", "상급", "ADVANCED", "KILLER", "HARD"].includes(d)) return "어려움";
-  return null;
-}
-// 난이도가 표시된 문항이 하나라도 있을 때만 걸러낸다(표시 없는 문항은 어느 난이도에서든 남긴다 — 문항을 임의로 줄이지 않는다).
-function gbApplyDifficulty(pools, level) {
-  const tagged = [...pools.mcPool, ...pools.saPool].filter((it) => gbDifficultyLevelOf(it)).length;
-  if (!level || tagged === 0) return { pools, tagged };
-  const keep = (it) => { const l = gbDifficultyLevelOf(it); return !l || l === level; };
-  const byGrade = {};
-  pools.grades.forEach((g) => { byGrade[g] = { mc: pools.byGrade[g].mc.filter(keep), sa: pools.byGrade[g].sa.filter(keep) }; });
-  return { pools: { grades: pools.grades, byGrade, mcPool: pools.mcPool.filter(keep), saPool: pools.saPool.filter(keep) }, tagged };
-}
 // 선택된 단원(소주제)을 트리 순서대로 — "선택한 범위" 칩용.
 function gbSelectedUnits(tree, selected) {
   const out = [];
@@ -14210,8 +14193,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
 
   const countMap = React.useMemo(() => (myQuestions ? gbCountMap(GB_GRAMMAR_TREE, GB_BANK, myQuestions) : {}), [myQuestions]);
   const basePools = React.useMemo(() => (myQuestions ? gbBuildPools(GB_GRAMMAR_TREE, GB_BANK, myQuestions, selected) : null), [myQuestions, selected]);
-  const diff = React.useMemo(() => (basePools ? gbApplyDifficulty(basePools, difficulty) : null), [basePools, difficulty]);
-  const pools = diff ? diff.pools : null;
+  const pools = basePools; // 난이도는 "준비 중"이라 뽑기에 쓰이지 않는다
 
   // 범위·구성을 바꾸면 잠깐(0.35초) 기다렸다가 한 번만 다시 뽑는다.
   useEffect(() => {
@@ -14346,11 +14328,14 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               </div>
             `}
             <div style=${{ marginTop: 10 }}>
-              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>난이도</div>
-              <div className="ap-seg" role="group" aria-label="난이도">
-                ${GB_DIFFICULTY_LEVELS.map((lv) => html`<button key=${lv} type="button" className=${difficulty === lv ? "active" : ""} onClick=${() => setDifficulty(lv)}>${lv}</button>`)}
+              <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style=${{ fontSize: 12, color: C.slate }}>난이도</span>
+                <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>준비 중</span>
               </div>
-              ${hasRange && diff.tagged === 0 && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>문항에 난이도 표시가 없어 아직 뽑기에는 반영되지 않아요.</div>`}
+              <div className="ap-seg" role="group" aria-label="난이도 (준비 중)" title="준비 중" style=${{ opacity: 0.5 }}>
+                ${GB_DIFFICULTY_LEVELS.map((lv) => html`<button key=${lv} type="button" disabled=${true} title="준비 중" aria-label=${`${lv} (준비 중)`} style=${{ cursor: "not-allowed" }}>${lv}</button>`)}
+              </div>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>난이도 선택은 준비 중입니다. 문항에 난이도 표시가 생기면 쓸 수 있어요.</div>
             </div>
             <div style=${{ marginTop: 10 }}>
               <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>시험지 제목 (비우면 자동)</div>
