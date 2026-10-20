@@ -2092,7 +2092,7 @@ exports.notifyTeacher = onRequest(
       const detailStr = detail ? String(detail).slice(0, 120) : "";
       const r = renderNotification(id, custom, { name: studentName, detail: detailStr });
       const title = r.title;
-      const body = r.hasCustomBody ? r.body : (detailStr || r.defaultBody || "알림이 정상적으로 도착했어요!");
+      const body = r.hasCustomBody ? r.body : (detailStr ? `${r.defaultBody}\n${detailStr}` : r.defaultBody);
       console.log("notifyTeacher", JSON.stringify({ studentName, kind, detail, title, body }));
 
       const resp = await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
@@ -2127,7 +2127,7 @@ exports.notifyStudent = onRequest(
     } catch (e) { console.error("notifyStudent: templates load failed", e); }
     const r = renderNotification(id, custom, { detail: detailStr });
     const title = r.title;
-    const body = r.hasCustomBody ? r.body : (detailStr || r.defaultBody || "새 소식이 있어요.");
+    const body = r.hasCustomBody ? r.body : (detailStr ? `${r.defaultBody}\n${detailStr}` : r.defaultBody);
 
     try {
       await admin.messaging().send({ token, data: { title, body } });
@@ -2529,14 +2529,14 @@ exports.homeworkReminderCheck = onSchedule(
           const detailStr = pendingHw.map((h) => h.content).join(", ").slice(0, 200);
           const r = renderNotification("reminder_homework", customTpl, { name: student.name, detail: detailStr });
           const title = r.title;
-          const body = r.hasCustomBody ? r.body : detailStr;
+          const body = r.hasCustomBody ? r.body : `${r.defaultBody}\n${detailStr}`;
           await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
         }
         if (pendingMock.length > 0) {
           const detailStr = pendingMock.map((t) => t.title).join(", ").slice(0, 200);
           const r = renderNotification("reminder_mock", customTpl, { name: student.name, detail: detailStr });
           const title = r.title;
-          const body = r.hasCustomBody ? r.body : detailStr;
+          const body = r.hasCustomBody ? r.body : `${r.defaultBody}\n${detailStr}`;
           await admin.messaging().sendEachForMulticast({ tokens, data: { title, body } });
         }
       } catch (e) {
@@ -2618,7 +2618,7 @@ exports.vocabRetestReminderCheck = onSchedule(
 
           const timeStr = `${t.retestDate} ${t.retestTime}`;
           const r = renderNotification(isExact ? "retest_now" : "retest_5min", customTpl, { name: student.name, title: t.title, time: timeStr });
-          await admin.messaging().sendEachForMulticast({ tokens, data: { title: r.title, body: r.hasCustomBody ? r.body : timeStr } });
+          await admin.messaging().sendEachForMulticast({ tokens, data: { title: r.title, body: r.hasCustomBody ? r.body : r.defaultBody } });
         }
       } catch (e) {
         console.error(`vocabRetestReminderCheck failed for student ${student.id}`, e);
