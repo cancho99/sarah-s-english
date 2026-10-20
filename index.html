@@ -13563,6 +13563,113 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
   `;
 }
 
+// Phase 8 prep §3 — 학생에게 그대로 나눠줄 수 있는 인쇄용 창. (2026-10 — ExamPaperDetail 안에 있던 것을 최상위로
+// 꺼냈다. 문법 시험 출제 2단 화면(GrammarExamTwoPane)이 같은 인쇄 흐름을 그대로 쓰기 위해서이며 내용은 그대로다.
+// 팝업이 막히면 false를 돌려주고, 안내 문구는 호출한 쪽이 띄운다.) 기존 printReport()/printInvoice()와
+// 같은 패턴(새 top-level 창 + window.print(), 별도 PDF 라이브러리 없음, 자체 print 전용 CSS).
+// 학생용 페이지는 여전히 qDoc.answer/qDoc.explanation을 참조하지 않는다 — questionText와
+// resolveQuestionForDisplay()가 돌려주는 displayChoices(정답 표시 없는 버전)만 사용.
+//
+// Teacher OS Exam Builder Phase B — 2가지 확장, 둘 다 기존 wordtest.html의 검증된 패턴을 그대로
+// 가져온 것: (1) paper.layout==="2col"이면 지문 없는(=객관식 위주) 섹션의 문제만 CSS
+// column-count:2로 감싼다 — 지문이 있는 Reading 섹션은 항상 전체 폭(§5/§13 스펙: "지문은
+// full-width, 객관식은 2-column"). (2) 정답지를 별도 페이지로 추가한다(wordtest.html의
+// `.page-break` 정답지 페이지와 동일한 관례) — 문항 번호는 학생용 페이지와 정확히 같은 카운터를
+// 공유해서 번호가 어긋나지 않는다.
+function printExamPaperSheet(EP, paper, questionsById, passagesById, existingWin) {
+  const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const layout = paper.layout === "2col" ? "2col" : "1col";
+  let qNum = 0;
+  const answerRows = [];
+  const sectionsHtml = (paper.sections || []).map((s) => {
+    const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
+    const passageHtml = passage
+      ? `<div class="passage"><div class="passage-title">${esc(passage.title)}</div><div class="passage-text">${esc(passage.passageText || passage.originalText)}</div></div>`
+      : "";
+    const questionsHtml = (s.questionRefs || []).map((qr) => {
+      const qDoc = questionsById[qr.questionId];
+      if (!qDoc) return "";
+      qNum += 1;
+      const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
+      const choicesHtml = displayChoices.length > 0
+        ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
+        : `<div class="answer-line">답: ______________________</div>`;
+      answerRows.push(`<span class="a-item"><span class="a-num">${qNum}.</span>${displayChoices.length > 0 ? esc(CIRCLED[displayAnswerIndex] || String(displayAnswerIndex + 1)) : esc(qDoc.answer)}</span>`);
+      return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
+    }).join("");
+    // 지문이 있는 섹션(Reading)은 항상 1단, 지문이 없는 섹션(Grammar 등)만 layout 설정을 따른다.
+    const bodyHtml = (!passage && layout === "2col") ? `<div class="qs-2col">${questionsHtml}</div>` : questionsHtml;
+    return `<div class="section">${passage ? '<div class="section-title full">' + esc(s.label) + '</div>' : '<div class="section-title">' + esc(s.label) + '</div>'}${passageHtml}${bodyHtml}</div>`;
+  }).join("");
+
+  const answerKeyHtml = answerRows.length > 0 ? `
+    <div class="sheet page-break">
+      <div class="hd">
+        <h1>${esc(paper.title)} — 정답지</h1>
+      </div>
+      <div class="answer-box">${answerRows.join("")}</div>
+    </div>` : "";
+
+  const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(paper.title)}</title>
+    <style>
+      @page { size: A4; margin: 18mm 16mm; }
+      body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
+      .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;z-index:100;flex-wrap:wrap;}
+      .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;flex-shrink:0;}
+      .sheet{padding:20px 6px;max-width:760px;margin:0 auto;}
+      .sheet.page-break{page-break-before:always;}
+      .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:14px;margin-bottom:16px;}
+      .hd h1{font-size:19px;color:#1C2B4A;margin:0 0 10px;}
+      .hd h1[contenteditable]{outline:none;border-radius:2px;}
+      .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:1px dashed #B8935A;}
+      @media print{ .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:none;} }
+      .meta{display:flex;justify-content:center;gap:22px;font-size:12px;flex-wrap:wrap;}
+      .meta .field{display:flex;align-items:center;gap:6px;}
+      .meta .field label{color:#5B6270;}
+      .meta .field input{border:none;border-bottom:1px solid #1B2A3D;padding:2px 4px;font-size:12px;width:110px;}
+      .section-title{font-size:13.5px;font-weight:700;color:#fff;background:#1C2B4A;padding:6px 10px;border-radius:3px;margin:20px 0 12px;page-break-after:avoid;}
+      .passage{background:#F7F5EE;border:1px solid #D8D2BE;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid;}
+      .passage-title{font-weight:700;margin-bottom:6px;font-size:12.5px;}
+      .passage-text{white-space:pre-wrap;font-size:12px;line-height:1.7;}
+      .qs-2col{column-count:2;column-gap:22px;}
+      .question{margin-bottom:14px;page-break-inside:avoid;break-inside:avoid;}
+      .q-text{font-size:12.5px;line-height:1.7;}
+      .q-num{font-weight:700;margin-right:4px;}
+      .choices{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;padding-left:18px;font-size:12px;}
+      .choice{white-space:nowrap;}
+      .answer-line{margin-top:8px;padding-left:18px;font-size:12px;}
+      .answer-box{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:13px;}
+      .a-item{white-space:nowrap;}
+      .a-num{font-weight:700;margin-right:4px;color:#5B6270;}
+      @media print{ .toolbar{display:none !important;} }
+    </style></head><body>
+    <div class="toolbar">
+      <span>학생용 인쇄 미리보기 — 제목을 클릭하면 직접 수정할 수 있어요. ${layout === "2col" ? "2단 레이아웃 · " : ""}정답지는 뒤에 별도 페이지로 붙어요.</span>
+      <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+    </div>
+    <div class="sheet">
+      <div class="hd">
+        <h1 contenteditable="true" spellcheck="false">${esc(paper.title)}</h1>
+        <div class="meta">
+          <div class="field"><label>이름</label><input type="text" /></div>
+          <div class="field"><label>학년/반</label><input type="text" /></div>
+          <div class="field"><label>날짜</label><input type="text" /></div>
+        </div>
+      </div>
+      ${sectionsHtml}
+    </div>
+    ${answerKeyHtml}
+    </body></html>`;
+  // existingWin: 호출한 쪽이 클릭 순간에 미리 열어 둔 창(시험지를 저장하느라 await한 뒤에 window.open하면 팝업 차단될 수 있어서).
+  const win = existingWin || window.open("", "_blank");
+  if (!win) return false;
+  win.document.write(html_);
+  win.document.close();
+  win.focus();
+  return true;
+}
+
 function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, onBack, onEdit, onChanged, onDuplicated }) {
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
@@ -13601,107 +13708,8 @@ function ExamPaperDetail({ EP, QB, paper, questionsById, passagesById, roster, o
       onDuplicated(doc);
     } catch (e) { setMsg("복제 실패: " + String(e.message || e)); } finally { setSaving(false); }
   }
-  // Phase 8 prep §3 — 학생에게 그대로 나눠줄 수 있는 인쇄용 창. 기존 printReport()/printInvoice()와
-  // 같은 패턴(새 top-level 창 + window.print(), 별도 PDF 라이브러리 없음, 자체 print 전용 CSS).
-  // 학생용 페이지는 여전히 qDoc.answer/qDoc.explanation을 참조하지 않는다 — questionText와
-  // resolveQuestionForDisplay()가 돌려주는 displayChoices(정답 표시 없는 버전)만 사용.
-  //
-  // Teacher OS Exam Builder Phase B — 2가지 확장, 둘 다 기존 wordtest.html의 검증된 패턴을 그대로
-  // 가져온 것: (1) paper.layout==="2col"이면 지문 없는(=객관식 위주) 섹션의 문제만 CSS
-  // column-count:2로 감싼다 — 지문이 있는 Reading 섹션은 항상 전체 폭(§5/§13 스펙: "지문은
-  // full-width, 객관식은 2-column"). (2) 정답지를 별도 페이지로 추가한다(wordtest.html의
-  // `.page-break` 정답지 페이지와 동일한 관례) — 문항 번호는 학생용 페이지와 정확히 같은 카운터를
-  // 공유해서 번호가 어긋나지 않는다.
   function printExamPaper() {
-    const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
-    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const layout = paper.layout === "2col" ? "2col" : "1col";
-    let qNum = 0;
-    const answerRows = [];
-    const sectionsHtml = (paper.sections || []).map((s) => {
-      const passage = s.bank === "reading" && s.passageId ? passagesById[s.passageId] : null;
-      const passageHtml = passage
-        ? `<div class="passage"><div class="passage-title">${esc(passage.title)}</div><div class="passage-text">${esc(passage.passageText || passage.originalText)}</div></div>`
-        : "";
-      const questionsHtml = (s.questionRefs || []).map((qr) => {
-        const qDoc = questionsById[qr.questionId];
-        if (!qDoc) return "";
-        qNum += 1;
-        const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
-        const choicesHtml = displayChoices.length > 0
-          ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
-          : `<div class="answer-line">답: ______________________</div>`;
-        answerRows.push(`<span class="a-item"><span class="a-num">${qNum}.</span>${displayChoices.length > 0 ? esc(CIRCLED[displayAnswerIndex] || String(displayAnswerIndex + 1)) : esc(qDoc.answer)}</span>`);
-        return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
-      }).join("");
-      // 지문이 있는 섹션(Reading)은 항상 1단, 지문이 없는 섹션(Grammar 등)만 layout 설정을 따른다.
-      const bodyHtml = (!passage && layout === "2col") ? `<div class="qs-2col">${questionsHtml}</div>` : questionsHtml;
-      return `<div class="section">${passage ? '<div class="section-title full">' + esc(s.label) + '</div>' : '<div class="section-title">' + esc(s.label) + '</div>'}${passageHtml}${bodyHtml}</div>`;
-    }).join("");
-
-    const answerKeyHtml = answerRows.length > 0 ? `
-      <div class="sheet page-break">
-        <div class="hd">
-          <h1>${esc(paper.title)} — 정답지</h1>
-        </div>
-        <div class="answer-box">${answerRows.join("")}</div>
-      </div>` : "";
-
-    const html_ = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${esc(paper.title)}</title>
-      <style>
-        @page { size: A4; margin: 18mm 16mm; }
-        body{font-family:'Noto Sans KR', sans-serif; color:#1B2A3D; margin:0;}
-        .toolbar{position:sticky;top:0;background:#1C2B4A;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;z-index:100;flex-wrap:wrap;}
-        .toolbar button{background:#B8935A;color:#1C2B4A;border:none;padding:8px 18px;border-radius:3px;font-weight:700;cursor:pointer;font-size:12.5px;flex-shrink:0;}
-        .sheet{padding:20px 6px;max-width:760px;margin:0 auto;}
-        .sheet.page-break{page-break-before:always;}
-        .hd{text-align:center;border-bottom:2px solid #1C2B4A;padding-bottom:14px;margin-bottom:16px;}
-        .hd h1{font-size:19px;color:#1C2B4A;margin:0 0 10px;}
-        .hd h1[contenteditable]{outline:none;border-radius:2px;}
-        .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:1px dashed #B8935A;}
-        @media print{ .hd h1[contenteditable]:hover, .hd h1[contenteditable]:focus{outline:none;} }
-        .meta{display:flex;justify-content:center;gap:22px;font-size:12px;flex-wrap:wrap;}
-        .meta .field{display:flex;align-items:center;gap:6px;}
-        .meta .field label{color:#5B6270;}
-        .meta .field input{border:none;border-bottom:1px solid #1B2A3D;padding:2px 4px;font-size:12px;width:110px;}
-        .section-title{font-size:13.5px;font-weight:700;color:#fff;background:#1C2B4A;padding:6px 10px;border-radius:3px;margin:20px 0 12px;page-break-after:avoid;}
-        .passage{background:#F7F5EE;border:1px solid #D8D2BE;border-radius:4px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid;}
-        .passage-title{font-weight:700;margin-bottom:6px;font-size:12.5px;}
-        .passage-text{white-space:pre-wrap;font-size:12px;line-height:1.7;}
-        .qs-2col{column-count:2;column-gap:22px;}
-        .question{margin-bottom:14px;page-break-inside:avoid;break-inside:avoid;}
-        .q-text{font-size:12.5px;line-height:1.7;}
-        .q-num{font-weight:700;margin-right:4px;}
-        .choices{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;padding-left:18px;font-size:12px;}
-        .choice{white-space:nowrap;}
-        .answer-line{margin-top:8px;padding-left:18px;font-size:12px;}
-        .answer-box{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:13px;}
-        .a-item{white-space:nowrap;}
-        .a-num{font-weight:700;margin-right:4px;color:#5B6270;}
-        @media print{ .toolbar{display:none !important;} }
-      </style></head><body>
-      <div class="toolbar">
-        <span>학생용 인쇄 미리보기 — 제목을 클릭하면 직접 수정할 수 있어요. ${layout === "2col" ? "2단 레이아웃 · " : ""}정답지는 뒤에 별도 페이지로 붙어요.</span>
-        <button onclick="window.print()">🖨 인쇄 / PDF 저장</button>
-      </div>
-      <div class="sheet">
-        <div class="hd">
-          <h1 contenteditable="true" spellcheck="false">${esc(paper.title)}</h1>
-          <div class="meta">
-            <div class="field"><label>이름</label><input type="text" /></div>
-            <div class="field"><label>학년/반</label><input type="text" /></div>
-            <div class="field"><label>날짜</label><input type="text" /></div>
-          </div>
-        </div>
-        ${sectionsHtml}
-      </div>
-      ${answerKeyHtml}
-      </body></html>`;
-    const win = window.open("", "_blank");
-    if (!win) { setMsg("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
-    win.document.write(html_);
-    win.document.close();
-    win.focus();
+    if (!printExamPaperSheet(EP, paper, questionsById, passagesById)) setMsg("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요.");
   }
   return html`
     <div>
@@ -13971,6 +13979,437 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
   `;
 }
 
+// ── 문법 시험 출제 2단 화면(PC, 너비 1025px 이상 — useIsDesktop) ─────────────────────────────────────────
+// 왼쪽: ① 범위(학년 혼합 단원 선택) ② 구성(객관식/서술형 개수·난이도). 오른쪽: ③ 미리보기(선생님용 / 학생 화면).
+// 1024px 이하(모바일·태블릿)는 예전 그대로 MobileGrammarBankExamBuilder가 나온다(ExamBuilderView의 bankPicker 분기).
+// 문항 뽑기·학년 섞기는 GrammarBankPrototype이 쓰는 순수 함수(gbSelKey/gbBuildPools/gbPickMix/gbExpectedMix/gbGradeLabel)를
+// 그대로 재사용하고, 시험지 저장은 MobileGrammarBankExamBuilder.handleCreate와 같은 EP/QB 파이프라인을 따른다.
+// 미리보기는 Firestore에 아무것도 쓰지 않는다 — "인쇄"/"학생에게 배정"을 눌렀을 때에만 시험지가 저장된다.
+
+const GB_DIFFICULTY_LEVELS = ["쉬움", "보통", "어려움"];
+// 선택된 단원(소주제)을 트리 순서대로 — "선택한 범위" 칩용.
+function gbSelectedUnits(tree, selected) {
+  const out = [];
+  Object.keys(tree).forEach((g) => tree[g].forEach((c) => c.subs.forEach((sub) => {
+    const key = gbSelKey(g, c.cat, sub);
+    if (selected[key]) out.push({ key, grade: g, cat: c.cat, sub });
+  })));
+  return out;
+}
+// 단원별 객관식/서술형 문항 수(gbBuildPools와 같은 기준: type이 "mc"가 아니면 서술형).
+function gbCountMap(tree, bank, mine) {
+  const m = {};
+  Object.keys(tree).forEach((g) => tree[g].forEach((c) => c.subs.forEach((sub) => {
+    const q = bank[g][c.cat][sub];
+    m[gbSelKey(g, c.cat, sub)] = { mc: q.mc.length, sa: q.sa.length };
+  })));
+  (mine || []).forEach((it) => {
+    const e = m[gbSelKey(it.grade, it.cat, it.sub)];
+    if (e) e[it.type === "mc" ? "mc" : "sa"]++;
+  });
+  return m;
+}
+// 뽑힌 문항 하나를 "학생이 실제로 보게 될 모양"(시험지에 저장될 모양과 같은 gbItemToPhase8Input 결과)으로 바꾼다.
+function gbDraftToExamDoc(item, i) {
+  const inp = gbItemToPhase8Input(item);
+  const isMc = item.type === "mc" && inp.choices.length > 0;
+  return {
+    id: "preview-" + i, questionText: inp.questionText, choices: inp.choices, answerFormat: isMc ? "mc" : "sa",
+    answerIdx: isMc ? Number(inp.answer) : -1, answerText: isMc ? "" : String(item.ans || ""),
+    grade: item.grade, cat: item.cat, sub: item.sub,
+  };
+}
+
+function GbRangePicker({ tree, selected, setSelected, countMap }) {
+  const [open, setOpen] = useState(false);
+  const [openGrades, setOpenGrades] = useState({});
+  const units = gbSelectedUnits(tree, selected);
+  const grades = Object.keys(tree);
+  function toggleKeys(keys, on) {
+    setSelected((s) => { const next = { ...s }; keys.forEach((k) => { if (on) next[k] = true; else delete next[k]; }); return next; });
+  }
+  const gradeKeys = (g) => tree[g].flatMap((c) => c.subs.map((sub) => gbSelKey(g, c.cat, sub)));
+  const linkBtn = { background: "none", border: "none", padding: 0, fontSize: 11.5, color: C.navy, cursor: "pointer", textDecoration: "underline" };
+  return html`
+    <div>
+      <button type="button" aria-expanded=${open} onClick=${() => setOpen((o) => !o)}
+        style=${{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", border: `1px solid ${C.line}`, borderRadius: 6, background: C.white, fontSize: 13, color: C.ink, cursor: "pointer" }}>
+        <span>${units.length > 0 ? `${units.length}개 단원 선택됨` : "범위를 선택하세요"}</span>
+        <span style=${{ color: C.slate }}>${open ? "▴" : "▾"}</span>
+      </button>
+      ${open && html`
+        <div style=${{ border: `1px solid ${C.line}`, borderRadius: 6, marginTop: 6, maxHeight: 340, overflowY: "auto", background: C.white }}>
+          ${grades.map((g) => {
+            const keys = gradeKeys(g);
+            const n = keys.filter((k) => selected[k]).length;
+            const isOpen = !!openGrades[g];
+            return html`
+              <div key=${g} style=${{ borderBottom: "1px solid #EDEAE2" }}>
+                <div style=${{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px" }}>
+                  <button type="button" aria-expanded=${isOpen} onClick=${() => setOpenGrades((o) => ({ ...o, [g]: !o[g] }))}
+                    style=${{ flex: 1, display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 13, fontWeight: 700, color: C.navy, textAlign: "left" }}>
+                    <span style=${{ width: 10, color: C.slate }}>${isOpen ? "▾" : "▸"}</span>${g}
+                    <span style=${{ fontWeight: 400, fontSize: 11.5, color: n > 0 ? C.ink : C.slate }}>${n}/${keys.length}</span>
+                  </button>
+                  <button type="button" onClick=${() => toggleKeys(keys, true)} style=${linkBtn}>전체 선택</button>
+                  <button type="button" onClick=${() => toggleKeys(keys, false)} style=${{ ...linkBtn, color: C.slate }}>해제</button>
+                </div>
+                ${isOpen && html`
+                  <div style=${{ padding: "0 10px 10px 26px" }}>
+                    ${tree[g].map((c) => {
+                      const catKeys = c.subs.map((sub) => gbSelKey(g, c.cat, sub));
+                      const allOn = catKeys.every((k) => selected[k]);
+                      return html`
+                        <div key=${c.cat} style=${{ marginTop: 8 }}>
+                          <div style=${{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span style=${{ fontSize: 12, fontWeight: 700, color: C.ink }}>${c.cat}</span>
+                            <button type="button" onClick=${() => toggleKeys(catKeys, !allOn)} style=${linkBtn}>${allOn ? "해제" : "전체"}</button>
+                          </div>
+                          <div style=${{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            ${c.subs.map((sub) => {
+                              const k = gbSelKey(g, c.cat, sub);
+                              const on = !!selected[k];
+                              const cm = countMap[k] || { mc: 0, sa: 0 };
+                              return html`
+                                <label key=${k} style=${{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, padding: "3px 8px", borderRadius: 6, border: `1px solid ${on ? C.gold : C.line}`, background: C.white, color: C.ink, cursor: "pointer" }}>
+                                  <input type="checkbox" checked=${on} onChange=${() => toggleKeys([k], !on)} style=${{ width: 13, height: 13, appearance: "auto" }} />${sub}
+                                  <span style=${{ color: C.slate, fontSize: 11 }}>${cm.mc}·${cm.sa}</span>
+                                </label>
+                              `;
+                            })}
+                          </div>
+                        </div>
+                      `;
+                    })}
+                  </div>
+                `}
+              </div>
+            `;
+          })}
+          <div style=${{ padding: "6px 10px", fontSize: 11, color: C.slate, background: "#F3F1EB" }}>단원 옆 숫자는 객관식·서술형 문항 수예요.</div>
+        </div>
+      `}
+      <div style=${{ marginTop: 10 }}>
+        <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <span style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>선택한 범위 ${units.length}개</span>
+          ${units.length > 0 && html`<button type="button" onClick=${() => setSelected({})} style=${{ ...linkBtn, color: C.slate }}>모두 지우기</button>`}
+        </div>
+        ${units.length === 0
+          ? html`<div style=${{ fontSize: 11.5, color: C.slate }}>단원을 골라 주세요. 여러 학년을 섞어서 골라도 돼요.</div>`
+          : html`
+            <div style=${{ display: "flex", flexWrap: "wrap", gap: 5, maxHeight: 112, overflowY: "auto" }}>
+              ${units.map((u) => html`
+                <span key=${u.key} title=${`${u.grade} > ${u.cat} > ${u.sub}`}
+                  style=${{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, padding: "2px 4px 2px 9px", borderRadius: 14, border: `1px solid ${C.gold}`, background: C.white, color: C.ink }}>
+                  ${u.grade} ${u.sub}
+                  <button type="button" aria-label=${`${u.grade} ${u.sub} 빼기`} onClick=${() => toggleKeys([u.key], false)}
+                    style=${{ border: "none", background: "none", padding: "0 4px", fontSize: 14, lineHeight: 1, color: C.slate, cursor: "pointer" }}>×</button>
+                </span>
+              `)}
+            </div>
+          `}
+      </div>
+    </div>
+  `;
+}
+
+function GbStepper({ label, hint, hintWarn, value, onChange }) {
+  const set = (v) => onChange(Math.max(0, Math.min(100, Math.round(Number(v) || 0))));
+  const stepBtn = { width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.line}`, background: C.white, color: C.navy, fontSize: 15, lineHeight: 1, padding: 0, cursor: "pointer" };
+  return html`
+    <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #EDEAE2" }}>
+      <div>
+        <div style=${{ fontSize: 13, color: C.ink }}>${label}</div>
+        <div style=${{ fontSize: 11.5, color: hintWarn ? C.danger : C.slate, marginTop: 1 }}>${hint}</div>
+      </div>
+      <div style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button type="button" aria-label=${`${label} 줄이기`} disabled=${value <= 0} onClick=${() => set(value - 1)} style=${{ ...stepBtn, opacity: value <= 0 ? 0.4 : 1, cursor: value <= 0 ? "not-allowed" : "pointer" }}>−</button>
+        <input type="number" min="0" max="100" value=${value} onChange=${(e) => set(e.target.value)} aria-label=${`${label} 개수`}
+          style=${{ ...inputStyle, width: 52, marginBottom: 0, textAlign: "center", padding: "4px 6px" }} />
+        <button type="button" aria-label=${`${label} 늘리기`} disabled=${value >= 100} onClick=${() => set(value + 1)} style=${{ ...stepBtn, opacity: value >= 100 ? 0.4 : 1, cursor: value >= 100 ? "not-allowed" : "pointer" }}>+</button>
+      </div>
+    </div>
+  `;
+}
+
+function GbTeacherPreviewItem({ doc, n, canReplace, onReplace }) {
+  const isMc = doc.answerFormat === "mc";
+  return html`
+    <div style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <div style=${{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
+          <span style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>${n}.</span>
+          <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, background: "#F3F1EB", color: C.slate }}>${isMc ? "객관식" : "서술형"}</span>
+          <span style=${{ fontSize: 11.5, color: C.slate }}>${doc.grade} · ${doc.cat} · ${doc.sub}</span>
+        </div>
+        <${Button} variant="ghost" disabled=${!canReplace} onClick=${onReplace} style=${{ padding: "3px 10px", fontSize: 12, flex: "0 0 auto" }}>↻ 교체<//>
+      </div>
+      <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${doc.questionText}</div>
+      ${isMc
+        ? html`
+          <div style=${{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+            ${doc.choices.map((c, i) => html`
+              <div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "2px 8px", borderRadius: 4, border: `1px solid ${i === doc.answerIdx ? C.gold : "transparent"}`, fontWeight: i === doc.answerIdx ? 700 : 400 }}>${i + 1}. ${c}</div>
+            `)}
+          </div>`
+        : html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 6, padding: "4px 8px", borderRadius: 4, background: "#F3F1EB" }}>정답: ${doc.answerText || "(정답 없음)"}</div>`}
+    </div>
+  `;
+}
+
+function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCancel }) {
+  const [myQuestions, setMyQuestions] = useState(null);
+  const [loadErr, setLoadErr] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const FC = window.SarahServices.firebaseClient;
+        const docs = await loadWithAuthRaceRetry(() => FC.getAllDocs("grammarBankQuestions"));
+        if (!cancelled) setMyQuestions(Object.entries(docs).map(([id, d]) => ({ id, ...d })));
+      } catch (e) {
+        if (!cancelled) setLoadErr("불러오지 못했어요: " + String(e.message || e));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const [selected, setSelected] = useState({}); // "grade|cat|sub" -> true (학년 혼합 선택 키)
+  const [mcCount, setMcCount] = useState(5);
+  const [saCount, setSaCount] = useState(5);
+  const [mixMode, setMixMode] = useState("random");
+  const [difficulty, setDifficulty] = useState("보통");
+  const [title, setTitle] = useState("");
+  const [pane, setPane] = useState("teacher"); // teacher | student
+  const [draft, setDraft] = useState([]);
+  const [settling, setSettling] = useState(false);
+  const [showAllTeacher, setShowAllTeacher] = useState(false);
+  const [studentIdx, setStudentIdx] = useState(0);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [info, setInfo] = useState(null); // { text, paper }
+  const [assignPaper, setAssignPaper] = useState(null);
+  const savedRef = useRef(null); // { key, paper, questionsById } — 같은 문항 구성으로 인쇄 → 배정해도 시험지는 한 번만 만든다
+
+  const countMap = React.useMemo(() => (myQuestions ? gbCountMap(GB_GRAMMAR_TREE, GB_BANK, myQuestions) : {}), [myQuestions]);
+  const basePools = React.useMemo(() => (myQuestions ? gbBuildPools(GB_GRAMMAR_TREE, GB_BANK, myQuestions, selected) : null), [myQuestions, selected]);
+  const pools = basePools; // 난이도는 "준비 중"이라 뽑기에 쓰이지 않는다
+
+  // 범위·구성을 바꾸면 잠깐(0.35초) 기다렸다가 한 번만 다시 뽑는다.
+  useEffect(() => {
+    if (!pools) return undefined;
+    setSettling(true);
+    const t = setTimeout(() => {
+      setDraft(gbPickMix(pools, mcCount, saCount, mixMode));
+      setStudentIdx(0); setShowAllTeacher(false); setSettling(false);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [pools, mcCount, saCount, mixMode]);
+
+  if (loadErr) return html`<div style=${{ color: C.danger, fontSize: 13 }}>${loadErr}</div>`;
+  if (myQuestions === null) return html`<${Empty} text="불러오는 중..." />`;
+
+  const mcAvail = pools.mcPool.length, saAvail = pools.saPool.length;
+  const hasRange = pools.grades.length > 0;
+  const mcShort = hasRange && mcCount > mcAvail, saShort = hasRange && saCount > saAvail;
+  const gradeLabel = gbGradeLabel(pools.grades);
+  const effTitle = title.trim() || (gradeLabel ? `문법 문제뱅크 (${gradeLabel})` : "문법 문제뱅크");
+  const expectedMix = pools.grades.length >= 2 ? gbExpectedMix(pools, mcCount, saCount, mixMode) : null;
+  const docs = draft.map(gbDraftToExamDoc);
+  const mcN = docs.filter((d) => d.answerFormat === "mc").length, saN = docs.length - mcN;
+  const requested = mcCount + saCount;
+  const draftKey = effTitle + "|" + draft.map((it) => it.id || it.q).join(",");
+
+  function replaceAt(i) {
+    const target = draft[i];
+    const pool = target.type === "mc" ? pools.mcPool : pools.saPool;
+    const used = new Set(draft);
+    const candidates = pool.filter((it) => !used.has(it));
+    if (candidates.length === 0) return;
+    const next = [...draft];
+    next[i] = gbShuffle(candidates)[0];
+    setDraft(next);
+  }
+  const canReplaceAt = (i) => {
+    const pool = draft[i].type === "mc" ? pools.mcPool : pools.saPool;
+    const used = new Set(draft);
+    return pool.some((it) => !used.has(it));
+  };
+
+  // 현재 뽑힌 문항을 시험지로 저장한다(MobileGrammarBankExamBuilder.handleCreate와 같은 순서). 같은 구성이면 한 번만.
+  async function ensureSavedPaper() {
+    if (draft.length === 0) throw new Error("뽑힌 문항이 없어요. 범위를 고르고 개수를 정해 주세요.");
+    if (savedRef.current && savedRef.current.key === draftKey) return savedRef.current;
+    const key = draftKey;
+    const created = [];
+    for (const item of draft) created.push(await QB.importPublishedQuestion(QB.GRAMMAR_COLLECTION, gbItemToPhase8Input(item)));
+    const paper = await EP.createExamPaper({ title: effTitle, grade: gradeLabel });
+    const { section } = EP.manualSection("grammar", "무작위 출제", created);
+    const updated = await EP.updateExamPaper(paper, { sections: [section] });
+    const questionsById = {};
+    created.forEach((d) => { questionsById[d.id] = d; });
+    const finalized = await EP.finalizeExamPaper(updated, questionsById);
+    savedRef.current = { key, paper: finalized, questionsById };
+    onPaperCreated(finalized, created);
+    return savedRef.current;
+  }
+
+  async function handlePrint() {
+    if (busy || draft.length === 0) return;
+    setErr(""); setInfo(null);
+    // 저장하느라 기다린 뒤에 창을 열면 팝업이 막힐 수 있어서, 클릭한 바로 이 순간에 빈 창부터 연다.
+    const win = window.open("", "_blank");
+    if (!win) { setErr("팝업이 차단되어 있어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요."); return; }
+    win.document.write("<p style=\"font-family:sans-serif;padding:20px\">시험지를 준비하는 중...</p>");
+    win.document.close();
+    setBusy("print");
+    try {
+      const rec = await ensureSavedPaper();
+      printExamPaperSheet(EP, rec.paper, rec.questionsById, {}, win);
+      setInfo({ text: "시험지를 저장하고 인쇄 창을 열었어요.", paper: rec.paper });
+    } catch (e) {
+      win.close();
+      setErr("인쇄할 시험지를 만들지 못했어요: " + String(e.message || e));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function handleAssign() {
+    if (busy || draft.length === 0) return;
+    setErr(""); setInfo(null); setBusy("assign");
+    try {
+      const rec = await ensureSavedPaper();
+      setAssignPaper(rec.paper);
+    } catch (e) {
+      setErr("배정할 시험지를 만들지 못했어요: " + String(e.message || e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const sectionTitle = { fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 8 };
+  const shown = showAllTeacher ? docs : docs.slice(0, 5);
+  const studentDocs = docs;
+  const sIdx = Math.min(studentIdx, Math.max(0, studentDocs.length - 1));
+  const sCur = studentDocs[sIdx];
+  const firstSa = studentDocs.findIndex((d) => d.answerFormat !== "mc");
+  const studentKind = sCur && sCur.answerFormat === "mc" ? "mc" : "sa";
+  const noop = () => {};
+
+  return html`
+    <div>
+      <${BackBtn} onClick=${onCancel} />
+      <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 10 }}>문법 시험 출제</div>
+      <div style=${{ display: "grid", gridTemplateColumns: "minmax(340px, 400px) minmax(0, 1fr)", gap: 14, alignItems: "start" }}>
+        <div style=${{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+          <${Card}>
+            <div style=${sectionTitle}>① 범위</div>
+            <${GbRangePicker} tree=${GB_GRAMMAR_TREE} selected=${selected} setSelected=${setSelected} countMap=${countMap} />
+          <//>
+          <${Card}>
+            <div style=${sectionTitle}>② 구성</div>
+            <${GbStepper} label="객관식" value=${mcCount} onChange=${setMcCount}
+              hint=${hasRange ? (mcShort ? `이 범위에는 객관식이 ${mcAvail}개뿐입니다` : `이 범위에서 ${mcAvail}개까지`) : "범위를 먼저 골라 주세요"} hintWarn=${mcShort} />
+            <${GbStepper} label="서술형" value=${saCount} onChange=${setSaCount}
+              hint=${hasRange ? (saShort ? `이 범위에는 서술형이 ${saAvail}개뿐입니다` : `이 범위에서 ${saAvail}개까지`) : "범위를 먼저 골라 주세요"} hintWarn=${saShort} />
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0 4px" }}>
+              <span style=${{ fontSize: 13, color: C.ink }}>총 문항 수</span>
+              <span style=${{ fontSize: 14, fontWeight: 700, color: C.navy, fontVariantNumeric: "tabular-nums" }}>${requested}문항</span>
+            </div>
+            ${hasRange && !settling && docs.length !== requested && html`<div style=${{ fontSize: 11.5, color: C.danger, textAlign: "right" }}>문항이 모자라 실제로는 ${docs.length}문항이 뽑혀요.</div>`}
+            ${pools.grades.length >= 2 && html`
+              <div style=${{ marginTop: 8 }}>
+                <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>학년 배분</div>
+                <div className="ap-seg" role="group" aria-label="학년 배분">
+                  <button type="button" className=${mixMode === "random" ? "active" : ""} onClick=${() => setMixMode("random")}>섞어서 무작위</button>
+                  <button type="button" className=${mixMode === "equal" ? "active" : ""} onClick=${() => setMixMode("equal")}>학년별 같은 비율</button>
+                </div>
+                ${expectedMix && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${expectedMix.rows.map((r) => `${r.grade} ${Math.round(r.total * 10) / 10}`).join(" · ")}${expectedMix.exact ? "" : " (예상)"}</div>`}
+              </div>
+            `}
+            <div style=${{ marginTop: 10 }}>
+              <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style=${{ fontSize: 12, color: C.slate }}>난이도</span>
+                <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>준비 중</span>
+              </div>
+              <div className="ap-seg" role="group" aria-label="난이도 (준비 중)" title="준비 중" style=${{ opacity: 0.5 }}>
+                ${GB_DIFFICULTY_LEVELS.map((lv) => html`<button key=${lv} type="button" disabled=${true} title="준비 중" aria-label=${`${lv} (준비 중)`} style=${{ cursor: "not-allowed" }}>${lv}</button>`)}
+              </div>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>난이도 선택은 준비 중입니다. 문항에 난이도 표시가 생기면 쓸 수 있어요.</div>
+            </div>
+            <div style=${{ marginTop: 10 }}>
+              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>시험지 제목 (비우면 자동)</div>
+              <input style=${{ ...inputStyle, marginBottom: 0 }} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder=${effTitle} />
+            </div>
+          <//>
+        </div>
+
+        <${Card} style=${{ minWidth: 0 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <div style=${{ ...sectionTitle, marginBottom: 0 }}>③ 미리보기${settling ? " (다시 만드는 중...)" : ""}</div>
+            <div className="ap-seg" role="group" aria-label="미리보기 보기 방식">
+              <button type="button" className=${pane === "teacher" ? "active" : ""} onClick=${() => setPane("teacher")}>선생님용</button>
+              <button type="button" className=${pane === "student" ? "active" : ""} onClick=${() => setPane("student")}>학생 화면</button>
+            </div>
+          </div>
+          ${docs.length === 0
+            ? html`<${Empty} text=${hasRange ? "이 조건으로 뽑을 수 있는 문항이 없어요. 범위나 개수를 바꿔 보세요." : "왼쪽에서 범위를 고르면 미리보기가 만들어져요."} />`
+            : pane === "teacher"
+              ? html`
+                <div>
+                  <div style=${{ fontSize: 12, color: C.slate }}>객관식 ${mcN}문항 · 서술형 ${saN}문항${gradeLabel ? " · " + gradeLabel : ""}</div>
+                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} />`)}
+                  ${docs.length > 5 && html`
+                    <div style=${{ paddingTop: 8 }}>
+                      <button type="button" onClick=${() => setShowAllTeacher((v) => !v)} style=${{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>
+                        ${showAllTeacher ? "접기" : `… 외 ${docs.length - 5}문항`}
+                      </button>
+                    </div>`}
+                </div>`
+              : html`
+                <div>
+                  ${saN > 0 && html`
+                    <div className="ap-seg" role="group" aria-label="학생 화면 종류" style=${{ marginBottom: 8 }}>
+                      <button type="button" disabled=${mcN === 0} className=${studentKind === "mc" ? "active" : ""} onClick=${() => setStudentIdx(0)}>객관식 화면</button>
+                      <button type="button" className=${studentKind === "sa" ? "active" : ""} onClick=${() => setStudentIdx(firstSa)}>서술형 화면</button>
+                    </div>`}
+                  <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>학생이 보는 화면이에요. 여기서는 답이 저장되지 않아요.</div>
+                  <${ExamRunScreen}
+                    title=${effTitle} index=${sIdx} total=${studentDocs.length}
+                    remainLabel="--:--" remainWarn=${false} remainPrefix="남은 시간 "
+                    passage=${null} questionText=${sCur.questionText} answerFormat=${sCur.answerFormat}
+                    displayChoices=${sCur.choices} selectedDisplayIdx=${-1} answerText=""
+                    readOnly=${true} notice="" onPickMc=${noop} onTypeText=${noop}
+                    questionIds=${studentDocs.map((d) => d.id)} answers=${{}} onGoto=${setStudentIdx}
+                    onPrev=${() => setStudentIdx(Math.max(0, sIdx - 1))}
+                    onNext=${() => setStudentIdx(Math.min(studentDocs.length - 1, sIdx + 1))}
+                    finalAction=${html`<${Button} variant="gold" disabled=${true}>시험 제출<//>`}
+                    savingAnswer=${false} saveError="" navyHeader=${true} showUnanswered=${true} />
+                </div>`}
+        <//>
+      </div>
+
+      ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 10 }}>${err}</div>`}
+      ${info && html`
+        <div style=${{ fontSize: 12.5, color: C.navy, marginTop: 10 }}>
+          ${info.text}
+          <button type="button" onClick=${() => onOpenDetail(info.paper)} style=${{ marginLeft: 8, background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>시험지 상세 열기</button>
+        </div>`}
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE2", flexWrap: "wrap" }}>
+        <div style=${{ fontSize: 11.5, color: C.slate }}>미리보기만으로는 아무것도 저장되지 않아요. 인쇄하거나 배정하면 이 문항들이 시험지로 저장돼요.</div>
+        <div style=${{ display: "flex", gap: 8 }}>
+          <${Button} variant="ghost" disabled=${!!busy || docs.length === 0 || settling} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
+          <${Button} variant="primary" disabled=${!!busy || docs.length === 0 || settling} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : "학생에게 배정"}<//>
+        </div>
+      </div>
+
+      ${assignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${assignPaper} roster=${roster || []}
+        onClose=${() => setAssignPaper(null)}
+        onAssigned=${(done) => { setInfo({ text: `${(done || []).length || 1}명에게 배정했어요. Results 탭에서 진행 상황을 볼 수 있어요.`, paper: assignPaper }); setAssignPaper(null); }} />`}
+    </div>
+  `;
+}
+
 function ExamBuilderView({ roster, onLogout }) {
   const EP = window.SarahServices.examPaperService;
   const QB = window.SarahServices.questionBankService;
@@ -13990,6 +14429,7 @@ function ExamBuilderView({ roster, onLogout }) {
   const [quickAssign, setQuickAssign] = useState(null); // 목록 오른쪽 카드에서 바로 배정 — 상세 화면을 거치지 않는다
   const [quickMsg, setQuickMsg] = useState("");
   const [newTitle, setNewTitle] = useState("");
+  const wideDesktop = useIsDesktop(); // 1025px 이상이면 문법 시험 출제가 2단 화면(GrammarExamTwoPane)
 
   async function load() {
     try {
@@ -14047,6 +14487,16 @@ function ExamBuilderView({ roster, onLogout }) {
     setReadingAnalysisQuestions((qs) => qs.map((q) => (usedIds.has(q.id) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q)));
   }
 
+  if (view === "bankPicker" && wideDesktop) {
+    // 시험지는 인쇄/배정을 누를 때 저장된다. 저장되면 목록 상태만 갱신하고 이 화면에 그대로 머문다(상세로 이동하지 않음).
+    return html`<${GrammarExamTwoPane} EP=${EP} QB=${QB} roster=${roster}
+      onPaperCreated=${(doc, created) => {
+        setPapers((ps) => [doc, ...ps]);
+        setGrammarQuestions((qs) => [...qs, ...created]);
+      }}
+      onOpenDetail=${(doc) => { setSelectedId(doc.id); setView("detail"); }}
+      onCancel=${() => setView("list")} />`;
+  }
   if (view === "bankPicker") {
     return html`<${MobileGrammarBankExamBuilder} EP=${EP} QB=${QB}
       onCreated=${(doc, created) => {
@@ -22281,6 +22731,82 @@ function originalToDisplayIndex(choiceDisplayOrder, originalIdx) {
   return choiceDisplayOrder ? choiceDisplayOrder.indexOf(Number(originalIdx)) : Number(originalIdx);
 }
 
+// 학생 응시 화면의 "눈에 보이는 부분"만 따로 뗀 컴포넌트(2026-10). 상태·저장·제출 로직은 전부 호출한 쪽에 있다 —
+// StudentExamRuntime은 실제 응시(답 저장, 제한 시간, 제출)를, GrammarExamTwoPane의 "학생 화면" 미리보기는
+// 같은 화면을 readOnly로 보여 주기만 한다(어디에도 저장하지 않음). 마크업은 예전 StudentExamRuntime의 것을 그대로 옮겼고,
+// 아래 prop 중 navyHeader/showUnanswered/remainPrefix/onBack 생략은 미리보기 전용 옵션이며 기본값은 예전 동작 그대로다.
+function ExamRunScreen({
+  title, index, total, remainLabel, remainWarn, remainPrefix = "⏱ ",
+  passage, questionText, answerFormat, displayChoices, selectedDisplayIdx, answerText,
+  readOnly, notice, onPickMc, onTypeText, questionIds, answers, onGoto, onPrev, onNext, finalAction,
+  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children,
+}) {
+  const isEmpty = (v) => v === undefined || v === null || v === "";
+  const unansweredNums = showUnanswered ? questionIds.map((id, i) => ({ id, n: i + 1 })).filter(({ id }) => isEmpty(answers[id])).map(({ n }) => n) : [];
+  return html`
+    <div>
+      ${onBack && html`<${BackBtn} onClick=${onBack} />`}
+      ${notice && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${notice}</div>`}
+      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: navyHeader ? "center" : "baseline", marginBottom: 8, ...(navyHeader ? { background: C.navy, borderRadius: 6, padding: "8px 12px" } : null) }}>
+        <div style=${{ ...serif, fontSize: 16, color: navyHeader ? C.white : C.navy }}>${title}</div>
+        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+          ${remainLabel !== null && remainLabel !== undefined && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainWarn ? "#F7E9E6" : "#EFEDE6", color: remainWarn ? C.danger : C.navy }}>${remainPrefix}${remainLabel}</div>`}
+          <div style=${{ fontSize: 12, color: navyHeader ? C.line : C.slate }}>${index + 1} / ${total}</div>
+        </div>
+      </div>
+
+      ${passage && html`
+        <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
+          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
+          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
+        <//>
+      `}
+
+      <${Card}>
+        <div style=${{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, marginBottom: 12 }}>${index + 1}. ${questionText}</div>
+        ${answerFormat === "mc"
+          ? html`
+            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+              ${displayChoices.map((c, i) => html`
+                <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)}
+                  style=${{
+                    textAlign: "left", padding: "10px 12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer",
+                    border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
+                    background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
+                    fontSize: 12.5, color: C.ink,
+                  }}>${i + 1}. ${c}<//>
+              `)}
+            </div>
+          `
+          : html`<textarea style=${{ ...inputStyle, minHeight: 90 }} disabled=${readOnly} value=${answerText || ""} onChange=${(e) => onTypeText(e.target.value)} placeholder="답을 입력하세요" />`}
+      <//>
+      ${savingAnswer && html`<div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>저장 중...</div>`}
+      ${saveError && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${saveError}</div>`}
+
+      <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: showUnanswered ? 6 : 14 }}>
+        ${questionIds.map((id, i) => html`
+          <button key=${id + i} type="button" onClick=${() => onGoto(i)}
+            style=${{
+              width: 30, height: 30, borderRadius: "50%", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+              border: i === index ? `2px solid ${C.navy}` : `1px solid ${C.line}`,
+              background: !isEmpty(answers[id]) ? "#E1EEE4" : C.white,
+              color: C.ink,
+            }}>${i + 1}<//>
+        `)}
+      </div>
+      ${showUnanswered && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 14 }}>${unansweredNums.length > 0 ? `안 푼 문제 ${unansweredNums.length}개: ${unansweredNums.join(", ")}번` : "안 푼 문제가 없어요."}</div>`}
+
+      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+        <${Button} variant="ghost" onClick=${onPrev} disabled=${index === 0}>◀ 이전<//>
+        ${index < total - 1
+          ? html`<${Button} variant="ghost" onClick=${onNext}>다음 ▶<//>`
+          : finalAction}
+      </div>
+      ${children}
+    </div>
+  `;
+}
+
 function StudentExamRuntime({ assignment, onExit }) {
   const AS = window.SarahServices.examAssignmentService;
   const AT = window.SarahServices.examAttemptService;
@@ -22440,64 +22966,18 @@ function StudentExamRuntime({ assignment, onExit }) {
   const selectedDisplayIdx = curQ.answerFormat === "mc" ? originalToDisplayIndex(cur.choiceDisplayOrder, selectedOriginal) : -1;
 
   return html`
-    <div>
-      <${BackBtn} onClick=${onExit} />
-      ${readOnly && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>이미 제출된 시험이에요. 답을 바꿀 수 없어요.</div>`}
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-        <div style=${{ ...serif, fontSize: 16, color: C.navy }}>${paper.title}</div>
-        <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-          ${remainLabel !== null && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainMs < 300000 ? "#F7E9E6" : "#EFEDE6", color: remainMs < 300000 ? C.danger : C.navy }}>⏱ ${remainLabel}</div>`}
-          <div style=${{ fontSize: 12, color: C.slate }}>${currentIndex + 1} / ${total}</div>
-        </div>
-      </div>
-
-      ${curPassage && html`
-        <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
-          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${curPassage.title}</div>
-          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${curPassage.passageText || curPassage.originalText}</div>
-        <//>
-      `}
-
-      <${Card}>
-        <div style=${{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, marginBottom: 12 }}>${currentIndex + 1}. ${curQ.questionText}</div>
-        ${curQ.answerFormat === "mc"
-          ? html`
-            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
-              ${displayChoices.map((c, i) => html`
-                <button key=${i} type="button" disabled=${readOnly} onClick=${() => pickMc(i)}
-                  style=${{
-                    textAlign: "left", padding: "10px 12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer",
-                    border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
-                    background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
-                    fontSize: 12.5, color: C.ink,
-                  }}>${i + 1}. ${c}<//>
-              `)}
-            </div>
-          `
-          : html`<textarea style=${{ ...inputStyle, minHeight: 90 }} disabled=${readOnly} value=${selectedOriginal || ""} onChange=${(e) => typeSubjective(e.target.value)} placeholder="답을 입력하세요" />`}
-      <//>
-      ${savingAnswer && html`<div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>저장 중...</div>`}
-      ${saveError && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${saveError}</div>`}
-
-      <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-        ${flatQuestions.map((q, i) => html`
-          <button key=${q.questionId + i} type="button" onClick=${() => setCurrentIndex(i)}
-            style=${{
-              width: 30, height: 30, borderRadius: "50%", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
-              border: i === currentIndex ? `2px solid ${C.navy}` : `1px solid ${C.line}`,
-              background: (answers[q.questionId] !== undefined && answers[q.questionId] !== null && answers[q.questionId] !== "") ? "#E1EEE4" : C.white,
-              color: C.ink,
-            }}>${i + 1}<//>
-        `)}
-      </div>
-
-      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <${Button} variant="ghost" onClick=${() => setCurrentIndex((i) => Math.max(0, i - 1))} disabled=${currentIndex === 0}>◀ 이전<//>
-        ${currentIndex < total - 1
-          ? html`<${Button} variant="ghost" onClick=${() => setCurrentIndex((i) => Math.min(total - 1, i + 1))}>다음 ▶<//>`
-          : html`<${Button} variant="gold" onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>시험 제출<//>`}
-      </div>
-
+    <${ExamRunScreen}
+        title=${paper.title} index=${currentIndex} total=${total}
+        remainLabel=${remainLabel} remainWarn=${remainMs !== null && remainMs < 300000}
+        passage=${curPassage} questionText=${curQ.questionText} answerFormat=${curQ.answerFormat}
+        displayChoices=${displayChoices} selectedDisplayIdx=${selectedDisplayIdx} answerText=${selectedOriginal}
+        readOnly=${readOnly} notice=${readOnly ? "이미 제출된 시험이에요. 답을 바꿀 수 없어요." : ""}
+        onPickMc=${pickMc} onTypeText=${typeSubjective}
+        questionIds=${flatQuestions.map((q) => q.questionId)} answers=${answers} onGoto=${setCurrentIndex}
+        onPrev=${() => setCurrentIndex((i) => Math.max(0, i - 1))}
+        onNext=${() => setCurrentIndex((i) => Math.min(total - 1, i + 1))}
+        finalAction=${html`<${Button} variant="gold" onClick=${() => setShowSubmitConfirm(true)} disabled=${readOnly}>시험 제출<//>`}
+        savingAnswer=${savingAnswer} saveError=${saveError} onBack=${onExit}>
       ${showSubmitConfirm && html`
         <${Modal} onClose=${() => !submitting && setShowSubmitConfirm(false)}>
           <div style=${{ fontWeight: 700, color: C.navy, fontSize: 15, marginBottom: 10 }}>시험을 제출할까요?</div>
@@ -22512,7 +22992,7 @@ function StudentExamRuntime({ assignment, onExit }) {
           </div>
         <//>
       `}
-    </div>
+    <//>
   `;
 }
 
