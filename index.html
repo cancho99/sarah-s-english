@@ -9688,6 +9688,48 @@ function esPaperSig(paper) {
   for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
   return h.toString(36) + ":" + str.length;
 }
+// 시험지 섹션 계획(2026-10) — 미리보기와 저장(esPublishPaperAsExam)이 같은 규칙을 쓴다.
+//  · 같은 원 지문(sourceKey)에서 나온 문항은 시험지에서 이웃하도록 모은다(처음 나온 자리에). sourceKey가 없는 예전 문항은 제자리.
+//  · 지문 글자가 같은(공백·줄바꿈 차이 무시) 문항은 한 섹션으로 묶는다 — 인쇄는 섹션 첫머리에 지문을 한 번만 싣는다.
+//    지문을 가공하는 유형(빈칸·어법·어휘·무관 문장·삽입·순서 등)은 문항마다 글자가 달라 각자 자기 섹션을 쓴다(억지로 합치지 않는다).
+//  · 섹션 이름: 출처 정보(sourceKey)가 있으면 "지문 n · 지문 제목"(n = 시험지에서 그 지문이 처음 나온 순번), 없는 예전 문항은 예전처럼 "지문 {문항 순번}".
+function esPlanPaperSections(entries) {
+  const list = entries || [];
+  const ordered = [];
+  const clustered = new Set();
+  list.forEach((e) => {
+    if (!e.sourceKey) { ordered.push(e); return; }
+    if (clustered.has(e.sourceKey)) return;
+    clustered.add(e.sourceKey);
+    list.forEach((x) => { if (x.sourceKey === e.sourceKey) ordered.push(x); });
+  });
+  const srcNo = new Map();
+  const byText = new Map();
+  const sections = [];
+  ordered.forEach((e, ei) => {
+    const isGroup = e.kind === "group";
+    const text = (isGroup ? e.sharedPassage : e.displayPassage) || "";
+    const key = esNormPassage(text);
+    let sec = byText.get(key);
+    if (!sec) {
+      let label;
+      if (e.sourceKey) {
+        if (!srcNo.has(e.sourceKey)) srcNo.set(e.sourceKey, srcNo.size + 1);
+        label = `지문 ${srcNo.get(e.sourceKey)}` + (e.sourceTitle ? ` · ${e.sourceTitle}` : "");
+      } else {
+        label = `지문 ${ei + 1}`;
+      }
+      sec = { id: sections.length, label, text: String(text).trim(), sourceKey: e.sourceKey || null, items: [] };
+      byText.set(key, sec);
+      sections.push(sec);
+    }
+    if (isGroup) (e.questions || []).forEach((q, qi) => sec.items.push({ entry: e, sub: qi, q }));
+    else sec.items.push({ entry: e, sub: null, q: e });
+  });
+  let n = 0;
+  sections.forEach((sec) => sec.items.forEach((it) => { it.n = ++n; }));
+  return sections;
+}
 async function esPublishPaperAsExam(paper, ES) {
   const EP = window.SarahServices.examPaperService;
   const QB = window.SarahServices.questionBankService;
@@ -9700,37 +9742,26 @@ async function esPublishPaperAsExam(paper, ES) {
   if (bad.length > 0) throw new Error("아직 완성되지 않은 문항이 있어요 — 지문/선택지/정답을 먼저 확인해 주세요.");
   const grade = paper.grade || "";
   const examType = paper.examType || "";
-  const sectionsByPassage = new Map(); // 지문 텍스트 → { passageId, label, questionDocs[] }
   const allDocs = [];
-  async function addQuestion(passageText, q, label) {
-    const key = passageText.trim();
-    let sec = sectionsByPassage.get(key);
-    if (!sec) {
-      const passage = await QB.importReadingPassage({ title: label, passageText: key, grade, examType, source: { type: "TEACHER_CREATED", note: "Exam Studio" } });
-      sec = { passageId: passage.id, label, questionDocs: [] };
-      sectionsByPassage.set(key, sec);
+  const sections = [];
+  for (const sec of esPlanPaperSections(paper.entries || [])) {
+    const passage = await QB.importReadingPassage({ title: sec.label, passageText: sec.text, grade, examType, source: { type: "TEACHER_CREATED", note: "Exam Studio" } });
+    const questionDocs = [];
+    for (const it of sec.items) {
+      const q = it.q;
+      const stem = [q.contextNote, q.questionText].filter((x) => x && String(x).trim()).join("\n\n");
+      const doc = await QB.importReadingQuestion({
+        grade, examType, questionText: stem || "다음 물음에 답하시오.",
+        choices: (q.choices || []).map((c) => String(c || "").replace(/^[①②③④⑤]\s*/, "").trim()),
+        answer: Number.isInteger(q.answer) ? q.answer : 0,
+        explanation: q.explanation || "",
+        source: { type: "TEACHER_CREATED", note: "Exam Studio" },
+      }, passage.id);
+      questionDocs.push(doc);
+      allDocs.push(doc);
     }
-    const stem = [q.contextNote, q.questionText].filter((x) => x && String(x).trim()).join("\n\n");
-    const doc = await QB.importReadingQuestion({
-      grade, examType, questionText: stem || "다음 물음에 답하시오.",
-      choices: (q.choices || []).map((c) => String(c || "").replace(/^[①②③④⑤]\s*/, "").trim()),
-      answer: Number.isInteger(q.answer) ? q.answer : 0,
-      explanation: q.explanation || "",
-      source: { type: "TEACHER_CREATED", note: "Exam Studio" },
-    }, sec.passageId);
-    sec.questionDocs.push(doc);
-    allDocs.push(doc);
+    sections.push(EP.manualSection("reading", sec.label, questionDocs, passage.id).section);
   }
-  let n = 0;
-  for (const e of paper.entries || []) {
-    n += 1;
-    if (e.kind === "group") {
-      for (const q of e.questions || []) await addQuestion(e.sharedPassage || "", q, `지문 ${n}`);
-    } else {
-      await addQuestion(e.displayPassage || "", e, `지문 ${n}`);
-    }
-  }
-  const sections = [...sectionsByPassage.values()].map((sec) => EP.manualSection("reading", sec.label, sec.questionDocs, sec.passageId).section);
   const created = await EP.createExamPaper({ title: paper.title || "Exam Studio 시험지", grade, examType, sections });
   const questionsById = {};
   allDocs.forEach((d) => { questionsById[d.id] = d; });
@@ -14642,21 +14673,6 @@ function esEntryMatchesPassage(e, p, pWords) {
   if (esNormPassage(text) === esNormPassage(p.text)) return true;
   return esDice(esWordSet(text), pWords) >= 0.85;
 }
-// 고른 지문 순서대로 문항을 묶는다(같은 지문의 문항이 이웃하도록).
-function esGroupDraftByPassage(chosen, draft) {
-  const groups = chosen.map((p) => ({ p, entries: draft.filter((e) => e.sourceKey === p.sourceKey) }));
-  return groups;
-}
-function esFlattenReadingDraft(groups) {
-  const out = [];
-  let n = 0;
-  groups.forEach((g, gi) => g.entries.forEach((e) => {
-    if (e.kind === "group") (e.questions || []).forEach((q, qi) => out.push({ n: ++n, gi, entry: e, sub: qi, q, passage: e.sharedPassage }));
-    else out.push({ n: ++n, gi, entry: e, sub: null, q: e, passage: e.displayPassage });
-  }));
-  return out;
-}
-
 function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCancel, examKind, onExamKind }) {
   const ES = window.SarahServices.examStudioService;
   const [loaded, setLoaded] = useState(false);
@@ -14717,8 +14733,9 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
 
   const typeList = ES_TYPE_META.filter((t) => counts[t.key]);
   const perPassage = typeList.reduce((sum, t) => sum + counts[t.key], 0);
-  const groups = esGroupDraftByPassage(chosen, draft);
-  const flat = esFlattenReadingDraft(groups);
+  const orderedEntries = chosen.flatMap((p) => draft.filter((e) => e.sourceKey === p.sourceKey)); // 고른 지문 순서
+  const plan = esPlanPaperSections(orderedEntries); // 인쇄·학생 화면과 같은 섹션 규칙
+  const flat = plan.flatMap((sec) => sec.items.map((it) => ({ ...it, sec })));
   const gradeSet = [...new Set(chosen.map((p) => p.grade).filter(Boolean))];
   const effTitle = title.trim() || (gradeSet.length > 0 ? `독해 문제 (${gradeSet.join("·")})` : "독해 문제");
   const timeLimitMinutes = timeUnlimited ? null : timeMin;
@@ -14871,7 +14888,6 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
     setStudentIdx(0);
   }
 
-  const orderedEntries = groups.flatMap((g) => g.entries);
   // 같은 구성인지 알아보는 열쇠 — 저장하면서 바뀌는 stage 같은 값은 넣지 않는다(두 번째 인쇄/배정이 시험지를 또 만들지 않게).
   const draftKey = effTitle + "|" + orderedEntries.map((e) => e.localId + (e.kind === "group" ? ":" + (e.questions || []).map((q) => q.questionText).join("|") : "")).join(",");
 
@@ -15126,13 +15142,12 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               : pane === "teacher"
                 ? html`
                   <div>
-                    ${groups.map((g, gi) => {
-                      const items = flat.filter((x) => x.gi === gi);
-                      if (items.length === 0) return null;
+                    ${plan.map((sec) => {
+                      const items = sec.items;
                       return html`
-                        <div key=${g.p.pid} style=${{ marginBottom: 12 }}>
+                        <div key=${sec.id} style=${{ marginBottom: 12 }}>
                           <div style=${{ background: "#F3F1EB", borderRadius: 6, padding: "6px 10px", fontSize: 12.5, fontWeight: 700, color: C.navy }}>
-                            지문 ${gi + 1} · ${g.p.title} <span style=${{ fontWeight: 400, color: C.slate }}>/ 문항 ${items[0].n === items[items.length - 1].n ? items[0].n : `${items[0].n}~${items[items.length - 1].n}`}</span>
+                            ${sec.label} <span style=${{ fontWeight: 400, color: C.slate }}>/ 문항 ${items[0].n === items[items.length - 1].n ? items[0].n : `${items[0].n}~${items[items.length - 1].n}`}</span>
                           </div>
                           ${items.map((it) => {
                             const meta = ES_TYPE_META.find((t) => t.key === it.entry.questionType) || ES_TYPE_META[0];
@@ -15161,7 +15176,7 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
                     <${ExamRunScreen}
                       title=${effTitle} index=${sIdx} total=${flat.length}
                       remainLabel=${timeLimitMinutes ? `${String(timeLimitMinutes).padStart(2, "0")}:00` : "제한 시간 없음"} remainWarn=${false} remainPrefix=${timeLimitMinutes ? "남은 시간 " : ""}
-                      passage=${{ title: `지문 ${sCur.gi + 1} · ${groups[sCur.gi].p.title}`, passageText: sCur.passage }}
+                      passage=${{ title: sCur.sec.label, passageText: sCur.sec.text }} passageSameAsPrev=${sIdx > 0 && flat[sIdx - 1].sec.id === sCur.sec.id}
                       questionText=${esStemOf(sCur.q)} answerFormat="mc"
                       displayChoices=${(sCur.q.choices || []).map(esStripCirc)} selectedDisplayIdx=${-1} answerText=""
                       readOnly=${true} notice="" onPickMc=${() => {}} onTypeText=${() => {}}
@@ -23665,9 +23680,10 @@ function ExamRunScreen({
   title, index, total, remainLabel, remainWarn, remainPrefix = "⏱ ",
   passage, questionText, answerFormat, displayChoices, selectedDisplayIdx, answerText,
   readOnly, notice, onPickMc, onTypeText, questionIds, answers, onGoto, onPrev, onNext, finalAction,
-  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction, wideFrame,
+  savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction, wideFrame, passageSameAsPrev,
 }) {
   const wide = useIsDesktop();
+  const [openPassageAt, setOpenPassageAt] = useState(-1); // PC: 앞 문항과 같은 지문은 접어 두고, 필요할 때만 펼친다(펼친 문항 번호)
   const isEmpty = (v) => v === undefined || v === null || v === "";
   const unansweredNums = showUnanswered ? questionIds.map((id, i) => ({ id, n: i + 1 })).filter(({ id }) => isEmpty(answers[id])).map(({ n }) => n) : [];
   if (wide) {
@@ -23692,9 +23708,20 @@ function ExamRunScreen({
             <div style=${{ fontSize: 12, color: navyHeader ? C.line : C.slate }}>${index + 1} / ${total}</div>
           </div>
         </div>
-        ${passage && html`
+        ${passage && passageSameAsPrev && openPassageAt !== index && html`
           <${Card} style=${{ background: C.ivory, marginBottom: 10, ...cap }}>
-            <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style=${{ fontSize: 12.5, color: C.slate, minWidth: 0 }}><b style=${{ color: C.navy }}>${passage.title}</b> — 앞 문항과 같은 지문이에요.</div>
+              <button type="button" onClick=${() => setOpenPassageAt(index)} style=${{ flex: "0 0 auto", background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>지문 다시 보기</button>
+            </div>
+          <//>
+        `}
+        ${passage && !(passageSameAsPrev && openPassageAt !== index) && html`
+          <${Card} style=${{ background: C.ivory, marginBottom: 10, ...cap }}>
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13 }}>${passage.title}</div>
+              ${passageSameAsPrev && html`<button type="button" onClick=${() => setOpenPassageAt(-1)} style=${{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.slate, cursor: "pointer", textDecoration: "underline" }}>지문 접기</button>`}
+            </div>
             <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
           <//>
         `}
@@ -23979,7 +24006,8 @@ function StudentExamRuntime({ assignment, onExit }) {
     <${ExamRunScreen}
         title=${paper.title} index=${currentIndex} total=${total}
         remainLabel=${remainLabel} remainWarn=${remainMs !== null && remainMs < 300000}
-        passage=${curPassage} questionText=${curQ.questionText} answerFormat=${curQ.answerFormat}
+        passage=${curPassage} passageSameAsPrev=${!!curPassage && currentIndex > 0 && flatQuestions[currentIndex - 1].bank === "reading" && flatQuestions[currentIndex - 1].passageId === cur.passageId}
+        questionText=${curQ.questionText} answerFormat=${curQ.answerFormat}
         displayChoices=${displayChoices} selectedDisplayIdx=${selectedDisplayIdx} answerText=${selectedOriginal}
         readOnly=${readOnly} notice=${readOnly ? "이미 제출된 시험이에요. 답을 바꿀 수 없어요." : ""}
         onPickMc=${pickMc} onTypeText=${typeSubjective}
