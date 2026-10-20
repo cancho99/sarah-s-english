@@ -13477,7 +13477,7 @@ function ExamPaperBuilder({ EP, QB, paper, grammarQuestions, readingQuestions, r
 // paper.status를 다시 한번 확인한다 — examAssignmentService.createAssignment() 자체는 examPaperId
 // 문자열만 받고 그 시험지의 상태를 모르므로(examPaperService를 모르는 8-A의 의도된 설계), 이 검증은
 // UI 레이어의 책임으로 둔다.
-function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
+function AssignExamModal({ AS, paper, roster, onClose, onAssigned, initialTimeLimit }) {
   function defaultDueDateStr() {
     const d = new Date();
     d.setDate(d.getDate() + 7);
@@ -13487,7 +13487,7 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned }) {
   const [picked, setPicked] = useState({});
   const [dueDate, setDueDate] = useState(defaultDueDateStr());
   const [dueTime, setDueTime] = useState("23:59");
-  const [timeLimit, setTimeLimit] = useState(""); // 분. 빈 값 = 제한 없음
+  const [timeLimit, setTimeLimit] = useState(initialTimeLimit > 0 ? String(initialTimeLimit) : ""); // 분. 빈 값 = 제한 없음 (initialTimeLimit: 문법 시험 출제 2단 화면이 미리 채워 줌)
   const [resultsVisible, setResultsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -14113,6 +14113,28 @@ function GbRangePicker({ tree, selected, setSelected, countMap }) {
   `;
 }
 
+// ② 구성의 "제한 시간" 줄 — 5분 단위(5~180분), "제한 없음"을 켜면 시간 조절이 사라지고, 끄면 이전 시간으로 돌아온다.
+const GB_TIME_MIN = 5, GB_TIME_MAX = 180, GB_TIME_STEP = 5, GB_TIME_DEFAULT = 40;
+function GbTimeLimitRow({ unlimited, minutes, onMinutes, onUnlimited }) {
+  const stepBtn = { width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.line}`, background: C.white, color: C.navy, fontSize: 15, lineHeight: 1, padding: 0 };
+  const dis = (off) => ({ opacity: off ? 0.4 : 1, cursor: off ? "not-allowed" : "pointer" });
+  return html`
+    <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 30 }}>
+      <span style=${{ fontSize: 13, color: C.ink }}>제한 시간</span>
+      <div style=${{ display: "flex", alignItems: "center", gap: 8 }}>
+        ${!unlimited && html`
+          <div style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button type="button" aria-label="제한 시간 5분 줄이기" disabled=${minutes <= GB_TIME_MIN} onClick=${() => onMinutes(Math.max(GB_TIME_MIN, minutes - GB_TIME_STEP))} style=${{ ...stepBtn, ...dis(minutes <= GB_TIME_MIN) }}>−</button>
+            <span style=${{ minWidth: 44, textAlign: "center", fontSize: 13, fontWeight: 700, color: C.navy, fontVariantNumeric: "tabular-nums" }}>${minutes}분</span>
+            <button type="button" aria-label="제한 시간 5분 늘리기" disabled=${minutes >= GB_TIME_MAX} onClick=${() => onMinutes(Math.min(GB_TIME_MAX, minutes + GB_TIME_STEP))} style=${{ ...stepBtn, ...dis(minutes >= GB_TIME_MAX) }}>+</button>
+          </div>`}
+        <button type="button" aria-pressed=${unlimited} onClick=${onUnlimited}
+          style=${{ fontSize: 12, padding: "4px 10px", borderRadius: 14, cursor: "pointer", border: `1px solid ${unlimited ? C.navy : C.line}`, background: unlimited ? C.navy : C.white, color: unlimited ? C.white : C.slate }}>제한 없음</button>
+      </div>
+    </div>
+  `;
+}
+
 function GbStepper({ label, hint, hintWarn, value, onChange }) {
   const set = (v) => onChange(Math.max(0, Math.min(100, Math.round(Number(v) || 0))));
   const stepBtn = { width: 28, height: 28, borderRadius: 6, border: `1px solid ${C.line}`, background: C.white, color: C.navy, fontSize: 15, lineHeight: 1, padding: 0, cursor: "pointer" };
@@ -14179,6 +14201,8 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const [saCount, setSaCount] = useState(5);
   const [mixMode, setMixMode] = useState("random");
   const [difficulty, setDifficulty] = useState("보통");
+  const [timeMin, setTimeMin] = useState(GB_TIME_DEFAULT); // 제한 시간(분) — "제한 없음"을 켜도 값은 남아 있다가 끄면 돌아온다
+  const [timeUnlimited, setTimeUnlimited] = useState(false);
   const [title, setTitle] = useState("");
   const [pane, setPane] = useState("teacher"); // teacher | student
   const [draft, setDraft] = useState([]);
@@ -14218,6 +14242,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const docs = draft.map(gbDraftToExamDoc);
   const mcN = docs.filter((d) => d.answerFormat === "mc").length, saN = docs.length - mcN;
   const requested = mcCount + saCount;
+  const timeLimitMinutes = timeUnlimited ? null : timeMin; // 배정 창에 미리 채울 값(null = 제한 없음). 인쇄·시험지 저장에는 쓰지 않는다
   const draftKey = effTitle + "|" + draft.map((it) => it.id || it.q).join(",");
 
   function replaceAt(i) {
@@ -14328,6 +14353,10 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               </div>
             `}
             <div style=${{ marginTop: 10 }}>
+              <${GbTimeLimitRow} unlimited=${timeUnlimited} minutes=${timeMin} onMinutes=${setTimeMin} onUnlimited=${() => setTimeUnlimited((v) => !v)} />
+              <div style=${{ fontSize: 11, color: C.slate, marginTop: 2 }}>여기서 정한 시간이 배정 창에 미리 채워지고, 배정할 때 바꿀 수 있습니다. 인쇄에는 쓰이지 않습니다.</div>
+            </div>
+            <div style=${{ marginTop: 10 }}>
               <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <span style=${{ fontSize: 12, color: C.slate }}>난이도</span>
                 <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>준비 중</span>
@@ -14376,7 +14405,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
                   <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>학생이 보는 화면이에요. 여기서는 답이 저장되지 않아요.</div>
                   <${ExamRunScreen}
                     title=${effTitle} index=${sIdx} total=${studentDocs.length}
-                    remainLabel="--:--" remainWarn=${false} remainPrefix="남은 시간 "
+                    remainLabel=${timeLimitMinutes ? `${String(timeLimitMinutes).padStart(2, "0")}:00` : "제한 시간 없음"} remainWarn=${false} remainPrefix=${timeLimitMinutes ? "남은 시간 " : ""}
                     passage=${null} questionText=${sCur.questionText} answerFormat=${sCur.answerFormat}
                     displayChoices=${sCur.choices} selectedDisplayIdx=${-1} answerText=""
                     readOnly=${true} notice="" onPickMc=${noop} onTypeText=${noop}
@@ -14403,7 +14432,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
         </div>
       </div>
 
-      ${assignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${assignPaper} roster=${roster || []}
+      ${assignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${assignPaper} roster=${roster || []} initialTimeLimit=${timeLimitMinutes}
         onClose=${() => setAssignPaper(null)}
         onAssigned=${(done) => { setInfo({ text: `${(done || []).length || 1}명에게 배정했어요. Results 탭에서 진행 상황을 볼 수 있어요.`, paper: assignPaper }); setAssignPaper(null); }} />`}
     </div>
