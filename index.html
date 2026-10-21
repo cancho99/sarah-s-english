@@ -13704,6 +13704,14 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned, initialTimeLi
 
   return html`
     <${Modal} onClose=${onClose}>
+      <style>
+        @media (max-width: 1024px) {
+          .assign-exam-due { flex-wrap: wrap; }
+          .assign-exam-due > div:first-child { flex: 1 1 100% !important; min-width: 0; }
+          .assign-exam-due > div:last-child { flex: 1 1 0; min-width: 0; }
+          .assign-exam-due select { flex: 1; min-width: 0; max-width: 100%; }
+        }
+      </style>
       <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 14 }}>학생에게 배정</div>
       <${Card} style=${{ marginBottom: 14, background: C.ivory }}>
         <div style=${{ fontSize: 13, fontWeight: 700, color: C.navy }}>${paper.title}</div>
@@ -13725,7 +13733,7 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned, initialTimeLi
             </div>
           <//>`}
       <${Field} label="응시 기한">
-        <div style=${{ display: "flex", gap: 8 }}>
+        <div className="assign-exam-due" style=${{ display: "flex", gap: 8 }}>
           <div style=${{ flex: 1 }}><${DateField} value=${dueDate} onChange=${setDueDate} /><//>
           <${TimeField} value=${dueTime} onChange=${setDueTime} />
         </div>
@@ -14437,6 +14445,24 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const [mobileCard, setMobileCard] = useState(1);
   const [myQuestions, setMyQuestions] = useState(null);
   const [loadErr, setLoadErr] = useState("");
+  const mobileActionsRef = useRef(null);
+  const [mobileBarSize, setMobileBarSize] = useState({ menu: 0, actions: 69 });
+  useEffect(() => {
+    if (wide || myQuestions === null) return undefined;
+    const menu = document.querySelector(".m-bottombar");
+    // 실제 높이를 재므로 메뉴의 border·safe-area 패딩도 함께 반영된다.
+    const measure = () => {
+      const next = { menu: menu ? menu.getBoundingClientRect().height : 0, actions: mobileActionsRef.current ? mobileActionsRef.current.getBoundingClientRect().height : 69 };
+      setMobileBarSize((prev) => prev.menu === next.menu && prev.actions === next.actions ? prev : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (menu) observer.observe(menu, { box: "border-box" });
+    if (mobileActionsRef.current) observer.observe(mobileActionsRef.current, { box: "border-box" });
+    window.addEventListener("resize", measure);
+    return () => { observer.disconnect(); window.removeEventListener("resize", measure); };
+  }, [wide, myQuestions]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -14582,7 +14608,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
     const configSummary = `객관식 ${mcCount} · 서술형 ${saCount} · ${timeUnlimited ? "제한 없음" : timeMin + "분"}`;
     const toggleCard = (n) => setMobileCard((v) => v === n ? null : n);
     return html`
-      <div className="gb-mobile-builder" style=${{ background: "#FAF7F1", minWidth: 0 }}>
+      <div className="gb-mobile-builder" style=${{ background: "#FAF7F1", minWidth: 0, paddingBottom: mobileBarSize.menu + mobileBarSize.actions }}>
         <style>
           .gb-mobile-builder button { min-width: 44px; min-height: 44px; }
           .gb-mobile-builder label { min-height: 44px; }
@@ -14686,7 +14712,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
           <button type="button" onClick=${() => onOpenDetail(info.paper)} style=${{ marginLeft: 8, background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>시험지 상세 열기</button>
         </div>`}
         <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0 8px" }}>미리보기만으로는 아무것도 저장되지 않아요. 인쇄하거나 배정하면 이 문항들이 시험지로 저장돼요.</div>
-        <div className="gb-mobile-actions" style=${{ position: "sticky", bottom: 0, zIndex: 20, background: "#fff", borderTop: `1px solid ${C.line}`, padding: "10px 0 max(10px, env(safe-area-inset-bottom))", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: 8 }}>
+        <div className="gb-mobile-actions" ref=${mobileActionsRef} style=${{ position: "fixed", left: 0, right: 0, bottom: mobileBarSize.menu, zIndex: 61, background: "#fff", borderTop: `1px solid ${C.line}`, padding: mobileBarSize.menu ? "10px 16px" : "10px 16px max(10px, env(safe-area-inset-bottom))", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: 8 }}>
           <${Button} variant="ghost" disabled=${!!busy || docs.length === 0 || settling} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
           <${Button} variant="primary" style=${{ background: "#1C2B4A" }} disabled=${!!busy || docs.length === 0 || settling} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : `학생에게 배정 (${docs.length}문항)`}<//>
         </div>
