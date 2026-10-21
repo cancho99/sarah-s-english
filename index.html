@@ -1274,10 +1274,15 @@ async function sendTestNotification(token) {
   if (res.status === 401) throw new Error("로그인 세션이 만료됐어요. 다시 로그인해 주세요.");
   if (!res.ok) throw new Error("테스트 알림을 보내지 못했어요.");
 }
-// 인쇄 창은 about:blank이므로 절대 URL 사용. SVG 안의 두 원본 이미지는 인라인으로 포함한다.
-const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-logo.svg", location.href).href;
-// 작은 배지용 모노그램(S·E)만 잘라낸 버전 — 사이드바/로그인 화면 등 좁은 자리에 사용
-const LOGO_MARK_DATA_URI = new URL("assets/sarah-sunsoonhwan-mark.svg", location.href).href;
+// 인쇄 창은 about:blank이므로 로고 이미지는 절대 URL을 사용한다.
+const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-horizontal-v1.png", location.href).href;
+// 작은 배지에서도 같은 그림을 사용하며 오른쪽 워드마크만 제외한다.
+function BrandSymbol() {
+  return html`<svg role="img" aria-label="Sarah’s English with 선순환" viewBox="70 0 730 724" style=${{ display: "block", width: 48, height: 48, flexShrink: 0 }}>
+    <defs><clipPath id="brand-symbol-clip"><path d="M0 0H800V250H650V724H0Z" /></clipPath></defs>
+    <image href=${LOGO_DATA_URI} width="2172" height="724" clipPath="url(#brand-symbol-clip)" />
+  </svg>`;
+}
 
 const C = {
   ink: "#14161A", navy: "#1C2B4A", gold: "#B8935A", ivory: "#FAF7F1",
@@ -2387,8 +2392,7 @@ function TopBar({ tagline }) {
     <div>
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ background: C.ivory, padding: "22px 16px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
-        <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 40, height: 40, borderRadius: 10, border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
-        <div style=${{ ...serif, fontSize: 21, color: C.navy, letterSpacing: 1 }}>Sarah’s English with 선순환</div>
+        <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 260, maxWidth: "100%", height: "auto", margin: "0 auto 10px" }} />
         ${tagline && html`<div style=${{ ...serif, fontStyle: "italic", fontSize: 12.5, color: C.slate, marginTop: 4 }}>${tagline}</div>`}
       </div>
     </div>
@@ -2601,8 +2605,8 @@ function SideNav({ items, active, onChange, onLogout }) {
     <div>
       <div className="ap-side-desktop">
         <div className="ap-side-brand">
-          <div className="ap-side-logo" role="img" aria-label="Sarah’s English with 선순환" style=${{ border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
-          <div><div className="ap-side-wordmark">Sarah's <i>English</i></div><div className="ap-side-sub" style=${{ color: "#A9D1AE", letterSpacing: 0.5 }}>with 선순환</div></div>
+          <${BrandSymbol} />
+          <div style=${{ minWidth: 0 }}><div className="ap-side-wordmark" style=${{ fontSize: 14, whiteSpace: "nowrap", letterSpacing: -0.3 }}>Sarah's <i style=${{ color: "inherit" }}>English</i></div><div className="ap-side-sub" style=${{ letterSpacing: 0, marginTop: 4, textTransform: "none" }}><span style=${{ color: C.gold, fontFamily: "Georgia, serif", fontStyle: "italic", fontSize: 12 }}>with</span> <span style=${{ color: "#A9D1AE", fontSize: 12, fontWeight: 700 }}>선순환</span></div></div>
         </div>
         ${items.map((it) => html`
           <div key=${it.key} className="ap-side-item-wrap"
@@ -3398,7 +3402,7 @@ function HomePage({ setScreen, announcement }) {
         <div style=${{ background: C.navy, height: 6 }} />
         <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${C.line}`, gap: 16, flexWrap: "wrap" }}>
           <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 118, height: 110, objectFit: "contain" }} />
+            <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 230, maxWidth: "100%", height: "auto", objectFit: "contain" }} />
           </div>
           ${!isMobile && html`
             <nav style=${{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -3816,7 +3820,7 @@ function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+            <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 270, maxWidth: "100%", height: "auto", margin: "0 auto 20px" }} />
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>선생님 로그인</div>
           </div>
           ${isNew ? html`
@@ -3852,7 +3856,7 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+            <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 270, maxWidth: "100%", height: "auto", margin: "0 auto 20px" }} />
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${mode === "student" ? "학생 로그인" : "학부모 로그인"}</div>
           </div>
           ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
@@ -9860,7 +9864,7 @@ function esEscapeHtml(s) {
 const ES_LETTERHEAD_CSS = `
   .doc-letterhead{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:12px;margin-bottom:18px;border-bottom:2px solid #1C2B4A;}
   .doc-logo{display:flex;align-items:center;}
-  .doc-logo img{display:block;height:80px;width:auto;}
+  .doc-logo img{display:block;width:230px;max-width:100%;height:auto;}
   .doc-logo-sub{font-size:12.5px;font-weight:700;color:#5B6270;letter-spacing:0.02em;white-space:nowrap;}
 `;
 function esBuildLetterheadHtml(subtitle) {
