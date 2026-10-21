@@ -13746,6 +13746,43 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned, initialTimeLi
   `;
 }
 
+// ---------- 시험지 인쇄용 문제 본문 (HTML 문자열) ----------
+// 학생 응시 화면이 쓰는 표시 규칙(esParseExamStem: 지시문 분리, 화자별 줄바꿈, <조건> 상자와 (1)(2) 항목 줄바꿈, 빈칸 (n) 밑줄)을
+// 그대로 쓰고, 종이용으로 흰 바탕·검은 글씨·얇은 테두리만 쓴다(색 배경 없음). 규칙이 안 맞거나 줄 나눌 게 없으면 null —
+// 호출한 쪽이 예전처럼 한 문단으로 인쇄한다(그래서 줄바꿈이 필요 없는 문항은 인쇄물이 예전과 같다).
+function esStemBlanksHtml(text) {
+  return String(text == null ? "" : text).split(/(\(\d+\))/).map((seg) => (/^\(\d+\)$/.test(seg) ? `<span class="stem-blank">${esEscapeHtml(seg)}</span>` : esEscapeHtml(seg))).join("");
+}
+function esStemSpeakerLineHtml(line) {
+  const m = String(line).match(/^([A-Z][A-Za-z]{0,14})\s?:\s?(.*)$/);
+  if (m && !ES_STEM_SPEAKER_NOT.includes(m[1])) return `<div><b>${esEscapeHtml(m[1])}:</b> ${esStemBlanksHtml(m[2])}</div>`;
+  return `<div>${esStemBlanksHtml(line)}</div>`;
+}
+function esStemPrintInner(text, isSubjective) {
+  // 객관식은 교사가 직접 줄바꿈을 넣은 문항만 나눈다(줄바꿈이 없는 객관식은 예전 인쇄물과 같게 한 문단) — 서술형은 일괄 등록처럼
+  // 줄바꿈이 없어도 규칙으로 나눈다(학생 화면과 같다).
+  if (!isSubjective && String(text || "").indexOf("\n") === -1) return null;
+  const parsed = esParseExamStem(text, isSubjective);
+  if (parsed.kind === "plain") return null;
+  if (parsed.kind === "lines" && parsed.nodes.length === 0) return null;
+  const rawTag = (String(text || "").match(ES_STEM_TAG_RE) || [""])[0].trim(); // "[서술형1]"처럼 입력한 그대로
+  const instr = `<b class="stem-instr">${rawTag ? esEscapeHtml(rawTag) + " " : ""}${esEscapeHtml(parsed.instruction)}</b>`;
+  let body = "";
+  if (parsed.kind === "rules") {
+    if (parsed.intro) body += `<div class="stem-intro">${esEscapeHtml(parsed.intro)}</div>`;
+    if (parsed.turns.length > 0) body += `<div class="stem-dialog">${parsed.turns.map((t) => `<div><b>${esEscapeHtml(t.speaker)}:</b> ${esStemBlanksHtml(t.text)}</div>`).join("")}</div>`;
+    if (parsed.cond) body += `<div class="stem-cond"><div><b>&lt;조건&gt;</b></div>${parsed.cond.lead ? `<div>${esEscapeHtml(parsed.cond.lead)}</div>` : ""}${parsed.cond.items.map((it) => `<div>${esEscapeHtml(it)}</div>`).join("")}</div>`;
+  } else {
+    body += parsed.nodes.map((n) => {
+      if (n.type === "box") return `<div class="stem-box">${n.lines.map((ln, j) => `<div>${j === 0 ? "<b>" : ""}${esEscapeHtml(ln)}${j === 0 ? "</b>" : ""}</div>`).join("")}</div>`;
+      if (n.type === "dialog") return `<div class="stem-dialog">${n.turns.map((t) => `<div><b>${esEscapeHtml(t.speaker)}:</b> ${esStemBlanksHtml(t.text)}</div>`).join("")}</div>`;
+      if (n.type === "labeled") return `<div class="stem-label"><b>${esEscapeHtml(n.label)}</b> ${esStemBlanksHtml(n.text)}</div>`;
+      return esStemSpeakerLineHtml(n.text);
+    }).join("");
+  }
+  return instr + body;
+}
+
 // Phase 8 prep §3 — 학생에게 그대로 나눠줄 수 있는 인쇄용 창. (2026-10 — ExamPaperDetail 안에 있던 것을 최상위로
 // 꺼냈다. 문법 시험 출제 2단 화면(GrammarExamTwoPane)이 같은 인쇄 흐름을 그대로 쓰기 위해서이며 내용은 그대로다.
 // 팝업이 막히면 false를 돌려주고, 안내 문구는 호출한 쪽이 띄운다.) 기존 printReport()/printInvoice()와
@@ -13779,7 +13816,12 @@ function printExamPaperSheet(EP, paper, questionsById, passagesById, existingWin
         ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
         : `<div class="answer-line">답: ______________________</div>`;
       answerRows.push(`<span class="a-item"><span class="a-num">${qNum}.</span>${displayChoices.length > 0 ? esc(CIRCLED[displayAnswerIndex] || String(displayAnswerIndex + 1)) : esc(qDoc.answer)}</span>`);
-      return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
+      const stemInner = esStemPrintInner(qDoc.questionText, displayChoices.length === 0);
+      if (stemInner && displayChoices.length === 0) {
+        // 서술형 정답지: 같은 본문 모양(대화·조건·빈칸) 아래에 정답을 붙인다 — 구조가 없는 문항은 예전 줄(번호 + 정답) 그대로
+        answerRows[answerRows.length - 1] = `<div class="a-block"><span class="a-num">${qNum}.</span>${stemInner}<div class="a-ans">정답: ${esc(qDoc.answer)}</div></div>`;
+      }
+      return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${stemInner || esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
     }).join("");
     // 지문이 있는 섹션(Reading)은 항상 1단, 지문이 없는 섹션(Grammar 등)만 layout 설정을 따른다.
     const bodyHtml = (!passage && layout === "2col") ? `<div class="qs-2col">${questionsHtml}</div>` : questionsHtml;
@@ -13822,7 +13864,15 @@ function printExamPaperSheet(EP, paper, questionsById, passagesById, existingWin
       .choices{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:6px;padding-left:18px;font-size:12px;}
       .choice{white-space:nowrap;}
       .answer-line{margin-top:8px;padding-left:18px;font-size:12px;}
+      .stem-instr{font-weight:700;}
+      .stem-intro{margin-top:4px;}
+      .stem-dialog{margin:6px 0 6px 18px;line-height:1.8;}
+      .stem-cond,.stem-box{border:1px solid #1B2A3D;padding:6px 10px;margin:6px 0 6px 18px;line-height:1.7;page-break-inside:avoid;break-inside:avoid;}
+      .stem-label{margin:2px 0 0 32px;}
+      .stem-blank{display:inline-block;min-width:56px;text-align:center;border-bottom:1px solid #1B2A3D;font-size:11px;line-height:1.2;margin:0 3px;}
       .answer-box{display:flex;flex-wrap:wrap;gap:10px 20px;font-size:13px;}
+      .a-block{flex:0 0 100%;font-size:12.5px;line-height:1.7;page-break-inside:avoid;break-inside:avoid;}
+      .a-ans{margin-top:4px;font-weight:700;}
       .a-item{white-space:nowrap;}
       .a-num{font-weight:700;margin-right:4px;color:#5B6270;}
       @media print{ .toolbar{display:none !important;} }
