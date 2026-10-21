@@ -1275,7 +1275,7 @@ async function sendTestNotification(token) {
   if (!res.ok) throw new Error("테스트 알림을 보내지 못했어요.");
 }
 // 인쇄 창은 about:blank이므로 절대 URL 사용. SVG 안의 두 원본 이미지는 인라인으로 포함한다.
-const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-logo.png", location.href).href;
+const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-logo.svg", location.href).href;
 // 작은 배지용 모노그램(S·E)만 잘라낸 버전 — 사이드바/로그인 화면 등 좁은 자리에 사용
 const LOGO_MARK_DATA_URI = new URL("assets/sarah-sunsoonhwan-mark.svg", location.href).href;
 
@@ -2387,7 +2387,7 @@ function TopBar({ tagline }) {
     <div>
       <div style=${{ background: C.ink, height: 6 }} />
       <div style=${{ background: C.ivory, padding: "22px 16px 16px", textAlign: "center", borderBottom: `1px solid ${C.line}` }}>
-        <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 40, height: 40, borderRadius: 10, border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+        <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 40, height: 40, borderRadius: 10, border: `1.5px solid ${C.navy}`, margin: "0 auto 10px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
         <div style=${{ ...serif, fontSize: 21, color: C.navy, letterSpacing: 1 }}>Sarah’s English with 선순환</div>
         ${tagline && html`<div style=${{ ...serif, fontStyle: "italic", fontSize: 12.5, color: C.slate, marginTop: 4 }}>${tagline}</div>`}
       </div>
@@ -2601,7 +2601,7 @@ function SideNav({ items, active, onChange, onLogout }) {
     <div>
       <div className="ap-side-desktop">
         <div className="ap-side-brand">
-          <div className="ap-side-logo" role="img" aria-label="Sarah’s English with 선순환" style=${{ backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+          <div className="ap-side-logo" role="img" aria-label="Sarah’s English with 선순환" style=${{ border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
           <div><div className="ap-side-wordmark">Sarah's <i>English</i></div><div className="ap-side-sub" style=${{ color: "#A9D1AE", letterSpacing: 0.5 }}>with 선순환</div></div>
         </div>
         ${items.map((it) => html`
@@ -3816,7 +3816,7 @@ function TeacherLogin({ teacherAuth, onBack, onSetPass, onLogin, err }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.navy}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>선생님 로그인</div>
           </div>
           ${isNew ? html`
@@ -3852,7 +3852,7 @@ function StudentParentLogin({ mode, roster, onBack, onLogin }) {
         <${BackBtn} onClick=${onBack} />
         <div style=${{ background: C.white, border: `1px solid ${C.line}`, borderTop: `3px solid ${C.gold}`, padding: "34px 30px", marginTop: 14 }}>
           <div style=${{ textAlign: "center", marginBottom: 24 }}>
-            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
+            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 44, height: 44, borderRadius: 11, border: `1px solid ${C.navy}`, margin: "0 auto 12px", boxSizing: "border-box", border: "none", borderRadius: 0, width: 44, height: 68, backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
             <div style=${{ ...serif, fontSize: 20, color: C.navy }}>${mode === "student" ? "학생 로그인" : "학부모 로그인"}</div>
           </div>
           ${roster.length === 0 ? html`<${Empty} text="아직 등록된 학생이 없어요. 선생님께 등록을 요청해 주세요." />` : html`
@@ -4767,6 +4767,9 @@ function SunsoonhwanSettingsPanel() {
       <div style=${{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <${Button} variant="gold" style=${{ minHeight: 44 }} disabled=${saving || !!error} onClick=${save}>${saving ? "저장 중..." : "저장"}<//>
         <a href=${svc.APP_URL} target="_blank" rel="noopener noreferrer" style=${{ display: "inline-flex", alignItems: "center", minHeight: 44, padding: "8px 14px", border: `1px solid ${C.navy}`, borderRadius: 6, color: C.navy, textDecoration: "none", fontSize: 13 }}>선순환 열기 ↗</a>
+      </div>
+      <div style=${{ fontSize: 13, lineHeight: 1.7, marginTop: 12, color: settings.classCode ? "#34734C" : C.slate }}>
+        ${settings.classCode ? `저장된 카드 표시: 학생 홈 ${settings.showStudent ? "켜짐" : "꺼짐"} · 학부모 홈 ${settings.showParent ? "켜짐" : "꺼짐"}. 카드는 각 홈 화면 아래쪽에 있어요.` : "아직 저장된 반 코드가 없어 학생·학부모 홈 카드가 숨겨져 있어요. 실제 반 코드를 입력하고 표시할 홈을 선택한 뒤 저장해 주세요."}
       </div>
       <div role="status" style=${{ color: "#34734C", fontSize: 13, marginTop: 10 }}>${message}</div>
       ${(error || saveError) && html`<div role="alert" style=${{ color: C.danger, fontSize: 13, marginTop: 8 }}>${error || saveError}</div>`}
