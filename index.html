@@ -14214,7 +14214,7 @@ function MobileGrammarBankExamBuilder({ EP, QB, onCreated, onCancel }) {
 
 // ── 문법 시험 출제 2단 화면(PC, 너비 1025px 이상 — useIsDesktop) ─────────────────────────────────────────
 // 왼쪽: ① 범위(학년 혼합 단원 선택) ② 구성(객관식/서술형 개수·난이도). 오른쪽: ③ 미리보기(선생님용 / 학생 화면).
-// 1024px 이하(모바일·태블릿)는 예전 그대로 MobileGrammarBankExamBuilder가 나온다(ExamBuilderView의 bankPicker 분기).
+// 1024px 이하(모바일·태블릿)는 같은 상태·부품을 세로 접이식 카드로 보여 준다.
 // 문항 뽑기·학년 섞기는 GrammarBankPrototype이 쓰는 순수 함수(gbSelKey/gbBuildPools/gbPickMix/gbExpectedMix/gbGradeLabel)를
 // 그대로 재사용하고, 시험지 저장은 MobileGrammarBankExamBuilder.handleCreate와 같은 EP/QB 파이프라인을 따른다.
 // 미리보기는 Firestore에 아무것도 쓰지 않는다 — "인쇄"/"학생에게 배정"을 눌렀을 때에만 시험지가 저장된다.
@@ -14412,7 +14412,29 @@ function GbTeacherPreviewItem({ doc, n, canReplace, onReplace }) {
   `;
 }
 
+// 모바일 출제 카드: 내용은 유지하고 보이는 카드만 하나로 제한한다.
+function GbMobileExamCard({ number, title, summary, open, onToggle, nextLabel, onNext, children }) {
+  return html`
+    <${Card} style=${{ padding: 0, overflow: "hidden" }}>
+      <button type="button" className="gb-mobile-card-head" aria-expanded=${open} onClick=${onToggle}>
+        <span style=${{ width: 30, height: 30, flexShrink: 0, borderRadius: "50%", background: "#1C2B4A", color: "#fff", display: "grid", placeItems: "center", fontSize: 14 }}>${number}</span>
+        <span style=${{ flex: 1, minWidth: 0, textAlign: "left" }}>
+          <span style=${{ display: "block", fontSize: 15, fontWeight: 700, color: "#1C2B4A" }}>${title}</span>
+          <span style=${{ display: "block", fontSize: 12, color: C.slate, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>${summary}</span>
+        </span>
+        <span style=${{ color: "#B8935A", fontSize: 12 }}>${open ? "▲" : "▼"}</span>
+      </button>
+      <div hidden=${!open} style=${{ padding: "0 14px 14px" }}>
+        ${children}
+        ${nextLabel && html`<${Button} variant="primary" style=${{ width: "100%", justifyContent: "center", marginTop: 14, minHeight: 48 }} onClick=${onNext}>${nextLabel}<//>`}
+      </div>
+    <//>
+  `;
+}
+
 function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCancel, examKind, onExamKind }) {
+  const wide = useIsDesktop();
+  const [mobileCard, setMobileCard] = useState(1);
   const [myQuestions, setMyQuestions] = useState(null);
   const [loadErr, setLoadErr] = useState("");
   useEffect(() => {
@@ -14553,6 +14575,127 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const firstSa = studentDocs.findIndex((d) => d.answerFormat !== "mc");
   const studentKind = sCur && sCur.answerFormat === "mc" ? "mc" : "sa";
   const noop = () => {};
+
+  if (!wide) {
+    const units = gbSelectedUnits(GB_GRAMMAR_TREE, selected);
+    const rangeSummary = `${units.length}개 단원${pools.grades.length ? " · " + pools.grades.join(", ") : ""}`;
+    const configSummary = `객관식 ${mcCount} · 서술형 ${saCount} · ${timeUnlimited ? "제한 없음" : timeMin + "분"}`;
+    const toggleCard = (n) => setMobileCard((v) => v === n ? null : n);
+    return html`
+      <div className="gb-mobile-builder" style=${{ background: "#FAF7F1", minWidth: 0 }}>
+        <style>
+          .gb-mobile-builder button { min-width: 44px; min-height: 44px; }
+          .gb-mobile-builder label { min-height: 44px; }
+          .gb-mobile-builder input:not([type="checkbox"]) { min-height: 44px; font-size: 16px !important; }
+          .gb-mobile-builder .gb-mobile-card-head { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #fff; border: none; cursor: pointer; }
+          .gb-mobile-builder .gb-mobile-actions button { height: 48px; justify-content: center; }
+        </style>
+        <${BackBtn} onClick=${onCancel} />
+        <div style=${{ fontWeight: 700, color: C.navy, fontSize: 16, marginBottom: 10 }}>문법 시험 출제</div>
+        <${GbMobileExamCard} number="1" title="범위" summary=${rangeSummary} open=${mobileCard === 1} onToggle=${() => toggleCard(1)} nextLabel="다음: 구성" onNext=${() => setMobileCard(2)}>
+          <${GbRangePicker} tree=${GB_GRAMMAR_TREE} selected=${selected} setSelected=${setSelected} countMap=${countMap} />
+        <//>
+        <${GbMobileExamCard} number="2" title="구성" summary=${configSummary} open=${mobileCard === 2} onToggle=${() => toggleCard(2)} nextLabel="다음: 미리보기" onNext=${() => setMobileCard(3)}>
+            <${GbStepper} label="객관식" value=${mcCount} onChange=${setMcCount}
+              hint=${hasRange ? (mcShort ? `이 범위에는 객관식이 ${mcAvail}개뿐입니다` : `이 범위에서 ${mcAvail}개까지`) : "범위를 먼저 골라 주세요"} hintWarn=${mcShort} />
+            <${GbStepper} label="서술형" value=${saCount} onChange=${setSaCount}
+              hint=${hasRange ? (saShort ? `이 범위에는 서술형이 ${saAvail}개뿐입니다` : `이 범위에서 ${saAvail}개까지`) : "범위를 먼저 골라 주세요"} hintWarn=${saShort} />
+            <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 0 4px" }}>
+              <span style=${{ fontSize: 13, color: C.ink }}>총 문항 수</span>
+              <span style=${{ fontSize: 14, fontWeight: 700, color: C.navy, fontVariantNumeric: "tabular-nums" }}>${requested}문항</span>
+            </div>
+            ${hasRange && !settling && docs.length !== requested && html`<div style=${{ fontSize: 11.5, color: C.danger, textAlign: "right" }}>문항이 모자라 실제로는 ${docs.length}문항이 뽑혀요.</div>`}
+            ${pools.grades.length >= 2 && html`
+              <div style=${{ marginTop: 8 }}>
+                <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>학년 배분</div>
+                <div className="ap-seg" role="group" aria-label="학년 배분">
+                  <button type="button" className=${mixMode === "random" ? "active" : ""} onClick=${() => setMixMode("random")}>섞어서 무작위</button>
+                  <button type="button" className=${mixMode === "equal" ? "active" : ""} onClick=${() => setMixMode("equal")}>학년별 같은 비율</button>
+                </div>
+                ${expectedMix && html`<div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>${expectedMix.rows.map((r) => `${r.grade} ${Math.round(r.total * 10) / 10}`).join(" · ")}${expectedMix.exact ? "" : " (예상)"}</div>`}
+              </div>
+            `}
+            <div style=${{ marginTop: 10 }}>
+              <${GbTimeLimitRow} unlimited=${timeUnlimited} minutes=${timeMin} onMinutes=${setTimeMin} onUnlimited=${() => setTimeUnlimited((v) => !v)} />
+              <div style=${{ fontSize: 11, color: C.slate, marginTop: 2 }}>여기서 정한 시간이 배정 창에 미리 채워지고, 배정할 때 바꿀 수 있습니다. 인쇄에는 쓰이지 않습니다.</div>
+            </div>
+            <div style=${{ marginTop: 10 }}>
+              <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <span style=${{ fontSize: 12, color: C.slate }}>난이도</span>
+                <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>준비 중</span>
+              </div>
+              <div className="ap-seg" role="group" aria-label="난이도 (준비 중)" title="준비 중" style=${{ opacity: 0.5 }}>
+                ${GB_DIFFICULTY_LEVELS.map((lv) => html`<button key=${lv} type="button" disabled=${true} title="준비 중" aria-label=${`${lv} (준비 중)`} style=${{ cursor: "not-allowed" }}>${lv}</button>`)}
+              </div>
+              <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 4 }}>난이도 선택은 준비 중입니다. 문항에 난이도 표시가 생기면 쓸 수 있어요.</div>
+            </div>
+            <div style=${{ marginTop: 10 }}>
+              <div style=${{ fontSize: 12, color: C.slate, marginBottom: 4 }}>시험지 제목 (비우면 자동)</div>
+              <input style=${{ ...inputStyle, marginBottom: 0 }} value=${title} onChange=${(e) => setTitle(e.target.value)} placeholder=${effTitle} />
+            </div>
+        <//>
+        <${GbMobileExamCard} number="3" title="미리보기" summary=${effTitle} open=${mobileCard === 3} onToggle=${() => toggleCard(3)}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+            <div style=${sectionTitle}>${settling ? "다시 만드는 중..." : ""}</div>
+            <div className="ap-seg" role="group" aria-label="미리보기 보기 방식">
+              <button type="button" className=${pane === "teacher" ? "active" : ""} onClick=${() => setPane("teacher")}>선생님용</button>
+              <button type="button" className=${pane === "student" ? "active" : ""} onClick=${() => setPane("student")}>학생 화면</button>
+            </div>
+          </div>
+          ${docs.length === 0
+            ? html`<${Empty} text=${hasRange ? "이 조건으로 뽑을 수 있는 문항이 없어요. 범위나 개수를 바꿔 보세요." : "범위를 고르면 미리보기가 만들어져요."} />`
+            : pane === "teacher"
+              ? html`
+                <div>
+                  <div style=${{ fontSize: 12, color: C.slate }}>객관식 ${mcN}문항 · 서술형 ${saN}문항${gradeLabel ? " · " + gradeLabel : ""}</div>
+                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} />`)}
+                  ${docs.length > 5 && html`
+                    <div style=${{ paddingTop: 8 }}>
+                      <button type="button" onClick=${() => setShowAllTeacher((v) => !v)} style=${{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>
+                        ${showAllTeacher ? "접기" : `… 외 ${docs.length - 5}문항`}
+                      </button>
+                    </div>`}
+                </div>`
+              : html`
+                <div>
+                  ${saN > 0 && html`
+                    <div className="ap-seg" role="group" aria-label="학생 화면 종류" style=${{ marginBottom: 8 }}>
+                      <button type="button" disabled=${mcN === 0} className=${studentKind === "mc" ? "active" : ""} onClick=${() => setStudentIdx(0)}>객관식 화면</button>
+                      <button type="button" className=${studentKind === "sa" ? "active" : ""} onClick=${() => setStudentIdx(firstSa)}>서술형 화면</button>
+                    </div>`}
+                  <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>학생이 보는 화면이에요. 여기서는 답이 저장되지 않아요.</div>
+                  <${ExamRunScreen}
+                    title=${effTitle} index=${sIdx} total=${studentDocs.length}
+                    remainLabel=${timeLimitMinutes ? `${String(timeLimitMinutes).padStart(2, "0")}:00` : "제한 시간 없음"} remainWarn=${false} remainPrefix=${timeLimitMinutes ? "남은 시간 " : ""}
+                    passage=${null} questionText=${sCur.questionText} answerFormat=${sCur.answerFormat}
+                    displayChoices=${sCur.choices} selectedDisplayIdx=${-1} answerText=""
+                    readOnly=${true} notice="" onPickMc=${noop} onTypeText=${noop}
+                    questionIds=${studentDocs.map((d) => d.id)} answers=${{}} onGoto=${setStudentIdx}
+                    onPrev=${() => setStudentIdx(Math.max(0, sIdx - 1))}
+                    onNext=${() => setStudentIdx(Math.min(studentDocs.length - 1, sIdx + 1))}
+                    finalAction=${html`<${Button} variant="gold" disabled=${true}>시험 제출<//>`}
+                    questionFormats=${studentDocs.map((d) => (d.answerFormat === "mc" ? "mc" : "sa"))}
+                    submitAction=${html`<${Button} variant="primary" style=${{ width: "100%", justifyContent: "center" }} disabled=${true}>제출하기<//>`}
+                    savingAnswer=${false} saveError="" navyHeader=${true} showUnanswered=${true} />
+                </div>`}
+        <//>
+      ${err && html`<div style=${{ fontSize: 12, color: C.danger, marginTop: 10 }}>${err}</div>`}
+      ${info && html`
+        <div style=${{ fontSize: 12.5, color: C.navy, marginTop: 10 }}>
+          ${info.text}
+          <button type="button" onClick=${() => onOpenDetail(info.paper)} style=${{ marginLeft: 8, background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>시험지 상세 열기</button>
+        </div>`}
+        <div style=${{ fontSize: 11.5, color: C.slate, margin: "12px 0 8px" }}>미리보기만으로는 아무것도 저장되지 않아요. 인쇄하거나 배정하면 이 문항들이 시험지로 저장돼요.</div>
+        <div className="gb-mobile-actions" style=${{ position: "sticky", bottom: 0, zIndex: 20, background: "#fff", borderTop: `1px solid ${C.line}`, padding: "10px 0 max(10px, env(safe-area-inset-bottom))", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: 8 }}>
+          <${Button} variant="ghost" disabled=${!!busy || docs.length === 0 || settling} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
+          <${Button} variant="primary" style=${{ background: "#1C2B4A" }} disabled=${!!busy || docs.length === 0 || settling} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : `학생에게 배정 (${docs.length}문항)`}<//>
+        </div>
+      ${assignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${assignPaper} roster=${roster || []} initialTimeLimit=${timeLimitMinutes}
+        onClose=${() => setAssignPaper(null)}
+        onAssigned=${(done) => { setInfo({ text: `${(done || []).length || 1}명에게 배정했어요. Results 탭에서 진행 상황을 볼 수 있어요.`, paper: assignPaper }); setAssignPaper(null); }} />`}
+      </div>
+    `;
+  }
 
   return html`
     <div>
@@ -15340,9 +15483,9 @@ function ExamBuilderView({ roster, onLogout }) {
     setReadingAnalysisQuestions((qs) => qs.map((q) => (usedIds.has(q.id) ? { ...q, usageCount: (q.usageCount || 0) + 1 } : q)));
   }
 
-  if (view === "bankPicker" && wideDesktop) {
+  if (view === "bankPicker") {
     // 시험지는 인쇄/배정을 누를 때 저장된다. 저장되면 목록 상태만 갱신하고 이 화면에 그대로 머문다(상세로 이동하지 않음).
-    if (examKind === "reading") {
+    if (wideDesktop && examKind === "reading") {
       return html`<${ReadingExamOnePane} EP=${EP} QB=${QB} roster=${roster} examKind=${examKind} onExamKind=${setExamKind}
         onPaperCreated=${(doc, rq, rp) => {
           setPapers((ps) => [doc, ...ps.filter((x) => x.id !== doc.id)]);
@@ -15358,16 +15501,6 @@ function ExamBuilderView({ roster, onLogout }) {
         setGrammarQuestions((qs) => [...qs, ...created]);
       }}
       onOpenDetail=${(doc) => { setSelectedId(doc.id); setView("detail"); }}
-      onCancel=${() => setView("list")} />`;
-  }
-  if (view === "bankPicker") {
-    return html`<${MobileGrammarBankExamBuilder} EP=${EP} QB=${QB}
-      onCreated=${(doc, created) => {
-        setPapers((ps) => [doc, ...ps]);
-        setGrammarQuestions((qs) => [...qs, ...created]);
-        setSelectedId(doc.id);
-        setView("detail");
-      }}
       onCancel=${() => setView("list")} />`;
   }
 
