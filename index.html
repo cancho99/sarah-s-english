@@ -15012,7 +15012,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
 // 제한 시간(GbTimeLimitRow), 새 시험지 화면(ExamRunScreen), 인쇄(printExamPaperSheet), 배정(AssignExamModal)은 문법 쪽 부품을 그대로 쓴다.
 // 데이터는 Exam Studio의 기존 구조(examStudioPassages / examStudioQuestions / examStudioExamPapers)를 그대로 쓰고 새 컬렉션은 없다.
 // 규칙: 화면을 열거나 지문·유형을 바꿀 때는 아무것도 저장하지 않고 AI도 부르지 않는다. AI는 "AI로 문제 생성" 버튼을 눌렀을 때만,
-// 저장은 "인쇄"/"학생에게 배정"을 눌렀을 때만(같은 구성이면 한 번만) 일어난다. 서술형은 아직 만들지 않는다(객관식 5지선다만).
+// 시험지 저장은 "인쇄"/"학생에게 배정"에서, 원본 문항 수정 저장은 명시적인 "수정 → 저장"에서 일어난다. 서술형은 아직 만들지 않는다(객관식 5지선다만).
 function ExamKindSwitch({ kind, onKind }) {
   return html`
     <div className="ap-seg" role="group" aria-label="시험 종류">
@@ -15053,6 +15053,66 @@ function esEntryMatchesPassage(e, p, pWords) {
   if (esNormPassage(text) === esNormPassage(p.text)) return true;
   return esDice(esWordSet(text), pWords) >= 0.85;
 }
+// 독해 출제의 PC·모바일 미리보기가 같은 편집 폼을 사용한다.
+function ReadingTeacherPreviewItem({ item, editing, locked, onEdit, onCancel, onSave, onRemove, editState, onEditState }) {
+  const q = item.q, group = item.entry.kind === "group";
+  const meta = ES_TYPE_META.find((t) => t.key === item.entry.questionType) || ES_TYPE_META[0];
+  const { form, saving, error } = editState;
+  const setForm = (form) => onEditState((prev) => ({ ...prev, form }));
+  const setSaving = (saving) => onEditState((prev) => ({ ...prev, saving }));
+  const setError = (error) => onEditState((prev) => ({ ...prev, error }));
+  function startEdit() {
+    setForm({ questionText: q.questionText || "", contextNote: q.contextNote || "", passage: esEntryPassageText(item.entry) || "", choices: [0, 1, 2, 3, 4].map((i) => esStripCirc((q.choices || [])[i])), answer: Number.isInteger(q.answer) ? q.answer : -1, explanation: q.explanation || "" });
+    setError(""); onEdit();
+  }
+  async function save() {
+    if (!form.questionText.trim() || !form.passage.trim()) { setError("발문과 지문을 입력해 주세요."); return; }
+    if (form.choices.some((c) => !c.trim())) { setError("보기 5개를 모두 입력해 주세요."); return; }
+    if (!Number.isInteger(form.answer) || form.answer < 0 || form.answer > 4) { setError("정답 보기를 선택해 주세요."); return; }
+    setSaving(true); setError("");
+    try { await onSave({ ...form, questionText: form.questionText.trim(), contextNote: form.contextNote.trim(), passage: form.passage.trim(), choices: form.choices.map((c) => c.trim()), explanation: form.explanation.trim() }); onCancel(); }
+    catch (e) { setError("저장하지 못했어요: " + String(e.message || e)); }
+    finally { setSaving(false); }
+  }
+  const control = { ...inputStyle, minHeight: 44, width: "100%", boxSizing: "border-box", fontSize: 16 };
+  return html`<div style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
+    <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>${item.n}. <span style=${{ fontWeight: 400, color: C.slate }}>${meta.label}${editing ? " · 문항 수정" : ""}</span></div>
+      ${!editing && html`<div style=${{ display: "flex", gap: 6 }}><${Button} variant="ghost" disabled=${locked} onClick=${startEdit} style=${{ minHeight: 44, padding: "6px 10px", fontSize: 12 }}>✎ 수정<//><${Button} variant="ghost" disabled=${locked} onClick=${onRemove} style=${{ minHeight: 44, padding: "6px 10px", fontSize: 12 }}>빼기<//></div>`}
+    </div>
+    ${editing && form ? html`<fieldset disabled=${saving} style=${{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+      <${Field} label="발문"><textarea aria-label="발문" style=${{ ...control, minHeight: 80 }} value=${form.questionText} onChange=${(e) => setForm({ ...form, questionText: e.target.value })} /><//>
+      <${Field} label="부가 정보 (선택)"><textarea aria-label="부가 정보" style=${control} value=${form.contextNote} onChange=${(e) => setForm({ ...form, contextNote: e.target.value })} /><//>
+      <${Field} label=${group ? "공유 지문 (세트 전체에 적용)" : "지문 (학생에게 보여줄 형태)"}><textarea aria-label="문항 지문" style=${{ ...control, minHeight: 140, lineHeight: 1.8 }} value=${form.passage} onChange=${(e) => setForm({ ...form, passage: e.target.value })} /><//>
+      <${Field} label="보기 · 정답">
+        <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>${form.choices.map((choice, i) => html`<div key=${i} style=${{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input aria-label=${`보기 ${i + 1}`} style=${{ ...control, flex: 1, minWidth: 0, marginBottom: 0 }} value=${choice} onChange=${(e) => setForm({ ...form, choices: form.choices.map((c, j) => j === i ? e.target.value : c) })} />
+          <button type="button" aria-label=${`보기 ${i + 1} 정답으로 선택`} aria-pressed=${form.answer === i} onClick=${() => setForm({ ...form, answer: i })} style=${{ minWidth: 64, minHeight: 44, borderRadius: 6, border: `1px solid ${C.line}`, background: form.answer === i ? C.gold : C.white, color: form.answer === i ? C.white : C.navy, cursor: "pointer" }}>${ES_CIRC[i]} 정답</button>
+        </div>`)}</div>
+      <//>
+      <${Field} label="해설"><textarea aria-label="해설" style=${{ ...control, minHeight: 80 }} value=${form.explanation} onChange=${(e) => setForm({ ...form, explanation: e.target.value })} /><//>
+      <div style=${{ color: C.slate, fontSize: 12, lineHeight: 1.7 }}>저장하면 현재 시험지 구성과 Exam Studio 원본 문항이 함께 바뀌어요. 이미 저장·배정한 시험지는 바뀌지 않아요.</div>
+      ${error && html`<div role="alert" style=${{ fontSize: 13, color: C.danger, marginTop: 8 }}>${error}</div>`}
+      <div style=${{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}><${Button} variant="ghost" onClick=${onCancel} style=${{ minHeight: 44 }}>취소<//><${Button} variant="gold" onClick=${save} style=${{ minHeight: 44 }}>${saving ? "저장 중..." : "저장"}<//></div>
+    </fieldset>` : html`<div style=${{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-line" }}>${esStemOf(q)}</div>
+      <div style=${{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>${(q.choices || []).map((c, i) => html`<div key=${i} style=${{ fontSize: 12.5, padding: "2px 8px", border: `1px solid ${i === q.answer ? C.gold : "transparent"}`, borderRadius: 4, fontWeight: i === q.answer ? 700 : 400 }}>${ES_CIRC[i]} ${esStripCirc(c)}</div>`)}</div>
+      <${ExplanationToggle} explanation=${q.explanation} />`}
+  </div>`;
+}
+
+// 원본의 미선택 소문항과 현재 시험지에서 뺀 소문항을 각각 보존한다.
+function esReadingQuestionEdit(source, entry, question, fields) {
+  const content = { questionText: fields.questionText, contextNote: fields.contextNote, choices: fields.choices, answer: fields.answer, explanation: fields.explanation };
+  if (entry.kind !== "group") {
+    const patch = { ...content, displayPassage: fields.passage };
+    return { patch, entry: { ...entry, ...patch } };
+  }
+  const matches = (q) => question.localId ? q.localId === question.localId : q === question;
+  if (!(source.questions || []).some(matches)) throw new Error("수정할 원본 소문항을 찾지 못했어요. 화면을 다시 열어 주세요.");
+  const change = (q) => matches(q) ? { ...q, ...content } : q;
+  return { patch: { sharedPassage: fields.passage, questions: source.questions.map(change) }, entry: { ...entry, sharedPassage: fields.passage, questions: entry.questions.map(change) } };
+}
+
 function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCancel, examKind, onExamKind }) {
   const ES = window.SarahServices.examStudioService;
   const wide = useIsDesktop();
@@ -15102,6 +15162,9 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const [timeMin, setTimeMin] = useState(GB_TIME_DEFAULT);
   const [timeUnlimited, setTimeUnlimited] = useState(false);
   // ④ 문항 만들기 / ⑤ 시험지
+  const [editingKey, setEditingKey] = useState(null);
+  const [editState, setEditState] = useState({ form: null, saving: false, error: "" });
+  const [editRev, setEditRev] = useState(0);
   const [draft, setDraft] = useState([]); // 시험지에 들어갈 문항(entry) 목록 — Exam Studio 문항 문서(단일/장문 세트)
   const [regen, setRegen] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
@@ -15136,6 +15199,9 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const orderedEntries = chosen.flatMap((p) => draft.filter((e) => e.sourceKey === p.sourceKey)); // 고른 지문 순서
   const plan = esPlanPaperSections(orderedEntries); // 인쇄·학생 화면과 같은 섹션 규칙
   const flat = plan.flatMap((sec) => sec.items.map((it) => ({ ...it, sec })));
+  useEffect(() => {
+    if (editingKey && !flat.some((it) => it.entry.localId + ":" + (it.q.localId || it.sub) === editingKey)) setEditingKey(null);
+  }, [editingKey, draft, chosen]);
   const gradeSet = [...new Set(chosen.map((p) => p.grade).filter(Boolean))];
   const effTitle = title.trim() || (gradeSet.length > 0 ? `독해 문제 (${gradeSet.join("·")})` : "독해 문제");
   const timeLimitMinutes = timeUnlimited ? null : timeMin;
@@ -15288,13 +15354,24 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
     setStudentIdx(0);
   }
 
+  async function saveQuestionEdit(item, fields) {
+    const source = questions.find((q) => q.localId === item.entry.localId);
+    if (!source) throw new Error("원본 문항을 찾지 못했어요. 화면을 다시 열어 주세요.");
+    const next = esReadingQuestionEdit(source, item.entry, item.q, fields);
+    await ES.updateQuestion(source.localId, next.patch);
+    setQuestions((prev) => prev.map((q) => q.localId === source.localId ? { ...q, ...next.patch } : q));
+    setDraft((prev) => prev.map((e) => e.localId === source.localId ? next.entry : e));
+    setEditRev((rev) => rev + 1);
+    setInfo(null); setErr("");
+  }
+
   // 같은 구성인지 알아보는 열쇠 — 저장하면서 바뀌는 stage 같은 값은 넣지 않는다(두 번째 인쇄/배정이 시험지를 또 만들지 않게).
-  const draftKey = effTitle + "|" + orderedEntries.map((e) => e.localId + (e.kind === "group" ? ":" + (e.questions || []).map((q) => q.questionText).join("|") : "")).join(",");
+  const draftKey = effTitle + "|" + editRev + "|" + orderedEntries.map((e) => e.localId + (e.kind === "group" ? ":" + (e.questions || []).map((q) => q.questionText).join("|") : "")).join(",");
 
   // 지금 구성을 시험지로 저장한다(Exam Studio 시험지 → 정식 시험지). 같은 구성이면 한 번만.
   async function ensureSavedPaper() {
     if (orderedEntries.length === 0) throw new Error("시험지에 들어갈 문항이 없어요. ④ 에서 문항을 만들어 주세요.");
-    if (incomplete.length > 0) throw new Error(`아직 완성되지 않은 문항이 ${incomplete.length}개 있어요 — 선택지/정답이 비어 있어요. 그 문항을 빼거나 Exam Studio에서 고쳐 주세요.`);
+    if (incomplete.length > 0) throw new Error(`아직 완성되지 않은 문항이 ${incomplete.length}개 있어요 — 선택지/정답이 비어 있어요. 그 문항을 빼거나 '수정'에서 고쳐 주세요.`);
     if (savedRef.current && savedRef.current.key === draftKey) return savedRef.current;
     const key = draftKey;
     const first = chosen[0] || {};
@@ -15321,7 +15398,7 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
     return savedRef.current;
   }
   async function handlePrint() {
-    if (busy) return;
+    if (busy || editingKey) return;
     if (flat.length === 0) { setInfo({ text: "문항이 없어요. ④ 에서 문항을 만든 뒤 인쇄해 주세요." }); return; }
     setErr(""); setInfo(null);
     // 저장하느라 기다린 뒤에 창을 열면 팝업이 막힐 수 있어서, 클릭한 바로 이 순간에 빈 창부터 연다.
@@ -15342,7 +15419,7 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
     }
   }
   async function handleAssign() {
-    if (busy) return;
+    if (busy || editingKey) return;
     if (flat.length === 0) { setInfo({ text: "문항이 없어요. ④ 에서 문항을 만든 뒤 배정해 주세요." }); return; }
     setErr(""); setInfo(null); setBusy("assign");
     try {
@@ -15517,8 +15594,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
         <${Card}>
             <div style=${sectionTitle}>④ 문항 만들기</div>
             <div className="reading-mobile-make" style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <${Button} variant="ghost" onClick=${importFromSaved} disabled=${genBusy}>저장함에서 가져오기 (무료)<//>
-              <${Button} variant="gold" onClick=${handleAiGenerate} disabled=${genBusy}>${genBusy ? "AI가 만드는 중..." : "AI로 문제 생성 (API 비용 발생)"}<//>
+              <${Button} variant="ghost" onClick=${importFromSaved} disabled=${genBusy || !!editingKey}>저장함에서 가져오기 (무료)<//>
+              <${Button} variant="gold" onClick=${handleAiGenerate} disabled=${genBusy || !!editingKey}>${genBusy ? "AI가 만드는 중..." : "AI로 문제 생성 (API 비용 발생)"}<//>
             </div>
             <div style=${{ fontSize: 11.5, color: C.danger, marginTop: 8 }}>⚠ AI 사용 — API 비용 발생. 이 버튼을 눌렀을 때만 AI를 불러요 (지문·유형을 바꿔도 자동으로 부르지 않아요).</div>
             <div style=${{ fontSize: 12.5, color: C.navy, fontWeight: 700, marginTop: 4 }}>지문 ${aiTargets.length}개 → AI ${aiTargets.length}회 호출 예상</div>
@@ -15533,10 +15610,10 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               <div style=${{ ...sectionTitle, marginBottom: 0 }}>⑤ 시험지${flat.length > 0 ? ` · ${flat.length}문항` : ""}</div>
               <div className="ap-seg" role="group" aria-label="시험지 보기 방식">
                 <button type="button" className=${pane === "teacher" ? "active" : ""} onClick=${() => setPane("teacher")}>선생님용</button>
-                <button type="button" className=${pane === "student" ? "active" : ""} onClick=${() => setPane("student")}>학생 화면</button>
+                <button type="button" className=${pane === "student" ? "active" : ""} disabled=${!!editingKey} onClick=${() => setPane("student")}>학생 화면</button>
               </div>
             </div>
-            ${incomplete.length > 0 && html`<div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 6 }}>선택지나 정답이 비어 있는 항목이 ${incomplete.length}개 있어요. 빼거나 Exam Studio에서 고친 뒤 인쇄·배정해 주세요.</div>`}
+            ${incomplete.length > 0 && html`<div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 6 }}>선택지나 정답이 비어 있는 항목이 ${incomplete.length}개 있어요. 빼거나 '수정'에서 고친 뒤 인쇄·배정해 주세요.</div>`}
             ${flat.length === 0
               ? html`<${Empty} text="아직 문항이 없어요. ①~② 를 정한 뒤 ④ 에서 문항을 만들어 주세요." />`
               : pane === "teacher"
@@ -15550,22 +15627,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
                             ${sec.label} <span style=${{ fontWeight: 400, color: C.slate }}>/ 문항 ${items[0].n === items[items.length - 1].n ? items[0].n : `${items[0].n}~${items[items.length - 1].n}`}</span>
                           </div>
                           ${items.map((it) => {
-                            const meta = ES_TYPE_META.find((t) => t.key === it.entry.questionType) || ES_TYPE_META[0];
-                            return html`
-                              <div key=${it.entry.localId + ":" + it.sub} style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
-                                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                  <div style=${{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
-                                    <span style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>${it.n}.</span>
-                                    <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, background: "#F3F1EB", color: C.slate }}>${meta.label}</span>
-                                  </div>
-                                  <${Button} variant="ghost" onClick=${() => removeQuestion(it)} style=${{ padding: "3px 10px", fontSize: 12, flex: "0 0 auto" }}>빼기<//>
-                                </div>
-                                <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${esStemOf(it.q)}</div>
-                                <div style=${{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-                                  ${(it.q.choices || []).map((c, i) => html`
-                                    <div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "2px 8px", borderRadius: 4, border: `1px solid ${i === it.q.answer ? C.gold : "transparent"}`, fontWeight: i === it.q.answer ? 700 : 400 }}>${ES_CIRC[i]} ${esStripCirc(c)}</div>`)}
-                                </div>
-                              </div>`;
+                            const key = it.entry.localId + ":" + (it.q.localId || it.sub);
+                            return html`<${ReadingTeacherPreviewItem} key=${key} item=${it} editState=${editState} onEditState=${setEditState} editing=${editingKey === key} locked=${!!editingKey || !!busy || genBusy} onEdit=${() => setEditingKey(key)} onCancel=${() => setEditingKey(null)} onSave=${(fields) => saveQuestionEdit(it, fields)} onRemove=${() => removeQuestion(it)} />`;
                           })}
                         </div>`;
                     })}
@@ -15600,8 +15663,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
 
           <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>미리보기만으로는 아무것도 저장되지 않아요. 인쇄하거나 배정하면 이 문항들이 시험지로 저장돼요.</div>
           <div className="reading-mobile-actions" style=${{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: 8 }}>
-            <${Button} variant="ghost" disabled=${!!busy} style=${dim(flat.length === 0)} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
-            <${Button} variant="primary" disabled=${!!busy} style=${dim(flat.length === 0)} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : `학생에게 배정 (${flat.length}문항)`}<//>
+            <${Button} variant="ghost" disabled=${!!busy || !!editingKey} style=${dim(flat.length === 0)} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
+            <${Button} variant="primary" disabled=${!!busy || !!editingKey} style=${dim(flat.length === 0)} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : `학생에게 배정 (${flat.length}문항)`}<//>
           </div>
         </div>
       ${assignPaper && html`<${AssignExamModal} AS=${window.SarahServices.examAssignmentService} paper=${assignPaper} roster=${roster || []} initialTimeLimit=${timeLimitMinutes}
@@ -15736,8 +15799,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
           <${Card}>
             <div style=${sectionTitle}>④ 문항 만들기</div>
             <div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <${Button} variant="ghost" onClick=${importFromSaved} disabled=${genBusy}>저장함에서 가져오기 (무료)<//>
-              <${Button} variant="gold" onClick=${handleAiGenerate} disabled=${genBusy}>${genBusy ? "AI가 만드는 중..." : "AI로 문제 생성 (API 비용 발생)"}<//>
+              <${Button} variant="ghost" onClick=${importFromSaved} disabled=${genBusy || !!editingKey}>저장함에서 가져오기 (무료)<//>
+              <${Button} variant="gold" onClick=${handleAiGenerate} disabled=${genBusy || !!editingKey}>${genBusy ? "AI가 만드는 중..." : "AI로 문제 생성 (API 비용 발생)"}<//>
             </div>
             <div style=${{ fontSize: 11.5, color: C.danger, marginTop: 8 }}>⚠ AI 사용 — API 비용 발생. 이 버튼을 눌렀을 때만 AI를 불러요 (지문·유형을 바꿔도 자동으로 부르지 않아요).</div>
             <div style=${{ fontSize: 12.5, color: C.navy, fontWeight: 700, marginTop: 4 }}>지문 ${aiTargets.length}개 → AI ${aiTargets.length}회 호출 예상</div>
@@ -15753,10 +15816,10 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               <div style=${{ ...sectionTitle, marginBottom: 0 }}>⑤ 시험지${flat.length > 0 ? ` · ${flat.length}문항` : ""}</div>
               <div className="ap-seg" role="group" aria-label="시험지 보기 방식">
                 <button type="button" className=${pane === "teacher" ? "active" : ""} onClick=${() => setPane("teacher")}>선생님용</button>
-                <button type="button" className=${pane === "student" ? "active" : ""} onClick=${() => setPane("student")}>학생 화면</button>
+                <button type="button" className=${pane === "student" ? "active" : ""} disabled=${!!editingKey} onClick=${() => setPane("student")}>학생 화면</button>
               </div>
             </div>
-            ${incomplete.length > 0 && html`<div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 6 }}>선택지나 정답이 비어 있는 항목이 ${incomplete.length}개 있어요. 빼거나 Exam Studio에서 고친 뒤 인쇄·배정해 주세요.</div>`}
+            ${incomplete.length > 0 && html`<div style=${{ fontSize: 11.5, color: C.danger, marginBottom: 6 }}>선택지나 정답이 비어 있는 항목이 ${incomplete.length}개 있어요. 빼거나 '수정'에서 고친 뒤 인쇄·배정해 주세요.</div>`}
             ${flat.length === 0
               ? html`<${Empty} text="아직 문항이 없어요. ①~② 를 정한 뒤 ④ 에서 문항을 만들어 주세요." />`
               : pane === "teacher"
@@ -15770,22 +15833,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
                             ${sec.label} <span style=${{ fontWeight: 400, color: C.slate }}>/ 문항 ${items[0].n === items[items.length - 1].n ? items[0].n : `${items[0].n}~${items[items.length - 1].n}`}</span>
                           </div>
                           ${items.map((it) => {
-                            const meta = ES_TYPE_META.find((t) => t.key === it.entry.questionType) || ES_TYPE_META[0];
-                            return html`
-                              <div key=${it.entry.localId + ":" + it.sub} style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
-                                <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                  <div style=${{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap" }}>
-                                    <span style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>${it.n}.</span>
-                                    <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, background: "#F3F1EB", color: C.slate }}>${meta.label}</span>
-                                  </div>
-                                  <${Button} variant="ghost" onClick=${() => removeQuestion(it)} style=${{ padding: "3px 10px", fontSize: 12, flex: "0 0 auto" }}>빼기<//>
-                                </div>
-                                <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${esStemOf(it.q)}</div>
-                                <div style=${{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
-                                  ${(it.q.choices || []).map((c, i) => html`
-                                    <div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "2px 8px", borderRadius: 4, border: `1px solid ${i === it.q.answer ? C.gold : "transparent"}`, fontWeight: i === it.q.answer ? 700 : 400 }}>${ES_CIRC[i]} ${esStripCirc(c)}</div>`)}
-                                </div>
-                              </div>`;
+                            const key = it.entry.localId + ":" + (it.q.localId || it.sub);
+                            return html`<${ReadingTeacherPreviewItem} key=${key} item=${it} editState=${editState} onEditState=${setEditState} editing=${editingKey === key} locked=${!!editingKey || !!busy || genBusy} onEdit=${() => setEditingKey(key)} onCancel=${() => setEditingKey(null)} onSave=${(fields) => saveQuestionEdit(it, fields)} onRemove=${() => removeQuestion(it)} />`;
                           })}
                         </div>`;
                     })}
@@ -15817,8 +15866,8 @@ function ReadingExamOnePane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
             <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE2", flexWrap: "wrap" }}>
               <div style=${{ fontSize: 11.5, color: C.slate }}>미리보기만으로는 아무것도 저장되지 않아요. 인쇄하거나 배정하면 이 문항들이 시험지로 저장돼요.</div>
               <div style=${{ display: "flex", gap: 8 }}>
-                <${Button} variant="ghost" disabled=${!!busy} style=${dim(flat.length === 0)} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
-                <${Button} variant="primary" disabled=${!!busy} style=${dim(flat.length === 0)} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : "학생에게 배정"}<//>
+                <${Button} variant="ghost" disabled=${!!busy || !!editingKey} style=${dim(flat.length === 0)} onClick=${handlePrint}>${busy === "print" ? "준비하는 중..." : "인쇄"}<//>
+                <${Button} variant="primary" disabled=${!!busy || !!editingKey} style=${dim(flat.length === 0)} onClick=${handleAssign}>${busy === "assign" ? "준비하는 중..." : "학생에게 배정"}<//>
               </div>
             </div>
           <//>
