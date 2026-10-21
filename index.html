@@ -11404,16 +11404,33 @@ function groupQuestionStemLines(lines) {
   }
   return nodes;
 }
+// 표시 전용 [[밑줄]]: 화면과 인쇄가 같은 파서를 쓰고 원문·정답은 바꾸지 않는다.
+function renderGrammarUnderline(text, asHtml = false) {
+  const str = String(text == null ? "" : text);
+  const re = /\[\[([\s\S]+?)\]\]/g;
+  const parts = [];
+  let at = 0, match;
+  while ((match = re.exec(str))) {
+    const plain = str.slice(at, match.index);
+    parts.push(asHtml ? esEscapeHtml(plain) : plain);
+    parts.push(asHtml ? `<u>${esEscapeHtml(match[1])}</u>` : html`<u key=${match.index}>${match[1]}</u>`);
+    at = re.lastIndex;
+  }
+  if (at === 0) return asHtml ? esEscapeHtml(str) : str;
+  parts.push(asHtml ? esEscapeHtml(str.slice(at)) : str.slice(at));
+  return asHtml ? parts.join("") : parts;
+}
+
 // groupQuestionStemLines가 만든 노드 하나를 실제 DOM으로 렌더링.
 function renderQuestionStemNode(node, i) {
   const key = `n${i}`;
   if (node.type === "box") {
-    return html`<div key=${key} style=${{ marginTop: 4, background: C.ivory, borderRadius: 8, padding: "9px 12px", whiteSpace: "pre-line" }}>${node.lines.join("\n")}</div>`;
+    return html`<div key=${key} style=${{ marginTop: 4, background: C.ivory, borderRadius: 8, padding: "9px 12px", whiteSpace: "pre-line" }}>${renderGrammarUnderline(node.lines.join("\n"))}</div>`;
   }
   if (node.type === "labeled") {
-    return html`<div key=${key} style=${{ marginTop: 2, marginLeft: 14 }}><b>${node.label}</b> ${node.text}</div>`;
+    return html`<div key=${key} style=${{ marginTop: 2, marginLeft: 14 }}><b>${renderGrammarUnderline(node.label)}</b> ${renderGrammarUnderline(node.text)}</div>`;
   }
-  return html`<div key=${key} style=${{ marginTop: 2 }}>${node.text}</div>`;
+  return html`<div key=${key} style=${{ marginTop: 2 }}>${renderGrammarUnderline(node.text)}</div>`;
 }
 // formatQuestionStem 결과를 실제로 렌더링 — instruction을 굵은 첫 줄로, 본문(lines)을
 // groupQuestionStemLines로 묶은 노드들을 그 아래 순서대로 보여준다. GrammarBankBrowseView의
@@ -11422,10 +11439,10 @@ function renderQuestionStemNode(node, i) {
 // 동일하게 적용된다.
 function renderFormattedQuestionStem(text) {
   const { instruction, lines } = formatQuestionStem(text);
-  if (lines.length === 0) return html`<b>${instruction}</b>`;
+  if (lines.length === 0) return html`<b>${renderGrammarUnderline(instruction)}</b>`;
   const nodes = groupQuestionStemLines(lines);
   return html`<span>
-    <b>${instruction}</b>
+    <b>${renderGrammarUnderline(instruction)}</b>
     <div style=${{ marginTop: 4 }}>
       ${nodes.map((node, i) => renderQuestionStemNode(node, i))}
     </div>
@@ -11435,18 +11452,18 @@ function renderFormattedQuestionStem(text) {
 // groupQuestionStemLines 파이프라인을 그대로 재사용해서 인쇄물도 화면과 동일하게 나온다.
 function renderQuestionStemHtml(text) {
   const { instruction, lines } = formatQuestionStem(text);
-  if (lines.length === 0) return `<b>${esEscapeHtml(instruction)}</b>`;
+  if (lines.length === 0) return `<b>${renderGrammarUnderline(instruction, true)}</b>`;
   const nodes = groupQuestionStemLines(lines);
   const nodeHtml = nodes.map((node) => {
     if (node.type === "box") {
-      return `<div style="margin-top:4px;background:#FAF7F1;border-radius:8px;padding:9px 12px;white-space:pre-line;">${esEscapeHtml(node.lines.join("\n"))}</div>`;
+      return `<div style="margin-top:4px;background:#FAF7F1;border-radius:8px;padding:9px 12px;white-space:pre-line;">${renderGrammarUnderline(node.lines.join("\n"), true)}</div>`;
     }
     if (node.type === "labeled") {
-      return `<div style="margin-top:2px;margin-left:14px;"><b>${esEscapeHtml(node.label)}</b> ${esEscapeHtml(node.text)}</div>`;
+      return `<div style="margin-top:2px;margin-left:14px;"><b>${renderGrammarUnderline(node.label, true)}</b> ${renderGrammarUnderline(node.text, true)}</div>`;
     }
-    return `<div style="margin-top:2px;">${esEscapeHtml(node.text)}</div>`;
+    return `<div style="margin-top:2px;">${renderGrammarUnderline(node.text, true)}</div>`;
   }).join("");
-  return `<b>${esEscapeHtml(instruction)}</b><div style="margin-top:4px;">${nodeHtml}</div>`;
+  return `<b>${renderGrammarUnderline(instruction, true)}</b><div style="margin-top:4px;">${nodeHtml}</div>`;
 }
 
 // 2026-09-08 — "빈칸이 사라진 것으로 의심되는 문항" 자동 점검. 세 가지 신호 중 하나라도 걸리면
@@ -11567,7 +11584,7 @@ function renderQuestionAnswerArea({ type, mode, opts, selectedOpt, correctOpt, o
           const highlighted = mode === "interactive" ? selectedOpt === oi : correctOpt === oi;
           return html`
             <div key=${oi} onClick=${mode === "interactive" ? () => onPickOpt(oi) : undefined}
-              style=${{ padding: "9px 12px", border: `1px solid ${highlighted ? C.gold : C.line}`, background: highlighted ? "#FBF4EA" : C.white, borderRadius: 3, marginBottom: 6, fontSize: 13, cursor: mode === "interactive" ? "pointer" : "default" }}>${opt}</div>
+              style=${{ padding: "9px 12px", border: `1px solid ${highlighted ? C.gold : C.line}`, background: highlighted ? "#FBF4EA" : C.white, borderRadius: 3, marginBottom: 6, fontSize: 13, cursor: mode === "interactive" ? "pointer" : "default" }}>${renderGrammarUnderline(opt)}</div>
           `;
         })}
       </div>
@@ -11981,11 +11998,11 @@ function GrammarBankPrototype({ roster, updateData }) {
       const disp = item.type === "mc" ? sanitizeGbMcOptsForDisplay(item) : item;
       let inner = `<div class="gp-qtext"><b>${idx + 1}.</b> ${renderQuestionStemHtml(disp.q)}</div>`;
       if (disp.type === "mc") {
-        inner += `<div class="gp-choices">${disp.opts.map((o) => `<span>${esEscapeHtml(o)}</span>`).join("")}</div>`;
+        inner += `<div class="gp-choices">${disp.opts.map((o) => `<span>${renderGrammarUnderline(o, true)}</span>`).join("")}</div>`;
         if (showAnswers) inner += `<div class="gp-ans">정답: ${esEscapeHtml(item.ans)}</div>`;
       } else if (item.parts && item.parts.length > 0) {
         // 다중 소문항 — 지시문 아래 밑줄, 정답 표시가 켜져 있으면 소문항별 정답을 한 줄로.
-        inner += item.parts.map((p) => `<div class="gp-qtext">${esEscapeHtml(p.text)}</div><div class="gp-blank">______________________________</div>`).join("");
+        inner += item.parts.map((p) => `<div class="gp-qtext">${renderGrammarUnderline(p.text, true)}</div><div class="gp-blank">______________________________</div>`).join("");
         if (showAnswers) inner += `<div class="gp-ans">정답: ${item.parts.map((p) => esEscapeHtml(`${p.label} ${p.ans}`)).join("  ")}</div>`;
       } else {
         inner += `<div class="gp-blank">______________________________</div>`;
@@ -12372,7 +12389,7 @@ function GrammarBankPrototype({ roster, updateData }) {
                     <div style=${{ margin: "6px 0 0 28px" }}>
                       ${item.parts && item.parts.length > 0 ? item.parts.map((part, pi) => html`
                         <div key=${pi} style=${{ marginBottom: pi < item.parts.length - 1 ? 8 : 0 }}>
-                          <div style=${{ fontSize: 12.5, color: C.ink, marginBottom: 3, whiteSpace: "pre-wrap" }}>${part.text}</div>
+                          <div style=${{ fontSize: 12.5, color: C.ink, marginBottom: 3, whiteSpace: "pre-wrap" }}>${renderGrammarUnderline(part.text)}</div>
                           ${renderQuestionAnswerArea({ type: "subjective", mode: "review", correctAnswers: previewMode !== "q" ? [part.ans] : null })}
                         </div>
                       `) : renderQuestionAnswerArea({ type: "subjective", mode: "review", correctAnswers: previewMode !== "q" ? [item.ans, ...(item.alts || [])] : null })}
@@ -12613,6 +12630,7 @@ function GrammarBankBrowseView() {
         <${Field} label="미리보기 (학생 화면에 실제로 보이는 서식)">
           <div style=${{ border: `1px solid ${C.line}`, borderRadius: 4, padding: "12px 14px", background: "#FDFBF6", fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line" }}>
             ${formQ.trim() ? renderFormattedQuestionStem(formQ) : html`<span style=${{ color: "#9a9488" }}>문제를 입력하면 여기에 미리보기가 표시돼요.</span>`}
+            ${formType === "mc" && formOpts.some((opt) => /\[\[.+?\]\]/.test(opt)) && html`<div style=${{ marginTop: 8 }}>${renderQuestionAnswerArea({ type: "mc", mode: "review", opts: formOpts, correctOpt: null })}</div>`}
           </div>
         <//>
         ${formType === "mc" ? html`
@@ -12751,7 +12769,7 @@ function GrammarBankBrowseView() {
                   <div style=${{ margin: "0 0 0 28px" }}>
                     ${item.parts && item.parts.length > 0 ? item.parts.map((part, pi) => html`
                       <div key=${pi} style=${{ marginBottom: pi < item.parts.length - 1 ? 10 : 0 }}>
-                        <div style=${{ fontSize: 13, color: C.ink, marginBottom: 4, whiteSpace: "pre-wrap" }}>${part.text}</div>
+                        <div style=${{ fontSize: 13, color: C.ink, marginBottom: 4, whiteSpace: "pre-wrap" }}>${renderGrammarUnderline(part.text)}</div>
                         ${renderQuestionAnswerArea({ type: "subjective", mode: "review", correctAnswers: showAnswers ? [part.ans] : null })}
                       </div>
                     `) : renderQuestionAnswerArea({ type: "subjective", mode: "review", correctAnswers: showAnswers ? [item.ans, ...(item.alts || [])] : null })}
@@ -13759,7 +13777,7 @@ function AssignExamModal({ AS, paper, roster, onClose, onAssigned, initialTimeLi
 // 그대로 쓰고, 종이용으로 흰 바탕·검은 글씨·얇은 테두리만 쓴다(색 배경 없음). 규칙이 안 맞거나 줄 나눌 게 없으면 null —
 // 호출한 쪽이 예전처럼 한 문단으로 인쇄한다(그래서 줄바꿈이 필요 없는 문항은 인쇄물이 예전과 같다).
 function esStemBlanksHtml(text) {
-  return String(text == null ? "" : text).split(/(\(\d+\))/).map((seg) => (/^\(\d+\)$/.test(seg) ? `<span class="stem-blank">${esEscapeHtml(seg)}</span>` : esEscapeHtml(seg))).join("");
+  return String(text == null ? "" : text).split(/(\(\d+\))/).map((seg) => (/^\(\d+\)$/.test(seg) ? `<span class="stem-blank">${renderGrammarUnderline(seg, true)}</span>` : renderGrammarUnderline(seg, true))).join("");
 }
 function esStemSpeakerLineHtml(line) {
   const m = String(line).match(/^([A-Z][A-Za-z]{0,14})\s?:\s?(.*)$/);
@@ -13774,15 +13792,15 @@ function esStemPrintInner(text, isSubjective) {
   if (parsed.kind === "plain") return null;
   if (parsed.kind === "lines" && parsed.nodes.length === 0) return null;
   const rawTag = (String(text || "").match(ES_STEM_TAG_RE) || [""])[0].trim(); // "[서술형1]"처럼 입력한 그대로
-  const instr = `<b class="stem-instr">${rawTag ? esEscapeHtml(rawTag) + " " : ""}${esEscapeHtml(parsed.instruction)}</b>`;
+  const instr = `<b class="stem-instr">${rawTag ? esEscapeHtml(rawTag) + " " : ""}${renderGrammarUnderline(parsed.instruction, true)}</b>`;
   let body = "";
   if (parsed.kind === "rules") {
-    if (parsed.intro) body += `<div class="stem-intro">${esEscapeHtml(parsed.intro)}</div>`;
+    if (parsed.intro) body += `<div class="stem-intro">${renderGrammarUnderline(parsed.intro, true)}</div>`;
     if (parsed.turns.length > 0) body += `<div class="stem-dialog">${parsed.turns.map((t) => `<div><b>${esEscapeHtml(t.speaker)}:</b> ${esStemBlanksHtml(t.text)}</div>`).join("")}</div>`;
-    if (parsed.cond) body += `<div class="stem-cond"><div><b>&lt;조건&gt;</b></div>${parsed.cond.lead ? `<div>${esEscapeHtml(parsed.cond.lead)}</div>` : ""}${parsed.cond.items.map((it) => `<div>${esEscapeHtml(it)}</div>`).join("")}</div>`;
+    if (parsed.cond) body += `<div class="stem-cond"><div><b>&lt;조건&gt;</b></div>${parsed.cond.lead ? `<div>${renderGrammarUnderline(parsed.cond.lead, true)}</div>` : ""}${parsed.cond.items.map((it) => `<div>${renderGrammarUnderline(it, true)}</div>`).join("")}</div>`;
   } else {
     body += parsed.nodes.map((n) => {
-      if (n.type === "box") return `<div class="stem-box">${n.lines.map((ln, j) => `<div>${j === 0 ? "<b>" : ""}${esEscapeHtml(ln)}${j === 0 ? "</b>" : ""}</div>`).join("")}</div>`;
+      if (n.type === "box") return `<div class="stem-box">${n.lines.map((ln, j) => `<div>${j === 0 ? "<b>" : ""}${renderGrammarUnderline(ln, true)}${j === 0 ? "</b>" : ""}</div>`).join("")}</div>`;
       if (n.type === "dialog") return `<div class="stem-dialog">${n.turns.map((t) => `<div><b>${esEscapeHtml(t.speaker)}:</b> ${esStemBlanksHtml(t.text)}</div>`).join("")}</div>`;
       if (n.type === "labeled") return `<div class="stem-label"><b>${esEscapeHtml(n.label)}</b> ${esStemBlanksHtml(n.text)}</div>`;
       return esStemSpeakerLineHtml(n.text);
@@ -13821,7 +13839,7 @@ function printExamPaperSheet(EP, paper, questionsById, passagesById, existingWin
       qNum += 1;
       const { displayChoices, displayAnswerIndex } = EP.resolveQuestionForDisplay(qDoc, qr.choiceDisplayOrder);
       const choicesHtml = displayChoices.length > 0
-        ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${esc(c)}</span>`).join("")}</div>`
+        ? `<div class="choices">${displayChoices.map((c, i) => `<span class="choice">${CIRCLED[i] || (i + 1) + ")"} ${renderGrammarUnderline(c, true)}</span>`).join("")}</div>`
         : `<div class="answer-line">답: ______________________</div>`;
       answerRows.push(`<span class="a-item"><span class="a-num">${qNum}.</span>${displayChoices.length > 0 ? esc(CIRCLED[displayAnswerIndex] || String(displayAnswerIndex + 1)) : esc(qDoc.answer)}</span>`);
       const stemInner = esStemPrintInner(qDoc.questionText, displayChoices.length === 0);
@@ -13829,7 +13847,7 @@ function printExamPaperSheet(EP, paper, questionsById, passagesById, existingWin
         // 서술형 정답지: 같은 본문 모양(대화·조건·빈칸) 아래에 정답을 붙인다 — 구조가 없는 문항은 예전 줄(번호 + 정답) 그대로
         answerRows[answerRows.length - 1] = `<div class="a-block"><span class="a-num">${qNum}.</span>${stemInner}<div class="a-ans">정답: ${esc(qDoc.answer)}</div></div>`;
       }
-      return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${stemInner || esc(qDoc.questionText)}</div>${choicesHtml}</div>`;
+      return `<div class="question"><div class="q-text"><span class="q-num">${qNum}.</span> ${stemInner || renderGrammarUnderline(qDoc.questionText, true)}</div>${choicesHtml}</div>`;
     }).join("");
     // 지문이 있는 섹션(Reading)은 항상 1단, 지문이 없는 섹션(Grammar 등)만 layout 설정을 따른다.
     const bodyHtml = (!passage && layout === "2col") ? `<div class="qs-2col">${questionsHtml}</div>` : questionsHtml;
@@ -14407,12 +14425,12 @@ function GbTeacherPreviewItem({ doc, n, canReplace, onReplace }) {
         </div>
         <${Button} variant="ghost" disabled=${!canReplace} onClick=${onReplace} style=${{ padding: "3px 10px", fontSize: 12, flex: "0 0 auto" }}>↻ 교체<//>
       </div>
-      <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${doc.questionText}</div>
+      <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${renderGrammarUnderline(doc.questionText)}</div>
       ${isMc
         ? html`
           <div style=${{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
             ${doc.choices.map((c, i) => html`
-              <div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "2px 8px", borderRadius: 4, border: `1px solid ${i === doc.answerIdx ? C.gold : "transparent"}`, fontWeight: i === doc.answerIdx ? 700 : 400 }}>${i + 1}. ${c}</div>
+              <div key=${i} style=${{ fontSize: 12.5, color: C.ink, padding: "2px 8px", borderRadius: 4, border: `1px solid ${i === doc.answerIdx ? C.gold : "transparent"}`, fontWeight: i === doc.answerIdx ? 700 : 400 }}>${i + 1}. ${renderGrammarUnderline(c)}</div>
             `)}
           </div>`
         : html`<div style=${{ fontSize: 12.5, color: C.ink, marginTop: 6, padding: "4px 8px", borderRadius: 4, background: "#F3F1EB" }}>정답: ${doc.answerText || "(정답 없음)"}</div>`}
@@ -24125,7 +24143,7 @@ const ES_MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 function esStemBlanks(text) {
   return String(text || "").split(/(\(\d+\))/).map((seg, i) => (/^\(\d+\)$/.test(seg)
     ? html`<span key=${i} style=${{ display: "inline-block", minWidth: 64, textAlign: "center", borderBottom: `1.5px solid ${C.ink}`, margin: "0 3px", fontSize: 13, color: C.slate, lineHeight: 1.3 }}>${seg}</span>`
-    : seg));
+    : renderGrammarUnderline(seg)));
 }
 function esStemSpeakerLine(line, key) {
   const m = String(line).match(/^([A-Z][A-Za-z]{0,14})\s?:\s?(.*)$/);
@@ -24142,23 +24160,23 @@ function EsExamStemView({ parsed, number, isSubjective }) {
         ${tag && html`<span style=${{ fontSize: 11.5, padding: "1px 8px", borderRadius: 10, border: `1px solid ${C.line}`, color: C.slate }}>${tag}</span>`}
       </div>
       ${parsed.kind === "plain"
-        ? html`<div style=${{ fontSize: 15, color: C.ink, lineHeight: 1.7, whiteSpace: "pre-line" }}>${parsed.text}</div>`
+        ? html`<div style=${{ fontSize: 15, color: C.ink, lineHeight: 1.7, whiteSpace: "pre-line" }}>${renderGrammarUnderline(parsed.text)}</div>`
         : html`
-          <div style=${{ fontSize: 16, fontWeight: 700, color: C.ink, lineHeight: 1.6 }}>${parsed.instruction}</div>
+          <div style=${{ fontSize: 16, fontWeight: 700, color: C.ink, lineHeight: 1.6 }}>${renderGrammarUnderline(parsed.instruction)}</div>
           ${parsed.kind === "rules" && html`
-            ${parsed.intro && html`<div style=${{ marginTop: 8, fontSize: 15, lineHeight: 1.7, color: C.ink }}>${parsed.intro}</div>`}
+            ${parsed.intro && html`<div style=${{ marginTop: 8, fontSize: 15, lineHeight: 1.7, color: C.ink }}>${renderGrammarUnderline(parsed.intro)}</div>`}
             ${parsed.turns.length > 0 && html`<div style=${{ ...boxBase, background: "#F3F1EB" }}>${parsed.turns.map((t, i) => html`<div key=${i}><b style=${{ fontFamily: ES_MONO, color: C.navy }}>${t.speaker}:</b> ${esStemBlanks(t.text)}</div>`)}</div>`}
             ${parsed.cond && html`
               <div style=${{ ...boxBase, border: `1px solid ${C.gold}`, background: C.white }}>
                 <div style=${{ fontWeight: 700, marginBottom: 4 }}>${"<조건>"}</div>
-                ${parsed.cond.lead && html`<div>${parsed.cond.lead}</div>`}
-                ${parsed.cond.items.map((it, i) => html`<div key=${i}>${it}</div>`)}
+                ${parsed.cond.lead && html`<div>${renderGrammarUnderline(parsed.cond.lead)}</div>`}
+                ${parsed.cond.items.map((it, i) => html`<div key=${i}>${renderGrammarUnderline(it)}</div>`)}
               </div>`}
           `}
           ${parsed.kind === "lines" && parsed.nodes.length > 0 && html`
             <div style=${{ marginTop: 8, fontSize: 15, lineHeight: 1.7, color: C.ink }}>
               ${parsed.nodes.map((n, i) => {
-                if (n.type === "box") return html`<div key=${i} style=${{ ...boxBase, border: `1px solid ${C.gold}`, background: C.white, fontSize: 15 }}>${n.lines.map((ln, j) => html`<div key=${j} style=${{ fontWeight: j === 0 ? 700 : 400 }}>${ln}</div>`)}</div>`;
+                if (n.type === "box") return html`<div key=${i} style=${{ ...boxBase, border: `1px solid ${C.gold}`, background: C.white, fontSize: 15 }}>${n.lines.map((ln, j) => html`<div key=${j} style=${{ fontWeight: j === 0 ? 700 : 400 }}>${renderGrammarUnderline(ln)}</div>`)}</div>`;
                 if (n.type === "dialog") return html`<div key=${i} style=${{ ...boxBase, background: "#F3F1EB" }}>${n.turns.map((t, j) => html`<div key=${j}><b style=${{ fontFamily: ES_MONO, color: C.navy }}>${t.speaker}:</b> ${esStemBlanks(t.text)}</div>`)}</div>`;
                 if (n.type === "labeled") return html`<div key=${i} style=${{ marginLeft: 14, marginTop: 2 }}><b>${n.label}</b> ${esStemBlanks(n.text)}</div>`;
                 return esStemSpeakerLine(n.text, i);
@@ -24243,7 +24261,7 @@ function ExamRunScreen({
                           border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
                           background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
                           fontSize: 14, color: C.ink,
-                        }}>${i + 1}. ${c}<//>
+                        }}>${i + 1}. ${renderGrammarUnderline(c)}<//>
                     `)}
                   </div>
                 `
@@ -24336,7 +24354,7 @@ function ExamRunScreen({
         ${answerFormat === "mc" ? html`
           <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
             ${displayChoices.map((c, i) => html`
-              <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)} style=${{ minHeight: 52, fontSize: 15, textAlign: "left", padding: "12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer", border: selectedDisplayIdx === i ? "2px solid #B8935A" : `1px solid ${C.line}`, background: selectedDisplayIdx === i ? "#FBF6EA" : "#fff", color: C.ink }}>${i + 1}. ${c}</button>
+              <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)} style=${{ minHeight: 52, fontSize: 15, textAlign: "left", padding: "12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer", border: selectedDisplayIdx === i ? "2px solid #B8935A" : `1px solid ${C.line}`, background: selectedDisplayIdx === i ? "#FBF6EA" : "#fff", color: C.ink }}>${i + 1}. ${renderGrammarUnderline(c)}</button>
             `)}
           </div>` : fieldValues ? html`
           <div style=${{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18 }}>
