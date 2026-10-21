@@ -18,5 +18,5 @@ const messaging = firebase.messaging();
 // index.html) and background display logic consistent instead of the browser doing its own thing.
 messaging.onBackgroundMessage((payload) => {
   const { title, body } = payload.data || {};
-  self.registration.showNotification(title || "Sarah's English", { body: body || "" });
+  self.registration.showNotification(title ? "Sarah’s English with 선순환 · " + title : "Sarah’s English with 선순환", { body: body || "" });
 });
