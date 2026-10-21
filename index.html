@@ -12108,13 +12108,8 @@ function GrammarBankPrototype({ roster, updateData }) {
       <div className="es-main">
         <div className="es-topbar"><div className="es-breadcrumb">문법 문제뱅크<span className="sep">·</span>${grade || "학년을 선택하세요"}</div></div>
         <div className="es-content">
-          ${(suspiciousQuestions.length > 0 || misclassifiedQuestions.length > 0 || contentLostQuestions.length > 0 || missingBlankQuestions.length > 0 || missingLeadingBlankQuestions.length > 0 || doubleCycleQuestions.length > 0) && html`
+          ${(misclassifiedQuestions.length > 0 || contentLostQuestions.length > 0 || missingBlankQuestions.length > 0 || doubleCycleQuestions.length > 0) && html`
             <div style=${{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-              ${suspiciousQuestions.length > 0 && html`
-                <div onClick=${showSuspiciousQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
-                  ⚠️ 빈칸이 빠졌을 수 있는 문항 ${suspiciousQuestions.length}개 — 클릭해서 확인
-                </div>
-              `}
               ${misclassifiedQuestions.length > 0 && html`
                 <div onClick=${showMisclassifiedQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
                   ⚠️ 객관식인데 서술형으로 등록된 문항처럼 보여요 ${misclassifiedQuestions.length}개 — 클릭해서 확인
@@ -12128,11 +12123,6 @@ function GrammarBankPrototype({ roster, updateData }) {
               ${missingBlankQuestions.length > 0 && html`
                 <div onClick=${showMissingBlankQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
                   ⚠️ 빈칸이 없는 것 같은 문항 ${missingBlankQuestions.length}개 — 클릭해서 확인
-                </div>
-              `}
-              ${missingLeadingBlankQuestions.length > 0 && html`
-                <div onClick=${showMissingLeadingBlankQuestions} style=${{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, background: "#FCEEE7", color: C.danger, border: `1px solid ${C.danger}`, borderRadius: 20, padding: "5px 12px", fontSize: 11.5, fontWeight: 700 }}>
-                  ⚠️ 문장 맨 앞 빈칸이 빠졌을 수 있는 문항 ${missingLeadingBlankQuestions.length}개 — 클릭해서 확인
                 </div>
               `}
               ${doubleCycleQuestions.length > 0 && html`
