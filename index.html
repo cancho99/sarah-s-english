@@ -23778,6 +23778,8 @@ function ExamRunScreen({
   savingAnswer, saveError, onBack, navyHeader, showUnanswered, children, questionFormats, submitAction, wideFrame, passageSameAsPrev,
 }) {
   const wide = useIsDesktop();
+  const [numberSheetOpen, setNumberSheetOpen] = useState(false);
+  const [mobilePassage, setMobilePassage] = useState({ index: -1, open: false });
   const [openPassageAt, setOpenPassageAt] = useState(-1); // PC: 앞 문항과 같은 지문은 접어 두고, 필요할 때만 펼친다(펼친 문항 번호)
   const isEmpty = (v) => v === undefined || v === null || v === "";
   const unansweredNums = showUnanswered ? questionIds.map((id, i) => ({ id, n: i + 1 })).filter(({ id }) => isEmpty(answers[id])).map(({ n }) => n) : [];
@@ -23890,65 +23892,82 @@ function ExamRunScreen({
       </div>
     `;
   }
+  const isSub = answerFormat !== "mc";
+  const parsed = esParseExamStem(questionText, isSub);
+  const fieldLabels = isSub ? esAnswerFieldLabels(questionText, true) : [];
+  const fieldValues = fieldLabels.length >= 2 ? esAnswerFieldValues(answerText, fieldLabels) : null;
+  const passageOpen = mobilePassage.index === index ? mobilePassage.open : !passageSameAsPrev;
+  const unansweredCount = questionIds.filter((id) => isEmpty(answers[id])).length;
   return html`
-    <div>
+    <div className="es-mobile" style=${{ background: "#FAF7F1", minWidth: 0, minHeight: "calc(100dvh - 32px)", display: "flex", flexDirection: "column", overflowWrap: "anywhere" }}>
+      <style>
+        .es-mobile button { min-height: 44px; min-width: 44px; }
+        .es-mobile-actions button { height: 48px; width: 100%; justify-content: center; padding: 8px; }
+        .es-mobile-sheet button { min-height: 44px; }
+        @keyframes esMobileSheetIn { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .es-mobile-sheet { animation: esMobileSheetIn .2s ease-out; }
+        @media (prefers-reduced-motion: reduce) { .es-mobile-sheet { animation: none; } }
+      </style>
       ${onBack && html`<${BackBtn} onClick=${onBack} />`}
       ${notice && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${notice}</div>`}
-      <div style=${{ display: "flex", justifyContent: "space-between", alignItems: navyHeader ? "center" : "baseline", marginBottom: 8, ...(navyHeader ? { background: C.navy, borderRadius: 6, padding: "8px 12px" } : null) }}>
-        <div style=${{ ...serif, fontSize: 16, color: navyHeader ? C.white : C.navy }}>${title}</div>
+      <div style=${{ background: "#1C2B4A", color: "#fff", borderRadius: "6px 6px 0 0", padding: "12px", display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div style=${{ ...serif, fontSize: 16, flex: "1 1 140px", minWidth: 0 }}>${title}</div>
         <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-          ${remainLabel !== null && remainLabel !== undefined && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", padding: "3px 10px", borderRadius: 20, background: remainWarn ? "#F7E9E6" : "#EFEDE6", color: remainWarn ? C.danger : C.navy }}>${remainPrefix}${remainLabel}</div>`}
-          <div style=${{ fontSize: 12, color: navyHeader ? C.line : C.slate }}>${index + 1} / ${total}</div>
+          ${remainLabel !== null && remainLabel !== undefined && html`<div style=${{ fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: remainWarn ? "#FFB6AC" : "#fff" }}>${remainPrefix}${remainLabel}</div>`}
+          <div style=${{ fontSize: 12 }}>${index + 1} / ${total}</div>
         </div>
       </div>
-
+      <div role="progressbar" aria-label="문항 진행" aria-valuemin=${0} aria-valuemax=${total} aria-valuenow=${index + 1} style=${{ height: 4, background: "#E7E0D5", marginBottom: 12 }}>
+        <div style=${{ height: "100%", width: `${total ? (index + 1) / total * 100 : 0}%`, background: "#B8935A" }} />
+      </div>
       ${passage && html`
-        <${Card} style=${{ background: C.ivory, marginBottom: 10 }}>
-          <div style=${{ fontWeight: 700, color: C.navy, fontSize: 13, marginBottom: 6 }}>${passage.title}</div>
-          <div style=${{ whiteSpace: "pre-wrap", fontSize: 12.5, lineHeight: 1.7, color: C.ink }}>${passage.passageText || passage.originalText}</div>
+        <${Card} style=${{ background: "#fff", marginBottom: 12 }}>
+          <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style=${{ fontWeight: 700, color: "#1C2B4A", fontSize: 15 }}>${passage.title || "지문"}</div>
+            <button type="button" aria-expanded=${passageOpen} onClick=${() => setMobilePassage({ index, open: !passageOpen })} style=${{ flexShrink: 0, border: `1px solid ${C.line}`, borderRadius: 6, padding: "8px 12px", background: "#fff", color: "#1C2B4A", cursor: "pointer" }}>${passageOpen ? "접기" : "펼치기"}</button>
+          </div>
+          ${passageOpen && html`<div style=${{ whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.8, color: C.ink, marginTop: 8 }}>${passage.passageText || passage.originalText}</div>`}
         <//>
       `}
-
-      <${Card}>
-        <div style=${{ fontSize: 13.5, color: C.ink, lineHeight: 1.7, marginBottom: 12 }}>${index + 1}. ${questionText}</div>
-        ${answerFormat === "mc"
-          ? html`
-            <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
-              ${displayChoices.map((c, i) => html`
-                <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)}
-                  style=${{
-                    textAlign: "left", padding: "10px 12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer",
-                    border: selectedDisplayIdx === i ? `2px solid ${C.gold}` : `1px solid ${C.line}`,
-                    background: selectedDisplayIdx === i ? "#FBF6EA" : C.white,
-                    fontSize: 12.5, color: C.ink,
-                  }}>${i + 1}. ${c}<//>
-              `)}
-            </div>
-          `
-          : html`<textarea style=${{ ...inputStyle, minHeight: 90 }} disabled=${readOnly} value=${answerText || ""} onChange=${(e) => onTypeText(e.target.value)} placeholder="답을 입력하세요" />`}
+      <${Card} style=${{ overflowWrap: "anywhere" }}>
+        <${EsExamStemView} parsed=${parsed} number=${index + 1} isSubjective=${isSub} />
+        ${answerFormat === "mc" ? html`
+          <div style=${{ display: "flex", flexDirection: "column", gap: 8, marginTop: 18 }}>
+            ${displayChoices.map((c, i) => html`
+              <button key=${i} type="button" disabled=${readOnly} onClick=${() => onPickMc(i)} style=${{ minHeight: 52, fontSize: 15, textAlign: "left", padding: "12px", borderRadius: 6, cursor: readOnly ? "default" : "pointer", border: selectedDisplayIdx === i ? "2px solid #B8935A" : `1px solid ${C.line}`, background: selectedDisplayIdx === i ? "#FBF6EA" : "#fff", color: C.ink }}>${i + 1}. ${c}</button>
+            `)}
+          </div>` : fieldValues ? html`
+          <div style=${{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18 }}>
+            ${fieldLabels.map((lb, i) => html`
+              <label key=${lb + ":" + i} style=${{ display: "flex", flexDirection: "column", gap: 6, fontSize: 15, fontWeight: 700, color: "#1C2B4A" }}>
+                <span>(${lb})</span>
+                <input type="text" style=${{ ...inputStyle, height: 48, fontSize: 16, marginBottom: 0, minWidth: 0 }} disabled=${readOnly} value=${fieldValues[i]} aria-label=${`답안 (${lb})`} placeholder="답을 입력하세요"
+                  onChange=${(e) => { const next = fieldValues.slice(); next[i] = e.target.value; onTypeText(esAnswerFieldsEncode(next, fieldLabels)); }} />
+              </label>`)}
+          </div>` : html`
+          <textarea aria-label="답안" style=${{ ...inputStyle, minHeight: 120, fontSize: 16, lineHeight: 1.6, marginTop: 18 }} disabled=${readOnly} value=${answerText || ""} onChange=${(e) => onTypeText(e.target.value)} placeholder="답을 입력하세요" />`}
       <//>
       ${savingAnswer && html`<div style=${{ fontSize: 11, color: C.slate, marginBottom: 6 }}>저장 중...</div>`}
       ${saveError && html`<div style=${{ fontSize: 12, color: C.danger, marginBottom: 10 }}>${saveError}</div>`}
-
-      <div style=${{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: showUnanswered ? 6 : 14 }}>
-        ${questionIds.map((id, i) => html`
-          <button key=${id + i} type="button" onClick=${() => onGoto(i)}
-            style=${{
-              width: 30, height: 30, borderRadius: "50%", fontSize: 11.5, fontWeight: 700, cursor: "pointer",
-              border: i === index ? `2px solid ${C.navy}` : `1px solid ${C.line}`,
-              background: !isEmpty(answers[id]) ? "#E1EEE4" : C.white,
-              color: C.ink,
-            }}>${i + 1}<//>
-        `)}
+      <div className="es-mobile-actions" style=${{ position: "sticky", bottom: 0, marginTop: "auto", zIndex: 10, background: "#fff", borderTop: `1px solid ${C.line}`, padding: "10px 8px max(10px, env(safe-area-inset-bottom))", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        <${Button} variant="ghost" onClick=${onPrev} disabled=${index === 0}>이전<//>
+        <button type="button" aria-haspopup="dialog" aria-expanded=${numberSheetOpen} onClick=${() => setNumberSheetOpen(true)} style=${{ background: "#1C2B4A", color: "#fff", border: "none", borderRadius: 6, fontSize: 15, cursor: "pointer" }}>${index + 1}번 ▲</button>
+        ${index < total - 1 ? html`<${Button} variant="ghost" onClick=${onNext}>다음<//>` : finalAction}
       </div>
-      ${showUnanswered && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 14 }}>${unansweredNums.length > 0 ? `안 푼 문제 ${unansweredNums.length}개: ${unansweredNums.join(", ")}번` : "안 푼 문제가 없어요."}</div>`}
-
-      <div style=${{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-        <${Button} variant="ghost" onClick=${onPrev} disabled=${index === 0}>◀ 이전<//>
-        ${index < total - 1
-          ? html`<${Button} variant="ghost" onClick=${onNext}>다음 ▶<//>`
-          : finalAction}
-      </div>
+      ${numberSheetOpen && html`
+        <div style=${{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(28,43,74,.4)", display: "flex", alignItems: "flex-end" }} onClick=${(e) => { if (e.target === e.currentTarget) setNumberSheetOpen(false); }} onKeyDown=${(e) => { if (e.key === "Escape") setNumberSheetOpen(false); }}>
+          <div className="es-mobile-sheet" role="dialog" aria-modal="true" aria-label="문항 번호판" style=${{ width: "100%", boxSizing: "border-box", background: "#fff", borderRadius: "18px 18px 0 0", padding: "20px 16px max(16px, env(safe-area-inset-bottom))", maxHeight: "80dvh", overflowY: "auto" }}>
+            <div style=${{ fontSize: 16, fontWeight: 700, color: "#1C2B4A", marginBottom: 14 }}>문항 번호판</div>
+            <div style=${{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: "10px 4px", justifyItems: "center" }}>
+              ${questionIds.map((id, i) => html`
+                <button key=${id + i} type="button" aria-label=${`${i + 1}번 문항`} aria-current=${i === index ? "true" : undefined} onClick=${() => { onGoto(i); setNumberSheetOpen(false); }} style=${{ width: 44, height: 44, borderRadius: "50%", fontSize: 15, fontWeight: 700, cursor: "pointer", border: `${i === index ? 3 : 1}px ${questionFormats && questionFormats[i] === "sa" ? "dashed" : "solid"} ${i === index ? "#1C2B4A" : C.line}`, background: !isEmpty(answers[id]) ? "#E1EEE4" : "#fff", color: "#1C2B4A" }}>${i + 1}</button>
+              `)}
+            </div>
+            <div style=${{ fontSize: 13, color: C.slate, margin: "14px 0" }}>안 푼 문항 ${unansweredCount}개 · 초록 = 답함 · 점선 = 서술형</div>
+            ${submitAction && html`<div className="es-mobile-actions" style=${{ marginBottom: 10 }}>${submitAction}</div>`}
+            <${Button} variant="ghost" style=${{ width: "100%", minHeight: 44, justifyContent: "center" }} onClick=${() => setNumberSheetOpen(false)}>닫기<//>
+          </div>
+        </div>`}
       ${children}
     </div>
   `;
