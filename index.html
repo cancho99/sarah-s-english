@@ -16221,7 +16221,7 @@ function buildWrongExplainItemHtml(item, EP, displayIndex, paper, studentName) {
     const hasAnswer = result.selectedAnswer !== null && result.selectedAnswer !== undefined && result.selectedAnswer !== "";
     const studentAnswerText = hasAnswer ? String(result.selectedAnswer) : "미응답";
     const correctAnswerText = String((result.correctAnswer != null ? result.correctAnswer : qDoc.answer) || "");
-    compareHtml = `<div class="compare-row"><div><span class="lbl">내 답</span><b style="color:var(--danger)">${esEscapeHtml(studentAnswerText)}</b></div><div><span class="lbl">정답</span><b>${esEscapeHtml(correctAnswerText)}</b></div></div>`;
+    compareHtml = `<div class="compare-row"><div><span class="lbl">내 답</span><b style="color:var(--danger)">${esEscapeHtml(studentAnswerText).replace(/\n/g, "<br/>")}</b></div><div><span class="lbl">정답</span><b>${esEscapeHtml(correctAnswerText)}</b></div></div>`;
     ansBadgeHtml = `<div class="ans-badge">정답 ${esEscapeHtml(correctAnswerText)}</div>`;
 
     if (Array.isArray(qDoc.parts) && qDoc.parts.length) {
@@ -23673,6 +23673,51 @@ function esParseExamStem(text, isSubjective) {
   if (f.instruction.length > 120) return { kind: "plain", text: full };
   return { kind: "lines", tag: null, instruction: f.instruction, nodes: esPostNodes(groupQuestionStemLines(f.lines)) };
 }
+// ---------- 서술형 답안 칸 나누기 (PC 응시 화면) ----------
+// 칸 개수·번호는 줄 나누기 규칙(esParseExamStem) 결과로 정한다: <조건> 아래 (n) 항목(2개 이상) → <조건>이 없으면 대화 속 밑줄 빈칸 (n)(2개 이상)
+// → 둘 다 아니면 [] (칸을 나누지 않고 지금처럼 입력칸 하나). 저장은 문항당 문자열 하나 — "(1) 첫째 답\n(2) 둘째 답"(칸마다 "(n) " 접두어 + 줄바꿈),
+// 빈 칸은 "(2) "만 남기고, 모든 칸이 비면 예전처럼 ""로 저장한다(안 푼 문제로 센다). 접두어 형식이 맞지 않는 예전 답은 나누지 않는다.
+function esDistinctNums(texts) {
+  const out = [];
+  texts.forEach((t) => { (String(t || "").match(/\(\d+\)/g) || []).forEach((m) => { const n = m.slice(1, -1); if (!out.includes(n)) out.push(n); }); });
+  return out;
+}
+function esLeadingNums(lines) {
+  const out = [];
+  lines.forEach((ln) => { const m = String(ln || "").trim().match(/^\((\d+)\)/); if (m && !out.includes(m[1])) out.push(m[1]); });
+  return out;
+}
+function esAnswerFieldLabels(text, isSubjective) {
+  if (!isSubjective) return [];
+  const p = esParseExamStem(text, true);
+  let nums = [];
+  if (p.kind === "rules") {
+    nums = p.cond ? esLeadingNums(p.cond.items) : esDistinctNums(p.turns.map((t) => t.text));
+  } else if (p.kind === "lines") {
+    const box = p.nodes.find((n) => n.type === "box" && ES_STEM_COND_RE.test(n.lines[0] || ""));
+    nums = box
+      ? esLeadingNums(box.lines.slice(1))
+      : esDistinctNums(p.nodes.flatMap((n) => (n.type === "dialog" ? n.turns.map((t) => t.text) : n.type === "text" ? [n.text] : [])));
+  }
+  return nums.length >= 2 ? nums : [];
+}
+function esAnswerFieldValues(stored, labels) {
+  const str = stored == null ? "" : String(stored);
+  if (str === "") return labels.map(() => "");
+  const lines = str.split("\n");
+  if (lines.length !== labels.length) return null;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^\((\d+)\) ?([\s\S]*)$/);
+    if (!m || m[1] !== labels[i]) return null;
+    out.push(m[2]);
+  }
+  return out;
+}
+function esAnswerFieldsEncode(values, labels) {
+  if (values.every((v) => !String(v).trim())) return "";
+  return values.map((v, i) => `(${labels[i]}) ${v}`).join("\n");
+}
 const ES_MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 // 대화문 속 빈칸 "(1)" "(2)"를 밑줄 친 칸으로 보여 준다.
 function esStemBlanks(text) {
@@ -23740,6 +23785,8 @@ function ExamRunScreen({
     // PC(1025px 이상): 시험지 느낌의 카드 + 오른쪽 번호판. 1024px 이하는 아래 기존 화면 그대로.
     const isSub = answerFormat !== "mc";
     const parsed = esParseExamStem(questionText, isSub);
+    const fieldLabels = isSub ? esAnswerFieldLabels(questionText, true) : [];
+    const fieldValues = fieldLabels.length >= 2 ? esAnswerFieldValues(answerText, fieldLabels) : null; // null = 칸 분리 없음(또는 예전 답 → 입력칸 하나)
     const fmt = (i) => (questionFormats ? questionFormats[i] : null);
     // wideFrame(실제 응시 화면에서만 켬): 바깥 컨테이너(App의 maxWidth 480)를 PC에서만 벗어나 화면 가운데에 최대 1040px로 펼친다.
     // 창이 좁아지면 100vw - 48px까지만 줄어들어 가로 스크롤이 생기지 않는다(transform을 쓰지 않아 fixed 모달 위치도 그대로).
@@ -23796,7 +23843,20 @@ function ExamRunScreen({
                     `)}
                   </div>
                 `
-                : html`
+                : fieldValues
+                  ? html`
+                    <div style=${{ marginTop: 18 }}>
+                      <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>답안</div>
+                      <div style=${{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        ${fieldLabels.map((lb, i) => html`
+                          <div key=${lb + ":" + i} style=${{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style=${{ flex: "0 0 auto", minWidth: 32, fontSize: 15, fontWeight: 700, color: C.navy, fontVariantNumeric: "tabular-nums" }}>(${lb})</span>
+                            <input type="text" style=${{ ...inputStyle, height: 42, fontSize: 15, marginBottom: 0, flex: 1, minWidth: 0 }} disabled=${readOnly} value=${fieldValues[i]} aria-label=${`답안 (${lb})`} placeholder="답을 입력하세요"
+                              onChange=${(e) => { const next = fieldValues.slice(); next[i] = e.target.value; onTypeText(esAnswerFieldsEncode(next, fieldLabels)); }} />
+                          </div>`)}
+                      </div>
+                    </div>`
+                  : html`
                   <div style=${{ marginTop: 18 }}>
                     <div style=${{ fontSize: 12.5, fontWeight: 700, color: C.navy, marginBottom: 6 }}>답안</div>
                     <textarea style=${{ ...inputStyle, minHeight: 120, fontSize: 15, lineHeight: 1.6 }} disabled=${readOnly} value=${answerText || ""} onChange=${(e) => onTypeText(e.target.value)} placeholder="답을 입력하세요" />
