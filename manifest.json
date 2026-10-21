@@ -1,7 +1,7 @@
 {
-  "name": "Sarah's English",
-  "short_name": "Sarah's English",
-  "description": "Sarah's English 학생·학부모·선생님 포털 — 숙제, 단어시험, 리포트, 리딩 라이브러리를 한 곳에서.",
+  "name": "Sarah’s English with 선순환",
+  "short_name": "Sarah’s English with 선순환",
+  "description": "Sarah’s English with 선순환 학생·학부모·선생님 포털 — 숙제, 단어시험, 리포트, 리딩 라이브러리를 한 곳에서.",
   "id": "/sarah-s-english/",
   "start_url": "index.html",
   "scope": "./",

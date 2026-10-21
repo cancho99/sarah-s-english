@@ -23,7 +23,7 @@ firebase.initializeApp({
 // onMessage)과 로직을 맞춰서 포그라운드/백그라운드 어느 쪽이든 같은 방식으로 보이게 한다.
 firebase.messaging().onBackgroundMessage((payload) => {
   const { title, body } = payload.data || {};
-  self.registration.showNotification(title || "Sarah's English", { body: body || "" });
+  self.registration.showNotification(title ? "Sarah’s English with 선순환 · " + title : "Sarah’s English with 선순환", { body: body || "" });
 });
 //
 // 전략: "네트워크 우선, 실패(오프라인) 시에만 캐시" — 온라인일 때는 항상 실제 네트워크
