@@ -14403,8 +14403,61 @@ function GbStepper({ label, hint, hintWarn, value, onChange, min = 0, max = 100 
   `;
 }
 
-function GbTeacherPreviewItem({ doc, n, canReplace, onReplace }) {
+// 출제 미리보기에서 문항을 그 자리에서 고친다. onSave가 있을 때만(내가 등록한 grammarBankQuestions 문항) "✎ 수정"이 보인다.
+function GbTeacherPreviewItem({ doc, n, canReplace, onReplace, onSave }) {
   const isMc = doc.answerFormat === "mc";
+  const [editing, setEditing] = useState(false);
+  const [fQ, setFQ] = useState("");
+  const [fOpts, setFOpts] = useState([]);
+  const [fAnsIdx, setFAnsIdx] = useState(0);
+  const [fAns, setFAns] = useState("");
+  const [saving, setSaving] = useState(false);
+  function startEdit() {
+    setFQ(doc.questionText || ""); setFOpts([...doc.choices]); setFAnsIdx(doc.answerIdx >= 0 ? doc.answerIdx : 0); setFAns(doc.answerText || "");
+    setEditing(true);
+  }
+  async function save() {
+    if (!fQ.trim()) { alert("문제 내용을 입력해주세요."); return; }
+    if (isMc && fOpts.some((o) => !o.trim())) { alert(`보기 ${fOpts.length}개를 모두 입력해주세요.`); return; }
+    if (!isMc && !fAns.trim()) { alert("정답을 입력해주세요."); return; }
+    setSaving(true);
+    try {
+      await onSave(isMc
+        ? { q: fQ.trim(), opts: fOpts.map((o, i) => `${GB_MC_NUMERALS[i]} ${o.trim()}`), ans: `${GB_MC_NUMERALS[fAnsIdx]} ${fOpts[fAnsIdx].trim()}` }
+        : { q: fQ.trim(), ans: fAns.trim() });
+      setEditing(false);
+    } catch (e) {
+      alert("저장에 실패했어요: " + (e && e.message ? e.message : e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  if (editing) return html`
+    <div style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
+      <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy, marginBottom: 6 }}>${n}. 문항 수정 <span style=${{ fontWeight: 400, color: C.slate }}>· ${doc.grade} · ${doc.cat} · ${doc.sub}</span></div>
+      <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>문제</div>
+      <textarea style=${{ ...inputStyle, width: "100%", minHeight: 80, resize: "vertical", boxSizing: "border-box" }} value=${fQ} onChange=${(e) => setFQ(e.target.value)} />
+      ${isMc
+        ? html`<div style=${{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            ${fOpts.map((o, i) => html`
+              <div key=${i} style=${{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style=${{ fontSize: 12.5, color: C.navy, flex: "0 0 auto" }}>${GB_MC_NUMERALS[i]}</span>
+                <input style=${{ ...inputStyle, flex: 1, minWidth: 0 }} value=${o} onChange=${(e) => setFOpts(fOpts.map((x, j) => (j === i ? e.target.value : x)))} />
+                <button type="button" aria-pressed=${fAnsIdx === i} onClick=${() => setFAnsIdx(i)}
+                  style=${{ flex: "0 0 auto", fontSize: 12, padding: "4px 8px", borderRadius: 6, cursor: "pointer", background: fAnsIdx === i ? C.gold : "transparent", color: fAnsIdx === i ? C.white : C.slate, border: `1px solid ${fAnsIdx === i ? C.gold : C.line}`, fontWeight: fAnsIdx === i ? 700 : 400 }}>${fAnsIdx === i ? "● 정답" : "○ 정답"}</button>
+              </div>`)}
+          </div>`
+        : html`<div style=${{ marginTop: 8 }}>
+            <div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 3 }}>정답</div>
+            <input style=${{ ...inputStyle, width: "100%", boxSizing: "border-box" }} value=${fAns} onChange=${(e) => setFAns(e.target.value)} />
+          </div>`}
+      <div style=${{ fontSize: 11.5, color: C.slate, marginTop: 8 }}>저장하면 이 시험지와 문제은행 원본이 함께 바뀌어요.</div>
+      <div style=${{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 6 }}>
+        <${Button} variant="ghost" disabled=${saving} onClick=${() => setEditing(false)} style=${{ padding: "5px 12px", fontSize: 12.5 }}>취소<//>
+        <${Button} variant="gold" disabled=${saving} onClick=${save} style=${{ padding: "5px 12px", fontSize: 12.5 }}>${saving ? "저장 중..." : "저장"}<//>
+      </div>
+    </div>
+  `;
   return html`
     <div style=${{ padding: "9px 0", borderBottom: "1px solid #EDEAE2" }}>
       <div style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -14413,7 +14466,10 @@ function GbTeacherPreviewItem({ doc, n, canReplace, onReplace }) {
           <span style=${{ fontSize: 11, padding: "1px 7px", borderRadius: 10, background: "#F3F1EB", color: C.slate }}>${isMc ? "객관식" : "서술형"}</span>
           <span style=${{ fontSize: 11.5, color: C.slate }}>${doc.grade} · ${doc.cat} · ${doc.sub}</span>
         </div>
-        <${Button} variant="ghost" disabled=${!canReplace} onClick=${onReplace} style=${{ padding: "3px 10px", fontSize: 12, flex: "0 0 auto" }}>↻ 교체<//>
+        <div style=${{ display: "flex", gap: 4, flex: "0 0 auto" }}>
+          ${onSave && html`<${Button} variant="ghost" onClick=${startEdit} style=${{ padding: "3px 10px", fontSize: 12 }}>✎ 수정<//>`}
+          <${Button} variant="ghost" disabled=${!canReplace} onClick=${onReplace} style=${{ padding: "3px 10px", fontSize: 12 }}>↻ 교체<//>
+        </div>
       </div>
       <div style=${{ fontSize: 13, color: C.ink, lineHeight: 1.6, whiteSpace: "pre-line", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>${renderGrammarUnderline(doc.questionText)}</div>
       ${isMc
@@ -14495,6 +14551,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const [title, setTitle] = useState("");
   const [pane, setPane] = useState("teacher"); // teacher | student
   const [draft, setDraft] = useState([]);
+  const [editRev, setEditRev] = useState(0);
   const [settling, setSettling] = useState(false);
   const [showAllTeacher, setShowAllTeacher] = useState(false);
   const [studentIdx, setStudentIdx] = useState(0);
@@ -14532,7 +14589,18 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
   const mcN = docs.filter((d) => d.answerFormat === "mc").length, saN = docs.length - mcN;
   const requested = mcCount + saCount;
   const timeLimitMinutes = timeUnlimited ? null : timeMin; // 배정 창에 미리 채울 값(null = 제한 없음). 인쇄·시험지 저장에는 쓰지 않는다
-  const draftKey = effTitle + "|" + draft.map((it) => it.id || it.q).join(",");
+  const draftKey = effTitle + "|" + editRev + "|" + draft.map((it) => it.id || it.q).join(",");
+
+  // ✎ 수정: 내가 등록한 문항(myQuestions에 있는 같은 객체)만 고칠 수 있다. 소문항(parts) 서술형은 이 폼으로 못 고친다.
+  const canEditAt = (i) => !!(draft[i] && draft[i].id && !draft[i].parts && !(draft[i].type === "mc" && !(draft[i].opts || []).length) && myQuestions.includes(draft[i]));
+  async function saveEditAt(i, data) {
+    const item = draft[i];
+    await window.SarahServices.firebaseClient.setDocAt("grammarBankQuestions", item.id, data, { merge: true });
+    // 같은 객체를 그대로 고쳐야 pools가 다시 계산되지 않아(= 문항이 새로 뽑히지 않아) 지금 시험지 구성이 유지된다.
+    Object.assign(item, data);
+    setDraft([...draft]);
+    setEditRev((r) => r + 1); // 인쇄 후 수정하면 다음 인쇄/배정 때 시험지를 새로 저장
+  }
 
   function replaceAt(i) {
     const target = draft[i];
@@ -14685,7 +14753,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               ? html`
                 <div>
                   <div style=${{ fontSize: 12, color: C.slate }}>객관식 ${mcN}문항 · 서술형 ${saN}문항${gradeLabel ? " · " + gradeLabel : ""}</div>
-                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} />`)}
+                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} onSave=${canEditAt(i) ? (data) => saveEditAt(i, data) : null} />`)}
                   ${docs.length > 5 && html`
                     <div style=${{ paddingTop: 8 }}>
                       <button type="button" onClick=${() => setShowAllTeacher((v) => !v)} style=${{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>
@@ -14803,7 +14871,7 @@ function GrammarExamTwoPane({ EP, QB, roster, onPaperCreated, onOpenDetail, onCa
               ? html`
                 <div>
                   <div style=${{ fontSize: 12, color: C.slate }}>객관식 ${mcN}문항 · 서술형 ${saN}문항${gradeLabel ? " · " + gradeLabel : ""}</div>
-                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} />`)}
+                  ${shown.map((d, i) => html`<${GbTeacherPreviewItem} key=${d.id + "-" + (draft[i] && draft[i].id || i)} doc=${d} n=${i + 1} canReplace=${canReplaceAt(i)} onReplace=${() => replaceAt(i)} onSave=${canEditAt(i) ? (data) => saveEditAt(i, data) : null} />`)}
                   ${docs.length > 5 && html`
                     <div style=${{ paddingTop: 8 }}>
                       <button type="button" onClick=${() => setShowAllTeacher((v) => !v)} style=${{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.navy, cursor: "pointer", textDecoration: "underline" }}>
