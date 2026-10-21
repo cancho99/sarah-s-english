@@ -1275,7 +1275,7 @@ async function sendTestNotification(token) {
   if (!res.ok) throw new Error("테스트 알림을 보내지 못했어요.");
 }
 // 인쇄 창은 about:blank이므로 절대 URL 사용. SVG 안의 두 원본 이미지는 인라인으로 포함한다.
-const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-logo.svg", location.href).href;
+const LOGO_DATA_URI = new URL("assets/sarah-sunsoonhwan-logo.png", location.href).href;
 // 작은 배지용 모노그램(S·E)만 잘라낸 버전 — 사이드바/로그인 화면 등 좁은 자리에 사용
 const LOGO_MARK_DATA_URI = new URL("assets/sarah-sunsoonhwan-mark.svg", location.href).href;
 
@@ -3398,8 +3398,7 @@ function HomePage({ setScreen, announcement }) {
         <div style=${{ background: C.navy, height: 6 }} />
         <div style=${{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${C.line}`, gap: 16, flexWrap: "wrap" }}>
           <div style=${{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div role="img" aria-label="Sarah’s English with 선순환" style=${{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.navy}`, boxSizing: "border-box", backgroundImage: `url(${LOGO_MARK_DATA_URI})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" }}></div>
-            <div><div style=${{ ...serif, fontSize: 16, color: C.navy }}>Sarah’s English</div><div style=${{ fontSize: 12, fontWeight: 700, color: "#34734C" }}>with 선순환</div></div>
+            <img src=${LOGO_DATA_URI} alt="Sarah’s English with 선순환" style=${{ display: "block", width: 118, height: 110, objectFit: "contain" }} />
           </div>
           ${!isMobile && html`
             <nav style=${{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -9858,7 +9857,7 @@ function esEscapeHtml(s) {
 const ES_LETTERHEAD_CSS = `
   .doc-letterhead{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:12px;margin-bottom:18px;border-bottom:2px solid #1C2B4A;}
   .doc-logo{display:flex;align-items:center;}
-  .doc-logo img{display:block;height:36px;width:auto;}
+  .doc-logo img{display:block;height:80px;width:auto;}
   .doc-logo-sub{font-size:12.5px;font-weight:700;color:#5B6270;letter-spacing:0.02em;white-space:nowrap;}
 `;
 function esBuildLetterheadHtml(subtitle) {

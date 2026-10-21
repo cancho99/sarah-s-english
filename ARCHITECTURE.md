@@ -1142,7 +1142,7 @@ AI가 대량으로 문제를 생성하면 fingerprint 중복 경고(§11.7/§12.
 - `services/sunsoonhwanService.js`가 `sarahsEnglishMeta/main.sunsoonhwan`의 읽기와 병합 저장을 담당한다. 새 설정 필드는 `{ classCode: string, showStudent: boolean, showParent: boolean }`이며 기존 필드는 삭제·변환하지 않는다. `loadStore()`에서 이미 읽은 메타 설정을 서비스 캐시에 전달하므로 홈 카드 때문에 메타 문서를 다시 읽지 않는다.
 - 반 코드는 선순환 `src/lib/consent.ts`와 같은 8자리 문자 규칙을 사용한다. 형식만 확인하며 실제 반의 존재·계정 연결·법정대리인 승인은 선순환에서 처리한다. 코드를 비우거나 역할별 표시를 끄면 해당 홈 카드를 숨긴다. 이 저장소는 선순환 Firebase에 접근하지 않는다.
 - 앱 열기 주소는 `https://sunsoonghwan-2026.web.app/preview/`이다. 지정 저장소의 `src/lib/links.ts` 호스트와 `.github/workflows/deploy-web-preview.yml`의 웹 배포 경로를 확인했다. 학생은 더보기 → 보호자 연결 → 학원 반 코드에서 연결한다. 학부모는 자녀의 보호자 초대로 연결한다. URL에 코드·개인정보를 자동 전달하지 않는다.
-- `assets/sarah-sunsoonhwan-mark.svg`는 기존 SE 이미지와 지정 저장소의 원본 `assets/character/suni-lv1.png`를 겹친 벡터 컨테이너다. `assets/sunsoonhwan-icon.png`는 원본 `assets/icon.png`이다. 홈·사이드바·로그인·기존 인쇄 로고에 사용하며, 단어시험지 페이지·인쇄물 하단 문구·기존 PWA 아이콘 이미지는 이번 범위에서 유지한다.
+- `assets/sarah-sunsoonhwan-logo.png`는 사용자가 제공한 최종 협업 로고 원본이다(이미지 내용 변경 없음). 작은 사이드바·로그인 배지용 `assets/sarah-sunsoonhwan-mark.svg`는 같은 원본의 SE·선이·새싹 영역만 보이는 SVG 뷰포트다. `assets/sunsoonhwan-icon.png`는 지정 저장소의 원본 `assets/icon.png`이다. 단어시험지 페이지·인쇄물 하단 문구·기존 PWA 아이콘 이미지는 이번 범위에서 유지한다.
 
 #### 숙제 자동 연동 후속 계획 (미구현)
 
