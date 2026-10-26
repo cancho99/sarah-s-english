@@ -22522,6 +22522,22 @@ function ExamEditor({ student, data, updateData, focusResultId }) {
     return r ? r.testId : null;
   });
 
+  const [builderTimeline, setBuilderTimeline] = useState({ studentId: null, rows: [] });
+  const builderRows = builderTimeline.studentId === student.id ? builderTimeline.rows : [];
+  useEffect(() => {
+    let cancelled = false;
+    setBuilderTimeline({ studentId: student.id, rows: [] });
+    (async () => {
+      try {
+        const rows = await getUnifiedAssessmentTimeline(student.id, student.name, data);
+        if (!cancelled) setBuilderTimeline({ studentId: student.id, rows: rows.filter((r) => r.kind === "examBuilder") });
+      } catch (_) {
+        if (!cancelled) setBuilderTimeline({ studentId: student.id, rows: [] });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [student.id, student.name, data]);
+
   function runParse() {
     const parsed = parseExamPaste(pasteText);
     if (parsed.length === 0) { setPasteMsg("인식된 문제가 없어요. 형식을 확인해 주세요."); return; }
@@ -22662,6 +22678,21 @@ function ExamEditor({ student, data, updateData, focusResultId }) {
           </div>
         </div>
       `}
+      <${SectionLabel} n=${3} label="시험지 배정" />
+      <div style=${{ fontSize: 12, color: C.slate, lineHeight: 1.7, marginBottom: 12 }}>시험지로 배정한 시험이에요. 학생은 "시험" 탭에서 풀어요. 여기서는 보기만 해요.</div>
+      <div style=${{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+        ${builderRows.map((r) => html`
+          <${Card} key=${r.id} style=${{ marginBottom: 0, minWidth: 0, overflowWrap: "anywhere" }}>
+            <div style=${{ fontWeight: 700, color: C.navy, marginBottom: 6 }}>${r.title}</div>
+            <div style=${{ fontSize: 12, color: C.slate, display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <span>${r.date ? fmtDate(r.date) : "날짜 없음"}</span>
+              <span>점수 ${r.score != null ? `${r.score}${r.total != null ? ` / ${r.total}` : ""}` : "—"}</span>
+              <span>정답률 ${r.percentage != null ? `${r.percentage}%` : "—"}</span>
+              <span style=${{ fontWeight: 700, color: C.navy }}>${r.status}</span>
+            </div>
+          <//>
+        `)}
+      </div>
     </div>
   `;
 }
