@@ -21940,8 +21940,8 @@ function VocabResultRow({ r, title, updateData }) {
     <div style=${{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.line}` }}>
       <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", cursor: hasBreakdown ? "pointer" : "default" }} onClick=${() => hasBreakdown && setOpen((o) => !o)}>
         <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
-        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${r.manualPass ? "합격 (선생님 처리)" : ok ? "합격" : "재시험 필요"}</span>
-        ${(r.manualPass || !ok) && html`<button disabled=${passSaving} onClick=${toggleManualPass} style=${{ minHeight: 44, padding: "4px 10px", border: `1px solid ${C.gold}`, borderRadius: 4, background: "none", color: C.navy, cursor: passSaving ? "wait" : "pointer" }}>${passSaving ? "저장 중…" : r.manualPass ? "취소" : "합격 처리"}</button>`}
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${r.manualPass ? "선생님 확인 합격" : ok ? "합격" : "재시험 필요"}</span>
+        ${(r.manualPass || !ok) && html`<button disabled=${passSaving} onClick=${toggleManualPass} style=${{ minHeight: 44, padding: "4px 2px", border: "none", background: "none", color: r.manualPass ? C.slate : C.navy, fontSize: 11, fontWeight: r.manualPass ? 400 : 600, whiteSpace: "nowrap", cursor: passSaving ? "wait" : "pointer", opacity: passSaving ? 0.5 : 1 }}>${passSaving ? "저장 중…" : r.manualPass ? "취소" : "합격 처리 ↗"}</button>`}
         ${timeRange && html`<span style=${{ fontSize: 11, color: C.slate }}>${timeRange}</span>`}
         ${hasBreakdown && html`<span style=${{ fontSize: 11, color: C.slate, marginLeft: "auto" }}>${open ? "▲ 답안 닫기" : "▼ 답안 보기"}</span>`}
         <button onClick=${removeResult} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13, padding: "0 2px", marginLeft: hasBreakdown ? undefined : "auto" }}>✕</button>
