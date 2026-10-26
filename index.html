@@ -1612,7 +1612,8 @@ function homeworkStats(data, month) {
 // 누적 80%/신규 90%로 바뀌었는데, 온라인 단어시험(학생이 실제로 응시하는 쪽)이 쓰는 이
 // 함수는 그때 같이 안 바뀌어서 옛 기준(누적 90%/신규 80%)이 그대로 남아있었다 — 실사용
 // 제보로 발견.
-function vocabPassThreshold(label) { return (label || "").includes("누적") ? 80 : 90; }
+function vocabPassThreshold(label) { return window.SarahServices.vocabularyService.passThreshold(label); }
+const isVocabResultPassed = window.SarahServices.vocabularyService.isVocabResultPassed;
 // 단어 합격율 — same month-scoping as homeworkStats, one row per online 단어 시험 attempt
 // (vocabResults), graded against that test's own pass threshold via vocabPassThreshold.
 function vocabPassStats(data, month) {
@@ -1623,7 +1624,7 @@ function vocabPassStats(data, month) {
   const total = results.length;
   const passed = results.filter((r) => {
     const pct = r.total > 0 ? (r.score / r.total) * 100 : 0;
-    return pct >= vocabPassThreshold(titleById[r.testId] || "");
+    return isVocabResultPassed(r, titleById[r.testId] || "", pct);
   }).length;
   // pruneOldMonths가 지운 달은 monthlyStats 스냅샷(응시 횟수/점수% 합/합격 수)을 합산한다.
   const snap = ((data && data.monthlyStats) || {})[targetMonth] || {};
@@ -1671,7 +1672,7 @@ function pruneOldMonths(d, currentMonth) {
     const pct = Math.round((r.score / r.total) * 100);
     bump(month, "vocabCount", 1);
     bump(month, "vocabPctSum", pct);
-    if (pct >= vocabPassThreshold(titleById[r.testId] || "")) bump(month, "vocabPassed", 1);
+    if (isVocabResultPassed(r, titleById[r.testId] || "", pct)) bump(month, "vocabPassed", 1);
   });
   droppedMockResults.forEach((r) => {
     if (!r.total) return;
@@ -21881,7 +21882,9 @@ function fmtVocabDuration(sec) {
 function VocabResultRow({ r, title, updateData }) {
   const [open, setOpen] = useState(false);
   const pct = Math.round((r.score / r.total) * 100);
-  const ok = pct >= vocabPassThreshold(title);
+  const ok = isVocabResultPassed(r, title, pct);
+  const [passSaving, setPassSaving] = useState(false);
+  const [passError, setPassError] = useState("");
   const hasBreakdown = Array.isArray(r.breakdown) && r.breakdown.length > 0;
   // §12/§14 — recallTotal이 있는 새 기록에서만 Instant Recall/Mastery 줄을 보여준다. 옛날 기록
   // (recall 데이터 자체가 없음)은 이 블록이 통째로 안 보이고 기존 합격/재시험 배지만 그대로 보인다
@@ -21889,6 +21892,28 @@ function VocabResultRow({ r, title, updateData }) {
   const hasRecall = r.recallTotal != null && r.recallTotal > 0;
   const finalMeta = r.finalStatus ? VOCAB_FINAL_STATUS_META[r.finalStatus] : null;
   const ig = r.integrity;
+
+  async function toggleManualPass(e) {
+    e.stopPropagation();
+    if (passSaving) return;
+    setPassSaving(true);
+    setPassError("");
+    try {
+      await updateData((d) => ({
+        ...d,
+        vocabResults: (d.vocabResults || []).map((x) => {
+          if (x.id !== r.id) return x;
+          if (!r.manualPass) return { ...x, manualPass: true };
+          const { manualPass, ...rest } = x;
+          return rest;
+        }),
+      }));
+    } catch (err) {
+      setPassError("저장하지 못했어요. 다시 시도해 주세요.");
+    } finally {
+      setPassSaving(false);
+    }
+  }
 
   async function markCorrect(idx) {
     await updateData((d) => ({
@@ -21913,13 +21938,15 @@ function VocabResultRow({ r, title, updateData }) {
 
   return html`
     <div style=${{ marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${C.line}` }}>
-      <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, cursor: hasBreakdown ? "pointer" : "default" }} onClick=${() => hasBreakdown && setOpen((o) => !o)}>
+      <div style=${{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", cursor: hasBreakdown ? "pointer" : "default" }} onClick=${() => hasBreakdown && setOpen((o) => !o)}>
         <span>${fmtDate(r.date)} 응시 — <b>${r.score}</b> / ${r.total} (${pct}%)</span>
-        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${ok ? "합격" : "재시험 필요"}</span>
+        <span style=${{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: ok ? "#E9F1EA" : "#F7E9E6", color: ok ? "#3D6B4F" : C.danger }}>${r.manualPass ? "합격 (선생님 처리)" : ok ? "합격" : "재시험 필요"}</span>
+        ${(r.manualPass || !ok) && html`<button disabled=${passSaving} onClick=${toggleManualPass} style=${{ minHeight: 44, padding: "4px 10px", border: `1px solid ${C.gold}`, borderRadius: 4, background: "none", color: C.navy, cursor: passSaving ? "wait" : "pointer" }}>${passSaving ? "저장 중…" : r.manualPass ? "취소" : "합격 처리"}</button>`}
         ${timeRange && html`<span style=${{ fontSize: 11, color: C.slate }}>${timeRange}</span>`}
         ${hasBreakdown && html`<span style=${{ fontSize: 11, color: C.slate, marginLeft: "auto" }}>${open ? "▲ 답안 닫기" : "▼ 답안 보기"}</span>`}
         <button onClick=${removeResult} style=${{ background: "none", border: "none", color: C.slate, cursor: "pointer", fontSize: 13, padding: "0 2px", marginLeft: hasBreakdown ? undefined : "auto" }}>✕</button>
       </div>
+      ${passError && html`<div role="alert" style=${{ color: C.danger, fontSize: 12, marginTop: 4 }}>${passError}</div>`}
       ${hasRecall && html`
         <div style=${{ marginTop: 6, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style=${{ color: C.slate }}>Instant Recall <b style=${{ color: C.navy }}>${r.recallScore}</b> / ${r.recallTotal}</span>
@@ -25145,7 +25172,7 @@ function StudentDash({ student, updateStudentRosterEntry, ensureData, updateData
         const latest = myResults[0];
         const latestPct = latest ? Math.round((latest.score / latest.total) * 100) : null;
         const threshold = vocabPassThreshold(t.title);
-        const needsRetest = latest && latestPct < threshold; // 정보 표시용(합격/재시험 필요 배지) — 마감 여부와는 무관
+        const needsRetest = latest && !isVocabResultPassed(latest, t.title, latestPct); // 정보 표시용(합격/재시험 필요 배지) — 마감 여부와는 무관
         const notTaken = !latest; // 응시했으면 합격 여부와 상관없이 마감으로 친다
         const isOverdue = notTaken && !t.expired && gIsOverdue;
         const isToday = notTaken && !t.expired && gIsToday;
