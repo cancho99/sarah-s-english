@@ -25,6 +25,11 @@ window.SarahServices = window.SarahServices || {};
     return (testTitle || "").includes("누적") ? 80 : 90;
   }
 
+  // Callers may supply their existing displayed/rounded percentage to preserve legacy boundaries.
+  function isVocabResultPassed(result, testTitle, pct = result.total > 0 ? (result.score / result.total) * 100 : 0) {
+    return !!result.manualPass || pct >= passThreshold(testTitle);
+  }
+
   // Phase 2 (Teacher Center "최근 시험" card): joins vocabResults with their vocabTests title,
   // normalized the same shape examService's getRecentMockResults/getRecentExamResults use so a
   // caller can merge and sort them together.
@@ -58,7 +63,7 @@ window.SarahServices = window.SarahServices || {};
     const usingSnapshot = withPct.length === 0 && snap && snap.vocabCount;
     const rCount = usingSnapshot ? snap.vocabCount : withPct.length;
     const rPctSum = usingSnapshot ? snap.vocabPctSum : withPct.reduce((s, r) => s + r.pct, 0);
-    const rPassed = usingSnapshot ? snap.vocabPassed : withPct.filter((r) => r.pct >= passThreshold(r.title)).length;
+    const rPassed = usingSnapshot ? snap.vocabPassed : withPct.filter((r) => isVocabResultPassed(r, r.title, r.pct)).length;
 
     const count = rCount + logRows.length;
     const pctSum = rPctSum + logRows.reduce((s, v) => s + (v.score || 0), 0);
@@ -101,6 +106,7 @@ window.SarahServices = window.SarahServices || {};
     getVocabResultsForStudent,
     getVocabLogForStudent,
     passThreshold,
+    isVocabResultPassed,
     getRecentVocabResults,
     getVocabActivityForStudent,
     getMonthlyVocabStats,

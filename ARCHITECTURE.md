@@ -127,11 +127,11 @@ dailyReports                      // { "YYYY-MM-DD": {text, published, updatedAt
 // vocabTests[]
 { id, title, date, words: [{word, meaning, synonyms: []}], mode: "mix"|"w2m"|"m2w", retestDate, retestTime, expired? }
 // vocabResults[]
-{ id, testId, date, score, total, breakdown, startedAt, submittedAt }
+{ id, testId, date, score, total, breakdown, startedAt, submittedAt, manualPass?: true }
 // vocabLog[] — 별도의, 더 단순한 세션 로그(오래된 흐름으로 추정)
 { id, date, book, range, correct, total, score, passed, retest }
 ```
-통과 기준: 제목에 "누적" 포함 시 90%, 아니면 80% (`vocabPassThreshold`, `:635`).
+통과 기준: 제목에 "누적" 포함 시 80%, 아니면 90%. `vocabularyService.isVocabResultPassed`가 기존 점수 기준 또는 `manualPass`로 판정한다. 선생님의 합격 처리/취소는 해당 `vocabResults`의 `manualPass`만 추가/제거하고 점수·답안은 보존한다.
 
 ### 2.6 (삭제됨) Reading Library schema
 
