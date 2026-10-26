@@ -600,7 +600,13 @@ if ("serviceWorker" in navigator) {
   .rp-name b { font-weight: 500; font-size: 13px; }
   .rp-name small { font-size: 11.5px; color: #5B6270; }
   .rp-badge { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #A6473A; color: #fff; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
-  @media (min-width: 1280px) { .drg { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: start; } .drg > * { min-width: 0; } }
+  .drg-container { container: daily-report / inline-size; min-width: 0; }
+  .drg > * { min-width: 0; }
+  .drg .drg-rating { flex-wrap: wrap; gap: 6px; }
+  .drg .drg-stars { flex-wrap: wrap; min-width: 0; }
+  @media (min-width: 1280px) {
+    @container daily-report (min-width: 800px) { .drg { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px; align-items: start; } }
+  }
   .ap-sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .ap-sc-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 10px; padding: 16px; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
   .ap-sc-card:hover { border-color: #B8935A; box-shadow: 0 4px 14px rgba(20,22,26,0.08); }
@@ -20348,7 +20354,7 @@ function buildDailyReportText(student, data, date, hwFrom, extra) {
 // Clicking the currently-selected star clears the rating back to unset (not stuck at "1").
 function StarRating({ value, onChange }) {
   return html`
-    <div style=${{ display: "flex", gap: 2 }}>
+    <div className="drg-stars" style=${{ display: "flex", gap: 2 }}>
       ${[1, 2, 3, 4, 5].map((n) => html`
         <span key=${n} onClick=${() => onChange(value === n ? null : n)}
           style=${{ cursor: "pointer", fontSize: 18, color: value != null && n <= value ? C.gold : C.line, lineHeight: 1 }}>★</span>
@@ -20517,7 +20523,7 @@ function DailyReportWorkspace({ student, data, date, updateData, examAttemptResu
       <div style=${{ fontSize: 11, fontWeight: 700, color: C.slate, marginBottom: 6 }}>수업 평가</div>
       <div style=${{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
         ${svc.reportService.DAILY_RATING_KEYS.map(({ key, label }) => html`
-          <div key=${key} style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.ivory, padding: "6px 10px", borderRadius: 4 }}>
+          <div key=${key} className="drg-rating" style=${{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.ivory, padding: "6px 10px", borderRadius: 4 }}>
             <span style=${{ fontSize: 12 }}>${label}</span>
             <${StarRating} value=${ratings[key]} onChange=${(v) => setRatings({ ...ratings, [key]: v })} />
           </div>
@@ -20683,7 +20689,7 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent, init
   const previewSinceDate = priorDailyDates.length ? priorDailyDates[priorDailyDates.length - 1] : null;
 
   return html`
-    <div className="drg">
+    <div className="drg-container"><div className="drg">
       <${DailyReportWorkspace} student=${student} data=${data} date=${date} updateData=${updateData}
         examAttemptResults=${examAttemptResults} onSelectStudent=${onSelectStudent} />
       <${Card}>
@@ -20720,7 +20726,7 @@ function DailyReportGenerator({ student, data, updateData, onSelectStudent, init
       ${!published && html`<div style=${{ fontSize: 11.5, color: C.slate, marginBottom: 8 }}>아직 "작성 완료"를 안 눌러서 실제로는 학부모님께 안 보여요 — 이건 지금 저장된 내용 기준 미리보기예요.</div>`}
       <${ParentDailyReportCard} student=${student} data=${data} date=${date} sinceDate=${previewSinceDate} r=${previewR}
         preloadedExamAttemptResults=${examAttemptResults} />
-    </div>
+    </div></div>
   `;
 }
 
