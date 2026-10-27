@@ -151,14 +151,14 @@ if ("serviceWorker" in navigator) {
   .ap-cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
   .ap-cal-weekdays > div { text-align: center; font-size: 10.5px; color: #5B6270; font-weight: 700; }
   .ap-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .ap-cal-cell { border: 1px solid #DCD8CF; border-radius: 4px; padding: 4px; min-height: 76px; cursor: pointer; background: #fff; box-sizing: border-box; }
+  .ap-cal-cell { min-width: 0; border: 1px solid #DCD8CF; border-radius: 4px; padding: 4px; min-height: 76px; cursor: pointer; background: #fff; box-sizing: border-box; }
   .ap-cal-cell-blank { border: none; cursor: default; background: none; }
   .ap-cal-cell.is-today { border-color: #B8935A; }
   .ap-cal-cell.has-items:hover { border-color: #B8935A; }
   .ap-cal-cell.is-selected { border-color: #1C2B4A; border-width: 2px; padding: 3px; background: #F3F1EB; }
   .ap-cal-daynum { font-size: 10.5px; color: #5B6270; margin-bottom: 3px; }
   .ap-cal-cell.is-today .ap-cal-daynum { color: #B8935A; font-weight: 700; }
-  .ap-cal-chip { font-size: 9.5px; padding: 1.5px 4px; border-radius: 2px; margin-bottom: 2px; font-weight: 600; white-space: normal; word-break: break-word; overflow-wrap: break-word; }
+  .ap-cal-chip { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: 9.5px; padding: 1.5px 4px; border-radius: 2px; margin-bottom: 2px; font-weight: 600; white-space: normal; word-break: break-word; overflow-wrap: break-word; }
   .ap-cal-more { font-size: 9px; color: #5B6270; }
   .ap-cal-dots { display: none; }
   /* 모바일 전용 달력(2026-10-12) — 글씨 칩 대신 점으로 표시하고, 칸을 정사각형에 가깝게 키워 손가락으로 누르기 쉽게 한다.
