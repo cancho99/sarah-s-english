@@ -767,6 +767,7 @@ if ("serviceWorker" in navigator) {
 <script src="services/studentService.js" defer></script>
 <script src="services/backupService.js" defer></script>
 <script src="services/homeworkService.js" defer></script>
+<script src="services/homeworkMediaService.js" defer></script>
 <script src="services/vocabularyService.js" defer></script>
 <script src="services/vocabTestService.js" defer></script>
 <script src="services/flashcardService.js" defer></script>
@@ -797,6 +798,7 @@ if ("serviceWorker" in navigator) {
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, runTransaction, collection, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
   import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
   // Phase 9-A — Teacher 로그인 백그라운드 Auth 세션용. 기존 passcode 로그인 흐름/Student·Parent
   // 로그인은 전혀 참조하지 않는다(syncTeacherFirebaseAuth에서만 사용).
@@ -825,6 +827,11 @@ if ("serviceWorker" in navigator) {
     console.warn("Firestore 오프라인 캐시를 켜지 못해 온라인 모드로 계속합니다:", e);
     window.__db = getFirestore(firebaseApp);
   }
+  window.__storage = getStorage(firebaseApp);
+  window.__storageRef = storageRef;
+  window.__uploadBytes = uploadBytes;
+  window.__getDownloadURL = getDownloadURL;
+  window.__deleteObject = deleteObject;
   window.__doc = doc;
   window.__getDoc = getDoc;
   window.__setDoc = setDoc;
@@ -21747,8 +21754,8 @@ function HomeworkEditor({ student, data, updateData }) {
   // 위한 목록이라 미완료(done:false)만 담는다 (위 "확인해야할 숙제"는 완료 여부와 무관하게 전부 보여주는 것과 다름).
   const dueToday = list.filter((h) => h.dueDate && h.dueDate <= todayStr && !h.done && !h.expired);
   function hwPhotoCount(h) {
-    if (h.externalPhotos) return h.photoCount || 0;
-    return (h.photos || (h.photo ? [h.photo] : [])).length;
+    return (h.externalPhotos ? (h.photoCount || 0) : (h.photos || (h.photo ? [h.photo] : [])).length)
+      + (h.attachments || []).filter((a) => a.kind === "image").length;
   }
   const calItems = list.filter((h) => h.dueDate).map((h) => ({ ...h, dateStr: h.dueDate }));
   const dayItems = list.filter((h) => h.dueDate === selectedDate);
@@ -26828,7 +26835,112 @@ function invalidateExternalPhotos(studentId) { delete __externalPhotosCache[stud
 // externalPhotos(용량 절감을 위해 homeworkPhotos 컬렉션에 분리 저장된 사진) 처리를 추가하면서
 // 하나로 합쳤다. h.externalPhotos가 없는 기존 항목은 지금까지처럼 h.photos를 그대로 쓴다(무수정
 // 하위호환) — 새로 업로드된 항목만 이 컬렉션을 비동기로 조회한다.
-function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
+function HomeworkMediaItem({ attachment }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null); setFailed(false);
+    window.SarahServices.homeworkMediaService.getUrl(attachment).then((value) => {
+      if (!cancelled) setUrl(value);
+    }).catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [attachment.path, retry]);
+  return html`<div style=${{ border: `1px solid ${C.line}`, borderRadius: 8, padding: 10, minWidth: 0 }}>
+    <div style=${{ fontSize: 12, color: C.navy, overflowWrap: "anywhere", marginBottom: 6 }}>${attachment.kind === "audio" ? "🎙 " : "📷 "}${attachment.name} · ${fmtDateTime(attachment.uploadedAt)}</div>
+    ${failed ? html`<button style=${{ minHeight: 44 }} onClick=${() => setRetry((n) => n + 1)}>파일 다시 불러오기</button>` : !url ? html`<span style=${{ fontSize: 12, color: C.slate }}>파일 불러오는 중…</span>` : attachment.kind === "audio"
+      ? html`<audio controls preload="none" src=${url} style=${{ width: "100%", maxWidth: "100%" }} />`
+      : html`<a href=${url} target="_blank" rel="noopener noreferrer"><img src=${url} alt="제출한 숙제 사진" loading="lazy" style=${{ maxWidth: "100%", maxHeight: 240, borderRadius: 4 }} /></a>`}
+  </div>`;
+}
+function HomeworkMediaList({ attachments }) {
+  return html`<div style=${{ display: "flex", flexDirection: "column", gap: 8, marginTop: attachments.length ? 10 : 0, minWidth: 0 }}>
+    ${attachments.map((a) => html`<${HomeworkMediaItem} key=${a.id} attachment=${a} />`)}
+  </div>`;
+}
+function HomeworkAudioSubmit({ studentId, h, updateData, onSubmitted }) {
+  const recorderRef = useRef(null), streamRef = useRef(null), timerRef = useRef(null), mountedRef = useRef(true);
+  const [recording, setRecording] = useState(false), [starting, setStarting] = useState(false);
+  const [seconds, setSeconds] = useState(0), [file, setFile] = useState(null), [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  useEffect(() => () => {
+    mountedRef.current = false;
+    clearInterval(timerRef.current);
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+  }, []);
+  useEffect(() => {
+    if (!file) { setPreview(null); return; }
+    const url = URL.createObjectURL(file); setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  function stop() {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+  }
+  async function start() {
+    if (starting || recording || busy) return;
+    setError("");
+    if (!navigator.mediaDevices || !window.MediaRecorder) { setError("이 브라우저에서는 직접 녹음이 어려워요. 녹음 파일을 첨부해 주세요."); return; }
+    setStarting(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+      streamRef.current = stream;
+      const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus"].find((t) => MediaRecorder.isTypeSupported(t));
+      const recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      recorderRef.current = recorder;
+      const chunks = []; let bytes = 0, elapsed = 0;
+      recorder.ondataavailable = (e) => { if (e.data.size) { chunks.push(e.data); bytes += e.data.size; if (bytes > 14 * 1024 * 1024) stop(); } };
+      recorder.onstop = () => {
+        clearInterval(timerRef.current); stream.getTracks().forEach((t) => t.stop());
+        if (!mountedRef.current) return;
+        setRecording(false);
+        const blob = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+        const ext = blob.type.includes("mp4") ? "m4a" : blob.type.includes("ogg") ? "ogg" : "webm";
+        if (blob.size) setFile(new File([blob], `숙제 녹음.${ext}`, { type: blob.type }));
+      };
+      recorder.onerror = () => { if (mountedRef.current) setError("녹음에 문제가 생겼어요. 파일 첨부로 제출할 수 있어요."); stop(); };
+      recorder.start(1000); setFile(null); setSeconds(0); setRecording(true);
+      timerRef.current = setInterval(() => { elapsed++; setSeconds(elapsed); if (elapsed >= 600) stop(); }, 1000);
+    } catch (_) {
+      if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
+      if (mountedRef.current) setError("마이크를 사용할 수 없어요. 마이크 권한을 확인하거나 녹음 파일을 첨부해 주세요.");
+    } finally { if (mountedRef.current) setStarting(false); }
+  }
+  function choose(e) {
+    const chosen = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!chosen) return;
+    try { window.SarahServices.homeworkMediaService.validateFile(chosen, "audio"); setFile(chosen); setError(""); }
+    catch (err) { setError(err.message); }
+  }
+  async function submit() {
+    if (!file || busy) return;
+    setBusy(true); setError("");
+    try {
+      await window.SarahServices.homeworkMediaService.upload(studentId, h.id, file, "audio", updateData);
+      if (mountedRef.current) setFile(null);
+      if (onSubmitted) onSubmitted();
+    } catch (err) { if (mountedRef.current) setError(err.message || "녹음을 보내지 못했어요. 다시 시도해 주세요."); }
+    finally { if (mountedRef.current) setBusy(false); }
+  }
+  return html`<div style=${{ marginTop: 12, padding: 12, border: `1px solid ${C.line}`, borderRadius: 8, minWidth: 0 }}>
+    <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>읽기·낭독 녹음 제출</div>
+    <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>직접 녹음은 최대 10분 · 파일은 15MB까지. 전송 전 들어볼 수 있어요.</div>
+    <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+      <${Button} variant="ghost" disabled=${busy || starting} onClick=${recording ? stop : start} style=${{ minHeight: 44 }}>${starting ? "마이크 연결 중…" : recording ? `■ 녹음 끝내기 (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")})` : file ? "다시 녹음하기" : "🎙 녹음하기"}<//>
+      <label style=${{ minHeight: 44, display: "inline-flex", alignItems: "center", padding: "8px 12px", color: C.navy, border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12, pointerEvents: busy || starting || recording ? "none" : "auto", opacity: busy || starting || recording ? 0.5 : 1 }}>
+        녹음 파일 첨부<input type="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg" onChange=${choose} disabled=${busy || starting || recording} style=${{ display: "none" }} />
+      </label>
+    </div>
+    ${preview && file && !recording && html`<div style=${{ marginTop: 10 }}><div style=${{ fontSize: 12, overflowWrap: "anywhere" }}>${file.name}</div><audio controls src=${preview} style=${{ width: "100%", maxWidth: "100%" }} /><div style=${{ display: "flex", gap: 8, flexWrap: "wrap" }}><${Button} variant="gold" disabled=${busy || starting} onClick=${submit} style=${{ minHeight: 44 }}>${busy ? "녹음 보내는 중…" : "녹음 제출"}<//><${Button} variant="ghost" disabled=${busy || starting} onClick=${() => setFile(null)} style=${{ minHeight: 44 }}>취소<//></div></div>`}
+    ${error && html`<div role="alert" style=${{ color: C.danger, fontSize: 12, marginTop: 8 }}>${error}</div>`}
+  </div>`;
+}
+
+function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size, showNewMedia = true }) {
   const [external, setExternal] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -26843,10 +26955,10 @@ function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
   }, [studentId, h.id, h.externalPhotos, h.photoCount]);
 
   const photos = h.externalPhotos ? (external || []) : (h.photos || (h.photo ? [h.photo] : []));
-  if (photos.length === 0) return null;
+  if (photos.length === 0) return showNewMedia ? html`<${HomeworkMediaList} attachments=${h.attachments || []} />` : null;
   const px = size || 70;
   return html`
-    <div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+    <div><div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
       ${photos.map((p, pi) => html`
         <div key=${pi} style=${{ position: "relative" }}>
           <img src=${photoUrl(p)} onClick=${() => onPhotoClick && onPhotoClick(photoUrl(p))} style=${{ width: px, height: px, objectFit: "cover", borderRadius: 4, border: `1px solid ${C.line}`, display: "block", cursor: "zoom-in" }} />
@@ -26854,7 +26966,7 @@ function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
           ${onRemove && html`<button onClick=${() => onRemove(pi)} style=${{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.danger, color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: "20px", padding: 0 }}>✕</button>`}
         </div>
       `)}
-    </div>
+    </div>${showNewMedia && html`<${HomeworkMediaList} attachments=${h.attachments || []} />`}</div>
   `;
 }
 
@@ -26862,60 +26974,23 @@ function HomeworkStudentCard({ h, studentId, studentName, updateData }) {
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [lightbox, setLightbox] = useState(null);
   const inputId = `hwphoto-${h.id}`;
-  const photoCount = h.externalPhotos ? (h.photoCount || 0) : (h.photos || (h.photo ? [h.photo] : [])).length;
+  const photoCount = (h.externalPhotos ? (h.photoCount || 0) : (h.photos || (h.photo ? [h.photo] : [])).length) + (h.attachments || []).filter((a) => a.kind === "image").length;
 
   async function handleFile(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (files.length === 0) return;
+    if (!files.length || busy) return;
     setErr(""); setBusy(true);
     try {
-      // 이 항목이 이미 레거시 인라인 사진을 갖고 있으면 계속 인라인에 추가한다(항목 하나를 두
-      // 저장 방식에 걸쳐 섞지 않기 위함) — 그 외(신규 항목, 또는 이미 externalPhotos인 항목)는
-      // 전부 homeworkPhotos 컬렉션으로 간다. 이게 "새 사진부터만 분리 저장, 기존 데이터는
-      // 그대로 유지"의 실제 분기점이다.
-      const legacyPhotos = h.photos || (h.photo ? [h.photo] : []);
-      const isExternal = h.externalPhotos || legacyPhotos.length === 0;
-      const newOnes = [];
-      let runningTotal = isExternal ? 0 : legacyPhotos.reduce((sum, p) => sum + (p ? photoUrl(p).length : 0), 0);
-      const BUDGET = 550000; // leaves headroom under Firestore's 1MB-per-document cap for this student's other data
       for (const file of files) {
-        const dataUrl = await withTimeout(compressImage(file, 640, 0.5), 20000, "storage/timeout");
-        if (dataUrl.length > 180000) { setErr("사진 한 장의 용량이 너무 커서 건너뛰었어요."); continue; }
-        if (!isExternal && runningTotal + dataUrl.length > BUDGET) { setErr("사진을 더 담기엔 이 학생의 저장 공간이 부족해요. '저장 공간 관리'에서 정리한 뒤 다시 시도해 주세요."); break; }
-        runningTotal += dataUrl.length;
-        newOnes.push({ url: dataUrl, uploadedAt: Date.now() });
+        const dataUrl = await compressImage(file, 1280, 0.75);
+        const blob = await (await fetch(dataUrl)).blob();
+        const image = new File([blob], file.name || "사진.jpg", { type: blob.type });
+        await window.SarahServices.homeworkMediaService.upload(studentId, h.id, image, "image", updateData);
       }
-      if (newOnes.length > 0) {
-        if (isExternal) {
-          const HW = window.SarahServices.homeworkService;
-          const currentMap = await loadExternalPhotos(studentId);
-          const combined = [...(currentMap[h.id] || []), ...newOnes];
-          await HW.saveExternalPhotos(studentId, h.id, combined);
-          invalidateExternalPhotos(studentId);
-          await updateData(studentId, (d) => ({
-            ...d,
-            homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: [], externalPhotos: true, photoCount: combined.length, done: true, doneAt: Date.now() } : x)),
-          }));
-          notifyTeacher(studentName, "homework_upload");
-        } else {
-          const save = () => updateData(studentId, (d) => ({
-            ...d,
-            homework: (d.homework || []).map((x) => (x.id === h.id ? { ...withoutLegacyPhoto(x), photos: [...(x.photos || (x.photo ? [x.photo] : [])), ...newOnes], done: true, doneAt: Date.now() } : x)),
-          }));
-          try {
-            await save();
-            notifyTeacher(studentName, "homework_upload");
-          } catch (saveErr) {
-            let recovered = false;
-            if (isDocSizeError(saveErr)) recovered = await attemptAutoShrinkAndRetry(studentId, updateData, save);
-            if (!recovered) throw saveErr;
-            else notifyTeacher(studentName, "homework_upload");
-          }
-        }
-      }
-    } catch (e) { setErr(friendlyErrorMessage(e)); }
-    setBusy(false);
+      notifyTeacher(studentName, "homework_upload");
+    } catch (e) { setErr(e.message || friendlyErrorMessage(e)); }
+    finally { setBusy(false); }
   }
   async function removePhoto(idx) {
     if (h.externalPhotos) {
@@ -26954,7 +27029,7 @@ function HomeworkStudentCard({ h, studentId, studentName, updateData }) {
       ` : html`
         <div style=${{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, flexWrap: "wrap" }}>
           <label htmlFor=${busy ? undefined : inputId} style=${{ fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 3, border: `1px solid ${C.navy}`, color: busy ? C.slate : C.navy, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, pointerEvents: busy ? "none" : "auto" }}>
-            ${busy ? "업로드 중..." : photoCount > 0 ? "인증샷 추가하기" : "인증샷 올리기"}
+            ${busy ? "업로드 중..." : photoCount > 0 ? "사진 추가하기" : "사진 첨부"}
           </label>
           <input id=${inputId} type="file" accept="image/*" multiple onChange=${handleFile} style=${{ display: "none" }} disabled=${busy} />
 
@@ -26963,6 +27038,7 @@ function HomeworkStudentCard({ h, studentId, studentName, updateData }) {
           </div>
         </div>
       `}
+      ${!h.expired && html`<${HomeworkAudioSubmit} key=${studentId + h.id} studentId=${studentId} h=${h} updateData=${updateData} onSubmitted=${() => notifyTeacher(studentName, "homework_upload", "녹음 제출")} />`}
       ${err && html`<div style=${{ fontSize: 11.5, color: C.danger, marginTop: 6 }}>${err}</div>`}
       ${lightbox && html`<${PhotoLightbox} src=${lightbox} onClose=${() => setLightbox(null)} />`}
     <//>
@@ -28279,7 +28355,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
               <${Card} key=${h.id}>
                 <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>내준 날짜 ${fmtDate(h.assignedDate)}</div>
                 <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
-                <${HomeworkPhotoGallery} studentId=${student.id} h=${h} onPhotoClick=${setLightbox} size=${70} />
+                <${HomeworkPhotoGallery} studentId=${student.id} h=${h} onPhotoClick=${setLightbox} size=${70} showNewMedia=${false} />
                 ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
                 <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : h.expired ? C.danger : C.slate, fontWeight: 600 }}>${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : h.expired ? "⏳ 기간만료" : "아직 미완료"}</div>
               <//>

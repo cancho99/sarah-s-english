@@ -39,7 +39,7 @@ window.SarahServices = window.SarahServices || {};
     // externalPhotos items keep the actual photo bytes out of this array (see
     // HOMEWORK_PHOTOS_COLLECTION below) — photoCount comes from the stored count instead of the
     // (empty) local array, so every existing count-based consumer keeps working unchanged.
-    const photoCount = hw.externalPhotos ? (hw.photoCount || 0) : photos.length;
+    const photoCount = (hw.externalPhotos ? (hw.photoCount || 0) : photos.length) + (hw.attachments || []).filter((a) => a.kind === "image").length;
     const today = todayStr();
 
     // Submission status — driven entirely by the existing `done`/`expired` fields, unchanged.
