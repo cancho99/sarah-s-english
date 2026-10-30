@@ -1,12 +1,18 @@
 // Firebase Storage rules for the "sarah-s-english" project.
-//
-// 2026-10 — 리딩 라이브러리와 함께 유일하게 Storage를 쓰던 쉐도잉 녹음 규칙을 제거했다. 이 프로젝트의 나머지 파일은 전부 Firestore 문서 안의
-// base64로 저장되므로(CLAUDE.md 참고) 지금은 Storage를 쓰는 코드가 없다 — 규칙 구조는 그대로 두되
-// match 블록이 하나도 없어서 모든 읽기/쓰기가 기본 차단된다. 나중에 Storage를 다시 쓰게 되면
-// 아래 `match /b/{bucket}/o { ... }` 안에 필요한 경로만 명시적으로 추가할 것.
+// Homework attachments use authenticated per-student paths.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // (의도적으로 비어 있음 — 모든 접근 차단)
+    match /homeworkMedia/{studentId}/{homeworkId}/{fileName} {
+      function teacher() { return request.auth != null && request.auth.token.role == "teacher"; }
+      function own(role) { return request.auth != null && request.auth.token.role == role && request.auth.token.studentId == studentId; }
+      allow read: if teacher() || own("student") || own("parent");
+      allow create: if (teacher() || own("student")) && (
+        (request.resource.contentType.matches('image/(jpeg|png|webp)') && request.resource.size <= 5 * 1024 * 1024) ||
+        (request.resource.contentType.matches('audio/(webm|mp4|mpeg|wav|x-wav|ogg|aac|x-m4a)(;.*)?') && request.resource.size <= 15 * 1024 * 1024)
+      );
+      allow delete: if teacher() || own("student");
+      allow update: if false;
+    }
   }
 }
