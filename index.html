@@ -2562,6 +2562,8 @@ function IconGrid({ items }) {
 // SVG 선 아이콘(2026-10 UI 리디자인) — 이모지는 기기마다 모양이 달라 전문적으로 보이지 않아서, 사이드바/하단
 // 탭처럼 구조를 이루는 자리에는 이 세트를 쓴다. stroke가 currentColor라 부모의 color를 그대로 따른다.
 const ICON_PATHS = {
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/>',
+
   today: '<path d="M3 11l9-8 9 8"/><path d="M5 9.5V20h14V9.5"/>',
   students: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.6a3.5 3.5 0 010 6.8M18.2 14.6c2 .7 3.3 2.5 3.3 5.4"/>',
   classes: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
@@ -26930,7 +26932,7 @@ function HomeworkAudioSubmit({ studentId, h, updateData, onSubmitted }) {
     <div style=${{ fontSize: 12, fontWeight: 700, color: C.navy }}>읽기·낭독 녹음 제출</div>
     <div style=${{ fontSize: 11, color: C.slate, marginTop: 4 }}>직접 녹음은 최대 10분 · 파일은 15MB까지. 전송 전 들어볼 수 있어요.</div>
     <div style=${{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-      <${Button} variant="ghost" disabled=${busy || starting} onClick=${recording ? stop : start} style=${{ minHeight: 44 }}>${starting ? "마이크 연결 중…" : recording ? `■ 녹음 끝내기 (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")})` : file ? "다시 녹음하기" : "🎙 녹음하기"}<//>
+      <${Button} variant="ghost" disabled=${busy || starting} onClick=${recording ? stop : start} style=${{ minHeight: 44 }}>${!recording && html`<${Icon} name="mic" size=${20} />`}${starting ? "마이크 연결 중…" : recording ? `■ 녹음 끝내기 (${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")})` : file ? "다시 녹음하기" : "녹음하기"}<//>
       <label style=${{ minHeight: 44, display: "inline-flex", alignItems: "center", padding: "8px 12px", color: C.navy, border: `1px solid ${C.line}`, borderRadius: 4, fontSize: 12, pointerEvents: busy || starting || recording ? "none" : "auto", opacity: busy || starting || recording ? 0.5 : 1 }}>
         녹음 파일 첨부<input type="file" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg" onChange=${choose} disabled=${busy || starting || recording} style=${{ display: "none" }} />
       </label>
