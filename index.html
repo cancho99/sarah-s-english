@@ -26940,7 +26940,7 @@ function HomeworkAudioSubmit({ studentId, h, updateData, onSubmitted }) {
   </div>`;
 }
 
-function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
+function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size, showNewMedia = true }) {
   const [external, setExternal] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -26955,7 +26955,7 @@ function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
   }, [studentId, h.id, h.externalPhotos, h.photoCount]);
 
   const photos = h.externalPhotos ? (external || []) : (h.photos || (h.photo ? [h.photo] : []));
-  if (photos.length === 0) return html`<${HomeworkMediaList} attachments=${h.attachments || []} />`;
+  if (photos.length === 0) return showNewMedia ? html`<${HomeworkMediaList} attachments=${h.attachments || []} />` : null;
   const px = size || 70;
   return html`
     <div><div style=${{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -26966,7 +26966,7 @@ function HomeworkPhotoGallery({ studentId, h, onRemove, onPhotoClick, size }) {
           ${onRemove && html`<button onClick=${() => onRemove(pi)} style=${{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.danger, color: "#fff", fontSize: 11, cursor: "pointer", lineHeight: "20px", padding: 0 }}>✕</button>`}
         </div>
       `)}
-    </div><${HomeworkMediaList} attachments=${h.attachments || []} /></div>
+    </div>${showNewMedia && html`<${HomeworkMediaList} attachments=${h.attachments || []} />`}</div>
   `;
 }
 
@@ -28355,7 +28355,7 @@ function ParentDash({ student, updateStudentRosterEntry, ensureData, updateData,
               <${Card} key=${h.id}>
                 <div style=${{ fontSize: 11.5, color: C.gold, fontWeight: 700 }}>내준 날짜 ${fmtDate(h.assignedDate)}</div>
                 <div style=${{ fontSize: 13.5, marginTop: 6, whiteSpace: "pre-wrap" }}>${h.content}</div>
-                <${HomeworkPhotoGallery} studentId=${student.id} h=${h} onPhotoClick=${setLightbox} size=${70} />
+                <${HomeworkPhotoGallery} studentId=${student.id} h=${h} onPhotoClick=${setLightbox} size=${70} showNewMedia=${false} />
                 ${(h.audios || (h.audio ? [h.audio] : [])).map((a, ai) => html`<audio key=${ai} controls src=${a} style=${{ width: "100%", height: 32, marginTop: 8 }} />`)}
                 <div style=${{ marginTop: 8, fontSize: 12.5, color: h.done ? C.gold : h.expired ? C.danger : C.slate, fontWeight: 600 }}>${h.done ? `✓ 완료함${h.doneAt ? ` (${fmtDateTime(h.doneAt)})` : ""}` : h.expired ? "⏳ 기간만료" : "아직 미완료"}</div>
               <//>

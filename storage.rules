@@ -6,7 +6,7 @@ service firebase.storage {
     match /homeworkMedia/{studentId}/{homeworkId}/{fileName} {
       function teacher() { return request.auth != null && request.auth.token.role == "teacher"; }
       function own(role) { return request.auth != null && request.auth.token.role == role && request.auth.token.studentId == studentId; }
-      allow read: if teacher() || own("student") || own("parent");
+      allow read: if teacher() || own("student");
       allow create: if (teacher() || own("student")) && (
         (request.resource.contentType.matches('image/(jpeg|png|webp)') && request.resource.size <= 5 * 1024 * 1024) ||
         (request.resource.contentType.matches('audio/(webm|mp4|mpeg|wav|x-wav|ogg|aac|x-m4a)(;.*)?') && request.resource.size <= 15 * 1024 * 1024)
